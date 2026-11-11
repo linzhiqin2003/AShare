@@ -1,0 +1,15 @@
+.venv/
+target/
+__pycache__/
+*.pyc
+*.so
+*.dylib
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.cache/
+.worktrees/
+data/
+.env
+.DS_Store
