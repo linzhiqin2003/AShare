@@ -1,0 +1,56 @@
+{
+  "source_sha256": "750fd1f28a555154feb089160e3ec17d0befeef5d525e59f2b47ce6adfd20ef6",
+  "mutations": [
+    {
+      "mutation": "去掉印花税",
+      "test": "test_fees_and_tax_on_slipped_amount",
+      "exit_code": 1
+    },
+    {
+      "mutation": "忽略 can_sell",
+      "test": "test_can_sell_and_carry",
+      "exit_code": 1
+    },
+    {
+      "mutation": "现金不足不同比缩减",
+      "test": "test_proportional_cash_scaling_before_column_order",
+      "exit_code": 1
+    },
+    {
+      "mutation": "最低佣金不生效",
+      "test": "test_min_commission_and_cash_scaling",
+      "exit_code": 1
+    },
+    {
+      "mutation": "分红不入账",
+      "test": "test_dividend_before_split_and_odd_buy",
+      "exit_code": 1
+    },
+    {
+      "mutation": "送转不调股数",
+      "test": "test_dividend_before_split_and_odd_buy",
+      "exit_code": 1
+    },
+    {
+      "mutation": "顺延触碰非受限持仓",
+      "test": "test_carry_only_blocked_security",
+      "exit_code": 1
+    },
+    {
+      "mutation": "忽略成交量上限",
+      "test": "test_volume_and_odd_lot_liquidation",
+      "exit_code": 1
+    },
+    {
+      "mutation": "卖价滑点方向反转",
+      "test": "test_fees_and_tax_on_slipped_amount",
+      "exit_code": 1
+    },
+    {
+      "mutation": "忽略退市回收率",
+      "test": "test_delist_prior_close_and_no_reentry",
+      "exit_code": 1
+    }
+  ],
+  "restored_git_diff_exit": 0
+}

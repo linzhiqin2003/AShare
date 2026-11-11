@@ -1,0 +1,278 @@
+[
+  {
+    "holdings": 100,
+    "interval": 21,
+    "max_nav_error": 2.55351295663786e-15,
+    "numpy_full": 0.016106416998809436,
+    "numpy_full_samples": [
+      0.016525875002116663,
+      0.015855042001930997,
+      0.016106416998809436
+    ],
+    "numpy_sparse": 0.008732875001442153,
+    "numpy_sparse_samples": [
+      0.009333916998002678,
+      0.008732875001442153,
+      0.00851712499934365
+    ],
+    "rust": 0.0005387079982028808,
+    "rust_samples": [
+      0.0006105419997766148,
+      0.0005387079982028808,
+      0.0005137920015840791
+    ],
+    "selection": [
+      {
+        "method": "serial",
+        "workers": 1,
+        "K": 30,
+        "seconds": 0.26478824999867356
+      },
+      {
+        "method": "threads",
+        "workers": 1,
+        "K": 30,
+        "seconds": 0.26352924999810057
+      },
+      {
+        "method": "threads",
+        "workers": 2,
+        "K": 30,
+        "seconds": 0.545607750002091
+      },
+      {
+        "method": "threads",
+        "workers": 4,
+        "K": 30,
+        "seconds": 1.396748832998128
+      },
+      {
+        "method": "processes",
+        "workers": 15,
+        "K": 30,
+        "seconds": 0.0284654999995837
+      }
+    ],
+    "numpy_batch_method": "processes",
+    "numpy_batch_workers": 15,
+    "batch_numpy": 0.9056658750014321,
+    "batch_numpy_samples": [
+      0.9056658750014321,
+      0.9015459169968381,
+      0.9088788750013919
+    ],
+    "batch_rust": 0.11549629100045422,
+    "batch_rust_samples": [
+      0.10140604200205416,
+      0.11549629100045422,
+      0.12327620900032343
+    ]
+  },
+  {
+    "holdings": 1000,
+    "interval": 21,
+    "max_nav_error": 3.774758283725532e-15,
+    "numpy_full": 0.016182041999854846,
+    "numpy_full_samples": [
+      0.016344167001079768,
+      0.016182041999854846,
+      0.016004625002096873
+    ],
+    "numpy_sparse": 0.02738616699934937,
+    "numpy_sparse_samples": [
+      0.02842416699786554,
+      0.02738616699934937,
+      0.026969624999765074
+    ],
+    "rust": 0.00552287500249804,
+    "rust_samples": [
+      0.005610750002233544,
+      0.00552287500249804,
+      0.005517166002391605
+    ],
+    "selection": [
+      {
+        "method": "serial",
+        "workers": 1,
+        "K": 30,
+        "seconds": 0.5308839999997872
+      },
+      {
+        "method": "threads",
+        "workers": 1,
+        "K": 30,
+        "seconds": 0.5073317919996043
+      },
+      {
+        "method": "threads",
+        "workers": 2,
+        "K": 30,
+        "seconds": 1.1181721670000115
+      },
+      {
+        "method": "threads",
+        "workers": 4,
+        "K": 30,
+        "seconds": 2.023194166999019
+      },
+      {
+        "method": "processes",
+        "workers": 15,
+        "K": 30,
+        "seconds": 0.05745645799834165
+      }
+    ],
+    "numpy_batch_method": "processes",
+    "numpy_batch_workers": 15,
+    "batch_numpy": 1.8456811249998282,
+    "batch_numpy_samples": [
+      1.864185542002815,
+      1.8456811249998282,
+      1.797060541000974
+    ],
+    "batch_rust": 0.48972583299837424,
+    "batch_rust_samples": [
+      0.47591983399979654,
+      0.5086451249990205,
+      0.48972583299837424
+    ]
+  },
+  {
+    "holdings": 100,
+    "interval": 1,
+    "max_nav_error": 2.886579864025407e-15,
+    "numpy_full": 0.23845408299894189,
+    "numpy_full_samples": [
+      0.2381900410000526,
+      0.23845408299894189,
+      0.2385725000021921
+    ],
+    "numpy_sparse": 0.086383375000878,
+    "numpy_sparse_samples": [
+      0.0867348329993547,
+      0.08574650000082329,
+      0.086383375000878
+    ],
+    "rust": 0.005682750001142267,
+    "rust_samples": [
+      0.006224417000339599,
+      0.005682750001142267,
+      0.005537000000913395
+    ],
+    "selection": [
+      {
+        "method": "serial",
+        "workers": 1,
+        "K": 30,
+        "seconds": 2.7066980419986066
+      },
+      {
+        "method": "threads",
+        "workers": 1,
+        "K": 30,
+        "seconds": 2.714771291000943
+      },
+      {
+        "method": "threads",
+        "workers": 2,
+        "K": 30,
+        "seconds": 4.224738916000206
+      },
+      {
+        "method": "threads",
+        "workers": 4,
+        "K": 30,
+        "seconds": 5.216005458001746
+      },
+      {
+        "method": "processes",
+        "workers": 15,
+        "K": 30,
+        "seconds": 0.246992083000805
+      }
+    ],
+    "numpy_batch_method": "processes",
+    "numpy_batch_workers": 15,
+    "batch_numpy": 9.479568332997587,
+    "batch_numpy_samples": [
+      8.898603124998772,
+      9.479568332997587,
+      9.780499874999805
+    ],
+    "batch_rust": 0.5844642920019396,
+    "batch_rust_samples": [
+      0.572948125001858,
+      0.6110919159982586,
+      0.5844642920019396
+    ]
+  },
+  {
+    "holdings": 1000,
+    "interval": 1,
+    "max_nav_error": 8.43769498715119e-15,
+    "numpy_full": 0.2467425409995485,
+    "numpy_full_samples": [
+      0.24676012499912758,
+      0.2467425409995485,
+      0.24644541599991499
+    ],
+    "numpy_sparse": 0.3110347500005446,
+    "numpy_sparse_samples": [
+      0.31194295899695135,
+      0.3110347500005446,
+      0.3108067920002213
+    ],
+    "rust": 0.06095149999964633,
+    "rust_samples": [
+      0.06113241699858918,
+      0.06095149999964633,
+      0.06095137499869452
+    ],
+    "selection": [
+      {
+        "method": "serial",
+        "workers": 1,
+        "K": 30,
+        "seconds": 7.248502624999674
+      },
+      {
+        "method": "threads",
+        "workers": 1,
+        "K": 30,
+        "seconds": 6.96996154199951
+      },
+      {
+        "method": "threads",
+        "workers": 2,
+        "K": 30,
+        "seconds": 13.495955582999159
+      },
+      {
+        "method": "threads",
+        "workers": 4,
+        "K": 30,
+        "seconds": 24.822041625000566
+      },
+      {
+        "method": "processes",
+        "workers": 15,
+        "K": 30,
+        "seconds": 0.7468794580017857
+      }
+    ],
+    "numpy_batch_method": "processes",
+    "numpy_batch_workers": 15,
+    "batch_numpy": 27.05727108299834,
+    "batch_numpy_samples": [
+      25.93957766600215,
+      27.05727108299834,
+      27.521597291000944
+    ],
+    "batch_rust": 6.00908495800104,
+    "batch_rust_samples": [
+      5.733780750000733,
+      6.13966420900033,
+      6.00908495800104
+    ]
+  }
+]

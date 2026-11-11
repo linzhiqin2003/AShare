@@ -1,0 +1,11 @@
+{
+  "trades": 36703,
+  "blocked_buy": 16313,
+  "blocked_sell": 11682,
+  "cash_scaled": 884,
+  "min_commission": 17870,
+  "delist": 1539,
+  "dividend": 5877,
+  "split": 5259,
+  "carry_trade": 8308
+}

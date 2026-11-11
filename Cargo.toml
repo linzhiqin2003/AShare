@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/panelbt-core", "packages/panelbt"]
+exclude = ["bench/spike"]
+resolver = "3"
+
+[workspace.dependencies]
+rayon = "1.12.0"
+pyo3 = "0.30.1"
+numpy = "0.30.0"
+
+[profile.release]
+lto = true
+codegen-units = 1

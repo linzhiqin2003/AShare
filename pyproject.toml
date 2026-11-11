@@ -1,0 +1,31 @@
+[project]
+name = "ashare"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["panelbt", "panelops"]
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+panelbt = { workspace = true }
+panelops = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py313"
+extend-exclude = ["docs", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

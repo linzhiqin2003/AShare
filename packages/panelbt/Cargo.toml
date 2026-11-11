@@ -1,0 +1,13 @@
+[package]
+name = "panelbt-python"
+version = "0.1.0"
+edition = "2024"
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+[dependencies]
+panelbt-core = { path = "../../crates/panelbt-core" }
+pyo3 = { workspace = true, features = ["extension-module"] }
+numpy.workspace = true

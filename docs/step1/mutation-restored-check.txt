@@ -1,0 +1,41 @@
+uv run --no-sync ruff check .
+All checks passed!
+uv run --no-sync ruff format --check .
+21 files already formatted
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+    Checking panelbt-core v0.1.0 (/Users/linzhiqin/Codespace/AShare/crates/panelbt-core)
+    Checking panelbt-python v0.1.0 (/Users/linzhiqin/Codespace/AShare/packages/panelbt)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+cargo test --workspace
+   Compiling panelbt-core v0.1.0 (/Users/linzhiqin/Codespace/AShare/crates/panelbt-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/panelbt_core-09da8478b86b5bdb)
+
+running 1 test
+test tests::lots ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests panelbt_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+uv run --no-sync pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.13.13, pytest-9.2.0, pluggy-1.7.0
+rootdir: /Users/linzhiqin/Codespace/AShare
+configfile: pyproject.toml
+testpaths: test
+plugins: hypothesis-6.170.15
+collected 68 items
+
+test/test_engine.py ................                                     [ 23%]
+test/test_inputs.py ....................................                 [ 76%]
+test/test_properties.py .....                                            [ 83%]
+test/test_random.py .                                                    [ 85%]
+test/test_rules.py ..........                                            [100%]
+
+============================== 68 passed in 3.49s ==============================

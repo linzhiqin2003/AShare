@@ -1,0 +1,6 @@
+{
+  "before": "panelbt-core-v1",
+  "changed": "panelbt-core-cache-check",
+  "restored": "panelbt-core-v1",
+  "command": "make dev（未用 --reinstall、--refresh 或清缓存）"
+}

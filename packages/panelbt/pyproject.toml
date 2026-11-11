@@ -1,0 +1,28 @@
+[project]
+name = "panelbt"
+version = "0.1.0"
+description = "基于面板数组的组合回测引擎"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.5.4,<3"]
+readme = "README.md"
+
+[build-system]
+requires = ["maturin>=1.16.0,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "panelbt._core"
+profile = "release"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "src/**/*.rs" },
+  { file = "../../crates/panelbt-core/Cargo.toml" },
+  { file = "../../crates/panelbt-core/src/**/*.rs" },
+  { file = "../../Cargo.toml" },
+  { file = "../../Cargo.lock" },
+  { file = "python/**/*.py" },
+]
