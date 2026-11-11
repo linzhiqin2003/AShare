@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 790" width="1280" height="790">
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#7A828E"/></marker>
+<style>
+text{font-family:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#1F2328}
+.title{font-size:22px;font-weight:600}
+.name{font-size:15px;font-weight:600;font-family:"SF Mono","Menlo","PingFang SC",monospace}
+.sub{font-size:12.5px;fill:#57606A}
+.band{font-size:16px;font-weight:600}
+.bandsub{font-size:13px;fill:#57606A}
+.note{font-size:12px;fill:#7A828E}
+</style></defs>
+<rect width="1280" height="790" fill="#FFFFFF"/>
+<text x="40" y="50" class="title">AShare 整体架构</text>
+<line x1="968" y1="44" x2="1004" y2="44" stroke="#B6BDC8" stroke-width="1.6"/><text x="1012" y="48" class="note">已有代码</text>
+<line x1="1092" y1="44" x2="1128" y2="44" stroke="#B6BDC8" stroke-width="1.6" stroke-dasharray="5 4"/><text x="1136" y="48" class="note">在做或计划</text>
+<rect x="240" y="72" width="160" height="34" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="254" y="98" class="name"></text>
+<text x="254" y="94" class="sub">Tushare · BaoStock</text>
+<rect x="970" y="72" width="115" height="34" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="984" y="98" class="name"></text>
+<text x="984" y="94" class="sub">Tushare 实时</text>
+<rect x="220" y="124" width="1020" height="210" rx="12" fill="#F4F5F7"/>
+<text x="40" y="156" class="band">ashare</text>
+<text x="40" y="180" class="bandsub">研究与策略</text>
+<text x="40" y="200" class="bandsub">Python</text>
+<line x1="320" y1="106" x2="320" y2="142" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="1027" y1="106" x2="1027" y2="142" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<rect x="240" y="144" width="160" height="96" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="254" y="170" class="name">data</text>
+<text x="254" y="190" class="sub">sources · catalog</text>
+<text x="254" y="208" class="sub">store · panel</text>
+<text x="254" y="226" class="sub">reader（唯一出口）</text>
+<rect x="240" y="256" width="160" height="56" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="254" y="282" class="name">research</text>
+<text x="254" y="302" class="sub">试验账本 · 检验</text>
+<rect x="430" y="144" width="240" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="444" y="170" class="name">factor</text>
+<text x="444" y="190" class="sub">因子库：表达式 · 登记 · 缓存</text>
+<rect x="430" y="242" width="240" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="444" y="268" class="name">eval</text>
+<text x="444" y="288" class="sub">单因子检验：IC · 分组 · 换手</text>
+<rect x="700" y="144" width="240" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="714" y="170" class="name">model · portfolio</text>
+<text x="714" y="190" class="sub">合成 · 风险模型 · 组合优化</text>
+<rect x="700" y="242" width="240" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="714" y="268" class="name">recon</text>
+<text x="714" y="288" class="sub">与 rqalpha 对账</text>
+<rect x="970" y="144" width="115" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="984" y="170" class="name">paper</text>
+<text x="984" y="190" class="sub">行情 · 调度</text>
+<rect x="1105" y="144" width="115" height="70" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1119" y="170" class="name">live</text>
+<text x="1119" y="190" class="sub">miniQMT 适配</text>
+<line x1="400" y1="179" x2="428" y2="179" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="670" y1="179" x2="698" y2="179" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="940" y1="179" x2="968" y2="179" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="550" y1="214" x2="550" y2="240" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="40" y="353" class="note">T × N numpy 数组</text>
+<line x1="550" y1="336" x2="550" y2="362" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="820" y1="336" x2="820" y2="362" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="1027" y1="336" x2="1027" y2="362" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<rect x="220" y="364" width="1020" height="130" rx="12" fill="#F4F5F7"/>
+<text x="40" y="396" class="band">独立的包</text>
+<text x="40" y="420" class="bandsub">Python 接口</text>
+<text x="40" y="440" class="bandsub">类与函数</text>
+<rect x="430" y="384" width="240" height="90" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="444" y="410" class="name">panelops</text>
+<text x="444" y="430" class="sub">函数：ts_* · cs_* · ic · 分组</text>
+<rect x="700" y="384" width="240" height="90" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="714" y="410" class="name">panelbt</text>
+<text x="714" y="430" class="sub">类：Market · Targets · Costs</text>
+<text x="714" y="448" class="sub">run() → Result</text>
+<rect x="970" y="384" width="250" height="90" rx="8" fill="#FFFFFF" stroke="#B6BDC8" stroke-width="1.4"/>
+<text x="984" y="410" class="name">paperbroker</text>
+<text x="984" y="430" class="sub">类：Broker</text>
+<text x="984" y="448" class="sub">.feed() · .order() · .settle()</text>
+<text x="40" y="513" class="note">PyO3 绑定 · 借用数组不复制</text>
+<line x1="550" y1="496" x2="550" y2="522" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="820" y1="496" x2="820" y2="522" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="1095" y1="496" x2="1095" y2="522" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<rect x="220" y="524" width="1020" height="236" rx="12" fill="#F4F5F7"/>
+<text x="40" y="556" class="band">Rust 内核</text>
+<text x="40" y="580" class="bandsub">结构体 + trait + 函数</text>
+<text x="40" y="600" class="bandsub">没有继承</text>
+<rect x="430" y="544" width="240" height="90" rx="8" fill="#EEF3FF" stroke="#3B6FE0" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="444" y="570" class="name">panelops-core</text>
+<text x="444" y="590" class="sub">并行算子核</text>
+<rect x="700" y="544" width="240" height="90" rx="8" fill="#EEF3FF" stroke="#3B6FE0" stroke-width="1.4"/>
+<text x="714" y="570" class="name">panelbt-core</text>
+<text x="714" y="590" class="sub">Market · Targets · Settings</text>
+<text x="714" y="608" class="sub">run() · run_batch()</text>
+<rect x="970" y="544" width="250" height="90" rx="8" fill="#EEF3FF" stroke="#3B6FE0" stroke-width="1.4"/>
+<text x="984" y="570" class="name">paperbroker-core</text>
+<text x="984" y="590" class="sub">Engine&lt;CostModel, LotRule&gt;</text>
+<text x="984" y="608" class="sub">Input → State → Action</text>
+<rect x="700" y="684" width="520" height="50" rx="8" fill="#EEF3FF" stroke="#3B6FE0" stroke-width="1.4"/>
+<text x="714" y="710" class="name">tradecore</text>
+<text x="824" y="710" class="sub">费用 · 申报单位 · 保证金，两个引擎共用</text>
+<line x1="820" y1="634" x2="820" y2="682" stroke="#7A828E" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="1095" y1="634" x2="1095" y2="682" stroke="#7A828E" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+</svg>
