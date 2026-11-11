@@ -3,8 +3,8 @@
 A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再改代码。
 
 ## 结构
-- `crates/` 纯 Rust 内核：`panelbt-core`（组合回测）、`panelops-core`（因子算子）
-- `packages/` 对应的 Python 包（maturin）：`panelbt`、`panelops`，都不依赖 `ashare`
+- `packages/` 两个独立的 Python 包：`panelbt`（组合回测）、`panelops`（因子算子），都不依赖 `ashare`
+- `crates/` 上面两个包里用 Rust 写的内核；哪些部分用 Rust 由基准测试决定（先测 numpy / polars 基线，快 3 倍以上才写）
 - `src/ashare/` 研究项目本体：数据、因子、检验、合成、组合
 - `test/` 测试；`docs/` 文档；`research/` 每个研究一个子目录；`data/` 不入库
 
