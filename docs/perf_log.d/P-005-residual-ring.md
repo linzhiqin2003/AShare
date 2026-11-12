@@ -1,6 +1,6 @@
 ### P-005 残差历史改为预分配的双份环形缓冲
 
-- 提交：见本文件所在提交（分支 `perf/risk`）。
+- 提交：`58451c0`；复核后修补 `794869a`。
 - 手段：硬件（内存分配与拷贝）。
 - 改了什么：`src/ashare/risk/window.py` 新增 `ResidualWindow`：预分配 2×history 行，每天把残差写进 `day mod history` 和它加 history 两处，
   任意不超过 history 天的窗口都是按时间排列的连续视图（`np.shares_memory`，不拷贝）。`model_series` 的残差历史从「Python 列表 + 每天

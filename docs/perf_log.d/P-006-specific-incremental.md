@@ -1,6 +1,6 @@
 ### P-006 特质风险：三个指数加权方差改为分块累加（允许相对误差 1e-12）
 
-- 提交：见本文件所在提交（分支 `perf/risk`）。
+- 提交：`3ad12c0`；复核后修补 `794869a`。
 - 手段：数学算法（少算：窗口每天只前进一天，按块复用已算好的加权矩）。
 - 改了什么：`src/ashare/risk/specific.py`（`SpecificMoments`）、`window.py`（`WindowVariances`，可代替残差窗口传给 `specific_variance`，函数签名不变）、
   `series.py` 接入；`portopt` 新增 `ew_moments_segment`、`ew_moments_variance`（Rust 内核 `crates/portopt-core`）。
