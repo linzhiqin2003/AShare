@@ -89,6 +89,31 @@ impl Account {
         long_rate * self.long + short_rate * self.short + additional_margin
     }
 }
+
+/// Cash variation from a signed contract position between two price marks.
+/// The caller chooses execution or settlement marks and applies fees separately.
+#[inline]
+pub fn futures_variation(contracts: f64, multiplier: f64, from: f64, to: f64) -> f64 {
+    contracts * multiplier * (to - from)
+}
+
+/// Initial and maintenance collateral for a marked futures position.
+#[inline]
+pub fn futures_margin(contracts: f64, multiplier: f64, mark: f64, rate: f64) -> f64 {
+    contracts.abs() * multiplier * mark * rate
+}
+
+/// Exchange commission or delivery fee: ad valorem plus per contract.
+#[inline]
+pub fn futures_charge(
+    contracts: f64,
+    multiplier: f64,
+    price: f64,
+    notional_rate: f64,
+    per_contract: f64,
+) -> f64 {
+    contracts.abs() * (multiplier * price * notional_rate + per_contract)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +140,12 @@ mod tests {
         assert_eq!(a.equity(), 250.0);
         assert_eq!(a.own_cash(false), 50.0);
         assert_eq!(a.margin(0.5, 1.0, 10.0), 160.0);
+    }
+    #[test]
+    fn futures_primitives_are_signed_and_contract_based() {
+        assert_eq!(futures_variation(2.0, 10.0, 100.0, 103.0), 60.0);
+        assert_eq!(futures_variation(-2.0, 10.0, 100.0, 103.0), -60.0);
+        assert_eq!(futures_margin(-2.0, 10.0, 103.0, 0.2), 412.0);
+        assert_eq!(futures_charge(-2.0, 10.0, 100.0, 0.001, 3.0), 8.0);
     }
 }

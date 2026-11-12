@@ -15,6 +15,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from metadata import compact
+
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "bench/results"
 ENGINES = [
@@ -98,7 +100,9 @@ def render(report):
         json.dumps(report["environment"], ensure_ascii=False, indent=2),
         "```",
     ]
-    own = RESULTS / "panelbt-current.json"
+    own = ROOT / ".cache/panelbt/panelbt-current.json"
+    if not own.exists():
+        own = RESULTS / "panelbt-current.json"
     if own.exists():
         current = json.loads(own.read_text())
         lines += [
@@ -113,6 +117,47 @@ def render(report):
             lines.append(
                 f"|{name}|{current[name]['total_s'] * 1000:.3f}|{delta:+.1%}{' REGRESSION' if delta > 0.1 else ''}|"
             )
+    future_baseline = RESULTS / "step1c-baseline.json"
+    if future_baseline.exists():
+        future = json.loads(future_baseline.read_text())
+        spot = future["spot_full_rules_ms"]
+        mixed = future["mixed_full_rules_ms"]
+        simple = future["simple_exact_ms"]
+        ledger = future["mixed_reference_ledger"]
+        lines += [
+            "",
+            "## 步骤 1c：期货对冲腿",
+            "",
+            "4000×5500 现货面板加 20 列期货、约 100 只现货、每 21 日调仓；同一已校验市场对象、9 次交替调用、单线程。完整规则的 NumPy 对照不适用：下方 NumPy 基线只实现同义的简化对冲，不含保证金、到期、强平或公司行为。市场构建及输入转换不计入时间。原始采样写入被忽略的 `.cache/panelbt/futures-current.json`；当前机器有并行任务，空闲时用 `make bench && make bench-docs` 重测。",
+            "",
+            "| 任务 | panelbt 最小 ms | panelbt 中位数 ms | NumPy 中位数 ms | 净值最大误差 |",
+            "|---|---:|---:|---:|---:|",
+            f"| 完整现货规则 | {spot['min']:.3f} | {spot['median']:.3f} | 不适用 | — |",
+            f"| 完整现货+20 列期货 | {mixed['min']:.3f} | {mixed['median']:.3f} | 不适用 | — |",
+            f"| 同义简化对冲任务 | {simple['panelbt']['min']:.3f} | {simple['panelbt']['median']:.3f} | {simple['numpy']['median']:.3f} | {future['simple_max_nav_error']:.3g} |",
+            "",
+            f"简化任务使用活跃证券稀疏 NumPy 运算；该任务 NumPy 比自研快，不能用它外推完整规则。新增混合语料 {ledger['cases']} 组、{ledger['trades']} 笔成交：参考实现 {ledger['divergences']} 分叉，独立账本 {ledger['ledger_failures']} 不符。复现：`uv run --no-sync python bench/validate.py --corpus futures --start 40000 --count 20000`。",
+            "",
+            f"机器：{future['machine']['platform']}，Python {future['machine']['python']}，NumPy {future['machine']['numpy']}；开始时 1/5/15 分钟负载 {', '.join(f'{x:.2f}' for x in future['machine']['load_start'])}，峰值 RSS {future['machine']['rss_peak_bytes'] / 2**30:.2f} GiB。",
+        ]
+        if "spot_pair_to_1b" in future:
+            pair = future["spot_pair_to_1b"]
+            lines += [
+                "",
+                f"同输入现货路径与 1b `{pair['base_ref']}` 各自 LTO 构建、AB/BA 交替配对（{pair['T']}×{pair['N']}，不含准备）；三场景最小值比均小于 1.05：",
+                "",
+                "| 场景 | 1b 最小 / 中位 ms | 当前最小 / 中位 ms | 最小值比 |",
+                "|---|---:|---:|---:|",
+            ]
+            for key, label in (
+                ("full_rules", "完整规则含退市"),
+                ("no_delist_panel", "不传退市面板"),
+                ("prices_only", "仅价格"),
+            ):
+                row = pair["scenarios"][key]
+                lines.append(
+                    f"| {label} | {row['base_min_ms']:.3f} / {row['base_median_ms']:.3f} | {row['current_min_ms']:.3f} / {row['current_median_ms']:.3f} | {row['minimum_ratio']:.3f} |"
+                )
     (ROOT / "docs/BENCHMARKS.md").write_text("\n".join(lines) + "\n")
 
 
@@ -292,7 +337,9 @@ def main():
                         timed_out[engine, task] = t * n
             print(row.get("median_s", row["status"]), flush=True)
         report["records"].append(row)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        output.write_text(
+            json.dumps(compact(report), ensure_ascii=False, indent=2) + "\n"
+        )
     # The optional open-source Rust engine is explicitly selected and isolated.
     report["vectorbt_rust"] = (
         f"vectorbt-rust {versions['vectorbt-rust']} installed; explicit engine=rust measured separately from engine=numba."
@@ -310,7 +357,7 @@ def main():
             )
         }
     )
-    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    output.write_text(json.dumps(compact(report), ensure_ascii=False, indent=2) + "\n")
     from collections import Counter
 
     print(

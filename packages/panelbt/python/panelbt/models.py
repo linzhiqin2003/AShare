@@ -69,6 +69,90 @@ def vector(value: ArrayLike, size: int, name: str) -> FloatArray:
     return a
 
 
+def future_rate(value: ArrayLike, shape: tuple[int, int], name: str) -> FloatArray:
+    """Keep scalar, per-contract, or daily per-contract rates compact."""
+    t, n = shape
+    try:
+        a = np.asarray(value, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name}: expected a numeric scalar, N, or T×N") from exc
+    if a.ndim == 0:
+        a = a.reshape(1, 1)
+    elif a.ndim == 1:
+        a = a.reshape(1, -1)
+    if a.shape not in ((1, 1), (1, n), (t, n)):
+        raise ValueError(f"{name}: expected scalar, length N, or T×N")
+    a = array(a, name, np.float64, 2)
+    nonnegative(a, name)
+    return a
+
+
+@dataclass(frozen=True)
+class Futures:
+    """Contract columns, settlement, expiry and explicitly supplied exchange costs.
+
+    `is_future` marks each column. Expiry is the inclusive panel row on which
+    cash settlement occurs; T means the contract expires after the panel.
+    """
+
+    is_future: ArrayLike
+    multiplier: ArrayLike
+    margin_rate: ArrayLike
+    settlement: ArrayLike
+    expiry: ArrayLike
+    fee_rate: ArrayLike = 0.0
+    fee_per_contract: ArrayLike = 0.0
+    delivery_fee_rate: ArrayLike = 0.0
+    delivery_fee_per_contract: ArrayLike = 0.0
+
+    def validated(self, shape: tuple[int, int], market: Market) -> Futures:
+        t, n = shape
+        kind = array(self.is_future, "is_future", np.bool_, 1)
+        multiplier = array(self.multiplier, "multiplier", np.float64, 1)
+        expiry = array(self.expiry, "expiry", np.int64, 1)
+        settlement = array(self.settlement, "settlement", np.float64, 2)
+        if kind.shape != (n,) or multiplier.shape != (n,) or expiry.shape != (n,):
+            raise ValueError(
+                "futures: is_future, multiplier and expiry require length N"
+            )
+        if settlement.shape != shape:
+            raise ValueError("settlement: expected T×N matching market prices")
+        if not kind.any():
+            raise ValueError("is_future: expected at least one futures column")
+        if not np.isfinite(multiplier[kind]).all() or (multiplier[kind] <= 0).any():
+            raise ValueError(
+                "multiplier: futures columns require finite positive values"
+            )
+        if (expiry[kind] < 0).any() or (expiry[kind] > t).any():
+            raise ValueError("expiry: futures columns require row indices in [0, T]")
+        if (
+            not np.isfinite(settlement[:, kind]).all()
+            or (settlement[:, kind] <= 0).any()
+        ):
+            raise ValueError(
+                "settlement: futures columns require finite positive prices"
+            )
+        if market.split is not None and np.any(market.split[:, kind] != 1):
+            raise ValueError("split: futures columns cannot have corporate actions")
+        if market.cash_div is not None and np.any(market.cash_div[:, kind] != 0):
+            raise ValueError("cash_div: futures columns cannot have corporate actions")
+        if market.delist is not None and np.any(market.delist[:, kind]):
+            raise ValueError("delist: futures columns use expiry, not delisting")
+        rates = {
+            name: future_rate(getattr(self, name), shape, name)
+            for name in (
+                "margin_rate",
+                "fee_rate",
+                "fee_per_contract",
+                "delivery_fee_rate",
+                "delivery_fee_per_contract",
+            )
+        }
+        return Futures(
+            kind, multiplier, rates.pop("margin_rate"), settlement, expiry, **rates
+        )
+
+
 @dataclass(frozen=True)
 class Market:
     """Aligned, validated, borrowed read-only market panels."""
@@ -82,7 +166,10 @@ class Market:
     cash_div: ArrayLike | None = None
     delist: ArrayLike | None = None
     can_short: ArrayLike | None = None
+    futures: Futures | None = None
     first_delist: IntArray = field(init=False, repr=False)
+    action_indptr: IntArray = field(init=False, repr=False)
+    action_cols: IntArray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         shape = None
@@ -137,6 +224,32 @@ class Market:
             first[present] = self.delist.argmax(axis=0)[present]
         first.flags.writeable = False
         object.__setattr__(self, "first_delist", first)
+        # Sparse daily corporate-action index; execution still reads the original
+        # values and visits affected columns in the same ascending order.
+        pointers = np.zeros(t + 1, dtype=np.int64)
+        columns = np.empty(0, dtype=np.int64)
+        if (
+            self.split is not None
+            or self.cash_div is not None
+            or self.delist is not None
+        ):
+            active = np.zeros((t, n), dtype=bool)
+            if self.split is not None:
+                active |= self.split != 1
+            if self.cash_div is not None:
+                active |= self.cash_div != 0
+            present = np.flatnonzero(first < t)
+            active[first[present], present] = True
+            rows, columns = np.nonzero(active)
+            pointers[1:] = np.cumsum(np.bincount(rows, minlength=t))
+            columns = np.ascontiguousarray(columns, dtype=np.int64)
+        pointers.flags.writeable = columns.flags.writeable = False
+        object.__setattr__(self, "action_indptr", pointers)
+        object.__setattr__(self, "action_cols", columns)
+        if self.futures is not None:
+            if not isinstance(self.futures, Futures):
+                raise ValueError("futures: expected a Futures specification")
+            object.__setattr__(self, "futures", self.futures.validated((t, n), self))
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -308,6 +421,15 @@ class LiquidationEvent:
     qty: float
 
 
+@dataclass(frozen=True)
+class ExpiryEvent:
+    day: int
+    col: int
+    qty: float
+    settlement: float
+    fee: float
+
+
 METRICS = (
     "nav",
     "cash",
@@ -335,6 +457,10 @@ METRICS = (
     "equity",
     "n_reduction_clipped",
     "n_invalid_quote",
+    "futures_pnl",
+    "futures_margin",
+    "delivery_fee",
+    "n_expired_target",
 )
 # The original counters stay separate so the unchanged long-only generator
 # continues to assert that every original branch was actually exercised.
@@ -372,6 +498,13 @@ EXTRA_COUNTERS = (
     "invalid_quote",
     "genuine_bankruptcy",
     "reversal",
+    "futures_open",
+    "futures_close",
+    "futures_margin_scaled",
+    "futures_margin_call",
+    "futures_liquidation",
+    "futures_expiry",
+    "expired_target",
 )
 
 
@@ -407,9 +540,16 @@ class Result:
     equity: FloatArray | None = None
     n_reduction_clipped: IntArray | None = None
     n_invalid_quote: IntArray | None = None
+    futures_pnl: FloatArray | None = None
+    futures_margin: FloatArray | None = None
+    delivery_fee: FloatArray | None = None
+    n_expired_target: IntArray | None = None
     contribution: FloatArray | None = None
     liquidation_events: list = field(default_factory=list)
     bankruptcy_events: list = field(default_factory=list)
+    expiry_events: list[ExpiryEvent] | list[list[ExpiryEvent]] = field(
+        default_factory=list
+    )
     coverage: dict = field(default_factory=dict)
 
     def to_npz(self, path) -> None:
@@ -459,9 +599,14 @@ class Result:
             ("trades", Trade),
             ("delist_events", DelistEvent),
             ("liquidation_events", LiquidationEvent),
+            ("expiry_events", ExpiryEvent),
         ):
-            if values[key] is not None:
+            if key in values and values[key] is not None:
                 values[key] = restore(values[key], kind)
+        # Version-1 archives created before futures support have no future fields.
+        for key in ("futures_pnl", "futures_margin", "delivery_fee"):
+            values.setdefault(key, np.zeros_like(values["nav"]))
+        values.setdefault("n_expired_target", np.zeros_like(values["n_blocked_buy"]))
         for key in ("diagnostics", "coverage"):
             values[key] = {
                 k: np.asarray(v, dtype=np.int64) if isinstance(v, list) else v

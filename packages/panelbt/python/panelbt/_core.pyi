@@ -13,5 +13,7 @@ def run(
     scalars: list[float],
     flags: list[bool],
     first_delist: NDArray,
+    actions: tuple[NDArray, NDArray],
+    future: tuple[NDArray, NDArray, NDArray, list[NDArray]],
     threads: int,
 ) -> list[dict[str, Any]]: ...

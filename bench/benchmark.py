@@ -79,6 +79,13 @@ def main():
     parser.add_argument("--single", action="store_true")
     parser.add_argument("--repeat", type=int, default=3)
     args = parser.parse_args()
+    (ROOT / ".cache/panelbt").mkdir(parents=True, exist_ok=True)
+    import sys
+
+    sys.path.insert(0, str(ROOT))
+    from test.build_guard import assert_current_build
+
+    assert_current_build()
     raw = market_inputs()
     setup, samples, market = timed(lambda: bt.Market(**raw), args.repeat)
     targets = plans(*market.shape, 1 if args.single else 1000)
@@ -166,7 +173,7 @@ def main():
     print("reference", json.dumps(report["reference"]), flush=True)
     out = (
         ROOT
-        / "bench/results"
+        / ".cache/panelbt"
         / ("benchmark-single.json" if args.single else "benchmark.json")
     )
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

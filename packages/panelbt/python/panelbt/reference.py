@@ -20,6 +20,10 @@ from .models import (
 
 
 def run(market, targets, costs=None, config=None):
+    if market.futures is not None:
+        from .reference_futures import run as run_futures
+
+        return run_futures(market, targets, costs, config)
     costs, config = costs or Costs(), config or Config()
     margin = config.margin
     t, n = market.shape
@@ -561,7 +565,9 @@ def run(market, targets, costs=None, config=None):
                                 else:
                                     hi = mid - 1
                             q = float(v[6][i] + lo * step(i))
-                    if q > 0:
+                    if q > 1e-9 * max(
+                        abs(quantities[i] + desired), abs(quantities[i]), 1
+                    ):
                         execute(i, q, day, rebalance, False)
             else:
                 orders.sort(key=lambda x: (x[1] > 0, x[0]))
@@ -597,7 +603,9 @@ def run(market, targets, costs=None, config=None):
                             else:
                                 hi = mid
                         q = math.copysign(opening(lo, i), q)
-                    if q != 0:
+                    if abs(q) > 1e-9 * max(
+                        abs(quantities[i] + desired), abs(quantities[i]), 1
+                    ):
                         account = project(account, i, q, day)
                         execute(i, q, day, rebalance, False)
         long = short = 0.0

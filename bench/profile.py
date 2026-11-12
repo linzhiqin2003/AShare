@@ -11,13 +11,19 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-COPY = ROOT / ".cache/rework/profile"
+COPY = ROOT / ".cache/panelbt/profile"
 
 
 def main():
     COPY.mkdir(parents=True, exist_ok=True)
     for name in ["Cargo.toml", "Cargo.lock"]:
         shutil.copy2(ROOT / name, COPY / name)
+    manifest = COPY / "Cargo.toml"
+    lines = manifest.read_text().splitlines()
+    lines[1] = (
+        'members = ["crates/tradecore", "crates/panelbt-core", "packages/panelbt"]'
+    )
+    manifest.write_text("\n".join(lines) + "\n")
     for name in ["crates/tradecore", "crates/panelbt-core", "packages/panelbt"]:
         shutil.copytree(
             ROOT / name,
@@ -39,7 +45,7 @@ def main():
         1,
     )
     markers = [
-        ("        for &i in &st.held {\n            if !m.dividend", 0),
+        ("        let action_start =", 0),
         ("        let rebalance = cursor", 1),
         ("        orders.clear();", 2),
         ("        let (mut long, mut short)", 3),
@@ -54,6 +60,12 @@ def main():
             1,
         )
     p.write_text(s)
+    p = COPY / "crates/panelbt-core/src/futures.rs"
+    s = p.read_text().replace(
+        "daily: vec![0.0; DAILY * m.t],",
+        "daily: vec![0.0; DAILY * m.t],\n        profile: [0;5],",
+    )
+    p.write_text(s)
     p = COPY / "packages/panelbt/src/lib.rs"
     s = p.read_text().replace(
         "let d = PyDict::new(py);",
@@ -64,14 +76,29 @@ def main():
     env["VIRTUAL_ENV"] = str(COPY / ".venv")
     env["PYO3_PYTHON"] = str(COPY / ".venv/bin/python")
     env["CARGO_HOME"] = str(ROOT / ".cache/cargo-home")
-    subprocess.run(
-        ["uv", "venv", str(COPY / ".venv"), "--python", str(ROOT / ".venv/bin/python")],
-        check=True,
-    )
-    subprocess.run(
-        ["uv", "pip", "install", "--python", env["PYO3_PYTHON"], "numpy", "maturin"],
-        check=True,
-    )
+    if not (COPY / ".venv/bin/python").exists():
+        subprocess.run(
+            [
+                "uv",
+                "venv",
+                str(COPY / ".venv"),
+                "--python",
+                str(ROOT / ".venv/bin/python"),
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                env["PYO3_PYTHON"],
+                "numpy",
+                "maturin",
+            ],
+            check=True,
+        )
     subprocess.run(
         [
             str(COPY / ".venv/bin/maturin"),
@@ -88,7 +115,7 @@ def main():
 import json,sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
-from review_perf import inputs
+from pair import inputs
 import numpy as np
 import panelbt as bt
 from panelbt.api import _prepare
@@ -122,7 +149,7 @@ print(json.dumps(rows))
         samples=rows,
         method="Disposable source instrumentation; two Instant reads per phase per day included; these fractions are diagnostic and not an uninstrumented lower bound.",
     )
-    (ROOT / "bench/results/review-profile.json").write_text(
+    (ROOT / ".cache/panelbt/profile.json").write_text(
         json.dumps(report, indent=2) + "\n"
     )
     print(json.dumps(report))

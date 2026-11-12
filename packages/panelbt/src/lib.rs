@@ -3,7 +3,7 @@
 use numpy::{
     IntoPyArray, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ndarray::Array2,
 };
-use panelbt_core::{Market, Settings, Targets};
+use panelbt_core::{Futures, Market, Settings, Targets};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
 type Plan<'a> = (
     PyReadonlyArray1<'a, i64>,
@@ -23,6 +23,13 @@ fn run<'py>(
     scalars: Vec<f64>,
     flags: Vec<bool>,
     first_delist: PyReadonlyArray1<'py, i64>,
+    actions: (PyReadonlyArray1<'py, i64>, PyReadonlyArray1<'py, i64>),
+    future: (
+        PyReadonlyArray1<'py, bool>,
+        PyReadonlyArray1<'py, f64>,
+        PyReadonlyArray1<'py, i64>,
+        Vec<PyReadonlyArray2<'py, f64>>,
+    ),
     threads: usize,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
     if floats.len() != 8
@@ -73,6 +80,53 @@ fn run<'py>(
     if first.len() != n {
         return Err(PyValueError::new_err("invalid delist length"));
     }
+    let action_indptr = actions.0.as_slice()?;
+    let action_cols = actions.1.as_slice()?;
+    if action_indptr.len() != t + 1
+        || action_indptr.first() != Some(&0)
+        || action_indptr.last().copied() != Some(action_cols.len() as i64)
+        || action_indptr.windows(2).any(|w| w[0] > w[1])
+        || action_cols.iter().any(|&i| i < 0 || i as usize >= n)
+    {
+        return Err(PyValueError::new_err("invalid corporate-action index"));
+    }
+    let kind = future.0.as_slice()?;
+    let multiplier = future.1.as_slice()?;
+    let expiry = future.2.as_slice()?;
+    let panels: Vec<&[f64]> = future
+        .3
+        .iter()
+        .map(|x| x.as_slice())
+        .collect::<Result<_, _>>()?;
+    let futures = if kind.is_empty() {
+        if !multiplier.is_empty() || !expiry.is_empty() || !panels.is_empty() {
+            return Err(PyValueError::new_err("invalid empty futures arguments"));
+        }
+        None
+    } else {
+        if kind.len() != n
+            || multiplier.len() != n
+            || expiry.len() != n
+            || panels.len() != 6
+            || panels[0].len() != t * n
+            || panels[1..]
+                .iter()
+                .any(|a| ![1, n, t * n].contains(&a.len()))
+        {
+            return Err(PyValueError::new_err("invalid futures argument lengths"));
+        }
+        Some(Futures {
+            kind,
+            multiplier,
+            expiry,
+            settlement: panels[0],
+            margin_rate: panels[1],
+            fee_rate: panels[2],
+            fee_per_contract: panels[3],
+            delivery_fee_rate: panels[4],
+            delivery_fee_per_contract: panels[5],
+        })
+    };
     let m = Market {
         t,
         n,
@@ -85,6 +139,9 @@ fn run<'py>(
         sell: ms[1],
         can_short: ms[3],
         first_delist: first,
+        action_indptr,
+        action_cols,
+        futures,
     };
     let s = Settings {
         vectors: vs,
@@ -147,6 +204,7 @@ fn run<'py>(
             d.set_item("contribution", o.contribution.into_pyarray(py))?;
             d.set_item("liquidations", o.liquidations)?;
             d.set_item("bankruptcies", o.bankruptcies)?;
+            d.set_item("expiries", o.expiries)?;
             Ok(d)
         })
         .collect()

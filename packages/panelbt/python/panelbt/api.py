@@ -15,6 +15,7 @@ from .models import (
     Config,
     Costs,
     DelistEvent,
+    ExpiryEvent,
     LiquidationEvent,
     Market,
     Result,
@@ -51,14 +52,31 @@ def _prepare(
         if not isinstance(target, Targets):
             raise ValueError("targets: expected Targets")
         target.validate_shape(t, n)
-        if not margin.allow_short and target.has_negative:
+        future_mask = (
+            market.futures.is_future
+            if market.futures is not None
+            else np.zeros(n, dtype=bool)
+        )
+        if not margin.allow_short and np.any(
+            (target.weights < 0) & ~future_mask[target.cols]
+        ):
             raise ValueError("weights: negative targets require allow_short")
+        if target.kind == "shares" and np.any(
+            future_mask[target.cols] & (target.weights != np.trunc(target.weights))
+        ):
+            raise ValueError("futures shares: target contracts must be integers")
         if (
             target.kind == "weights"
             and not margin.allow_financing
             and not margin.allow_short
         ):
-            if target.max_row_sum > 1 + 1e-9:
+            rows = np.repeat(np.arange(len(target.days)), np.diff(target.indptr))
+            stock_sum = np.bincount(
+                rows,
+                weights=np.where(future_mask[target.cols], 0.0, target.weights),
+                minlength=len(target.days),
+            )
+            if np.max(stock_sum, initial=0.0) > 1 + 1e-9:
                 raise ValueError("weights: cash account requires row sum <= 1 + 1e-9")
     names = (
         "commission_rate",
@@ -154,7 +172,8 @@ def _prepare(
     ]
     plans = [(x.days, x.indptr, x.cols, x.weights, x.kind == "shares") for x in targets]
     classic = (
-        not margin.allow_short
+        market.futures is None
+        and not margin.allow_short
         and not margin.allow_financing
         and np.all(vectors[11] == 1)
         and np.all(vectors[13] == 0)
@@ -169,7 +188,39 @@ def _prepare(
         margin.margin_call == "liquidate",
         classic,
     ]
-    return floats, masks, plans, vectors, scalars, flags, market.first_delist
+    if market.futures is None:
+        futures = (
+            np.empty(0, dtype=bool),
+            np.empty(0, dtype=np.float64),
+            np.empty(0, dtype=np.int64),
+            [],
+        )
+    else:
+        f = market.futures
+        futures = (
+            f.is_future,
+            f.multiplier,
+            f.expiry,
+            [
+                f.settlement,
+                f.margin_rate,
+                f.fee_rate,
+                f.fee_per_contract,
+                f.delivery_fee_rate,
+                f.delivery_fee_per_contract,
+            ],
+        )
+    return (
+        floats,
+        masks,
+        plans,
+        vectors,
+        scalars,
+        flags,
+        market.first_delist,
+        (market.action_indptr, market.action_cols),
+        futures,
+    )
 
 
 def _result(raw: dict[str, Any]) -> Result:
@@ -191,6 +242,7 @@ def _result(raw: dict[str, Any]) -> Result:
         contribution=raw["contribution"],
         liquidation_events=[LiquidationEvent(*x) for x in raw["liquidations"]],
         bankruptcy_events=raw["bankruptcies"],
+        expiry_events=[ExpiryEvent(*x) for x in raw["expiries"]],
     )
 
 
@@ -256,6 +308,7 @@ def _batch_result(raw, t, n, record):
                 [LiquidationEvent(*e) for e in x["liquidations"]] for x in raw
             ],
             bankruptcy_events=[x["bankruptcies"] for x in raw],
+            expiry_events=[[ExpiryEvent(*e) for e in x["expiries"]] for x in raw],
             contribution=np.stack([x["contribution"] for x in raw])
             if raw
             else np.empty((0, n)),
@@ -296,4 +349,5 @@ def _batch_result(raw, t, n, record):
         else np.empty((0, n)),
         liquidation_events=[x.liquidation_events for x in results],
         bankruptcy_events=[x.bankruptcy_events for x in results],
+        expiry_events=[x.expiry_events for x in results],
     )

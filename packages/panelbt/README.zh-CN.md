@@ -75,7 +75,13 @@ A 股监管担保物/负债公式与模型不同，`markets.ashare_margin` 要�
 `run_batch(..., threads=0)` 使用全部可用 CPU，批量共享行情；同一环境下，线程数不改变单策略浮点执行顺序。
 开启 `record_trades=True` 会保存 T×N（批量 K×T×N）持仓及成交，较大的批量通常保持默认关闭。
 
-详细顺序、公式、监管来源、T+1 日频约定和不支持的功能见 [SPEC.md](SPEC.md)。多币种、日内多次成交和期货尚不支持。
+## 期货对冲列
+
+在 `Market(futures=Futures(...))` 中逐列标记期货，现货与期货在同一面板结算。期货权重表示名义金额除以权益，股数模式表示整数手数；开仓只支付费用并占用保证金。必须提供结算价、合约乘数、到期行和保证金率；手续费、交割费可分别按名义金额和按手设置。示意用法见 [英文 README](README.md#futures-hedge-columns)；示例费率并非市场默认值，使用前须核实。
+
+`panelbt.futures.roll_targets` 按到期前交易日生成换月目标；`hedge_contracts` 按组合市值或贝塔计算对冲手数。`markets.cffex_index_futures` 只内置核实过的 IF/IH/IC/IM 合约乘数，费率及保证金率由调用方提供。
+
+详细顺序、公式、监管来源、T+1 日频约定和不支持的功能见 [SPEC.md](SPEC.md)。多币种和日内多次成交尚不支持。
 
 ## 独立构建
 

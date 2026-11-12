@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 import numpy as np
 
-from ..models import Config, Costs, MarginModel, Market
+from ..models import Config, Costs, Futures, MarginModel, Market
 from .ashare import Board, infer_board, lot_rules, stamp_tax_sell
 from .ashare import tradability as ashare_tradability
 
@@ -183,6 +183,39 @@ ASHARE = MarketProfile(
 )
 
 
+def cffex_index_futures(
+    products,
+    settlement,
+    expiry,
+    *,
+    margin_rate,
+    fee_rate,
+    fee_per_contract,
+    delivery_fee_rate,
+    delivery_fee_per_contract,
+):
+    """Build IF/IH/IC/IM column metadata with caller-verified cost terms.
+
+    A None product denotes a spot column. Multipliers follow the CFFEX
+    contract rules; broker margin and all fee terms must be supplied explicitly.
+    """
+    names = tuple(products)
+    mapping = {"IF": 300.0, "IH": 300.0, "IC": 200.0, "IM": 200.0}
+    if not names or any(x is not None and x not in mapping for x in names):
+        raise ValueError("products: expected IF, IH, IC, IM or None per column")
+    return Futures(
+        is_future=[x is not None for x in names],
+        multiplier=[mapping.get(x, 1.0) for x in names],
+        margin_rate=margin_rate,
+        settlement=settlement,
+        expiry=expiry,
+        fee_rate=fee_rate,
+        fee_per_contract=fee_per_contract,
+        delivery_fee_rate=delivery_fee_rate,
+        delivery_fee_per_contract=delivery_fee_per_contract,
+    )
+
+
 def ashare_margin(
     *,
     long_initial,
@@ -231,6 +264,7 @@ __all__ = [
     "FeeSchedule",
     "MarketProfile",
     "ashare_margin",
+    "cffex_index_futures",
     "infer_board",
     "lot_rules",
     "stamp_tax_sell",

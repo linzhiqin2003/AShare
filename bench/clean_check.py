@@ -8,14 +8,14 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".cache/rework/clean"
+DEST = ROOT / ".cache/panelbt/clean"
 
 
 def main():
     if DEST.exists():
         shutil.rmtree(DEST)
     DEST.mkdir(parents=True)
-    archive = ROOT / ".cache/rework/clean-head.tar"
+    archive = ROOT / ".cache/panelbt/clean-head.tar"
     with archive.open("wb") as out:
         subprocess.run(["git", "archive", "HEAD"], cwd=ROOT, stdout=out, check=True)
     # Exporting the committed skeleton is read-only. No source in excluded
@@ -50,7 +50,7 @@ def main():
             dest.unlink()
     assert not any((DEST / x).exists() for x in (".cache", "target", ".venv"))
     env = os.environ.copy()
-    logs = ROOT / ".cache/rework"
+    logs = ROOT / ".cache/panelbt"
     for target in ["dev", "check"]:
         with (logs / f"clean-make-{target}.txt").open("w") as stream:
             result = subprocess.run(
@@ -78,7 +78,7 @@ def main():
         ).hexdigest(),
         check_tail=tail,
     )
-    (ROOT / "bench/results/review-clean.json").write_text(
+    (ROOT / ".cache/panelbt/clean-check.json").write_text(
         json.dumps(report, indent=2) + "\n"
     )
     print("\n".join(tail))

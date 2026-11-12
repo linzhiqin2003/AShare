@@ -86,6 +86,36 @@ zero threads means all available CPUs. Thread counts do not change per-strategy
 floating-point execution order. Recording positions/trades explicitly allocates
 T×N (or K×T×N) output; leave `record_trades=False` for large batches.
 
+## Futures hedge columns
+
+Attach `Futures` to a `Market` to mix daily settled futures and cash equities in
+one panel. Futures weights are signed notional divided by equity; share targets
+are integer contracts. Contract multipliers, settlement prices, expiry rows,
+dated margin rates, trading fees, and delivery fees are explicit inputs.
+
+```python
+hedge_prices = np.array([[10., 100.], [11., 101.], [12., 99.]])
+futures = bt.Futures(
+    is_future=[False, True], multiplier=[1, 10], margin_rate=0.12,
+    settlement=hedge_prices,
+    expiry=[3, 3], fee_rate=0.0002, fee_per_contract=0,
+    delivery_fee_rate=0, delivery_fee_per_contract=0,
+)
+hedge_market = bt.Market(hedge_prices, hedge_prices,
+                         hedge_prices > 0, hedge_prices > 0,
+                         futures=futures)
+hedge_targets = bt.Targets.from_dense(
+    [[0.5, -1.0], [np.nan, np.nan], [0, 0]]
+)
+hedge_result = bt.run(hedge_market, hedge_targets, costs, config)
+```
+
+The prices, rates, and margin above are illustrative; verify contract terms
+before using them. `panelbt.futures.roll_targets` creates a deterministic
+pre-expiry roll schedule, and `hedge_contracts` converts equity value or beta
+exposure into a signed contract count. `panelbt.markets.cffex_index_futures`
+supplies verified IF/IH/IC/IM multipliers but requires fee and margin inputs.
+
 See [SPEC.md](SPEC.md) for exact ordering, accounting conventions and limitations.
 
 ## Build

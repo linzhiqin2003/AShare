@@ -328,14 +328,22 @@ def test_zero_mark_reduction_does_not_count_blocked_buy(engine):
     np.testing.assert_array_equal(r.n_blocked_sell, [0, 1, 0])
 
 
-@pytest.mark.parametrize("seed", [1048, 8257])
-def test_coverage_is_stable_at_tiny_cash_residuals(seed):
-    from .test_extended import extended_case
-
-    inputs = extended_case(seed)
-    a, b = bt.run(*inputs), reference.run(*inputs)
-    assert a.coverage == b.coverage
-    np.testing.assert_allclose(a.equity, b.equity, rtol=1e-9, atol=1e-9)
+@pytest.mark.parametrize("rate,expected", [(5e-11, 0), (2e-10, 1)])
+def test_coverage_is_stable_at_tiny_cash_residuals(engine, rate, expected):
+    cash = simulate(engine, [[10]], [[0]], initial_cash=1, cash_rate=rate)
+    assert cash.cash_interest[0] == rate
+    assert cash.coverage["cash_interest"] == expected
+    debt = simulate(
+        engine,
+        [[1]],
+        [[2]],
+        initial_cash=1,
+        margin=bt.MarginModel(
+            allow_financing=True, long_initial=0.5, financing_rate=rate
+        ),
+    )
+    assert debt.financing_interest[0] == rate
+    assert debt.coverage["financing_interest"] == expected
 
 
 def test_volume_cap_cannot_create_subminimum_partial_sale(engine):

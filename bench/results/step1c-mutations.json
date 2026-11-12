@@ -1,0 +1,227 @@
+{
+  "mutations": [
+    {
+      "mutation": "N3 action order",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N3 action order",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N5b classic dispatch",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N5b classic dispatch",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N14c opening invalid quote",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N14c opening invalid quote",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N16 unvalued bankruptcy",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N16 unvalued bankruptcy",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N18 interest materiality",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N18 interest materiality",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N19 genuine bankruptcy",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N19 genuine bankruptcy",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N20 margin call tolerance",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N20 margin call tolerance",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N23 forced long reduction",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N23 forced long reduction",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N24 forced weighted row",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "N24 forced weighted row",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F1 settlement basis",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F1 settlement basis",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F2 contract multiplier",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F2 contract multiplier",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F3 effective opening price",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F3 effective opening price",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F4 expiry closure",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F4 expiry closure",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F5 delivery charge",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F5 delivery charge",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F6 dated collateral",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F6 dated collateral",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F7 collateral in affordability",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F7 collateral in affordability",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F8 future-first liquidation",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F8 future-first liquidation",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F9 expired target",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F9 expired target",
+      "scope": "dual",
+      "built": true,
+      "caught": true
+    },
+    {
+      "mutation": "F10 roll boundary",
+      "scope": "single",
+      "built": true,
+      "caught": true
+    }
+  ],
+  "all_caught": true
+}

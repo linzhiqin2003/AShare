@@ -3,8 +3,20 @@
 use rayon::prelude::*;
 use tradecore::{Account, FeeTerms, Fees, round_close, round_open as lot};
 pub const BUILD_MARKER: &str = "panelbt-core-v2";
-pub const DAILY: usize = 26;
-pub const COUNTS: usize = 31;
+pub const DAILY: usize = 30;
+pub const COUNTS: usize = 38;
+
+pub struct Futures<'a> {
+    pub kind: &'a [bool],
+    pub multiplier: &'a [f64],
+    pub expiry: &'a [i64],
+    pub settlement: &'a [f64],
+    pub margin_rate: &'a [f64],
+    pub fee_rate: &'a [f64],
+    pub fee_per_contract: &'a [f64],
+    pub delivery_fee_rate: &'a [f64],
+    pub delivery_fee_per_contract: &'a [f64],
+}
 
 pub struct Market<'a> {
     pub t: usize,
@@ -18,6 +30,9 @@ pub struct Market<'a> {
     pub split: &'a [f64],
     pub dividend: &'a [f64],
     pub first_delist: &'a [i64],
+    pub action_indptr: &'a [i64],
+    pub action_cols: &'a [i64],
+    pub futures: Option<Futures<'a>>,
 }
 pub struct Targets<'a> {
     pub days: &'a [i64],
@@ -64,6 +79,7 @@ pub struct Output {
     pub contribution: Vec<f64>,
     pub liquidations: Vec<(usize, usize, f64)>,
     pub bankruptcies: Vec<usize>,
+    pub expiries: Vec<(usize, usize, f64, f64, f64)>,
 }
 #[inline]
 fn cell(a: &[f64], day: usize, col: usize, m: &Market<'_>) -> f64 {
@@ -321,7 +337,9 @@ fn affordable(
 }
 
 pub fn run(m: &Market<'_>, targets: &Targets<'_>, s: &Settings<'_>) -> Output {
-    if s.flags[6] {
+    if m.futures.is_some() {
+        futures::run(m, targets, s)
+    } else if s.flags[6] {
         run_impl::<true>(m, targets, s)
     } else {
         run_impl::<false>(m, targets, s)
@@ -341,6 +359,7 @@ fn run_impl<const CLASSIC: bool>(
         contribution: vec![0.0; m.n],
         liquidations: Vec::new(),
         bankruptcies: Vec::new(),
+        expiries: Vec::new(),
     };
     let mut st = State {
         cash: s.scalars[5],
@@ -383,7 +402,14 @@ fn run_impl<const CLASSIC: bool>(
         if flow > requested {
             out.counts[13] += 1;
         }
-        for &i in &st.held {
+        let action_start = m.action_indptr[day] as usize;
+        let action_end = m.action_indptr[day + 1] as usize;
+        let mut removed = false;
+        for &col in &m.action_cols[action_start..action_end] {
+            let i = col as usize;
+            if st.shares[i] == 0.0 {
+                continue;
+            }
             if !m.dividend.is_empty() && m.dividend[base + i] != 0.0 {
                 let d = st.shares[i] * m.dividend[base + i];
                 let tax = if d > 0.0 { d * s.v(8, day) } else { 0.0 };
@@ -420,9 +446,12 @@ fn run_impl<const CLASSIC: bool>(
                 out.events.push((day, i, st.shares[i], p, proceeds));
                 out.counts[5] += 1;
                 st.shares[i] = 0.0;
+                removed = true;
             }
         }
-        st.held.retain(|&i| st.shares[i] != 0.0);
+        if removed {
+            st.held.retain(|&i| st.shares[i] != 0.0);
+        }
         let rebalance = cursor < targets.days.len() && targets.days[cursor] as usize == day;
         let forced = !CLASSIC && ((call && s.flags[5]) || bankrupt);
         let mut unfilled_liquidation = false;
@@ -738,7 +767,7 @@ fn run_impl<const CLASSIC: bool>(
                     if q > 0.0 && -movement(q, quote(q, i, day, m, s)) > st.cash {
                         q = affordable(st.cash, q, i, day, step, min, m, s);
                     }
-                    if q > 0.0 {
+                    if q > quantity_tolerance(st.shares[i] + desired, st.shares[i]) {
                         fill(day, i, q, !rebalance, false, m, s, &mut st, &mut out);
                     }
                 }
@@ -791,7 +820,7 @@ fn run_impl<const CLASSIC: bool>(
                         }
                         q = q.signum() * lot(lo, s.vectors[6][i], step);
                     }
-                    if q != 0.0 {
+                    if q.abs() > quantity_tolerance(st.shares[i] + desired, st.shares[i]) {
                         account = projected(account, i, q, st.shares[i], day, m, s);
                         fill(day, i, q, !rebalance, false, m, s, &mut st, &mut out);
                     }
@@ -904,6 +933,8 @@ fn run_impl<const CLASSIC: bool>(
     }
     out
 }
+
+mod futures;
 pub fn run_batch(
     m: &Market<'_>,
     targets: &[Targets<'_>],

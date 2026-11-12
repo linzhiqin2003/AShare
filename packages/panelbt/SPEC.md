@@ -1,8 +1,8 @@
-# panelbt 0.1 execution specification (round 1b)
+# panelbt 0.1 execution specification (round 1c)
 
 ## Scope and alignment
 
-A deterministic, daily, single-currency spot portfolio simulator. Each row is
+A deterministic, daily, single-currency portfolio simulator. Each row is
 one execution opportunity, followed by a closing mark. The caller aligns signals;
 no signal shifting occurs inside the engine. Prices and quantities use float64.
 The default is the original long-only, unlevered cash account. Signed holdings
@@ -228,12 +228,104 @@ sale's quoted price must not be below the latest transaction price.
   execution needs an explicit unlock inventory/clock; sell_lock is metadata now.
 - Multiple currencies, FX conversion, and cross-currency financing.
 - Full broker regulatory collateral/debt ledgers and contract-vintage terms.
-- Futures (planned next round): instrument kinds, multipliers, settlement marks,
-  expiry and cash variation margin are not implemented. `tradecore::Account`
-  separates cash from spot L/S, and its margin method accepts additional_margin;
-  per-fill fees are separate from principal movement. These are extension points,
-  not an advertised futures API. Future settlement must feed cash independently
-  of spot notional while contributing additional margin to the same constraint.
+- Exchange-specific spread offsets and cross-contract collateral netting. The
+  futures implementation charges the sum of absolute contract margins, which
+  is deliberately conservative unless the caller supplies an adjusted rate.
+- Physical delivery, options, currency conversion and intraday margin calls.
+
+## Futures: instrument columns, settlement and expiry
+
+`Market(..., futures=Futures(...))` is opt-in. Without it, the original cash or
+spot-margin runner is dispatched with no futures work in its daily loop. A
+`Futures` object gives `is_future[N]`, `multiplier[N]`, `settlement[T,N]`,
+inclusive `expiry[N]` row indices, and scalar/N/T×N margin and fee arrays.
+An expiry equal to T denotes an expiry beyond the backtest. Future columns
+require a positive finite settlement on every row, a positive multiplier, and
+no split, dividend or delisting. Spot columns ignore futures parameters. Input
+validation finishes before Rust is called. An absent futures object is the
+exact spot-only compatibility path.
+
+`kind="shares"` means an integer contract count for future columns; fractional
+future targets are rejected. `kind="weights"` means signed *notional* divided
+by pretrade equity: floor of `abs(weight × max(E,0) × (1-cash_buffer) /
+(execution_mark × multiplier))`, with the original sign. Future shorts are
+permitted even when spot `allow_short=False`, since no securities are borrowed.
+Future fills use an integer minimum and step of one contract, independent of
+spot lot rules. The same buy/sell masks, participation cap, slippage and impact
+apply to contracts. No future trade uses a missing or nonpositive execution
+quote. Spot commissions, stamp tax and per-share charges never apply to future
+fills. Future commission is `abs(contracts) × (multiplier × effective_price ×
+fee_rate + fee_per_contract)`; it is included in the normal commission and
+turnover fields. Slippage and impact costs are multiplied by the contract
+multiplier and are already embedded in the effective price.
+
+At execution, a future fill changes cash only by its commission and realized
+P&L on any contracts closed at the effective price relative to their last
+settlement basis. Adding contracts updates the basis by quantity-weighted
+execution price; a reversal starts the new side at the new execution price.
+At each close, the remaining contracts earn `contracts × multiplier ×
+(today_settlement - basis)` in cash, then their basis becomes today's settlement.
+This gives opening-day `settlement - execution`, later `today - yesterday`, and
+correct execution-price P&L for intraday closes. A future has no long or short
+spot market value. Equity is `cash + spot_long - spot_short`, with all accrued
+future variation already in cash. `futures_pnl` reports realized plus closing
+variation; future contribution includes this P&L less all future fees.
+
+Expiry is processed after that day's normal execution and settlement, even if
+buy/sell masks are false or execution price is NaN. Any open quantity is cash
+settled at that row's supplied delivery settlement price, pays
+`abs(contracts) × (multiplier × delivery_price × delivery_fee_rate +
+delivery_fee_per_contract)`, and becomes zero. The delivery fee appears in
+both `delivery_fee` and the aggregate `other_fee`; it is debited only once.
+The event records signed contracts, settlement price and fee. A same-day target
+may trade before expiry and then settle. Starting the following row, nonzero
+targets are ignored and counted in `n_expired_target`/`expired_target` diagnostics;
+they never reopen a contract. The caller expresses a roll by making the old
+contract zero and the next contract nonzero on a rebalance row. The pure
+`roll_targets` helper schedules this at `expiry - roll_days` trading rows;
+`hedge_contracts` converts spot value and beta to signed whole contracts.
+
+Future collateral is `abs(contracts) × multiplier × mark × margin_rate[day,col]`.
+The pretrade mark is the last settlement (or an execution price on a new
+contract); today's settlement is not read during trade sizing or affordability.
+An executed contract uses its effective execution price for the projected
+collateral of that column. At close the mark changes to today's settlement.
+The sum of future collateral is added to spot initial and maintenance margin.
+Without financing, available own cash is `C - restricted_spot_short_value -
+future_collateral`, and must stay nonnegative after openings; withdrawals and
+idle-cash interest use the same available balance. Financing interest applies
+to its negative part. All opening orders are scaled by a common factor and
+rounded down to legal quantities, with a prefix feasibility check.
+
+The mixed account performs all reductions before openings. Future reductions
+go first because they release collateral without consuming spot principal;
+spot long sales precede spot short covers, preserving the spot risk order.
+Future openings reserve hedge collateral before short-sale and cash-funded
+spot openings. On a next-day maintenance call, the same proportional
+liquidation solver includes both instruments, then applies these reduction
+orders under quote, mask and volume constraints. Unfilled reductions retain the
+call; a feasible completed plan does not trigger a new call solely because
+initial margin remains above equity. A scheduled risk-reducing target may
+increase that day's liquidation, while increases are discarded. Insolvency
+records the first valued, nonempty account failure and attempts closure on
+following rows. Expiry cash settlement still occurs if forced trading is
+blocked. The engine cannot guarantee that an adverse overnight variation or
+blocked exit leaves nonnegative cash or initial margin at every close; it
+reports the deficit and forced events instead.
+
+`markets.cffex_index_futures` supplies only verified IF/IH 300 and IC/IM 200
+CNY-per-index-point multipliers. Margin and both ordinary/delivery fee terms
+are required caller inputs because exchange and broker schedules change.
+The multiplier sources are the CFFEX IF trading rules (2013-08-30), IH and IC
+trading rules (2015-03-27), and IM trading rules (2022-07-18):
+[IF](https://www.cffex.com.cn/u/cms/www/202003/27165505w3j5.pdf),
+[IH](https://www.cffex.com.cn/u/cms/www/202003/271658063l8q.pdf),
+[IC](https://www.cffex.com.cn/u/cms/www/202003/27165856gzzt.pdf),
+[IM](https://www.cffex.com.cn/u/cms/www/202207/182020307zry.pdf).
+The [CFFEX settlement rules](https://www.cffex.com.cn/u/cms/www/202501/071747590uho.pdf)
+describe daily cash settlement. The model does not infer exchange margin
+offsets, broker add-ons, special closing fees or current rates from these
+contract specifications.
 
 
 ## Review clarifications
@@ -245,6 +337,9 @@ sale's quoted price must not be below the latest transaction price.
   Its unrounded residual is retained when deciding reductions; the proposed fill
   itself is checked against the closing minimum. Zero targets still mean exit.
 - Target differences within `1e-9 * max(abs(target), abs(held), 1)` are zero.
+  The same threshold is checked again after opening-basket and per-fill
+  affordability scaling, immediately before execution; a scaled dust order
+  does not pay fees, alter holdings or create a trade record.
   Monetary branch diagnostics ignore interest below `1e-10` currency units;
   maintenance comparisons use `1e-10 * max(abs(E), L, S, 1)` tolerance.
 - `n_reduction_clipped` counts reductions cut by the own-cash constraint;
@@ -257,6 +352,17 @@ sale's quoted price must not be below the latest transaction price.
   from holdings and the dividend panel.
 - Setting maintenance requirements explicitly selects the margin path, even for
   long-only exposure. The default cash account has no maintenance enforcement.
+  The exact cash specialization requires no shorting, no financing,
+  long_initial equal to 1 on every row, and both maintenance rates equal to 0
+  on every row. Positive long_maintenance therefore changes missing-close
+  valuation and selects margin_scaled rather than cash_scaled diagnostics.
+  The valued guard is reachable after a distribution exceeds the carried mark
+  while both current quotes are missing: the mark is floored to zero and the
+  bankruptcy decision waits for a valid quote. The historical
+  genuine_bankruptcy name additionally requires short exposure or own-cash
+  debt larger than the monetary tolerance; it can differ from bankruptcy for
+  sub-tolerance negative equity in very small accounts. It is a materiality
+  diagnostic, not a second economic definition of insolvency.
 - `metrics.summarize` accepts losses below -100%, marks `bankrupt` and
   `geometric_metrics_valid`, and returns NaN for geometric annualization and
   Calmar when compounding crosses zero. Arithmetic risk metrics and drawdowns
