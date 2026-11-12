@@ -11,13 +11,17 @@ from .models import (
     MarginModel,
     Market,
     Result,
+    Rules,
     Targets,
     Trade,
+    TradeReason,
 )
+from .step import DayRecord, Simulator, State
 
 __all__ = [
     "Config",
     "Costs",
+    "DayRecord",
     "DelistEvent",
     "ExpiryEvent",
     "Futures",
@@ -25,8 +29,12 @@ __all__ = [
     "Market",
     "MarginModel",
     "Result",
+    "Rules",
+    "Simulator",
+    "State",
     "Targets",
     "Trade",
+    "TradeReason",
     "run",
     "run_batch",
 ]

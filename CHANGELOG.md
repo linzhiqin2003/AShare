@@ -20,6 +20,8 @@
 - 端到端剖析工具 `bench/e2e`（`make perf-profile`、`make perf-compare`）和第一份基线。
 
 ## 2026-11-13
+- `panelbt` 声明式退出规则和限价目标（DESIGN 4.13、SPEC「Declarative exit rules and limit targets」）：`Market` 可选 `open`/`high`/`low`；`Config(rules=Rules(...))` 支持止损、止盈、移动止损（标量、每只证券或 T×N）、最长持有期、限价目标，在内核里执行，`run`、`run_batch`、`Simulator` 通用；日内先后不明的情形一律按不利一侧处理；受限顺延、卖出锁定、重新买入的冷却都照常生效；限价单默认要求当天价格穿过限价才成交（`limit_fill="cross"`，「碰到即成交」是显式选项），依据是复核在沪深 300 成分上的实测；规则计数进 `Result.diagnostics`，成交明细带 `TradeReason`。不配规则时由编译期开关去掉全部规则代码，结果与改动前逐位相同。纯 Python 参考实现对拍、手算例子三方核对、性质测试、变异检查；两个真实数据例子 `bench/rules_examples.py`（接 `ashare.backtest`，带冒烟测试）。期货列暂不支持规则（输入检查拒绝）。
+- `panelbt` 逐日步进接口 `bt.Simulator`（DESIGN 4.12）：内核逐日循环拆成开盘前和成交收盘两段，`bt.run` 就是逐行调用这两段（结果逐位不变、不变慢）；`state` 只含成交前已知的信息（持仓、成本、建仓日、现金、权益、顺延订单），数组为零拷贝视图、底层缓冲区只读；`snapshot`/`restore` 存档恢复（带 CRC-32 校验，指纹含全部规则参数）；`step` 释放 GIL。每步约 4.5 µs，与证券数无关（backtrader 约 29 µs/根）。
 - 归因与容量（`ashare.analysis`，`docs/DESIGN.md` 6.5、`docs/ANALYSIS_NOTES.md`）：基于风险模型的收益归因（市场 / 行业 / 风格 / 特质 / 交易 / 成本，GRAP 或 Carino 多期链接）、事前风险拆分与偏差统计、Brinson 行业归因（BF / BHB）、按冲击模型的容量与成本（解析模拟与 `panelbt` 实跑对账）、按年的成本拆解；结果都能转成列式 dict。
 - 归因与容量返工：停牌中除权的收益改为后复权价整体沿用（原先在除权日记假收益、复牌日反向，沪深 300 基准 2015 年起累计被高估约 1.3 个百分点）；持仓估值改用 panelbt 的除权参考价；成本率加上红利税和融资利息。容量改为取成本曲线上升段的交点（原先报搜索下限 1 万元，真实例子现为约 7.15 千万元），另报最小可行规模，边界情况给 NaN/inf 加状态。未覆盖基准成分超过阈值时告警；诊断加停牌持仓在特质项里的部分；偏差区间改用块自助法。行情、账户规则、费用表、信号错位改用主干入口。
 - 归因与容量收尾：解析模拟一次算多个规模（`simulate_many`），交点改用成批多分法，真实例子一次容量求解 15.7 s → 3.1 s，结果相对差 ≤ 2e-7；容量表里被最低佣金打穿的规模记 NaN 并加 `wiped_out` 列；诊断加分红口径差 `dividend_convention`。

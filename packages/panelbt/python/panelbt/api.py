@@ -12,6 +12,7 @@ from .models import (
     COUNTERS,
     EXTRA_COUNTERS,
     METRICS,
+    RULE_COUNTERS,
     Config,
     Costs,
     DelistEvent,
@@ -19,8 +20,10 @@ from .models import (
     LiquidationEvent,
     Market,
     Result,
+    Rules,
     Targets,
     Trade,
+    TradeReason,
     array,
     vector,
 )
@@ -39,6 +42,85 @@ def _panel(value, t, n, name, *, optional=False):
     if not np.isfinite(a).all() or (a < 0).any():
         raise ValueError(f"{name}: expected finite nonnegative values")
     return array(a, name, np.float64, 2)
+
+
+_EMPTY = np.empty(0)
+_EMPTY.flags.writeable = False
+
+
+def _percent(value, t, n, name):
+    """Rule percentage as a flat array of length 0, 1, N or T×N."""
+    if value is None:
+        return _EMPTY
+    a = np.asarray(value, dtype=np.float64)
+    if a.ndim == 0:
+        a = a.reshape(1)
+    elif a.ndim == 1:
+        if a.shape != (n,):
+            raise ValueError(f"{name}: expected scalar, length N or T×N")
+    elif a.shape == (t, n):
+        a = a.ravel()
+    else:
+        raise ValueError(f"{name}: expected scalar, length N or T×N")
+    if np.any(np.isinf(a) | (a <= 0)):
+        raise ValueError(f"{name}: expected positive fractions or NaN")
+    return array(a, name, np.float64, 1)
+
+
+def _rules(market: Market, rules: Rules | None, any_limits: bool):
+    """Kernel rule arguments, or None when neither rules nor limits are used."""
+    if rules is None:
+        if any_limits:
+            raise ValueError("limits: limit targets require Config(rules=Rules(...))")
+        return None
+    if not isinstance(rules, Rules):
+        raise ValueError("rules: expected Rules")
+    if market.futures is not None:
+        raise ValueError(
+            "rules: futures columns are not supported with exit rules or limit targets"
+        )
+    if market.open is None or market.high is None or market.low is None:
+        raise ValueError("rules: Market needs open, high and low panels")
+    timing = {"open": 0, "close": 1, "average": 2}.get(rules.fill_time)
+    if timing is None:
+        raise ValueError("fill_time: expected open, close or average")
+    if rules.both_hit not in ("stop", "target"):
+        raise ValueError("both_hit: expected stop or target")
+    if rules.limit_valid not in ("day", "until_next"):
+        raise ValueError("limit_valid: expected day or until_next")
+    if rules.limit_fill not in ("cross", "touch"):
+        raise ValueError("limit_fill: expected cross or touch")
+    for name in ("max_hold", "cooldown"):
+        value = getattr(rules, name)
+        if value is not None and (
+            not isinstance(value, int | np.integer)
+            or isinstance(value, bool)
+            or value < (1 if name == "max_hold" else 0)
+        ):
+            raise ValueError(
+                f"{name}: expected None or an integer >= "
+                f"{1 if name == 'max_hold' else 0}"
+            )
+    for name in ("dividend_adjusts_cost", "sell_lock"):
+        if not isinstance(getattr(rules, name), bool):
+            raise ValueError(f"{name}: expected bool")
+    t, n = market.shape
+    arrays = [market.open.ravel(), market.high.ravel(), market.low.ravel()]
+    arrays += [
+        _percent(getattr(rules, k), t, n, k)
+        for k in ("stop_loss", "take_profit", "trailing_stop")
+    ]
+    terms = (
+        int(rules.max_hold or 0),
+        timing,
+        rules.both_hit == "target",
+        -1 if rules.cooldown is None else int(rules.cooldown),
+        rules.dividend_adjusts_cost,
+        rules.sell_lock,
+        rules.limit_valid == "until_next",
+        rules.limit_fill == "touch",
+    )
+    return arrays, terms
 
 
 def _prepare(
@@ -146,7 +228,17 @@ def _prepare(
         getattr(market, k).view(np.uint8) if getattr(market, k) is not None else eb
         for k in ("can_buy", "can_sell", "delist", "can_short")
     ]
-    plans = [(x.days, x.indptr, x.cols, x.weights, x.kind == "shares") for x in targets]
+    plans = [
+        (
+            x.days,
+            x.indptr,
+            x.cols,
+            x.weights,
+            x.kind == "shares",
+            _EMPTY if x.limits is None else x.limits,
+        )
+        for x in targets
+    ]
     # The cash specialization is chosen by the account terms alone; futures
     # columns do not change how the spot side of a cash account is executed.
     classic = (
@@ -209,8 +301,31 @@ def _checks(targets: Sequence[Targets], config: Config) -> tuple:
     )
 
 
+def _rule_args(market: Market, targets: Sequence[Targets], config: Config):
+    return _rules(market, config.rules, any(x.limits is not None for x in targets))
+
+
 def _validated(market: Market, targets: Sequence[Targets]) -> bool:
     return market.validated and all(x.validated for x in targets)
+
+
+def _trades(raw: dict[str, Any]):
+    if raw["trades"] is None:
+        return None
+    if not raw["reasons"]:
+        return [Trade(*x) for x in raw["trades"]]
+    reasons = dict(raw["reasons"])
+    return [
+        Trade(*x, TradeReason(reasons[k])) if k in reasons else Trade(*x)
+        for k, x in enumerate(raw["trades"])
+    ]
+
+
+def _diagnostics(raw: dict[str, Any]) -> dict:
+    out = dict(zip(COUNTERS, raw["counts"][: len(COUNTERS)], strict=True))
+    if raw["rule_counts"]:
+        out.update(zip(RULE_COUNTERS, raw["rule_counts"], strict=True))
+    return out
 
 
 def _result(raw: dict[str, Any], validated: bool = True) -> Result:
@@ -225,9 +340,9 @@ def _result(raw: dict[str, Any], validated: bool = True) -> Result:
     return Result(
         **values,
         positions=raw["positions"],
-        trades=None if raw["trades"] is None else [Trade(*x) for x in raw["trades"]],
+        trades=_trades(raw),
         delist_events=[DelistEvent(*x) for x in raw["events"]],
-        diagnostics=dict(zip(COUNTERS, raw["counts"][: len(COUNTERS)], strict=True)),
+        diagnostics=_diagnostics(raw),
         coverage=dict(zip(EXTRA_COUNTERS, raw["counts"][len(COUNTERS) :], strict=True)),
         contribution=raw["contribution"],
         liquidation_events=[LiquidationEvent(*x) for x in raw["liquidations"]],
@@ -246,7 +361,12 @@ def run(
     """Execute targets on their given rows without shifting signals."""
     config = config or Config()
     prepared = _prepare(market, [targets], costs or Costs(), config)
-    raw = _core.run(*prepared, *_checks([targets], config), 1)[0]
+    raw = _core.run(
+        *prepared,
+        *_checks([targets], config),
+        1,
+        _rule_args(market, [targets], config),
+    )[0]
     return _result(raw, _validated(market, [targets]))
 
 
@@ -266,6 +386,7 @@ def run_batch(
             *_prepare(market, targets, costs or Costs(), config),
             *_checks(targets, config),
             threads,
+            _rule_args(market, targets, config),
         ),
         *market.shape,
         config.record_trades,
@@ -284,6 +405,11 @@ def _batch_result(raw, t, n, record, validated=True):
         counts = np.asarray([x["counts"] for x in raw], dtype=np.int64).reshape(
             len(raw), len(COUNTERS) + len(EXTRA_COUNTERS)
         )
+        rule_counts = (
+            np.asarray([x["rule_counts"] for x in raw], dtype=np.int64)
+            if raw and raw[0]["rule_counts"]
+            else None
+        )
         daily = {
             key: tensor[:, i].astype(np.int64)
             if key.startswith("n_")
@@ -296,7 +422,12 @@ def _batch_result(raw, t, n, record, validated=True):
             **daily,
             positions=None,
             trades=None,
-            diagnostics={key: counts[:, i] for i, key in enumerate(COUNTERS)},
+            diagnostics={key: counts[:, i] for i, key in enumerate(COUNTERS)}
+            | (
+                {}
+                if rule_counts is None
+                else {k: rule_counts[:, i] for i, k in enumerate(RULE_COUNTERS)}
+            ),
             coverage={
                 key: counts[:, len(COUNTERS) + i]
                 for i, key in enumerate(EXTRA_COUNTERS)
@@ -337,7 +468,7 @@ def _batch_result(raw, t, n, record, validated=True):
         delist_events=[x.delist_events for x in results],
         diagnostics={
             k: np.array([x.diagnostics[k] for x in results], dtype=np.int64)
-            for k in COUNTERS
+            for k in (results[0].diagnostics if results else COUNTERS)
         },
         coverage={
             k: np.array([x.coverage[k] for x in results], dtype=np.int64)
