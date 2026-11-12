@@ -65,8 +65,9 @@ the other scheduled form, so a fixed-rate setup is explicit:
 `infer_board` accepts six-digit codes with or without `.SH`/`.SZ`/`.BJ`; prefer
 an authoritative board column where you have one.
 
-Only A shares have a built-in profile. The following **illustrative rates are
-not verified market defaults; verify them before use**. These examples reuse
+To build a custom profile, use `MarketProfile` directly (the built-in Hong Kong
+and US profiles are in the next section). The following **illustrative rates
+are not verified market defaults; verify them before use**. These examples reuse
 `prices` and `targets` above.
 
 ```python
@@ -87,6 +88,89 @@ us_costs = us_style.costs(dates, commission_rate=0, slippage=0,
     commission_per_share=0.005, commission_min=1, commission_max_rate=0.01)
 us_result = bt.run(us_style.market(prices, prices), targets, us_costs, us_config)
 ```
+
+## Hong Kong and US profiles
+
+Three built-in profiles cover a local Hong Kong account, Southbound Stock
+Connect (mainland investors buying Hong Kong shares) and US equities. Pick one
+by name; `costs`, `config` and `market` work as for `ASHARE`:
+
+```python
+import numpy as np
+import panelbt as bt
+from panelbt import markets
+
+prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
+dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
+targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
+hk = markets.get("hk_direct")             # local HK account, in HKD
+config = hk.config(lot_sizes=[500, 2000], h_share=[True, True], initial_cash=1e6)
+result = bt.run(hk.market(prices, prices), targets, hk.costs(dates), config)
+```
+
+```python
+import numpy as np
+import panelbt as bt
+from panelbt import markets
+
+prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
+dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
+targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
+sb = markets.get("hk_southbound")         # Stock Connect, backtested in HKD
+eligible = np.array([[True, True], [True, False], [True, False]])  # leaves Connect
+config = sb.config(lot_sizes=[500, 2000], initial_cash=1e6)
+market = sb.market(prices, prices, connect_eligible=eligible)
+result = bt.run(market, targets, sb.costs(dates), config)
+cny = markets.connect_home_equity(result.equity, result.cash, [0.92, 0.921, 0.919], 1e6)
+```
+
+```python
+import numpy as np
+import panelbt as bt
+from panelbt import markets
+
+prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
+dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
+targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
+us = markets.get("us")                    # whole shares, 10% treaty withholding
+config = us.config(n=2, initial_cash=1e5)
+result = bt.run(us.market(prices, prices), targets, us.costs(dates), config)
+```
+
+- Fee tables are dated from 2010 (Southbound from 2014-11-17): Hong Kong stamp
+  duty, SFC and AFRC levies, HKEX trading fee, HKSCC settlement fee and the
+  trading tariff; US SEC Section 31 fee and FINRA TAF (sell side only).
+  `profile.charges(dates)` lists every statutory item by name.
+- The kernel has no per-fill fixed amounts, per-charge floors or round-ups.
+  They are added as `amount / fill_value` (default HK$20,000 and US$10,000).
+  At that fill size the result equals the per-fill rules' upper bound; fixed
+  charges and floors are overcharged on larger fills and undercharged on
+  smaller ones, while the stamp round-up allowance exceeds its average
+  (about HK$0.5) for fills above half of `fill_value`. Set it to your typical
+  fill, or `None`. Per-charge caps are ignored (an overcharge).
+- Default commissions are assumptions: HK$15 per fill (local), 0.03% (Connect),
+  IBKR Fixed $0.005/share, $1 minimum, 1% cap (US). Override any of them.
+- Dividend withholding: local HK 0% non-H, 10% H shares; optional flags for
+  foreign-invested-enterprise H shares (20% from 2026-09-01) and red chips of
+  Chinese resident enterprises (`resident_enterprise`, 10%; off by default,
+  which is optimistic if they are withheld). Without `h_share` every security
+  is withheld at 10% with a warning. Connect 20%; US 10% (`US_WITHHOLDING` has
+  30% and 0%). The kernel takes one rate per day: pass the market's
+  `cash_div` to `config` so only securities paying that day count; otherwise
+  the day's highest rate is used with a warning. `net_dividends` is the exact
+  alternative for accounts that cannot short.
+- Delisting: prices freeze at the last close until the delisting row.
+  `delisting="zero"` (long-only default) settles at 0: pessimistic for longs,
+  optimistic for shorts; `"last"` settles at the last close: optimistic for
+  longs, neutral for shorts. When the margin model allows shorting you must
+  choose explicitly. No price limits and no sell lock: pass
+  `Rules(sell_lock=False)`. Connect cannot short or borrow; its `fx_cost` is
+  kept when you override `fee_rate_buy/sell` (pass `fx_cost=0` to drop it).
+- Margin accounts: `markets.reg_t_margin(financing_rate=...)` (Reg T) and
+  `markets.hk_margin(...)` (ratios from your broker).
+- What is approximated, not modelled, or needs kernel support, and the
+  defaults awaiting confirmation, are in `docs/markets/PROFILES.md` of the
+  AShare repository.
 
 ## Accounts and results
 

@@ -4,6 +4,9 @@
 - 纯期货组合回测（DESIGN 4.14、SPEC「Stand-alone futures portfolios」、`docs/FUTURES_BACKTEST.md`）：`panelbt.FuturesBook` 把逐合约逐日的交易所参数建成市场，按手数、名义或保证金三种写法给目标，期货公司条款（`FuturesAccount`）、实物交割与个人持仓期限的强平（按结算价、计手续费和滑点）、涨跌停掩码与一字板推断、缺值默认报错；内核不改，现有路径逐位不变。`ashare.backtest.futures.futures_portfolio` 按数据层换月规则持有具体合约、个人持仓期限前换月、交易单位分界平旧开新，`signal_prices` 只作信号。独立朴素参考实现对拍、性质测试、14 处变异全部抓到；RB2310 真实数据手工核对逐项相同；动量例子（`bench/futures_momentum.py`，品种按当时成交额取，不用全样本名单）与「连续价格直接算收益」的错误做法对比。数据层 `FuturesData` 新增 `held_columns`、`adjust_prices`、`panelbt_inputs` 三个公开转发入口，回测层只走公开入口；修复跨交易单位分界日时 `futures_portfolio` 重复读同一合约行情而报错。
 - 外部行情入口 `ashare.backtest.futures.book_from_table`（长表，字段名同 `futures_schema`），合成 WTI 式月度合约链例子 `bench/futures_wti_example.py`。
 - 混合面板里的退出规则（DESIGN 4.15、SPEC「Exit rules in mixed panels」）：有期货列时止损、止盈、移动止损、持有期只作用于现货列，保证金账户的规则平仓削减扣掉期货保证金，内核增加「期货 + 记账」特化，参考实现接上期货路径；限价目标在有期货列的市场里继续拒绝。
+## 2026-11-13（港股、美股市场档案）
+- `panelbt.markets` 新增三份档案：香港本地账户 `HK_DIRECT`、港股通 `HK_SOUTHBOUND`、美股 `US`（`docs/DESIGN.md` 4.16、`docs/markets/PROFILES.md`），按名字取 `markets.get("hk_southbound")`（A 股取到的是原 `ASHARE` 对象）。2010 年起按日期分段的法定费用逐项表（港股印花税、证监会与会财局征费、交易费、股份交收费及上下限、交易系统使用费；美股 SEC 规费、FINRA TAF），每段注明生效日与调研出处；每笔固定费用、单项下限和取整按参考成交额折成比例费，上限忽略（偏悲观）；按证券的分红扣税（H 股、外商投资企业 H 股、港股通 20%、美股 10%/30%/0%、ADR）；退市默认除牌日按 0；港股通合资格掩码与汇兑损耗；Reg T 与港股本地保证金账户构造函数；人民币折算工具。不改内核，需要内核支持的能力列成清单。A 股档案输出不变。
+- 港美股档案复核返工：允许做空时退市处理必须显式选择（"zero" 对空头偏乐观）；港股本地新增可选的中国居民企业红筹 10% 预扣标记（默认不启用、未核实），不给 H 股标记时告警；`config(cash_div=)` 让分红税只看当天派息的证券；`net_dividends` 拒绝允许做空的账户；覆盖 `fee_rate_*` 时港股通 `fx_cost` 仍叠加；交收费通告编号更正为 PT/SCS/CCASS/022/2025；`fill_value` 偏差方向按费用项分开写；README 三个例子各自可单独运行。
 
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。

@@ -203,7 +203,7 @@ and zero for fractional shares. No-limit profiles require only valid prices and
 no suspension. A-share adapters preserve the original board and price-limit
 rules; `rules.ashare` remains an import facade over `markets.ashare`.
 
-ASHARE is the only built-in market. Its schedule starts on 2005-01-24 and
+ASHARE was the first built-in market (Hong Kong and US profiles follow below). Its schedule starts on 2005-01-24 and
 covers every stamp-duty and transfer-fee change since (sources beside the
 `ASHARE` definition). Before 2015-08-01 the transfer fee differed by venue (per
 share in Shanghai, per amount in Shenzhen); fees cannot vary by security, so
@@ -237,6 +237,49 @@ public maxima. Therefore none is silently installed as a misleading default.
 This model does not reproduce the full Chinese securities-credit ledger or
 contract-vintage rules. Daily bars also cannot simulate the rule that a short
 sale's quoted price must not be below the latest transaction price.
+
+### Hong Kong and US profiles
+
+`markets.get(name)` returns a built-in profile: `ashare` (the `ASHARE` object
+itself), `hk_direct`, `hk_southbound` or `us`. The three new profiles are
+`RegionalProfile` subclasses (`markets/hk.py`, `markets/us.py`) and add no
+kernel behaviour; sources, dated fee history, unverified items and open
+defaults are in `docs/markets/PROFILES.md` of the AShare repository.
+
+- Each profile keeps an itemised dated table of statutory charges
+  (`charges(dates)`), from which the engine-key `FeeSchedule` is derived.
+  Hong Kong: stamp duty in `tax_buy/tax_sell`; SFC levy, AFRC levy, HKEX
+  trading fee and HKSCC settlement fee summed in `fee_rate_buy/sell`.
+  US: SEC Section 31 fee in `fee_rate_sell`, FINRA TAF in `fee_per_share_sell`.
+- `costs(dates, fill_value=..., **overrides)`: per-fill fixed charges, per-fill
+  floors and round-ups are added as `amount / fill_value` (equal to the per-fill
+  rule's upper bound at that fill size; pessimistic above it). Per-fill caps
+  are ignored (an overcharge). `fill_value=None` keeps proportional statutory
+  charges only. Default broker commissions are assumptions; every keyword
+  replaces the final value. `HK_SOUTHBOUND.costs(fx_cost=...)` adds the
+  CNY/HKD settlement spread to both directions.
+- `config(lot_sizes=..., n=..., dates=..., cash_div=..., delisting="zero"|"last", ...)`:
+  Hong Kong lots are per security (length N, or T×N reduced to the largest lot
+  with a warning); US uses whole shares (`fractional=True` for zero steps).
+  Dividend withholding is computed per security (`h_share`, `fie_h_share`,
+  `resident_enterprise`; `withholding`, `adr`, `adr_withholding`). The kernel
+  takes one rate per day: with `cash_div` the day's maximum is taken over
+  securities paying that day, otherwise over all securities, with a warning
+  when paying securities differ. Without `h_share` the local HK profile
+  withholds 10% from every security and warns. `delisting="zero"` sets
+  `delist_recovery=0` (pessimistic for longs, optimistic for shorts), `"last"`
+  sets 1 (optimistic for longs, neutral for shorts); long-only accounts
+  default to `"zero"`, and a margin model that allows shorting requires an
+  explicit choice. A `Rules` with `sell_lock=True` is rejected (both markets
+  allow same-day round trips). Southbound rejects margin models that allow
+  shorting or financing.
+- `HK_SOUTHBOUND.costs` adds `fx_cost` after keyword overrides, so overriding
+  `fee_rate_buy/sell` keeps the exchange spread (`fx_cost=0` drops it).
+- `net_dividends(cash_div, rates, account)` refuses an account that may short
+  (shorts would pay net instead of gross dividends) unless `allow_short=True`.
+- `market(..., connect_eligible=...)` masks Southbound buys only.
+- Helpers: `net_dividends`, `home_currency_nav`, `connect_home_equity`,
+  `settlement_days`, `hk_margin`, `reg_t_margin`, `US_WITHHOLDING`.
 
 ## Currently unsupported: changes to the kernel are required
 

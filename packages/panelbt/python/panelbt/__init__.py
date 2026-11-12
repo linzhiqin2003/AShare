@@ -1,5 +1,6 @@
 """Panel portfolio backtesting with NumPy as the only runtime dependency."""
 
+from . import markets
 from .api import run, run_batch
 from .futures import HedgeRoundingWarning
 from .futures_book import FuturesAccount, FuturesBook
@@ -38,6 +39,7 @@ __all__ = [
     "Targets",
     "Trade",
     "TradeReason",
+    "markets",
     "run",
     "run_batch",
 ]
