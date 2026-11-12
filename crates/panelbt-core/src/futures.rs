@@ -115,15 +115,15 @@ pub(super) fn project(
 }
 
 /// Contract state owned by the runner when `FUT = true`.
-pub(super) struct Book {
-    pub basis: Vec<f64>,
+pub struct Book<'s> {
+    pub basis: &'s mut [f64],
     pub held: Vec<usize>,
     /// Sticky: a cash account monitors maintenance and insolvency once it has
     /// held a contract; a cash account without futures never does.
     pub seen: bool,
 }
 
-impl Book {
+impl Book<'_> {
     /// Execute a contract fill. The runner never reverses a position in one
     /// fill: reversals are a complete close followed by a separate opening.
     #[expect(clippy::too_many_arguments, reason = "Explicit fill context")]

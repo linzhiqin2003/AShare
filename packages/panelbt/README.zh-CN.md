@@ -83,6 +83,66 @@ A 股监管担保物/负债公式与模型不同，`markets.ashare_margin` 要�
 
 `hedge_contracts` 与引擎一样向零取整，敞口不足一手时给出 `HedgeRoundingWarning`。现金账户挂上期货后，股票部分仍按原来的现金账户规则成交：先从现金里预留期货保证金，持有过合约后才会追保。现金只约束保证金占用、不约束名义金额：保证金率 12% 时，现金账户可以持有约 8 倍权益的合约名义。期货亏损使现金为负后，股票卖出只要成交额够付自身费用就照常成交。费率接受标量、(1, N) 按合约、(T, 1) 按日和 T×N，一维数组因含义不明确而报错。到期行的 `settlement` 必须填交易所的交割结算价。引擎不区分平今仓手续费（中金所平今费率远高于普通平仓），同一天开平的换月会低估成本。
 
+## 逐日步进
+
+`bt.Simulator` 用同一个内核一次推进一天，策略可以根据账户状态决定当天的目标。第 t 步给的目标是第 t 日成交后要持有的；第 t 步之前的 `sim.state` 只含第 t 日成交前已知的信息。同样的目标逐日喂进去，结果与 `bt.run` 逐位相同。
+
+```python
+sim = bt.Simulator(market, costs, config)
+for t in range(sim.n_days):
+    state = sim.state                     # 现金、权益、持仓、持仓成本、建仓日……
+    if t == 0:
+        target = ([0, 1], [0.5, 0.5])     # (列号, 权重)；也可以给长度 N 的一行
+    elif state.shares[0] and prices[t - 1, 0] < 0.9 * state.cost[0]:
+        target = ([1], [0.5])             # 第 0 列亏损 10% 后退出
+    else:
+        target = None                     # 当天不给新目标
+    sim.step(target)
+result = sim.result()
+
+blob = sim.snapshot()                     # 字节串，用 Simulator.restore 恢复
+```
+
+状态数组是只读的实时视图（要保留历史就 `copy()`）。`step` 期间释放 GIL，不同的模拟可以在不同线程里推进。每一步的固定开销是几微秒，不随证券数增长。止损这类固定模式用下面的声明式规则更快。
+
+## 声明式止损和限价目标
+
+止损、止盈、移动止损、最长持有期和限价单都在内核里执行，`run`、`run_batch` 和 `Simulator` 一样可用。日线不告诉你一天之内价格的先后顺序，所以每个说不清的情形都按对策略不利的一边处理：跳空穿过止损线按开盘价成交，同一天既碰止损又碰止盈按止损算，移动止损线只用到前一天为止的最高价。`fill_time` 说明 `exec_price` 在一天中的位置，必须给。
+
+```python
+import numpy as np
+import panelbt as bt
+
+o = np.array([[10.0], [10.4], [9.0], [9.2]])
+h = np.array([[10.5], [10.9], [9.3], [9.6]])
+l = np.array([[9.9], [10.1], [8.7], [9.0]])
+c = np.array([[10.3], [10.2], [9.1], [9.5]])
+ok = np.ones_like(o, dtype=bool)
+bars = bt.Market(o, c, ok, ok, open=o, high=h, low=l)  # 成交价 = 开盘价
+
+rules = bt.Rules(
+    fill_time="open",        # exec_price 是开盘价
+    stop_loss=0.08,          # 标量、每只证券一个值，或 T×N 面板
+    trailing_stop=0.12,
+    take_profit=0.30,
+    max_hold=20,             # 行数
+)
+exit_config = bt.Config(initial_cash=1e5, rules=rules, record_trades=True)
+exit_result = bt.run(bars, bt.Targets.from_dense([[1.0], [np.nan], [np.nan], [np.nan]]),
+                     bt.Costs(), exit_config)
+print([(t.day, t.reason.name, t.price) for t in exit_result.trades])
+print(exit_result.diagnostics["stop_loss"])   # 各规则的计数在 diagnostics 里
+
+# 限价目标：当天价格到过 9.1 或更低才买。
+limits = np.array([[np.nan], [np.nan], [9.1], [np.nan]])
+weights = np.array([[np.nan], [np.nan], [1.0], [np.nan]])
+limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Costs(),
+                      bt.Config(initial_cash=1e5, rules=bt.Rules(fill_time="open"),
+                                record_trades=True))
+```
+
+规则平仓后，这一列要等到之后的目标行（`cooldown=None`，默认）或 `cooldown=k` 行之后才能重新开仓。`sell_lock=True`（默认，T+1）时当天买入的股份当天不会被规则卖出，平仓顺延到下一行。卖不出去（跌停、停牌）的平仓在之后各行按当天的 `exec_price` 重试。不用规则时结果与没有这项功能的版本逐位相同。期货列不能用规则。确切语义见 [SPEC.md](SPEC.md)（英文）。
+
 ## 输入检查
 
 `Market(...)` 与 `Targets(...)` 默认逐格检查（价格为正或 NaN、掩码取值、送转为正、分红非负、期货结算价与费率、调仓日递增、权重有限、同一行列号不重复），检查在 Rust 内核里多线程完成。传 `validate=False` 只跳过这些逐格的内容检查：

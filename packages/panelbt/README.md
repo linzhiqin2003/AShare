@@ -130,6 +130,85 @@ On an expiry row, `settlement` must be the exchange delivery settlement price.
 The engine does not distinguish close-today fees, which CFFEX charges at a much
 higher rate; same-day open-and-close rolls are therefore under-costed.
 
+## Stepping one row at a time
+
+`bt.Simulator` advances the same kernel one row per call, so a strategy can
+decide each target from the account state. Row `t`'s target is what to hold
+after row `t`'s trading; `sim.state` before step `t` only holds what is known
+before row `t` trades. The result is bit-for-bit what `bt.run` returns for the
+same targets.
+
+```python
+sim = bt.Simulator(market, costs, config)
+for t in range(sim.n_days):
+    state = sim.state                     # cash, equity, shares, cost, entry_day, ...
+    if t == 0:
+        target = ([0, 1], [0.5, 0.5])     # (cols, weights); or a length-N row
+    elif state.shares[0] and prices[t - 1, 0] < 0.9 * state.cost[0]:
+        target = ([1], [0.5])             # exit column 0 after a 10% loss
+    else:
+        target = None                     # no new target today
+    sim.step(target)
+result = sim.result()
+
+blob = sim.snapshot()                     # bytes; resume with Simulator.restore
+```
+
+State arrays are read-only live views (copy them to keep history). `step`
+releases the GIL, so independent simulators can run in separate threads. The
+per-step cost is a few microseconds and does not grow with the number of
+securities. Fixed patterns such as stops are faster as declarative rules (below).
+
+## Declarative exit rules and limit targets
+
+Stops, take-profits, trailing stops, holding periods and limit prices run
+inside the kernel, in `run`, `run_batch` and `Simulator` alike. Daily bars do
+not tell the order of prices within a day, so every ambiguous case is resolved
+against the strategy: a gap through a stop fills at the open, a day that hits
+both the stop and the target takes the stop, and the trailing line uses the
+peak up to the previous day only. `fill_time` says where `exec_price` sits in
+the day and must be given.
+
+```python
+import numpy as np
+import panelbt as bt
+
+o = np.array([[10.0], [10.4], [9.0], [9.2]])
+h = np.array([[10.5], [10.9], [9.3], [9.6]])
+l = np.array([[9.9], [10.1], [8.7], [9.0]])
+c = np.array([[10.3], [10.2], [9.1], [9.5]])
+ok = np.ones_like(o, dtype=bool)
+bars = bt.Market(o, c, ok, ok, open=o, high=h, low=l)  # exec_price = open
+
+rules = bt.Rules(
+    fill_time="open",        # exec_price is the open
+    stop_loss=0.08,          # scalar, per-security vector or T×N panel
+    trailing_stop=0.12,
+    take_profit=0.30,
+    max_hold=20,             # rows
+)
+exit_config = bt.Config(initial_cash=1e5, rules=rules, record_trades=True)
+exit_result = bt.run(bars, bt.Targets.from_dense([[1.0], [np.nan], [np.nan], [np.nan]]),
+                     bt.Costs(), exit_config)
+print([(t.day, t.reason.name, t.price) for t in exit_result.trades])
+print(exit_result.diagnostics["stop_loss"])   # rule counters sit in diagnostics
+
+# A limit target: buy only if the price trades at 9.1 or below that day.
+limits = np.array([[np.nan], [np.nan], [9.1], [np.nan]])
+weights = np.array([[np.nan], [np.nan], [1.0], [np.nan]])
+limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Costs(),
+                      bt.Config(initial_cash=1e5, rules=bt.Rules(fill_time="open"),
+                                record_trades=True))
+```
+
+After a rule exit the column cannot be reopened until a later target row
+(`cooldown=None`, default) or for `cooldown=k` rows. With `sell_lock=True`
+(default, T+1) shares bought today are not sold by a rule today; the exit
+waits for the next row. An exit that cannot trade (limit-down, suspension)
+retries at the next rows' `exec_price`. Without rules, results are bit-for-bit
+those of a build without the feature. Rules are not available with futures
+columns. The exact semantics are in [SPEC.md](SPEC.md).
+
 ## Input validation
 
 `Market(...)` and `Targets(...)` check every cell by default (finite positive

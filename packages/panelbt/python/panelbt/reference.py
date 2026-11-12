@@ -29,6 +29,10 @@ from .models import (
 
 
 def run(market, targets, costs=None, config=None):
+    if (config is not None and config.rules is not None) or targets.limits is not None:
+        from .reference_rules import run as run_rules
+
+        return run_rules(market, targets, costs, config)
     if market.futures is not None:
         from .reference_futures import run as run_futures
 

@@ -71,7 +71,24 @@ def worker(t, n):
         market = bt.Market(**inputs(t, n, actions, delist))
         cfg = bt.Config(initial_cash=1e7, max_participation=part)
         bt.run(market, target, costs, cfg)
-        scenarios[name] = (market, cfg)
+        scenarios[name] = (market, cfg, target)
+    # Margin account with shorts, and a batch: the other two hot paths.
+    market = bt.Market(**inputs(t, n, True, True))
+    weights = target.weights.copy()
+    weights[::2] *= -1
+    short = bt.Targets(target.days, target.indptr, target.cols, weights)
+    margin = bt.Config(
+        initial_cash=1e7,
+        max_participation=0.1,
+        margin=bt.MarginModel(allow_short=True, short_initial=1, borrow_rate=0.0001),
+    )
+    bt.run(market, short, costs, margin)
+    scenarios["long_short"] = (market, margin, short)
+    batch = [
+        bt.Targets(target.days, target.indptr, (target.cols + k) % n, target.weights)
+        for k in range(16)
+    ]
+    scenarios["batch16"] = (market, bt.Config(initial_cash=1e7), batch)
     print(
         json.dumps(
             {
@@ -85,11 +102,16 @@ def worker(t, n):
     for line in sys.stdin:
         request = json.loads(line)
         name = request["scenario"]
-        market, cfg = scenarios[name]
+        market, cfg, plan = scenarios[name]
         samples = []
         for _ in range(request["repeats"]):
             start = perf_counter()
-            r = bt.run(market, target, costs, cfg)
+            if isinstance(plan, list):
+                r = bt.run_batch(market, plan, costs, cfg, threads=1)
+                r.nav = r.nav[0]
+                r.diagnostics = {k: int(v[0]) for k, v in r.diagnostics.items()}
+            else:
+                r = bt.run(market, plan, costs, cfg)
             samples.append(perf_counter() - start)
         print(
             json.dumps(
@@ -111,6 +133,9 @@ def main():
     )
     parser.add_argument("--t", type=int, default=2000)
     parser.add_argument("--n", type=int, default=2000)
+    parser.add_argument(
+        "--keep", action="store_true", help="Keep the historical build for reuse"
+    )
     args = parser.parse_args()
     if args.worker:
         return worker(args.t, args.n)
@@ -118,7 +143,7 @@ def main():
         parser.error("--base-ref is required for paired timing")
     assert_current_build()
     historical = ROOT / ".cache/panelbt/pair-base"
-    if historical.exists():
+    if historical.exists() and not args.keep:
         shutil.rmtree(historical)
     if not (historical / ".venv/bin/python").exists():
         historical.mkdir(parents=True, exist_ok=True)
@@ -161,13 +186,22 @@ def main():
         scenarios={},
     )
     try:
-        for name in ["full_rules", "no_delist_panel", "prices_only"]:
+        for name in [
+            "full_rules",
+            "no_delist_panel",
+            "prices_only",
+            "long_short",
+            "batch16",
+        ]:
             values = [[], []]
             results = [None, None]
             for round_index in range(6):
                 for index in [0, 1] if round_index % 2 == 0 else [1, 0]:
                     p = processes[index]
-                    p.stdin.write(json.dumps(dict(scenario=name, repeats=40)) + "\n")
+                    repeats = 4 if name == "batch16" else 40
+                    p.stdin.write(
+                        json.dumps(dict(scenario=name, repeats=repeats)) + "\n"
+                    )
                     p.stdin.flush()
                     result = json.loads(p.stdout.readline())
                     values[index].extend(result["samples_s"])
@@ -185,9 +219,11 @@ def main():
                 )
             }
             row["minimum_ratio"] = row["current"]["min_s"] / row["base"]["min_s"]
+            row["median_ratio"] = row["current"]["median_s"] / row["base"]["median_s"]
             row["passes_5pct"] = row["minimum_ratio"] <= 1.05
+            row["passes_3pct"] = row["minimum_ratio"] <= 1.03
             report["scenarios"][name] = row
-            print(name, row["minimum_ratio"], flush=True)
+            print(name, row["minimum_ratio"], row["median_ratio"], flush=True)
     finally:
         for p in processes:
             p.stdin.close()
@@ -195,7 +231,8 @@ def main():
     report["load_end"] = os.getloadavg()
     (ROOT / ".cache/panelbt/pair.json").write_text(json.dumps(report, indent=2) + "\n")
 
-    shutil.rmtree(historical)
+    if not args.keep:
+        shutil.rmtree(historical)
 
 
 if __name__ == "__main__":

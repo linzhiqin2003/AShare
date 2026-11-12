@@ -17,6 +17,8 @@
 - 端到端剖析工具 `bench/e2e`（`make perf-profile`、`make perf-compare`）和第一份基线。
 
 ## 2026-11-13
+- `panelbt` 声明式退出规则和限价目标（DESIGN 4.13、SPEC「Declarative exit rules and limit targets」）：`Market` 可选 `open`/`high`/`low`；`Config(rules=Rules(...))` 支持止损、止盈、移动止损（标量、每只证券或 T×N）、最长持有期、限价目标，在内核里执行，`run`、`run_batch`、`Simulator` 通用；日内先后不明的情形一律按不利一侧处理；受限顺延、卖出锁定、重新买入的冷却都照常生效；规则计数进 `Result.diagnostics`，成交明细带 `TradeReason`。不配规则时由编译期开关去掉全部规则代码，结果与改动前逐位相同。纯 Python 参考实现对拍、性质测试、10 处变异检查；两个真实数据例子 `bench/rules_examples.py`。期货列暂不支持规则（输入检查拒绝）。
+- `panelbt` 逐日步进接口 `bt.Simulator`（DESIGN 4.12）：内核逐日循环拆成开盘前和成交收盘两段，`bt.run` 就是逐行调用这两段（结果逐位不变、不变慢）；`state` 只含成交前已知的信息（持仓、成本、建仓日、现金、权益、顺延订单），数组为零拷贝只读视图；`snapshot`/`restore` 存档恢复；`step` 释放 GIL。每步约 4.5 µs，与证券数无关（backtrader 约 29 µs/根）。
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。

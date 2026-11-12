@@ -41,6 +41,8 @@ pub struct Targets<'a> {
     pub indptr: &'a [i64],
     pub cols: &'a [i64],
     pub weights: &'a [f64],
+    /// Limit price per entry (NaN: ordinary target); empty when none.
+    pub limits: &'a [f64],
     pub shares: bool,
 }
 pub struct Settings<'a> {
@@ -50,6 +52,8 @@ pub struct Settings<'a> {
     pub slippage: &'a [f64],
     pub impact: &'a [f64],
     pub borrow: &'a [f64],
+    /// Declarative exit rules and limit-order settings (spot only).
+    pub rules: Option<rules::Rules<'a>>,
 }
 impl Settings<'_> {
     #[inline]
@@ -72,6 +76,7 @@ impl Settings<'_> {
 }
 pub type Trade = (usize, usize, f64, f64, f64, f64, f64, f64, f64);
 pub type DelistEvent = (usize, usize, f64, f64, f64);
+#[derive(Clone)]
 pub struct Output {
     pub daily: Vec<f64>,
     pub positions: Option<Vec<f64>>,
@@ -82,6 +87,10 @@ pub struct Output {
     pub liquidations: Vec<(usize, usize, f64)>,
     pub bankruptcies: Vec<usize>,
     pub expiries: Vec<(usize, usize, f64, f64, f64)>,
+    /// (trade index, reason) for rule and limit fills; other fills rebalance.
+    pub reasons: Vec<(usize, u8)>,
+    /// Rule counters; empty unless rules are configured.
+    pub rule_counts: Vec<u64>,
 }
 #[inline]
 fn cell(a: &[f64], day: usize, col: usize, m: &Market<'_>) -> f64 {
@@ -101,8 +110,13 @@ struct Quote {
     slip: f64,
     impact: f64,
 }
+#[inline]
 fn quote(q: f64, i: usize, day: usize, m: &Market<'_>, s: &Settings<'_>) -> Quote {
-    let p = m.price[day * m.n + i];
+    quote_at(q, i, day, m.price[day * m.n + i], m, s)
+}
+/// Quote a fill at an explicit raw (pre-slippage) price `p`.
+#[inline]
+fn quote_at(q: f64, i: usize, day: usize, p: f64, m: &Market<'_>, s: &Settings<'_>) -> Quote {
     let slip = cell(s.slippage, day, i, m);
     let slipped = p * (1.0 + q.signum() * slip);
     let impact = if s.impact.is_empty() {
@@ -132,13 +146,57 @@ fn movement(q: f64, x: Quote) -> f64 {
         x.amount - x.fees.commission - x.fees.tax - x.fees.other
     }
 }
-struct State {
-    cash: f64,
-    shares: Vec<f64>,
-    last: Vec<f64>,
-    held: Vec<usize>,
+/// Account state. The per-security vectors are borrowed so that the stepping
+/// interface can keep them in caller-visible arrays without copying.
+pub struct State<'s> {
+    pub cash: f64,
+    pub shares: &'s mut [f64],
+    pub last: &'s mut [f64],
+    pub held: Vec<usize>,
 }
-impl State {
+/// Per-position bookkeeping maintained only when `T` (tracking) is compiled
+/// in: the stepping interface and declarative rules. Empty slices otherwise.
+pub struct Track<'s> {
+    /// Quantity-weighted raw execution price of the open position.
+    pub cost: &'s mut [f64],
+    /// Row on which the open position was entered; -1 when flat.
+    pub entry: &'s mut [i64],
+    /// Highest high (long) or lowest low (short) since entry, through the
+    /// previous row; the entry price on the entry row.
+    pub peak: &'s mut [f64],
+}
+impl Track<'static> {
+    pub fn none() -> Self {
+        Track {
+            cost: &mut [],
+            entry: &mut [],
+            peak: &mut [],
+        }
+    }
+}
+#[inline]
+fn track_fill(
+    trk: &mut Track<'_>,
+    i: usize,
+    before: f64,
+    after: f64,
+    q: f64,
+    raw: f64,
+    day: usize,
+) {
+    if after == 0.0 {
+        trk.cost[i] = 0.0;
+        trk.entry[i] = -1;
+        trk.peak[i] = 0.0;
+    } else if before == 0.0 || before.signum() != after.signum() {
+        trk.cost[i] = raw;
+        trk.entry[i] = day as i64;
+        trk.peak[i] = raw;
+    } else if after.abs() > before.abs() {
+        trk.cost[i] = (before.abs() * trk.cost[i] + q.abs() * raw) / after.abs();
+    }
+}
+impl State<'_> {
     fn account(&self, day: usize, m: &Market<'_>) -> Account {
         let mut a = Account {
             cash: self.cash,
@@ -153,18 +211,22 @@ impl State {
     }
 }
 #[allow(clippy::too_many_arguments)]
-fn fill(
+#[inline]
+fn fill<const T: bool>(
     day: usize,
     i: usize,
     q: f64,
+    raw: f64,
     carry: bool,
     forced: bool,
     m: &Market<'_>,
     s: &Settings<'_>,
-    st: &mut State,
+    st: &mut State<'_>,
+    trk: &mut Track<'_>,
+    rb: &mut rules::RuleBook,
     out: &mut Output,
 ) {
-    let x = quote(q, i, day, m, s);
+    let x = quote_at(q, i, day, raw, m, s);
     let before = st.shares[i];
     st.cash += movement(q, x);
     st.shares[i] += q;
@@ -224,6 +286,10 @@ fn fill(
     }
     if before == 0.0 && st.shares[i] != 0.0 {
         st.held.push(i);
+    }
+    if T {
+        track_fill(trk, i, before, st.shares[i], q, raw, day);
+        rb.on_fill(i, before, q, st.shares[i]);
     }
 }
 fn past_close(m: &Market<'_>, day: usize, i: usize) -> f64 {
@@ -334,11 +400,16 @@ fn affordable(
 }
 
 pub fn run(m: &Market<'_>, targets: &Targets<'_>, s: &Settings<'_>) -> Output {
-    match (s.flags[6], m.futures.is_some()) {
-        (true, false) => run_impl::<true, false>(m, targets, s),
-        (false, false) => run_impl::<false, false>(m, targets, s),
-        (true, true) => run_impl::<true, true>(m, targets, s),
-        (false, true) => run_impl::<false, true>(m, targets, s),
+    // Rules and limit targets compile in position tracking; they are rejected
+    // with futures columns at input, so only the spot builds need them.
+    let track = s.rules.is_some() || !targets.limits.is_empty();
+    match (s.flags[6], m.futures.is_some(), track) {
+        (true, false, false) => run_impl::<true, false, false>(m, targets, s),
+        (false, false, false) => run_impl::<false, false, false>(m, targets, s),
+        (true, true, _) => run_impl::<true, true, false>(m, targets, s),
+        (false, true, _) => run_impl::<false, true, false>(m, targets, s),
+        (true, false, true) => run_impl::<true, false, true>(m, targets, s),
+        (false, false, true) => run_impl::<false, false, true>(m, targets, s),
     }
 }
 #[inline]
@@ -350,16 +421,13 @@ fn is_future<const FUT: bool>(m: &Market<'_>, i: usize) -> bool {
 fn lot_terms<const FUT: bool>(
     m: &Market<'_>,
     s: &Settings<'_>,
-    targets: &Targets<'_>,
+    shares: bool,
     i: usize,
 ) -> (f64, f64) {
     if is_future::<FUT>(m, i) {
         (1.0, 1.0)
     } else {
-        (
-            s.vectors[6][i],
-            if targets.shares { 0.0 } else { s.vectors[7][i] },
-        )
+        (s.vectors[6][i], if shares { 0.0 } else { s.vectors[7][i] })
     }
 }
 /// Initial-margin and own-cash test; `fm` is the futures collateral (0 for spot).
@@ -405,7 +473,7 @@ fn quote_any<const FUT: bool>(
 /// margin-account opening and, in the cash specialization, for futures openings
 /// that reserve collateral before the legacy cash-funded spot basket.
 #[allow(clippy::too_many_arguments)]
-fn open_basket<const FUT: bool>(
+fn open_basket<const FUT: bool, const T: bool>(
     orders: &mut [(usize, f64)],
     account: &mut Account,
     fm: &mut f64,
@@ -413,10 +481,12 @@ fn open_basket<const FUT: bool>(
     rebalance: bool,
     day: usize,
     m: &Market<'_>,
-    targets: &Targets<'_>,
+    shares: bool,
     s: &Settings<'_>,
-    st: &mut State,
-    book: &mut futures::Book,
+    st: &mut State<'_>,
+    book: &mut futures::Book<'_>,
+    trk: &mut Track<'_>,
+    rb: &mut rules::RuleBook,
     out: &mut Output,
 ) {
     if FUT {
@@ -428,11 +498,10 @@ fn open_basket<const FUT: bool>(
     let trial = |scale: f64| {
         let (mut a, mut margin) = (*account, *fm);
         for &(i, q) in orders.iter() {
-            let (minimum, step) = lot_terms::<FUT>(m, s, targets, i);
+            let (minimum, step) = lot_terms::<FUT>(m, s, shares, i);
             let q = q.signum() * lot(q.abs() * scale, minimum, step);
             if q != 0.0 {
-                (a, margin) =
-                    project_any::<FUT>(a, margin, i, q, &st.shares, &book.basis, day, m, s);
+                (a, margin) = project_any::<FUT>(a, margin, i, q, st.shares, book.basis, day, m, s);
             }
         }
         (a, margin)
@@ -460,19 +529,19 @@ fn open_basket<const FUT: bool>(
         lo
     };
     for &(i, desired) in orders.iter() {
-        let (minimum, step) = lot_terms::<FUT>(m, s, targets, i);
+        let (minimum, step) = lot_terms::<FUT>(m, s, shares, i);
         let mut q = desired.signum() * lot(desired.abs() * scale, minimum, step);
         // An already deficient own-cash balance can make an early
         // short opening infeasible even when the whole basket fits.
         if q != 0.0 {
-            let x = project_any::<FUT>(*account, *fm, i, q, &st.shares, &book.basis, day, m, s);
+            let x = project_any::<FUT>(*account, *fm, i, q, st.shares, book.basis, day, m, s);
             if !feasible(x.0, x.1, s, day) {
                 let (mut lo, mut hi) = (0.0, q.abs());
                 for _ in 0..64 {
                     let mid = (lo + hi) * 0.5;
                     let c = q.signum() * lot(mid, minimum, step);
                     let y =
-                        project_any::<FUT>(*account, *fm, i, c, &st.shares, &book.basis, day, m, s);
+                        project_any::<FUT>(*account, *fm, i, c, st.shares, book.basis, day, m, s);
                     if feasible(y.0, y.1, s, day) {
                         lo = mid;
                     } else {
@@ -484,10 +553,10 @@ fn open_basket<const FUT: bool>(
         }
         if q.abs() > quantity_tolerance(st.shares[i] + desired, st.shares[i]) {
             (*account, *fm) =
-                project_any::<FUT>(*account, *fm, i, q, &st.shares, &book.basis, day, m, s);
+                project_any::<FUT>(*account, *fm, i, q, st.shares, book.basis, day, m, s);
             if is_future::<FUT>(m, i) {
                 book.execute(
-                    &mut st.shares,
+                    st.shares,
                     &mut st.cash,
                     i,
                     q,
@@ -499,56 +568,112 @@ fn open_basket<const FUT: bool>(
                     out,
                 );
             } else {
-                fill(day, i, q, !rebalance, false, m, s, st, out);
+                fill::<T>(
+                    day,
+                    i,
+                    q,
+                    m.price[day * m.n + i],
+                    !rebalance,
+                    false,
+                    m,
+                    s,
+                    st,
+                    trk,
+                    rb,
+                    out,
+                );
             }
         }
     }
 }
-/// One daily account loop for every account type. `CLASSIC` selects the exact
-/// long-only cash specialization; `FUT` compiles in futures columns. With
-/// `FUT = true`, a futures column that is never held or targeted executes no
-/// futures arithmetic, so spot results equal the `FUT = false` build bit for bit.
-fn run_impl<const CLASSIC: bool, const FUT: bool>(
-    m: &Market<'_>,
-    targets: &Targets<'_>,
-    s: &Settings<'_>,
-) -> Output {
-    let mut out = Output {
-        daily: vec![0.0; DAILY * m.t],
-        positions: s.flags[1].then(|| vec![0.0; m.t * m.n]),
-        trades: s.flags[1].then(Vec::new),
-        events: Vec::new(),
-        counts: [0; COUNTS],
-        contribution: vec![0.0; m.n],
-        liquidations: Vec::new(),
-        bankruptcies: Vec::new(),
-        expiries: Vec::new(),
-    };
-    let mut st = State {
-        cash: s.scalars[5],
-        shares: vec![0.0; m.n],
-        last: vec![0.0; m.n],
-        held: Vec::new(),
-    };
-    let mut book = futures::Book {
-        basis: if FUT { vec![0.0; m.n] } else { Vec::new() },
-        held: Vec::new(),
-        seen: false,
-    };
-    let mut pending: Vec<(usize, f64)> = Vec::new();
-    let mut commands = Vec::new();
-    let mut orders = Vec::new();
-    let mut future_orders = Vec::new();
-    let mut weights = vec![0.0; m.n];
-    let mut cursor = 0;
-    let (mut previous, mut unit) = (s.scalars[5], 1.0);
-    let (mut call, mut bankrupt) = (false, false);
-    let mut forced_quantities = vec![0.0; m.n];
-    for day in 0..m.t {
+/// A target row: sorted unique columns and their weights or quantities.
+#[derive(Clone, Copy)]
+pub struct Row<'a> {
+    pub cols: &'a [i64],
+    pub weights: &'a [f64],
+    /// Limit prices (NaN: ordinary target); empty when none.
+    pub limits: &'a [f64],
+}
+/// The daily account loop, split into a pre-open phase (external flow,
+/// corporate actions, delisting) and a trading-and-close phase. `run` drives
+/// both phases for every row; the stepping interface drives them one row at a
+/// time. Everything that persists between rows lives here or in the borrowed
+/// `State`, `futures::Book` and `Track`.
+#[derive(Clone)]
+pub struct Core {
+    pub out: Output,
+    pending: Vec<(usize, f64)>,
+    commands: Vec<(usize, f64)>,
+    orders: Vec<(usize, f64)>,
+    future_orders: Vec<(usize, f64)>,
+    weights: Vec<f64>,
+    forced_quantities: Vec<f64>,
+    previous: f64,
+    unit: f64,
+    call: bool,
+    bankrupt: bool,
+    fm_before: f64,
+    flow: f64,
+    pub rb: rules::RuleBook,
+}
+impl Core {
+    /// `track` allocates the rule state (stepping interface, rules).
+    pub fn new(m: &Market<'_>, s: &Settings<'_>, track: bool) -> Core {
+        Core {
+            out: Output {
+                daily: vec![0.0; DAILY * m.t],
+                positions: s.flags[1].then(|| vec![0.0; m.t * m.n]),
+                trades: s.flags[1].then(Vec::new),
+                events: Vec::new(),
+                counts: [0; COUNTS],
+                contribution: vec![0.0; m.n],
+                liquidations: Vec::new(),
+                bankruptcies: Vec::new(),
+                expiries: Vec::new(),
+                reasons: Vec::new(),
+                rule_counts: Vec::new(),
+            },
+            pending: Vec::new(),
+            commands: Vec::new(),
+            orders: Vec::new(),
+            future_orders: Vec::new(),
+            weights: vec![0.0; m.n],
+            forced_quantities: vec![0.0; m.n],
+            previous: s.scalars[5],
+            unit: 1.0,
+            call: false,
+            bankrupt: false,
+            fm_before: 0.0,
+            flow: 0.0,
+            rb: if track {
+                rules::RuleBook::new(m.n)
+            } else {
+                rules::RuleBook::default()
+            },
+        }
+    }
+    /// Pre-open phase of `day`: external flow, corporate actions, delisting.
+    #[inline(always)]
+    pub fn open<const CLASSIC: bool, const FUT: bool, const T: bool>(
+        &mut self,
+        day: usize,
+        m: &Market<'_>,
+        s: &Settings<'_>,
+        st: &mut State<'_>,
+        book: &mut futures::Book<'_>,
+        trk: &mut Track<'_>,
+    ) {
+        let Core {
+            out,
+            fm_before,
+            flow,
+            rb,
+            ..
+        } = self;
         let base = day * m.n;
         // Futures collateral at the last settlement and today's rate.
-        let fm_before = if FUT {
-            futures::held_margin(&book.held, &st.shares, &book.basis, day, m)
+        *fm_before = if FUT {
+            futures::held_margin(&book.held, st.shares, book.basis, day, m)
         } else {
             0.0
         };
@@ -556,7 +681,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
         // and futures collateral cannot be withdrawn; debt is never increased.
         let available = if CLASSIC {
             if FUT {
-                (st.cash - fm_before).max(0.0)
+                (st.cash - *fm_before).max(0.0)
             } else {
                 st.cash.max(0.0)
             }
@@ -569,20 +694,20 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 a.short += (-st.shares[i]).max(0.0) * st.last[i]
             }
             if FUT {
-                (a.own_cash(s.flags[4]) - fm_before).max(0.0)
+                (a.own_cash(s.flags[4]) - *fm_before).max(0.0)
             } else {
                 a.own_cash(s.flags[4]).max(0.0)
             }
         };
         let requested = s.v(10, day);
-        let flow = requested.max(-available);
-        st.cash += flow;
-        out.daily[12 * m.t + day] = flow;
-        out.daily[13 * m.t + day] = flow - requested;
-        if flow != 0.0 {
+        *flow = requested.max(-available);
+        st.cash += *flow;
+        out.daily[12 * m.t + day] = *flow;
+        out.daily[13 * m.t + day] = *flow - requested;
+        if *flow != 0.0 {
             out.counts[12] += 1;
         }
-        if flow > requested {
+        if *flow > requested {
             out.counts[13] += 1;
         }
         let action_start = m.action_indptr[day] as usize;
@@ -598,6 +723,10 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 let tax = if d > 0.0 { d * s.v(8, day) } else { 0.0 };
                 if st.last[i] > 0.0 {
                     st.last[i] = (st.last[i] - m.dividend[base + i]).max(0.0);
+                }
+                if T && s.rules.as_ref().is_some_and(|r| r.div_adjust) {
+                    trk.cost[i] = (trk.cost[i] - m.dividend[base + i]).max(0.0);
+                    trk.peak[i] = (trk.peak[i] - m.dividend[base + i]).max(0.0);
                 }
                 st.cash += d - tax;
                 out.contribution[i] += d - tax;
@@ -617,6 +746,10 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 let f = m.split[base + i];
                 st.shares[i] *= f;
                 st.last[i] /= f;
+                if T {
+                    trk.cost[i] /= f;
+                    trk.peak[i] /= f;
+                }
                 if f != 1.0 {
                     out.counts[7] += 1;
                 }
@@ -630,14 +763,63 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 out.counts[5] += 1;
                 st.shares[i] = 0.0;
                 removed = true;
+                if T {
+                    trk.cost[i] = 0.0;
+                    trk.entry[i] = -1;
+                    trk.peak[i] = 0.0;
+                    if !rb.due.is_empty() {
+                        rb.due[i] = 0;
+                    }
+                }
             }
         }
         if removed {
             st.held.retain(|&i| st.shares[i] != 0.0);
         }
-        let rebalance = cursor < targets.days.len() && targets.days[cursor] as usize == day;
+    }
+    /// Trading and closing phase of `day`; `row` is the day's new target row.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub fn trade<const CLASSIC: bool, const FUT: bool, const T: bool>(
+        &mut self,
+        day: usize,
+        row: Option<Row<'_>>,
+        shares: bool,
+        m: &Market<'_>,
+        s: &Settings<'_>,
+        st: &mut State<'_>,
+        book: &mut futures::Book<'_>,
+        trk: &mut Track<'_>,
+    ) {
+        let Core {
+            out,
+            pending,
+            commands,
+            orders,
+            future_orders,
+            weights,
+            forced_quantities,
+            previous,
+            unit,
+            call,
+            bankrupt,
+            fm_before,
+            flow,
+            rb,
+        } = self;
+        let base = day * m.n;
+        let rebalance = row.is_some();
+        // Rules are compiled in only with tracking; `rules_on` is then a
+        // runtime switch shared by the whole row.
+        let rules = if T { s.rules.as_ref() } else { None };
+        if let Some(r) = rules {
+            rb.entry_fresh = r.timing != 0;
+            if let Some(row) = row {
+                rb.begin_row(day, row.cols, row.weights, row.limits, r);
+            }
+        }
         // A cash account without futures never records calls or insolvency.
-        let forced = (!CLASSIC || FUT) && ((call && s.flags[5]) || bankrupt);
+        let forced = (!CLASSIC || FUT) && ((*call && s.flags[5]) || *bankrupt);
         let mut unfilled_liquidation = false;
         commands.clear();
         if rebalance {
@@ -646,27 +828,33 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 weights[i] = 0.0;
                 commands.push((i, 0.0));
             }
-            for j in targets.indptr[cursor] as usize..targets.indptr[cursor + 1] as usize {
-                let i = targets.cols[j] as usize;
-                weights[i] = targets.weights[j];
+            let row = row.unwrap();
+            for j in 0..row.cols.len() {
+                let i = row.cols[j] as usize;
+                weights[i] = row.weights[j];
                 commands.push((i, weights[i]));
             }
             commands.sort_unstable_by_key(|x| x.0);
             commands.dedup_by_key(|x| x.0);
-            for c in &mut commands {
+            for c in commands.iter_mut() {
                 c.1 = weights[c.0];
             }
-            cursor += 1;
         } else if s.flags[0] {
-            std::mem::swap(&mut commands, &mut pending);
+            std::mem::swap(commands, pending);
             pending.clear();
         }
-        let mut account = if !commands.is_empty() || forced {
+        if let Some(r) = rules
+            && r.timing != 0
+            && !forced
+        {
+            rules::intraday::<CLASSIC>(day, shares, *bankrupt, m, s, r, st, trk, rb, out);
+        }
+        let mut account = if !commands.is_empty() || forced || rules.is_some() {
             st.account(day, m)
         } else {
             Account::default()
         };
-        let mut fm = fm_before;
+        let mut fm = *fm_before;
         let value = account.equity();
         if forced {
             pending.clear();
@@ -687,7 +875,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 let (mut a, mut margin) = (account, fm);
                 for &i in book.held.iter().chain(&st.held) {
                     let current = st.shares[i];
-                    let (minimum, step) = lot_terms::<FUT>(m, s, targets, i);
+                    let (minimum, step) = lot_terms::<FUT>(m, s, shares, i);
                     let magnitude =
                         round_close(current.abs() * (1.0 - keep), current.abs(), minimum, step);
                     let q = -current.signum() * magnitude;
@@ -695,15 +883,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                         let x = quote_any::<FUT>(q, i, day, m, s);
                         if x.price > 0.0 && x.price.is_finite() {
                             (a, margin) = project_any::<FUT>(
-                                a,
-                                margin,
-                                i,
-                                q,
-                                &st.shares,
-                                &book.basis,
-                                day,
-                                m,
-                                s,
+                                a, margin, i, q, st.shares, book.basis, day, m, s,
                             );
                         }
                     }
@@ -712,7 +892,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             };
             let all = after_liquidation(0.0);
             let none = after_liquidation(1.0);
-            let keep = if bankrupt || value <= 0.0 || !feasible(all.0, all.1, s, day) {
+            let keep = if *bankrupt || value <= 0.0 || !feasible(all.0, all.1, s, day) {
                 0.0
             } else if feasible(none.0, none.1, s, day) {
                 1.0
@@ -732,7 +912,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             for &i in book.held.iter().chain(&st.held) {
                 let current = st.shares[i];
                 let future = is_future::<FUT>(m, i);
-                let (minimum, step) = lot_terms::<FUT>(m, s, targets, i);
+                let (minimum, step) = lot_terms::<FUT>(m, s, shares, i);
                 let mut amount =
                     round_close(current.abs() * (1.0 - keep), current.abs(), minimum, step);
                 if rebalance && let Some(&(_, w)) = requested_commands.iter().find(|x| x.0 == i) {
@@ -744,7 +924,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                     } else {
                         st.last[i]
                     };
-                    let desired = if targets.shares {
+                    let desired = if shares {
                         w
                     } else if mark > 0.0 {
                         let raw = w * value.max(0.0) * (1.0 - s.scalars[8]);
@@ -780,9 +960,13 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             // Stable: the legacy spot order is unchanged.
             commands.sort_by_key(|&(i, _)| !is_future::<FUT>(m, i));
         }
-        for &(i, w) in &commands {
+        for &(i, w) in commands.iter() {
             let future = is_future::<FUT>(m, i);
             if m.first_delist[i] <= day as i64 {
+                continue;
+            }
+            // A rule exit, a due exit or a limit entry owns the column today.
+            if rules.is_some() && !forced && (rb.exited[i] || rb.due[i] != 0 || rb.limit_today[i]) {
                 continue;
             }
             if future && day as i64 > m.futures.as_ref().unwrap().expiry[i] {
@@ -811,11 +995,11 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             } else {
                 st.last[i]
             };
-            let (minimum, step) = lot_terms::<FUT>(m, s, targets, i);
+            let (minimum, step) = lot_terms::<FUT>(m, s, shares, i);
             let mut rounded_to_zero = false;
             let mut target = if forced {
                 w
-            } else if targets.shares {
+            } else if shares {
                 out.counts[9] += 1;
                 w
             } else if mark > 0.0 {
@@ -847,7 +1031,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 st.shares[i] * mark
             };
             if !forced
-                && !targets.shares
+                && !shares
                 && w != 0.0
                 && st.shares[i] != 0.0
                 && value > 0.0
@@ -913,7 +1097,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                                 s,
                             );
                             book.execute(
-                                &mut st.shares,
+                                st.shares,
                                 &mut st.cash,
                                 i,
                                 q,
@@ -922,7 +1106,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                                 forced,
                                 m,
                                 s,
-                                &mut out,
+                                out,
                             );
                             used = q.abs();
                         } else {
@@ -986,7 +1170,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                                     x.amount >= x.fees.commission + x.fees.tax + x.fees.other
                                 })
                         {
-                            fill(day, i, q, !rebalance, forced, m, s, &mut st, &mut out);
+                            fill::<T>(day, i, q, p, !rebalance, forced, m, s, st, trk, rb, out);
                             account = candidate;
                             used = q.abs();
                         } else if !x.price.is_finite() || x.price <= 0.0 {
@@ -1008,7 +1192,17 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             } else {
                 0.0
             };
-            if opening.abs() > quantity_tolerance(target, after) && !forced && !bankrupt {
+            let reentry = if let Some(r) = rules {
+                opening.abs() > quantity_tolerance(target, after)
+                    && !forced
+                    && !*bankrupt
+                    && rb.blocks(i, day, r)
+            } else {
+                false
+            };
+            if reentry {
+                rb.counts[5] += 1;
+            } else if opening.abs() > quantity_tolerance(target, after) && !forced && !*bankrupt {
                 let allowed = p.is_finite()
                     && if opening > 0.0 {
                         m.buy[base + i] != 0
@@ -1076,19 +1270,21 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 cash: st.cash,
                 ..Default::default()
             };
-            open_basket::<FUT>(
-                &mut future_orders,
+            open_basket::<FUT, T>(
+                future_orders,
                 &mut a,
                 &mut fm,
                 false,
                 rebalance,
                 day,
                 m,
-                targets,
+                shares,
                 s,
-                &mut st,
-                &mut book,
-                &mut out,
+                st,
+                book,
+                trk,
+                rb,
+                out,
             );
         }
         if !orders.is_empty() {
@@ -1105,8 +1301,8 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 } else {
                     1.0
                 };
-                for &(i, desired) in &orders {
-                    let step = if targets.shares { 0.0 } else { s.vectors[7][i] };
+                for &(i, desired) in orders.iter() {
+                    let step = if shares { 0.0 } else { s.vectors[7][i] };
                     let min = s.vectors[6][i];
                     let mut q = if scale < 1.0 {
                         lot(desired * scale, min, step)
@@ -1117,25 +1313,46 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                         q = affordable(free(st.cash), q, i, day, step, min, m, s);
                     }
                     if q > quantity_tolerance(st.shares[i] + desired, st.shares[i]) {
-                        fill(day, i, q, !rebalance, false, m, s, &mut st, &mut out);
+                        fill::<T>(
+                            day,
+                            i,
+                            q,
+                            m.price[base + i],
+                            !rebalance,
+                            false,
+                            m,
+                            s,
+                            st,
+                            trk,
+                            rb,
+                            out,
+                        );
                     }
                 }
             } else {
-                open_basket::<FUT>(
-                    &mut orders,
+                open_basket::<FUT, T>(
+                    orders,
                     &mut account,
                     &mut fm,
                     true,
                     rebalance,
                     day,
                     m,
-                    targets,
+                    shares,
                     s,
-                    &mut st,
-                    &mut book,
-                    &mut out,
+                    st,
+                    book,
+                    trk,
+                    rb,
+                    out,
                 );
             }
+        }
+        if let Some(r) = rules
+            && r.timing == 0
+            && !forced
+        {
+            rules::intraday::<CLASSIC>(day, shares, *bankrupt, m, s, r, st, trk, rb, out);
         }
         if !commands.is_empty() {
             st.held.sort_unstable();
@@ -1169,8 +1386,22 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                 }
             }
         }
+        if let Some(r) = rules {
+            // Today's range extends the peak only of positions that saw all of it.
+            for &i in &st.held {
+                if !rb.fresh[i] {
+                    let k = base + i;
+                    if st.shares[i] > 0.0 && r.high[k].is_finite() {
+                        trk.peak[i] = trk.peak[i].max(r.high[k]);
+                    } else if st.shares[i] < 0.0 && r.low[k].is_finite() {
+                        trk.peak[i] = trk.peak[i].min(r.low[k]);
+                    }
+                }
+            }
+            rb.end_row(r);
+        }
         let closing_fm = if FUT {
-            book.settle(&mut st.shares, &mut st.cash, day, m, &mut out)
+            book.settle(st.shares, &mut st.cash, day, m, out)
         } else {
             0.0
         };
@@ -1186,13 +1417,13 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             out.counts[26] += 1;
         }
         let equity = st.cash + long - short;
-        let denom = previous + flow;
+        let denom = *previous + *flow;
         let ret = if denom > 8.0 * f64::EPSILON * s.scalars[5].max(previous.abs()).max(flow.abs()) {
             equity / denom - 1.0
         } else {
             0.0
         };
-        unit *= 1.0 + ret;
+        *unit *= 1.0 + ret;
         let mut required = s.v(11, day) * long + s.v(12, day) * short;
         let mut maintenance = s.v(13, day) * long + s.v(14, day) * short;
         let mut tolerance = 1e-10 * equity.abs().max(long).max(short).max(1.0);
@@ -1203,8 +1434,8 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
         }
         // A cash account is monitored only after it has held a contract.
         let monitored = !CLASSIC || (FUT && book.seen);
-        call = monitored && (maintenance > equity + tolerance || unfilled_liquidation);
-        if call {
+        *call = monitored && (maintenance > equity + tolerance || unfilled_liquidation);
+        if *call {
             out.counts[23] += 1;
             if FUT && closing_fm > 0.0 {
                 out.counts[34] += 1;
@@ -1213,11 +1444,11 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
         let valued = monitored && st.held.iter().all(|&i| st.last[i] > 0.0);
         if monitored
             && equity <= 0.0
-            && !bankrupt
+            && !*bankrupt
             && valued
             && (!st.held.is_empty() || (FUT && !book.held.is_empty()) || st.cash < 0.0)
         {
-            bankrupt = true;
+            *bankrupt = true;
             out.bankruptcies.push(day);
             out.counts[25] += 1;
             if short > 0.0 || own < -tolerance {
@@ -1229,7 +1460,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
             (1, st.cash),
             (14, interest),
             (15, ret),
-            (16, unit),
+            (16, *unit),
             (17, long),
             (18, short),
             (20, financing),
@@ -1243,7 +1474,7 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
                     0.0
                 },
             ),
-            (22, if call { 1.0 } else { 0.0 }),
+            (22, if *call { 1.0 } else { 0.0 }),
             (23, equity),
         ] {
             out.daily[k * m.t + day] = v;
@@ -1256,18 +1487,101 @@ fn run_impl<const CLASSIC: bool, const FUT: bool>(
         } else {
             0.0
         };
-        previous = equity;
+        *previous = equity;
         if let Some(p) = out.positions.as_mut() {
-            p[base..base + m.n].copy_from_slice(&st.shares);
+            p[base..base + m.n].copy_from_slice(st.shares);
         }
     }
-    for &i in &st.held {
-        out.contribution[i] += st.shares[i] * st.last[i];
+    /// Final marks: contribution of the positions still held after the last row.
+    pub fn finish(&mut self, st: &State<'_>, s: &Settings<'_>) {
+        for &i in &st.held {
+            self.out.contribution[i] += st.shares[i] * st.last[i];
+        }
+        if s.rules.is_some() {
+            self.out.rule_counts = self.rb.counts.to_vec();
+        }
     }
-    out
+    /// A maintenance call at the last close (liquidation is due on this row).
+    pub fn margin_call(&self) -> bool {
+        self.call
+    }
+    pub fn bankrupt(&self) -> bool {
+        self.bankrupt
+    }
+    /// Equity at the last close (initial cash before the first row).
+    pub fn equity(&self) -> f64 {
+        self.previous
+    }
+    /// Carried price-, mask- or volume-blocked orders: (column, target).
+    pub fn pending(&self) -> &[(usize, f64)] {
+        &self.pending
+    }
+}
+/// One daily account loop for every account type. `CLASSIC` selects the exact
+/// long-only cash specialization; `FUT` compiles in futures columns. With
+/// `FUT = true`, a futures column that is never held or targeted executes no
+/// futures arithmetic, so spot results equal the `FUT = false` build bit for bit.
+/// `run` drives the same two phases as the stepping interface, with position
+/// tracking compiled out (`T = false`).
+fn run_impl<const CLASSIC: bool, const FUT: bool, const T: bool>(
+    m: &Market<'_>,
+    targets: &Targets<'_>,
+    s: &Settings<'_>,
+) -> Output {
+    let mut shares = vec![0.0; m.n];
+    let mut last = vec![0.0; m.n];
+    let mut basis = if FUT { vec![0.0; m.n] } else { Vec::new() };
+    let mut st = State {
+        cash: s.scalars[5],
+        shares: &mut shares,
+        last: &mut last,
+        held: Vec::new(),
+    };
+    let mut book = futures::Book {
+        basis: &mut basis,
+        held: Vec::new(),
+        seen: false,
+    };
+    let (mut cost, mut peak, mut entry) = if T {
+        (vec![0.0; m.n], vec![0.0; m.n], vec![-1; m.n])
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
+    let mut trk = Track {
+        cost: &mut cost,
+        entry: &mut entry,
+        peak: &mut peak,
+    };
+    let mut core = Core::new(m, s, T);
+    let mut cursor = 0;
+    for day in 0..m.t {
+        core.open::<CLASSIC, FUT, T>(day, m, s, &mut st, &mut book, &mut trk);
+        let row = if cursor < targets.days.len() && targets.days[cursor] as usize == day {
+            let (a, b) = (
+                targets.indptr[cursor] as usize,
+                targets.indptr[cursor + 1] as usize,
+            );
+            cursor += 1;
+            Some(Row {
+                cols: &targets.cols[a..b],
+                weights: &targets.weights[a..b],
+                limits: if targets.limits.is_empty() {
+                    &[]
+                } else {
+                    &targets.limits[a..b]
+                },
+            })
+        } else {
+            None
+        };
+        core.trade::<CLASSIC, FUT, T>(day, row, targets.shares, m, s, &mut st, &mut book, &mut trk);
+    }
+    core.finish(&st, s);
+    core.out
 }
 
-mod futures;
+pub mod futures;
+pub mod rules;
 pub mod validate;
 pub fn run_batch(
     m: &Market<'_>,
@@ -1287,4 +1601,420 @@ pub fn run_batch(
         .num_threads(workers)
         .build()
         .map(|p| p.install(|| targets.par_iter().map(|t| run(m, t, s)).collect()))
+}
+
+pub mod codec;
+use codec::Codec;
+
+/// Caller-owned per-security vectors of a stepped simulation. `basis` holds
+/// futures settlement bases; `cost`, `entry` and `peak` are the position
+/// bookkeeping of `Track`.
+pub struct Vectors<'s> {
+    pub shares: &'s mut [f64],
+    pub last: &'s mut [f64],
+    pub basis: &'s mut [f64],
+    pub cost: &'s mut [f64],
+    pub peak: &'s mut [f64],
+    pub entry: &'s mut [i64],
+}
+
+/// Everything a stepped simulation owns apart from its `Vectors`.
+///
+/// `begin` runs the pre-open phase of row 0. Each `step` runs the trading and
+/// closing phase of the current row and then the pre-open phase of the next
+/// one, so between steps the visible state is exactly what is known before the
+/// next row's trading: the previous close plus that row's cash flow, corporate
+/// actions and delisting. The phases and their order are those of `run`.
+#[derive(Clone)]
+pub struct Stepper {
+    pub core: Core,
+    pub cash: f64,
+    pub held: Vec<usize>,
+    pub book_held: Vec<usize>,
+    pub seen: bool,
+    pub day: usize,
+}
+
+const SNAPSHOT_MAGIC: &[u8; 8] = b"PBTSTEP1";
+
+impl Stepper {
+    /// A placeholder with no rows; replaced by `new` before use.
+    pub fn new_empty() -> Stepper {
+        Stepper {
+            core: Core {
+                out: Output {
+                    daily: Vec::new(),
+                    positions: None,
+                    trades: None,
+                    events: Vec::new(),
+                    counts: [0; COUNTS],
+                    contribution: Vec::new(),
+                    liquidations: Vec::new(),
+                    bankruptcies: Vec::new(),
+                    expiries: Vec::new(),
+                    reasons: Vec::new(),
+                    rule_counts: Vec::new(),
+                },
+                pending: Vec::new(),
+                commands: Vec::new(),
+                orders: Vec::new(),
+                future_orders: Vec::new(),
+                weights: Vec::new(),
+                forced_quantities: Vec::new(),
+                previous: 0.0,
+                unit: 1.0,
+                call: false,
+                bankrupt: false,
+                fm_before: 0.0,
+                flow: 0.0,
+                rb: rules::RuleBook::default(),
+            },
+            cash: 0.0,
+            held: Vec::new(),
+            book_held: Vec::new(),
+            seen: false,
+            day: 0,
+        }
+    }
+    pub fn new(m: &Market<'_>, s: &Settings<'_>) -> Stepper {
+        Stepper {
+            core: Core::new(m, s, true),
+            cash: s.scalars[5],
+            held: Vec::new(),
+            book_held: Vec::new(),
+            seen: false,
+            day: 0,
+        }
+    }
+    fn with<R>(
+        &mut self,
+        v: Vectors<'_>,
+        f: impl FnOnce(&mut Core, &mut State<'_>, &mut futures::Book<'_>, &mut Track<'_>) -> R,
+    ) -> R {
+        let mut st = State {
+            cash: self.cash,
+            shares: v.shares,
+            last: v.last,
+            held: std::mem::take(&mut self.held),
+        };
+        let mut book = futures::Book {
+            basis: v.basis,
+            held: std::mem::take(&mut self.book_held),
+            seen: self.seen,
+        };
+        let mut trk = Track {
+            cost: v.cost,
+            entry: v.entry,
+            peak: v.peak,
+        };
+        let r = f(&mut self.core, &mut st, &mut book, &mut trk);
+        self.cash = st.cash;
+        self.held = st.held;
+        self.book_held = book.held;
+        self.seen = book.seen;
+        r
+    }
+    /// Pre-open phase of row 0.
+    pub fn begin(&mut self, v: Vectors<'_>, m: &Market<'_>, s: &Settings<'_>) {
+        match (s.flags[6], m.futures.is_some()) {
+            (true, false) => self.with(v, |c, st, b, k| {
+                c.open::<true, false, true>(0, m, s, st, b, k)
+            }),
+            (false, false) => self.with(v, |c, st, b, k| {
+                c.open::<false, false, true>(0, m, s, st, b, k)
+            }),
+            (true, true) => self.with(v, |c, st, b, k| {
+                c.open::<true, true, true>(0, m, s, st, b, k)
+            }),
+            (false, true) => self.with(v, |c, st, b, k| {
+                c.open::<false, true, true>(0, m, s, st, b, k)
+            }),
+        }
+    }
+    /// Trade and close the current row, then open the next one.
+    pub fn step(
+        &mut self,
+        v: Vectors<'_>,
+        row: Option<Row<'_>>,
+        shares: bool,
+        m: &Market<'_>,
+        s: &Settings<'_>,
+    ) {
+        let day = self.day;
+        assert!(day < m.t, "simulation already finished");
+        match (s.flags[6], m.futures.is_some()) {
+            (true, false) => self.with(v, |c, st, b, k| {
+                step_day::<true, false>(c, day, row, shares, m, s, st, b, k)
+            }),
+            (false, false) => self.with(v, |c, st, b, k| {
+                step_day::<false, false>(c, day, row, shares, m, s, st, b, k)
+            }),
+            (true, true) => self.with(v, |c, st, b, k| {
+                step_day::<true, true>(c, day, row, shares, m, s, st, b, k)
+            }),
+            (false, true) => self.with(v, |c, st, b, k| {
+                step_day::<false, true>(c, day, row, shares, m, s, st, b, k)
+            }),
+        }
+        self.day += 1;
+    }
+    /// The finished output, with final marks added; the stepper is unchanged.
+    pub fn result(&self, shares: &[f64], last: &[f64], rules: bool) -> Output {
+        let mut out = self.core.out.clone();
+        for &i in &self.held {
+            out.contribution[i] += shares[i] * last[i];
+        }
+        if rules {
+            out.rule_counts = self.core.rb.counts.to_vec();
+        }
+        out
+    }
+    /// Serialize; `header` fingerprints the inputs the snapshot belongs to.
+    pub fn encode(&self, header: &[u64], v: &Vectors<'_>) -> Vec<u8> {
+        let mut w = SNAPSHOT_MAGIC.to_vec();
+        header.to_vec().put(&mut w);
+        let c = &self.core;
+        let o = &c.out;
+        (
+            o.daily.clone(),
+            o.positions.clone(),
+            o.trades.clone(),
+            o.events.clone(),
+        )
+            .put(&mut w);
+        o.counts.put(&mut w);
+        (
+            o.contribution.clone(),
+            o.liquidations.clone(),
+            o.bankruptcies.clone(),
+            o.expiries.clone(),
+            c.pending.clone(),
+        )
+            .put(&mut w);
+        (
+            c.weights.clone(),
+            c.forced_quantities.clone(),
+            c.previous,
+            c.unit,
+            c.call,
+        )
+            .put(&mut w);
+        (
+            c.bankrupt,
+            c.fm_before,
+            c.flow,
+            self.cash,
+            self.held.clone(),
+        )
+            .put(&mut w);
+        (self.book_held.clone(), self.seen, self.day).put(&mut w);
+        (
+            v.shares.to_vec(),
+            v.last.to_vec(),
+            v.basis.to_vec(),
+            v.cost.to_vec(),
+            v.peak.to_vec(),
+        )
+            .put(&mut w);
+        v.entry.to_vec().put(&mut w);
+        (o.reasons.clone(), o.rule_counts.clone()).put(&mut w);
+        let b = &c.rb;
+        (
+            b.bought.clone(),
+            b.used.clone(),
+            b.fresh.clone(),
+            b.exited.clone(),
+            b.marked.clone(),
+        )
+            .put(&mut w);
+        (
+            b.touched.clone(),
+            b.due.clone(),
+            b.block.clone(),
+            b.blocked.clone(),
+            b.limits.clone(),
+        )
+            .put(&mut w);
+        (
+            b.limit_today.clone(),
+            b.limit_cols.clone(),
+            b.entry_fresh,
+            b.counts,
+        )
+            .put(&mut w);
+        w
+    }
+    /// Restore a snapshot into `self` and `v`; the header must match exactly.
+    pub fn decode(&mut self, blob: &[u8], header: &[u64], v: Vectors<'_>) -> Result<(), String> {
+        let mut r = blob
+            .strip_prefix(SNAPSHOT_MAGIC.as_slice())
+            .ok_or("snapshot: not a panelbt simulator snapshot")?;
+        if Vec::<u64>::take(&mut r)? != header {
+            return Err("snapshot: market shape, account type or settings differ".into());
+        }
+        #[allow(clippy::type_complexity)]
+        let (daily, positions, trades, events): (
+            Vec<f64>,
+            Option<Vec<f64>>,
+            Option<Vec<Trade>>,
+            Vec<DelistEvent>,
+        ) = Codec::take(&mut r)?;
+        let counts = Codec::take(&mut r)?;
+        #[allow(clippy::type_complexity)]
+        let (contribution, liquidations, bankruptcies, expiries, pending): (
+            Vec<f64>,
+            Vec<(usize, usize, f64)>,
+            Vec<usize>,
+            Vec<(usize, usize, f64, f64, f64)>,
+            Vec<(usize, f64)>,
+        ) = Codec::take(&mut r)?;
+        let (weights, forced_quantities, previous, unit, call): (
+            Vec<f64>,
+            Vec<f64>,
+            f64,
+            f64,
+            bool,
+        ) = Codec::take(&mut r)?;
+        let (bankrupt, fm_before, flow, cash, held): (bool, f64, f64, f64, Vec<usize>) =
+            Codec::take(&mut r)?;
+        let (book_held, seen, day): (Vec<usize>, bool, usize) = Codec::take(&mut r)?;
+        #[allow(clippy::type_complexity)]
+        let (shares, last, basis, cost, peak): (
+            Vec<f64>,
+            Vec<f64>,
+            Vec<f64>,
+            Vec<f64>,
+            Vec<f64>,
+        ) = Codec::take(&mut r)?;
+        let entry: Vec<i64> = Codec::take(&mut r)?;
+        let (reasons, rule_counts): (Vec<(usize, u8)>, Vec<u64>) = Codec::take(&mut r)?;
+        #[allow(clippy::type_complexity)]
+        let (bought, used, fresh, exited, marked): (
+            Vec<f64>,
+            Vec<f64>,
+            Vec<bool>,
+            Vec<bool>,
+            Vec<bool>,
+        ) = Codec::take(&mut r)?;
+        #[allow(clippy::type_complexity)]
+        let (touched, due, block, blocked, limits): (
+            Vec<usize>,
+            Vec<u8>,
+            Vec<i64>,
+            Vec<usize>,
+            Vec<(usize, f64, f64)>,
+        ) = Codec::take(&mut r)?;
+        let (limit_today, limit_cols, entry_fresh, book_counts): (
+            Vec<bool>,
+            Vec<usize>,
+            bool,
+            [u64; rules::RULE_COUNTS],
+        ) = Codec::take(&mut r)?;
+        let book = &self.core.rb;
+        let sized = bought.len() == book.bought.len()
+            && used.len() == book.used.len()
+            && fresh.len() == book.fresh.len()
+            && exited.len() == book.exited.len()
+            && marked.len() == book.marked.len()
+            && due.len() == book.due.len()
+            && block.len() == book.block.len()
+            && limit_today.len() == book.limit_today.len();
+        let n0 = v.shares.len();
+        let inside = |c: &[usize]| c.iter().all(|&i| i < n0);
+        if !sized
+            || !inside(&touched)
+            || !inside(&blocked)
+            || !inside(&limit_cols)
+            || limits.iter().any(|x| x.0 >= n0)
+        {
+            return Err("snapshot: inconsistent sizes".into());
+        }
+        if !r.is_empty() {
+            return Err("snapshot: trailing bytes".into());
+        }
+        let o = &self.core.out;
+        let n = v.shares.len();
+        let ok = |a: &Vec<f64>, b: &[f64]| a.len() == b.len();
+        let held_ok = |h: &[usize]| h.iter().all(|&i| i < n);
+        if !ok(&daily, &o.daily)
+            || positions.as_ref().map(Vec::len) != o.positions.as_ref().map(Vec::len)
+            || trades.is_some() != o.trades.is_some()
+            || !ok(&contribution, &o.contribution)
+            || !ok(&weights, &self.core.weights)
+            || !ok(&forced_quantities, &self.core.forced_quantities)
+            || !ok(&shares, v.shares)
+            || !ok(&last, v.last)
+            || !ok(&basis, v.basis)
+            || !ok(&cost, v.cost)
+            || !ok(&peak, v.peak)
+            || entry.len() != v.entry.len()
+            || !held_ok(&held)
+            || !held_ok(&book_held)
+            || pending.iter().any(|&(i, _)| i >= n)
+            || day > o.daily.len() / DAILY
+        {
+            return Err("snapshot: inconsistent sizes".into());
+        }
+        self.core.out = Output {
+            daily,
+            positions,
+            trades,
+            events,
+            counts,
+            contribution,
+            liquidations,
+            bankruptcies,
+            expiries,
+            reasons,
+            rule_counts,
+        };
+        let c = &mut self.core;
+        c.rb = rules::RuleBook {
+            bought,
+            used,
+            fresh,
+            exited,
+            marked,
+            touched,
+            due,
+            block,
+            blocked,
+            limits,
+            limit_today,
+            limit_cols,
+            entry_fresh,
+            counts: book_counts,
+            ..Default::default()
+        };
+        (c.pending, c.weights, c.forced_quantities) = (pending, weights, forced_quantities);
+        (c.previous, c.unit, c.call, c.bankrupt) = (previous, unit, call, bankrupt);
+        (c.fm_before, c.flow) = (fm_before, flow);
+        (self.cash, self.held, self.book_held, self.seen, self.day) =
+            (cash, held, book_held, seen, day);
+        v.shares.copy_from_slice(&shares);
+        v.last.copy_from_slice(&last);
+        v.basis.copy_from_slice(&basis);
+        v.cost.copy_from_slice(&cost);
+        v.peak.copy_from_slice(&peak);
+        v.entry.copy_from_slice(&entry);
+        Ok(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn step_day<const CLASSIC: bool, const FUT: bool>(
+    c: &mut Core,
+    day: usize,
+    row: Option<Row<'_>>,
+    shares: bool,
+    m: &Market<'_>,
+    s: &Settings<'_>,
+    st: &mut State<'_>,
+    book: &mut futures::Book<'_>,
+    trk: &mut Track<'_>,
+) {
+    c.trade::<CLASSIC, FUT, true>(day, row, shares, m, s, st, book, trk);
+    if day + 1 < m.t {
+        c.open::<CLASSIC, FUT, true>(day + 1, m, s, st, book, trk);
+    }
 }
