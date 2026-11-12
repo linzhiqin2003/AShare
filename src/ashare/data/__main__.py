@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import date, timedelta
 
-from .catalog import DATASETS
+from .catalog import DATASETS, FUTURES_DATASETS
 from .maintenance import collect_garbage, disk_usage
 from .panel import build
 from .sources import Tushare
@@ -38,6 +38,19 @@ def main():
         default=3000,
         help="本次运行的请求预算，含重试与翻页",
     )
+    futures = commands.add_parser("sync-futures", help="境内期货原始库（全部交易所）")
+    futures.add_argument("--start", default="1995-04-17")
+    futures.add_argument(
+        "--end", default=(date.today() - timedelta(days=1)).isoformat()
+    )
+    futures.add_argument("--datasets", nargs="+", choices=FUTURES_DATASETS)
+    futures.add_argument("--force", action="store_true")
+    futures.add_argument("--no-refresh", action="store_true")
+    futures.add_argument("--workers", type=int, default=12)
+    futures.add_argument("--rate", type=float, default=400)
+    futures.add_argument("--budget", type=int, default=60000)
+    commands.add_parser("build-futures", help="由期货原始库构建交易日×合约面板")
+    commands.add_parser("verify-futures", help="期货原始库与面板的独立校验")
     panel = commands.add_parser("build-panel")
     panel.add_argument("--start")
     panel.add_argument("--end")
@@ -95,6 +108,48 @@ def main():
                 )
 
         result = asyncio.run(run())
+    elif args.command == "sync-futures":
+        from .futures_sync import sync_futures
+
+        async def run_futures():
+            async with Tushare(
+                rate=args.rate,
+                concurrency=args.workers,
+                state_path=store.root / "account.json",
+                budget=args.budget,
+            ) as source:
+                outcome = await sync_futures(
+                    source,
+                    store,
+                    args.start,
+                    args.end,
+                    args.datasets,
+                    force=args.force,
+                    refresh=not args.no_refresh,
+                    workers=args.workers,
+                )
+                return dict(stats=outcome["stats"], calls=source.calls)
+
+        result = asyncio.run(run_futures())
+    elif args.command == "build-futures":
+        from .futures_panel import build_futures
+
+        meta = build_futures(store)
+        result = {k: meta[k] for k in ("version", "shape", "elapsed_seconds")}
+    elif args.command == "verify-futures":
+        from .futures_verify import verify_futures
+
+        report = verify_futures(store)
+        result = {
+            k: {p: v[p] for p in ("verdict", "checked", "failed", "explained")}
+            for k, v in report["checks"].items()
+        }
+        result["verdict"] = report["verdict"]
+        result["cause_unknown"] = report["known_exceptions"]["cause_unknown"]
+        result["report"] = str(store.root / "reports/futures_verify.md")
+        if report["verdict"] == "fail":
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            raise SystemExit(1)
     elif args.command == "build-panel":
         meta = build(
             store,
@@ -140,6 +195,18 @@ def main():
             for name in DATASETS
             if (entries := store.entries(name))
         }
+        # 期货单独一节，股票部分与没有期货时逐位相同。
+        futures_status = {
+            name: dict(
+                partitions=len(entries),
+                rows=sum(e.get("rows", 0) for e in entries.values()),
+                failed=sum(e["status"] != "complete" for e in entries.values()),
+            )
+            for name in FUTURES_DATASETS
+            if (entries := store.entries(name))
+        }
+        if futures_status:
+            result["futures"] = futures_status
     if args.command in ("status", "gc"):
         result["disk_usage"] = disk_usage(store.root)
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -42,6 +42,7 @@ def ts(
     periods=1,
     limit=None,
     rows=None,
+    ties="latest",
 ):
     """Evaluate cells directly; optional rows limits audit work, not input history."""
     a, b = clean(x, mask), None if y is None else clean(y, mask)
@@ -102,7 +103,8 @@ def ts(
                 z = getattr(np, op)(v)
             elif op in ("argmin", "argmax", "idxmin", "idxmax"):
                 extreme = np.min(v) if op in ("argmin", "idxmin") else np.max(v)
-                z = t - idx[np.flatnonzero(v == extreme)[-1]]
+                tied = np.flatnonzero(v == extreme)
+                z = t - idx[tied[0] if ties == "earliest" else tied[-1]]
                 if op.startswith("idx"):
                     z = window - z
             elif op in ("quantile", "median", "mad"):

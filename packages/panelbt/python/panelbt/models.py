@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import Any
 
 import numpy as np
@@ -174,6 +175,10 @@ class Market:
     delist: ArrayLike | None = None
     can_short: ArrayLike | None = None
     futures: Futures | None = None
+    # Daily bars for declarative rules and limit targets (see `Rules`).
+    open: ArrayLike | None = None
+    high: ArrayLike | None = None
+    low: ArrayLike | None = None
     validate: bool = field(default=True, kw_only=True)
     first_delist: IntArray = field(init=False, repr=False)
     action_indptr: IntArray = field(init=False, repr=False)
@@ -195,6 +200,9 @@ class Market:
             "cash_div",
             "delist",
             "can_short",
+            "open",
+            "high",
+            "low",
         ):
             value = getattr(self, name)
             if value is None:
@@ -223,6 +231,17 @@ class Market:
             )
         if not isinstance(self.validate, bool):
             raise ValueError("validate: expected bool")
+        bars = [getattr(self, k) for k in ("open", "high", "low")]
+        if self.validate and any(b is not None for b in bars):
+            for name, b in zip(("open", "high", "low"), bars, strict=True):
+                if b is not None:
+                    nonnegative(b, name, nan=True, positive=True)
+            if all(b is not None for b in bars):
+                o, h, lo = bars
+                with np.errstate(invalid="ignore"):
+                    bad = (lo > h) | (lo > o) | (o > h)
+                if np.any(bad):
+                    raise ValueError("open/high/low: expected low <= open <= high")
         empty, none = np.empty((0, 0)), np.empty((0, 0), np.uint8)
 
         def floats(name):
@@ -280,6 +299,8 @@ class Targets:
     cols: ArrayLike
     weights: ArrayLike
     kind: str = "weights"
+    # Limit price per entry; NaN is an ordinary target (needs `Config.rules`).
+    limits: ArrayLike | None = None
     validate: bool = field(default=True, kw_only=True)
     has_negative: bool = field(init=False, repr=False)
     max_row_sum: float = field(init=False, repr=False)
@@ -298,6 +319,13 @@ class Targets:
             raise ValueError("kind: expected weights or shares")
         if not isinstance(self.validate, bool):
             raise ValueError("validate: expected bool")
+        if self.limits is not None:
+            limits = array(self.limits, "limits", np.float64, 1)
+            if limits.shape != self.weights.shape:
+                raise ValueError("limits: expected one limit per target entry")
+            if np.any(np.isinf(limits) | (limits <= 0)):
+                raise ValueError("limits: expected positive limit prices or NaN")
+            object.__setattr__(self, "limits", limits)
         d, p, c, w = self.days, self.indptr, self.cols, self.weights
         # Pointer and index structure is always checked; day order, finite
         # weights and duplicate columns only with `validate`.
@@ -309,6 +337,10 @@ class Targets:
             object.__setattr__(
                 self, "weights", array(w[order], "weights", np.float64, 1)
             )
+            if self.limits is not None:
+                object.__setattr__(
+                    self, "limits", array(self.limits[order], "limits", np.float64, 1)
+                )
             ordered, negative, row_max = _core.check_plan(
                 d, p, self.cols, self.weights, False
             )
@@ -333,14 +365,41 @@ class Targets:
 
     @classmethod
     def from_dense(
-        cls, weights: ArrayLike, *, kind: str = "weights", validate: bool = True
+        cls,
+        weights: ArrayLike,
+        *,
+        kind: str = "weights",
+        limits: ArrayLike | None = None,
+        validate: bool = True,
     ) -> Targets:
+        """Dense rows: all-NaN = no target; NaN elsewhere = 0.
+
+        `limits` (T×N, NaN = ordinary) attaches a limit price to a cell; a
+        cell with a limit is kept even when its weight is 0 (a limit exit).
+        """
         w = array(weights, "weights", np.float64, 2)
         days = np.flatnonzero(~np.all(np.isnan(w), axis=1))
-        rows, cols = np.nonzero((w != 0) & ~np.isnan(w))
+        keep = (w != 0) & ~np.isnan(w)
+        lim = None
+        if limits is not None:
+            lim = array(limits, "limits", np.float64, 2)
+            if lim.shape != w.shape:
+                raise ValueError("limits: expected the shape of weights")
+            row_on = ~np.all(np.isnan(w), axis=1)[:, None]
+            keep = keep | (~np.isnan(lim) & row_on)
+        rows, cols = np.nonzero(keep)
         counts = np.bincount(rows, minlength=w.shape[0])[days]
         indptr = np.concatenate(([0], np.cumsum(counts)))
-        return cls(days, indptr, cols, w[rows, cols], kind, validate=validate)
+        values = np.nan_to_num(w[rows, cols], nan=0.0)
+        return cls(
+            days,
+            indptr,
+            cols,
+            values,
+            kind,
+            None if lim is None else lim[rows, cols],
+            validate=validate,
+        )
 
     def to_dense(self, t: int, n: int) -> FloatArray:
         if not isinstance(t, int) or not isinstance(n, int) or t < 0 or n < 0:
@@ -388,6 +447,36 @@ class MarginModel:
     margin_call: str = "liquidate"
 
 
+@dataclass(frozen=True, kw_only=True)
+class Rules:
+    """Declarative exits and limit orders executed inside the kernel.
+
+    `fill_time` says where `exec_price` sits in the day ("open", "close" or
+    "average") and decides whether rules act after or before the day's
+    rebalance. Percentages are positive fractions: a scalar, a length-N
+    vector or a T×N panel; NaN disables a cell. Requires `Market` open, high
+    and low panels; not available with futures columns. See SPEC.md.
+
+    `limit_fill="cross"` (default) fills a limit buy only when the day's low
+    is strictly below the limit (a sell: the high strictly above); "touch"
+    also fills when the low (high) only equals it, which is optimistic.
+    `sell_lock=True` (A-share T+1) is the default for every market; set it to
+    False elsewhere.
+    """
+
+    fill_time: str
+    stop_loss: ArrayLike | None = None
+    take_profit: ArrayLike | None = None
+    trailing_stop: ArrayLike | None = None
+    max_hold: int | None = None
+    both_hit: str = "stop"
+    cooldown: int | None = None
+    dividend_adjusts_cost: bool = False
+    sell_lock: bool = True
+    limit_valid: str = "day"
+    limit_fill: str = "cross"
+
+
 @dataclass(frozen=True)
 class Config:
     initial_cash: float = 1e7
@@ -403,6 +492,18 @@ class Config:
     cash_flow: ArrayLike = 0.0
     cash_rate: ArrayLike = 0.0
     margin: MarginModel = field(default_factory=MarginModel)
+    rules: Rules | None = None
+
+
+class TradeReason(IntEnum):
+    """Why a fill happened: target rows (including carried and forced fills) or a rule."""
+
+    REBALANCE = 0
+    STOP_LOSS = 1
+    TAKE_PROFIT = 2
+    TRAILING_STOP = 3
+    MAX_HOLD = 4
+    LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -416,6 +517,7 @@ class Trade:
     other_fee: float
     slippage_cost: float
     impact_cost: float = 0.0
+    reason: TradeReason = TradeReason.REBALANCE
 
 
 @dataclass(frozen=True)
@@ -519,6 +621,18 @@ EXTRA_COUNTERS = (
     "futures_expiry",
     "expired_target",
     "futures_rounded_to_zero",
+)
+# Present in `Result.diagnostics` only when `Config.rules` is set.
+RULE_COUNTERS = (
+    "stop_loss",
+    "take_profit",
+    "trailing_stop",
+    "max_hold",
+    "rule_deferred",
+    "reentry_blocked",
+    "limit_filled",
+    "limit_unfilled",
+    "limit_blocked",
 )
 
 

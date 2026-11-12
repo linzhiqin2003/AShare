@@ -103,10 +103,14 @@ data-verify = [
 dev = [
     { name = "hypothesis" },
     { name = "maturin" },
+    { name = "pandas" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "scikit-learn" },
     { name = "threadpoolctl" },
+]
+factor-reference = [
+    { name = "pandas" },
 ]
 ml = [
     { name = "lightgbm" },
@@ -154,11 +158,13 @@ data-verify = [{ name = "baostock", specifier = ">=0.8.9" }]
 dev = [
     { name = "hypothesis", specifier = ">=6.170.15" },
     { name = "maturin", specifier = ">=1.16.0" },
+    { name = "pandas", specifier = ">=3.1.1" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "ruff", specifier = ">=0.17.4" },
     { name = "scikit-learn", specifier = ">=1.6" },
     { name = "threadpoolctl", specifier = ">=3.5" },
 ]
+factor-reference = [{ name = "pandas", specifier = ">=3.1.1" }]
 ml = [
     { name = "lightgbm", specifier = ">=4.6" },
     { name = "scikit-learn", specifier = ">=1.6" },

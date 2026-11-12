@@ -99,20 +99,25 @@ def context_from_data(
             raise ReportError(
                 "请声明基准类型 benchmark_kind='price'（价格指数）或 'total_return'（全收益）"
             )
-        idx = (
-            data.table("index_daily", start=days[0], end=days[-1])
-            .filter(pl.col("symbol") == benchmark)
-            .select("date", "close")
-            .collect()
-        )
-        if idx.height == 0:
-            raise ReportError(f"数据层没有指数 {benchmark} 在区间内的行情")
-        m = dict(zip(idx["date"].to_list(), idx["close"].to_list(), strict=True))
-        values = np.array([m.get(d, np.nan) for d in days], dtype=float)
-        out["benchmark"] = Benchmark(
-            values,
-            benchmark_name or INDEX_NAMES.get(benchmark, benchmark),
-            benchmark_kind,
-            benchmark,
+        out["benchmark"] = index_benchmark(
+            data, days, benchmark, benchmark_kind, benchmark_name
         )
     return out
+
+
+def index_benchmark(
+    data, dates: Sequence, code: str, kind: str, name: str | None = None
+) -> Benchmark:
+    """从数据层 `index_daily` 取一条指数，按回测日期对齐成 `Benchmark`。"""
+    days = [_compact(d) for d in dates]
+    idx = (
+        data.table("index_daily", start=days[0], end=days[-1])
+        .filter(pl.col("symbol") == code)
+        .select("date", "close")
+        .collect()
+    )
+    if idx.height == 0:
+        raise ReportError(f"数据层没有指数 {code} 在区间内的行情")
+    m = dict(zip(idx["date"].to_list(), idx["close"].to_list(), strict=True))
+    values = np.array([m.get(d, np.nan) for d in days], dtype=float)
+    return Benchmark(values, name or INDEX_NAMES.get(code, code), kind, code)

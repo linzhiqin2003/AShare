@@ -132,6 +132,8 @@ def _normalized(op, args, params):
             panelops.api.scalar(
                 normalized[key], key, 1e-300 if key == "alpha" else 0, 1
             )
+    if "ties" in normalized and normalized["ties"] not in ("latest", "earliest"):
+        raise ValueError("ties 只能是 latest 或 earliest")
     if "normalize" in normalized and type(normalized["normalize"]) is not bool:
         raise TypeError("normalize 必须为 bool")
     if "scale" in normalized:
