@@ -286,6 +286,29 @@ def test_locked_days_and_limits_block_one_direction():
     assert not capped.market.can_buy[1, 0] and capped.market.can_buy[2, 0]
 
 
+def test_one_price_day_at_the_previous_settlement_blocks_nothing():
+    # 一字但开盘价等于前结算价（平盘，不是停板）：两个方向都不拒绝。
+    s = np.array([[100.0], [100.0], [99.0]])
+    one = np.array([[100.0], [100.0], [99.0]])
+    book = bt.FuturesBook(
+        settlement=s,
+        close=s,
+        open=one,
+        high=one,
+        low=one,
+        volume=np.array([[5.0], [5.0], [5.0]]),
+        multiplier=[10.0],
+        expiry=[3],
+        margin_rate=0.1,
+        infer_locked=True,
+    )
+    assert not book.locked_up[1, 0] and not book.locked_down[1, 0]
+    assert book.market.can_buy[1, 0] and book.market.can_sell[1, 0]
+    # 下一行一字且低于前结算：只拒绝卖出。
+    assert book.locked_down[2, 0] and book.market.can_buy[2, 0]
+    assert not book.market.can_sell[2, 0]
+
+
 def test_input_errors():
     s = np.array([[100.0], [101.0]])
     base = dict(settlement=s, close=s, exec_price=s, multiplier=[1.0], expiry=[2])
@@ -307,6 +330,20 @@ def test_input_errors():
         )
     with pytest.raises(ValueError, match="margin_add"):
         bt.FuturesAccount(margin_add=-0.1)
+
+
+@pytest.mark.parametrize("validate", [True, False])
+@pytest.mark.parametrize("field", ["settlement", "exec_price", "close", "open"])
+@pytest.mark.parametrize("bad", [0.0, -37.63])
+def test_nonpositive_prices_rejected_whatever_validate(validate, field, bad):
+    # WTI 2020-04-20 式的负价不能模拟：保证金会算成负数、不触发追保。与 validate 无关。
+    s = np.array([[20.0], [18.0], [10.0]])
+    kw = dict(settlement=s, close=s, exec_price=s, open=s)
+    kw[field] = np.array([[20.0], [bad], [10.0]])
+    with pytest.raises(ValueError, match="negative futures prices are not supported"):
+        bt.FuturesBook(
+            **kw, multiplier=[1000.0], expiry=[3], margin_rate=0.1, validate=validate
+        )
 
 
 @pytest.mark.parametrize("name", ["README.md", "README.zh-CN.md"])

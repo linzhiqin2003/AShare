@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-11-13（期货回测）
+- 期货回测复核返工：`FuturesPortfolio.run` 改为逐行推进，第一行（品种还没有合约）给 k 手就开 k 手；换月行只动换月的品种、保持手数，其他品种不再被拉回目标名义；期货账本无条件拒绝 0 和负价（`validate=False` 也一样）；`book_from_table` 最后交易日等于样本末日时照常了结；交割月类个人持仓期限与 SC 类同一口径（提前一天）、日历截在到期前时用工作日补齐；一字板推断的偏向、负价、交易单位分界空仓一夜、不模拟规则的偏向、混合现金账户的旧口径写进文档；动量例子重跑（年化 5.11%、回撤 47.7%，费用按权益 1.9%/年），变异清单增至 25 处。
 - 纯期货组合回测（DESIGN 4.14、SPEC「Stand-alone futures portfolios」、`docs/FUTURES_BACKTEST.md`）：`panelbt.FuturesBook` 把逐合约逐日的交易所参数建成市场，按手数、名义或保证金三种写法给目标，期货公司条款（`FuturesAccount`）、实物交割与个人持仓期限的强平（按结算价、计手续费和滑点）、涨跌停掩码与一字板推断、缺值默认报错；内核不改，现有路径逐位不变。`ashare.backtest.futures.futures_portfolio` 按数据层换月规则持有具体合约、个人持仓期限前换月、交易单位分界平旧开新，`signal_prices` 只作信号。独立朴素参考实现对拍、性质测试、14 处变异全部抓到；RB2310 真实数据手工核对逐项相同；动量例子（`bench/futures_momentum.py`，品种按当时成交额取，不用全样本名单）与「连续价格直接算收益」的错误做法对比。数据层 `FuturesData` 新增 `held_columns`、`adjust_prices`、`panelbt_inputs` 三个公开转发入口，回测层只走公开入口；修复跨交易单位分界日时 `futures_portfolio` 重复读同一合约行情而报错。
 - 外部行情入口 `ashare.backtest.futures.book_from_table`（长表，字段名同 `futures_schema`），合成 WTI 式月度合约链例子 `bench/futures_wti_example.py`。
 - 混合面板里的退出规则（DESIGN 4.15、SPEC「Exit rules in mixed panels」）：有期货列时止损、止盈、移动止损、持有期只作用于现货列，保证金账户的规则平仓削减扣掉期货保证金，内核增加「期货 + 记账」特化，参考实现接上期货路径；限价目标在有期货列的市场里继续拒绝。

@@ -217,6 +217,26 @@ class FuturesBook:
         personal = future & (end < expiry)
 
         settle = _panel(settlement, shape, "settlement")
+        # Checked whatever `validate` says: a nonpositive price does not make
+        # the run slower but wrong (negative collateral, no margin call).
+        close_panel = _panel(close, shape, "close")
+        for name, panel in (
+            ("settlement", settle),
+            ("exec_price", price),
+            ("close", close_panel),
+            ("open", None if open is None else _panel(open, shape, "open")),
+        ):
+            if panel is None:
+                continue
+            bad = future[None, :] & np.isfinite(panel) & (panel <= 0)
+            if bad.any():
+                r, c = map(int, np.argwhere(bad)[0])
+                raise ValueError(
+                    f"{name}: zero or negative futures prices are not supported "
+                    f"(row {r}, column {c}); negative prices such as WTI on "
+                    "2020-04-20 cannot be simulated, validate=False does not "
+                    "change this"
+                )
         tradable = (
             np.isfinite(price)
             if tradable is None

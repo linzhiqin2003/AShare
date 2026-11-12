@@ -714,12 +714,18 @@ row (below); outside it margin and fees are zero and need no value.
    prices (a fill at or beyond a limit is refused in that direction).
    `infer_locked=True` refuses, on a row whose open, high and low are equal
    with positive volume, buying when the open is above the previous row's
-   settlement and selling when below. This cannot see a day that opens at the
-   limit and trades away from it; it is a cheap guard for one-price days.
+   settlement and selling when below (an open equal to it refuses nothing).
+   What it catches and misses: most one-price rows are thin contracts with a
+   single small fill, not limit days, so refusing them is pessimistic there;
+   a row that opens at the limit and then trades away from it is not caught,
+   so a fill at such an open is optimistic. With limit prices available, pass
+   `limit_up`/`limit_down` and leave `infer_locked` off.
 6. **Rolls.** The book holds individual contracts; the research package
-   expands product targets to contract targets on its roll schedule
-   (decision at row t−1's close, execution at row t's open, both legs paying
-   fees and slippage). Continuous prices are for signals only.
+   steps product targets onto contracts on its roll schedule (decision at row
+   t−1's close, execution at row t's open, both legs paying fees and
+   slippage). A roll row moves only the rolling product (same lots, rescaled
+   by the multiplier ratio); other positions do not trade. Continuous prices
+   are for signals only.
 7. **End rows.** A futures column ends on `min(expiry, last_hold + 1)`.
    `last_hold[N]` is the last row a position may be held at the close (a
    retail position limit); the next row still trades normally, and whatever
@@ -734,7 +740,8 @@ row (below); outside it margin and fees are zero and need no value.
 8. **Unit changes.** A contract whose multiplier changes is two columns: the
    first ends on the row before the change (a forced close as in 7), the
    second trades from the change row (a new opening). Fees and slippage are
-   paid on both sides; the exchange's proportional conversion is not modeled.
+   paid on both sides and the position is flat for the night between; the
+   exchange's proportional conversion is not modeled.
 9. **Missing rates.** A NaN margin or fee inside a trading window raises by
    default. `missing="previous"` forward-fills within the window (never from
    later rows); a number fills the gap with that value.
@@ -742,11 +749,21 @@ row (below); outside it margin and fees are zero and need no value.
    open of an exchange that has a night session it is the previous evening's
    auction. A signal computed at row t's close fills at row t+1's open; row
    t+1's open, high, low or volume must not enter that signal.
+11. **No negative prices.** A zero or negative settlement, execution, close
+   or open price on a futures column is rejected whatever `validate` says:
+   collateral would turn negative and losses would not trigger a margin
+   call. Negative-price episodes (WTI on 2020-04-20) cannot be simulated.
 
-Not modeled: close-today fees, exchange-specific margin offsets, the larger
-side rule for two-sided positions, limit expansion after one-sided markets and
-the automatic margin increase that goes with it, forced position reduction at
-the limit, physical delivery, intraday paths and daily open-position caps.
+Not modeled, with the direction of the error: close-today fees (unclear:
+cheaper on some SHFE products, ten times on CFFEX index futures);
+exchange-specific margin offsets and the larger-side rule for two-sided
+positions (pessimistic: every contract pays full margin); limit expansion
+after one-sided markets, the automatic margin increase that goes with it and
+the ban on opening in the limit direction after a limit close (optimistic);
+queueing at the limit (unclear, see 5); forced position reduction at the limit
+(optimistic); daily open-position caps and position limits (optimistic);
+physical delivery (unclear: positions never enter it); proportional unit
+conversion (mostly pessimistic, see 8); intraday paths (unclear).
 
 ## Exit rules in mixed panels
 

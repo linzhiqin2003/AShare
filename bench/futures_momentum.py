@@ -125,38 +125,59 @@ def main():
     fut = ad.open(args.root).futures()
     t0 = time.perf_counter()
     products = fut.products().filter(pl.col("exchange") != "CFFEX")["product"].to_list()
-    pf = futures_portfolio(fut, products, start=START, end=END, missing=MISSING)
+    pf = futures_portfolio(
+        fut,
+        products,
+        start=START,
+        end=END,
+        missing=MISSING,
+        config=bt.Config(initial_cash=1e7, record_trades=True),
+    )
     build = time.perf_counter() - t0
     liquid = liquidity(pf)
     plan = momentum_weights(pf.signal_prices, liquid=liquid)
     signal = execution_targets(plan)
-    t0 = time.perf_counter()
-    targets = pf.targets(signal, "notional")
-    expand = time.perf_counter() - t0
     book = pf.book
-    config = bt.Config(initial_cash=book.config.initial_cash, record_trades=True)
-    r = bt.run(book.market, targets, book.costs, config)
     times = []
     for _ in range(args.repeat):
         t0 = time.perf_counter()
-        bt.run(book.market, targets, book.costs, book.config)
+        r = pf.run(signal, "notional")
         times.append(time.perf_counter() - t0)
-    # Cost attribution: fills on a product's roll row in its outgoing or
-    # incoming contract are roll costs.
-    roll_cells = set()
     t, n_products = pf.held.shape
+    # Fill categories: rebalance rows (signal rows), roll rows of the rolling
+    # product (its outgoing and incoming contract), anything else.
+    lagged = signal.to_dense(t, n_products)
+    rebalance_rows = set(np.flatnonzero(~np.all(np.isnan(lagged), axis=1)).tolist())
+    roll_cells = set()
     for day in range(1, t):
         for k in range(n_products):
             a, b = pf.held[day - 1, k], pf.held[day, k]
             if a != b:
                 roll_cells.update({(day, a), (day, b)})
     cost = lambda x: x.commission + x.slippage_cost  # noqa: E731
-    total = sum(cost(x) for x in r.trades) + float(r.other_fee.sum())
-    rolls = sum(cost(x) for x in r.trades if (x.day, x.col) in roll_cells)
-    rolls += float(r.other_fee.sum())  # forced closes at the end row
+    cats = dict(rebalance=[0, 0.0], roll=[0, 0.0], other=[0, 0.0])
+    for x in r.trades:
+        key = (
+            "rebalance"
+            if x.day in rebalance_rows
+            else "roll"
+            if (x.day, x.col) in roll_cells
+            else "other"
+        )
+        cats[key][0] += 1
+        cats[key][1] += cost(x)
+    cats["roll"][1] += float(r.other_fee.sum())  # forced closes at the end row
+    daily_cost = r.commission + r.slippage_cost + r.other_fee
+    previous = np.concatenate([[book.config.initial_cash], r.equity[:-1]])
+    years = t / 244
+    total = float(daily_cost.sum())
+    f = book.market.futures
+    positions = np.nan_to_num(r.positions)
+    gross = (
+        np.abs(positions) * f.multiplier[None, :] * np.nan_to_num(f.settlement)
+    ).sum(axis=1) / r.equity
     engine = summary(r.returns)
     # Wrong way: same signal-row weights applied to continuous prices.
-    lagged = signal.to_dense(t, n_products)
     raw_cont = np.column_stack(
         [
             np.asarray(
@@ -170,27 +191,22 @@ def main():
     raw_cont[pf.held < 0] = np.nan
     wrong_raw = summary(naive_continuous(raw_cont, lagged))
     wrong_adj = summary(naive_continuous(pf.signal_prices, lagged))
-    # 100 parameter sets for run_batch.
+    # 100 parameter sets: signals (Python), then the stepped runs in threads.
     plans = []
     t0 = time.perf_counter()
     for lookback in (20, 40, 60, 80, 100, 120, 160, 200, 240, 260):
         for risk in (0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20, 0.22):
             plans.append(
-                pf.targets(
-                    execution_targets(
-                        momentum_weights(
-                            pf.signal_prices, lookback, 60, risk, liquid=liquid
-                        )
+                execution_targets(
+                    momentum_weights(
+                        pf.signal_prices, lookback, 60, risk, liquid=liquid
                     )
                 )
             )
     batch_prepare = time.perf_counter() - t0
-    batch = []
-    for _ in range(3):
-        t0 = time.perf_counter()
-        bt.run_batch(book.market, plans, book.costs, book.config)
-        batch.append(time.perf_counter() - t0)
-    years = t / 244
+    t0 = time.perf_counter()
+    pf.run_batch(plans, "notional", threads=8)
+    batch = time.perf_counter() - t0
     out = dict(
         universe=products,
         top=TOP,
@@ -203,16 +219,19 @@ def main():
         contracts=len(pf.symbols),
         rolls=pf.rolls.height,
         build_seconds=build,
-        expand_seconds=expand,
         run_ms_median=1000 * float(np.median(times)),
-        batch100_prepare_seconds=batch_prepare,
-        batch100_seconds_median=float(np.median(batch)),
+        batch100_signals_seconds=batch_prepare,
+        batch100_runs_seconds_8_threads=batch,
         engine=engine,
         wrong_unadjusted_continuous=wrong_raw,
         wrong_adjusted_continuous=wrong_adj,
         trades=len(r.trades),
-        total_cost_per_year_pct=100 * total / book.config.initial_cash / years,
-        roll_cost_share=rolls / total if total else 0.0,
+        fills_by_kind={k: dict(fills=v[0], cost=v[1]) for k, v in cats.items()},
+        cost_per_year_pct_of_equity=100 * float((daily_cost / previous).sum()) / years,
+        cost_per_year_pct_of_initial=100 * total / book.config.initial_cash / years,
+        roll_cost_share=cats["roll"][1] / total if total else 0.0,
+        gross_leverage_mean=float(np.mean(gross)),
+        gross_leverage_max=float(np.max(gross)),
         forced_closes=len(r.expiry_events),
         margin_calls=int(r.margin_call.sum()),
         mean_margin_usage=float(np.mean(r.margin_usage)),

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import panelbt as bt
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
@@ -95,10 +96,29 @@ def test_portfolio_across_unit_change_reads_bars_once(tmp_path):
         personal=False,
         infer_locked=False,
         missing=dict(margin_rate=0.1, fee_rate=0.0, fee_per_contract=3.0),
+        config=bt.Config(initial_cash=1e6, record_trades=True),
     )
     assert pf.splits, "样本区间应跨过交易单位分界日"
     labels = list(pf.symbols)
+    dates = list(pf.dates)
+    o = np.asarray(pf.book.market.open)
     for split in pf.splits:
         a, b = labels.index(split["before"]), labels.index(split["after"])
-        o = np.asarray(pf.book.market.open)
-        _same(o[:, a], o[:, b])
+        # 两列的开盘价都等于数据层这一合约自己的开盘价（独立读一次面板对照）。
+        raw = fut.panel(
+            ["open"], symbols=[split["symbol"]], start=dates[0], end=dates[-1]
+        )
+        expect = np.asarray(raw["open"])[:, 0]
+        _same(o[:, a], expect)
+        _same(o[:, b], expect)
+        # 回测：分界日前持有 2 手（25 吨），分界日起按乘数折成 10 手（5 吨）。
+        held = pf.held[:, 0]
+        first = int(np.argmax(held >= 0))
+        w = np.full((len(dates), 1), np.nan)
+        w[first] = 2.0
+        r = pf.run(w, "lots")
+        cut = dates.index(split["date"])
+        mult = pf.book.market.futures.multiplier
+        assert mult[a] == 25.0 and mult[b] == 5.0
+        assert r.positions[cut - 1, a] == 0  # 前一列在分界日前一行收盘了结
+        assert r.positions[cut, b] == 10.0

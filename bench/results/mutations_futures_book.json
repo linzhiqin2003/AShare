@@ -50,13 +50,58 @@
     "caught": true
   },
   {
-    "mutant": "lots not rescaled across a unit change",
+    "mutant": "carried lots not rescaled across a unit change",
     "file": "src/ashare/backtest/futures.py",
     "caught": true
   },
   {
-    "mutant": "roll rows not written without a new target",
+    "mutant": "roll lots not converted by the multiplier ratio",
     "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "first-row lots divided by the multiplier",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "kept positions sized without the half-lot margin",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll rows re-target every product",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "last trading day on the last sample row treated as after the sample",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "delivery-month personal rule one day late",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal roll looks at the switch row's quote (look-ahead)",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "external params take the smaller side's margin",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "one-price day at the previous settlement blocks buying",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "nonpositive prices accepted with validate=False",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
     "caught": true
   },
   {

@@ -18,7 +18,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "packages/panelbt/python/panelbt/futures_book.py"
 PORT = ROOT / "src/ashare/backtest/futures.py"
-TESTS = ["test/test_futures_book.py", "test/backtest/test_futures_backtest.py"]
+TESTS = [
+    "test/test_futures_book.py",
+    "test/backtest/test_futures_backtest.py",
+    "test/backtest/test_futures_public_entries.py",
+]
 
 MUTANTS = [
     (
@@ -82,16 +86,70 @@ MUTANTS = [
         "a = np.where(window, _ffill(np.where(window, a, np.nan)[::-1])[::-1], a)",
     ),
     (
-        "lots not rescaled across a unit change",
+        "carried lots not rescaled across a unit change",
         PORT,
-        "value = np.trunc(value * reference[k] / mult[h])",
-        "value = np.trunc(value)",
+        'entry[k] = ("units", q0[c] * mult[c])',
+        'entry[k] = ("units", q0[c])',
     ),
     (
-        "roll rows not written without a new target",
+        "roll lots not converted by the multiplier ratio",
         PORT,
-        "current[k] != 0 and self.held[day, k] != written[k] for k in range(p)",
-        "False for k in range(p)",
+        "lots = np.trunc(np.sum(q[mine] * mult[mine]) / mult[h])",
+        "lots = np.trunc(np.sum(q[mine]))",
+    ),
+    (
+        "first-row lots divided by the multiplier",
+        PORT,
+        "return e[1] if e[2] is None else np.trunc(e[1] * e[2] / mult[h])",
+        "return np.trunc(e[1] / mult[h])",
+    ),
+    (
+        "kept positions sized without the half-lot margin",
+        PORT,
+        "return (lots + 0.5 * np.sign(lots)) * mark * mult[col] / (equity * buffer)",
+        "return lots * mark * mult[col] / (equity * buffer)",
+    ),
+    (
+        "roll rows re-target every product",
+        PORT,
+        "vals.append(value(day, c, q[c], equity, basis))",
+        "vals.append(goal_value(day, c, goal_now[k]))",
+    ),
+    (
+        "last trading day on the last sample row treated as after the sample",
+        PORT,
+        "if day is None or day > dates[-1]:",
+        "if day is None or day >= dates[-1]:",
+    ),
+    (
+        "delivery-month personal rule one day late",
+        PORT,
+        'k = int(np.searchsorted(calendar, month + "01")) - 1 - 1',
+        'k = int(np.searchsorted(calendar, month + "01")) - 1',
+    ),
+    (
+        "personal roll looks at the switch row's quote (look-ahead)",
+        PORT,
+        "and day > 0 and quote[day - 1, j]",
+        "and day > 0 and quote[day, j]",
+    ),
+    (
+        "external params take the smaller side's margin",
+        PORT,
+        "return np.fmax(*values) if len(values) == 2 else values[0]",
+        "return np.fmin(*values) if len(values) == 2 else values[0]",
+    ),
+    (
+        "one-price day at the previous settlement blocks buying",
+        BOOK,
+        "self.locked_up = one_price & started & (o > previous)",
+        "self.locked_up = one_price & started & (o >= previous)",
+    ),
+    (
+        "nonpositive prices accepted with validate=False",
+        BOOK,
+        "            if bad.any():\n                r, c = map(int, np.argwhere(bad)[0])",
+        "            if bad.any() and validate:\n                r, c = map(int, np.argwhere(bad)[0])",
     ),
     (
         "personal override disabled",
