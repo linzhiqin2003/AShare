@@ -3,13 +3,16 @@
 import json
 import shutil
 
-from .catalog import FUTURES_DATASETS
+from .catalog import FUND_DATASETS, FUTURES_DATASETS
 from .store import lock
 
 
 def disk_usage(root):
     result = {}
     futures_dirs = {spec.raw_dir or spec.api for spec in FUTURES_DATASETS.values()}
+    # 基金与可转债的原始库、面板、报告单独计（键 funds），股票部分不随它们变化。
+    fund_dirs = {spec.raw_dir or spec.api for spec in FUND_DATASETS.values()}
+    excluded = futures_dirs | fund_dirs
     for name in ("raw", "panel", "reports", "projections", "futures"):
         if name == "futures":
             # 期货原始库与期货面板单独计，股票部分不随期货变化。
@@ -24,10 +27,10 @@ def disk_usage(root):
                 p
                 for p in (root / name).rglob("*")
                 if not (
-                    name == "raw"
-                    and p.relative_to(root / "raw").parts[0] in futures_dirs
+                    name == "raw" and p.relative_to(root / "raw").parts[0] in excluded
                 )
                 and not (name == "reports" and p.name.startswith("futures_verify"))
+                and not (name == "reports" and p.name.startswith("funds_verify"))
             ]
         else:
             paths = []
@@ -38,6 +41,17 @@ def disk_usage(root):
             "files": len(files),
             "bytes": sum(p.stat().st_size for p in files),
             "allocated_bytes": sum(p.stat().st_blocks * 512 for p in files),
+        }
+    fund_paths = [
+        p for d in sorted(fund_dirs) for p in (root / "raw" / d).rglob("*")
+    ] + list((root / "fund_panel").rglob("*"))
+    fund_paths += [p for p in (root / "reports").glob("funds_verify*") if p.exists()]
+    fund_files = [p for p in fund_paths if p.is_file()]
+    if fund_files:
+        result["funds"] = {
+            "files": len(fund_files),
+            "bytes": sum(p.stat().st_size for p in fund_files),
+            "allocated_bytes": sum(p.stat().st_blocks * 512 for p in fund_files),
         }
     result["manifest"] = {
         "bytes": sum(p.stat().st_size for p in root.glob("manifest*") if p.is_file())

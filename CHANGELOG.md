@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-13（场内基金、可转债与资产配置）
+- 场内基金与可转债数据（`docs/DESIGN.md` 6.1.4、`docs/FUND_CB_DATA.md`）：13 个接口权限探查；2015-01-05 起全量下载（`sync-funds`），数据集单列为 `FUND_DATASETS`、版本另算，股票和期货输出逐位不变；基金面板（拆分与折算由前收盘缺口反推、复权因子同时变化才认）和可转债面板（转股价、强赎、剩余规模按公告次日起可知，转股价值、溢价率、双低、剩余期限；零成交占位行不算行情），单位与 A 股面板一致（成交量份 / 张、成交额元，按实测换算）；`fund_market`、`cb_market` 给出 `panelbt` 行情与费用（免印花税和过户费、交易单位、涨跌停）；独立校验 `verify-funds`，只认逐条登记的已知例外。
+- 资产配置 `ashare.allocation`（`docs/DESIGN.md` 6.8、`docs/ALLOCATION_NOTES.md`）：固定权重与再平衡带、等权、倒波动、带预算的风险平价（牛顿法，坐标下降参考实现对拍，无解时加 ridge 并记录）、目标波动、最小方差、均值方差、趋势过滤；协方差复用 `ashare.risk`，不前视；四只 ETF 的真实数据例子与性能基线。
+
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。
 

@@ -666,3 +666,158 @@ FUTURES_DATASETS = {
 }
 ALL_DATASETS = {**DATASETS, **FUTURES_DATASETS}
 assert not set(DATASETS) & set(FUTURES_DATASETS)
+
+
+# 场内基金（ETF、LOF）与可转债（第 2 批）。与期货一样单独成组、不并入 DATASETS：
+# 股票的同步、状态、校验、内容版本只看 DATASETS，共用清单里多出这些条目时股票侧逐位不变。
+# 采集见 ashare.data.fund_sync，口径见 docs/FUND_CB_DATA.md。原始字段名只出现在 fund_*/cb_* 模块。
+FUND_DATASETS = {
+    d.name: d
+    for d in [
+        dataset(
+            "fund_calendar",
+            "fund_exchange",
+            "exchange,cal_date",
+            "exchange,cal_date,is_open,pretrade_date",
+            api="trade_cal",
+            date="cal_date",
+            limit=5000,
+            known_at="交易所提前公布",
+            raw_dir="fund_calendar",
+        ),
+        dataset(
+            "fund_basic",
+            "fund_status",
+            "ts_code",
+            "ts_code,name,management,custodian,fund_type,found_date,due_date,list_date,issue_date,delist_date,issue_amount,m_fee,c_fee,duration_year,p_value,min_amount,exp_return,benchmark,status,invest_type,type,trustee,purc_startdate,redm_startdate,market",
+            date="list_date",
+            limit=2000,
+            params={"market": "E"},
+            known_at="当前基金主表（含退市）；名称、类型为现值",
+            raw_dir="fund_basic",
+        ),
+        dataset(
+            "fund_daily",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,pre_close,open,high,low,close,change,pct_chg,vol,amount",
+            limit=2000,
+            units={"vol": "手（100 份）", "amount": "千元"},
+            coverage_start="19980407",
+            empty_allowed=False,
+            raw_dir="fund_daily",
+        ),
+        dataset(
+            "fund_adj",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,adj_factor",
+            limit=2000,
+            coverage_start="20050223",
+            empty_allowed=False,
+            raw_dir="fund_adj",
+        ),
+        dataset(
+            "fund_share",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,fd_share,fund_type,market",
+            limit=2000,
+            units={"fd_share": "万份"},
+            coverage_start="20041230",
+            known_at="交易所公布的份额，通常为当日收盘后或次日公布；回测按次日可知",
+            # 季末那天源还返回场外基金（行数是平日的十几倍），次日行数「骤降」是常态，不做骤降检查。
+            raw_dir="fund_share",
+        ),
+        dataset(
+            "fund_div",
+            "day",
+            "ts_code,ann_date,ex_date,div_proc",
+            "ts_code,ann_date,imp_anndate,base_date,div_proc,record_date,ex_date,pay_date,earpay_date,net_ex_date,div_cash,base_unit,ear_distr,ear_amount,account_date,base_year",
+            date="ex_date",
+            limit=2000,
+            units={"div_cash": "元/份（税前）"},
+            coverage_start="19990101",
+            known_at="除息日盘前已知（实施公告早于除息日）",
+            raw_dir="fund_div",
+        ),
+        dataset(
+            "cb_basic",
+            "static",
+            "ts_code",
+            "ts_code,bond_full_name,bond_short_name,cb_type,cb_code,stk_code,stk_short_name,maturity,par,issue_price,issue_size,remain_size,value_date,maturity_date,rate_type,coupon_rate,add_rate,pay_per_year,list_date,delist_date,exchange,conv_start_date,conv_end_date,conv_stop_date,first_conv_price,conv_price,rate_clause",
+            date="list_date",
+            limit=2000,
+            known_at="当前主表；conv_price、remain_size 为现值，历史值见 cb_price_chg、cb_share",
+            raw_dir="cb_basic",
+        ),
+        dataset(
+            "cb_issue",
+            "static",
+            "ts_code",
+            "ts_code,ann_date,res_ann_date,plan_issue_size,issue_size,issue_price,issue_type,onl_code,onl_name,onl_date,onl_size,onl_pch_vol,onl_pch_num,onl_pch_excess,shd_ration_code,shd_ration_name,shd_ration_date,shd_ration_record_date,shd_ration_pay_date,shd_ration_price,shd_ration_ratio,shd_ration_size,offl_size",
+            date="ann_date",
+            limit=2000,
+            known_at="发行公告日",
+            raw_dir="cb_issue",
+        ),
+        dataset(
+            "cb_call",
+            "static",
+            "ts_code,call_type,is_call,ann_date",
+            "ts_code,call_type,is_call,ann_date,call_date,call_price,call_price_tax,call_vol,call_amount,payment_date,call_reg_date",
+            date="ann_date",
+            limit=2000,
+            known_at="公告日收盘后；按公告日的下一交易日可知",
+            raw_dir="cb_call",
+        ),
+        dataset(
+            "cb_rate",
+            "static",
+            "ts_code,rate_start_date",
+            "ts_code,rate_freq,rate_start_date,rate_end_date,coupon_rate",
+            date="rate_start_date",
+            limit=2000,
+            units={"coupon_rate": "%"},
+            known_at="发行时约定",
+            raw_dir="cb_rate",
+        ),
+        dataset(
+            "cb_price_chg",
+            "cb_batch",
+            "ts_code,publish_date,change_date",
+            "ts_code,bond_short_name,publish_date,change_date,convert_price_initial,convertprice_bef,convertprice_aft",
+            date="change_date",
+            limit=2000,
+            known_at="公告日收盘后；新转股价自 max(生效日, 公告日的下一交易日) 起使用",
+            raw_dir="cb_price_chg",
+        ),
+        dataset(
+            "cb_share",
+            "cb_code",
+            "ts_code,end_date,publish_date",
+            "ts_code,bond_short_name,publish_date,end_date,issue_size,convert_price_initial,convert_price,convert_val,convert_vol,convert_ratio,acc_convert_val,acc_convert_vol,acc_convert_ratio,remain_size,total_shares",
+            date="end_date",
+            limit=2000,
+            units={"remain_size": "元（面值）", "convert_val": "元（面值）"},
+            known_at="公告日收盘后；按公告日的下一交易日可知",
+            raw_dir="cb_share",
+        ),
+        dataset(
+            "cb_daily",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,pre_close,open,high,low,close,change,pct_chg,vol,amount,bond_value,bond_over_rate,cb_value,cb_over_rate",
+            limit=2000,
+            units={
+                "vol": "见 docs/FUND_CB_DATA.md（实测）",
+                "amount": "见 docs/FUND_CB_DATA.md（实测）",
+            },
+            coverage_start="19930210",
+            empty_allowed=False,
+            raw_dir="cb_daily",
+        ),
+    ]
+}
+ALL_DATASETS = {**ALL_DATASETS, **FUND_DATASETS}
+assert not set(FUND_DATASETS) & (set(DATASETS) | set(FUTURES_DATASETS))
