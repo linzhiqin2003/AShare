@@ -3,10 +3,10 @@
 每个函数接收 ``ashare.data.open()`` 的句柄，返回事件表（见 :mod:`ashare.events.table`）。
 定义、字段口径和已知的坑写在各函数的文档串和 ``docs/EVENTS_NOTES.md``。
 
-**数据入口（临时）**：数据层的公开长表 ``Data.table`` 只公开了这些表的少数几列
-（例如业绩预告没有类型和变动幅度），本模块经 :func:`_raw` 读数据层内部的
-``Data._store``（已做换码规范化的原始库），源字段名只出现在本模块里。数据层补上
-公开列以后改成 ``Data.table``，见 ``docs/EVENTS_NOTES.md`` 的「交给负责人」。
+**数据入口**：业绩快报、分红走公开的 ``Data.table``。业绩预告的类型、变动幅度、上年同期、
+首次公告日，利润表的归母净利润，指数成分权重长表还没有公开，经 :func:`_raw` 读数据层内部的
+``Data._store``（已做换码规范化的原始库），源字段名只出现在本模块里；清单见
+``docs/EVENTS_NOTES.md``，数据层公开后改成 ``Data.table``。
 
 最小例子::
 
@@ -25,6 +25,9 @@ import weakref
 import polars as pl
 
 WAN = 10_000.0  # 业绩预告的净利润单位是万元
+REVIEW_SWITCH = (
+    "20131101"  # 定期调样从 1 月、7 月改到 6 月、12 月（快照实测 2013-12 起）
+)
 INDEX_CODES = {"csi300": "000300.SH", "csi500": "000905.SH", "csi1000": "000852.SH"}
 
 
@@ -82,8 +85,10 @@ def forecasts(data) -> pl.DataFrame:
       为空，``change_mid`` 是有的那一端或两端平均。
     - ``net_income_low``/``net_income_high``/``prior_net_income``：预计净利润区间与上年同期
       （元）。
-    - 首次预告与修正：``first_date`` 是该报告期首次预告日，``is_revision`` = 公告日晚于它；
-      ``revision`` 是该报告期内的第几次（0 为首次）。
+    - 首次预告与修正（一套规则）：``first_date`` = min(源首次公告日, 本表该报告期最早的公告日)；
+      ``revision`` = 该报告期内这是第几次（本表里排在它前面的条数，若源记载的首次公告日早于
+      本表最早一条——真正的首次预告不在表里，多是随定期报告披露——再加 1）；
+      ``is_revision`` ≡ ``revision > 0``。
     - 同一证券、报告期、公告日的重复行（换码前后两个代码各报一次）只留一条，优先更新标识 1。
     """
     raw = (
@@ -116,15 +121,21 @@ def forecasts(data) -> pl.DataFrame:
             pl.lit("forecast").alias("kind"),
             pl.lit("after_close").alias("timing"),
             pl.mean_horizontal("change_low", "change_high").alias("change_mid"),
-            pl.coalesce(
-                "first_date", pl.col("date").min().over(["symbol", "period_end"])
+            pl.min_horizontal(
+                pl.col("first_date").min().over(["symbol", "period_end"]),
+                pl.col("date").min().over(["symbol", "period_end"]),
             ).alias("first_date"),
-            pl.int_range(pl.len()).over(["symbol", "period_end"]).alias("revision"),
+            pl.int_range(pl.len()).over(["symbol", "period_end"]).alias("_rank"),
+            pl.col("date").min().over(["symbol", "period_end"]).alias("_earliest"),
         )
         .with_columns(
-            (pl.col("date") > pl.col("first_date")).alias("is_revision"),
+            (
+                pl.col("_rank")
+                + (pl.col("first_date") < pl.col("_earliest")).cast(pl.Int64)
+            ).alias("revision")
         )
-        .drop("update_flag")
+        .with_columns((pl.col("revision") > 0).alias("is_revision"))
+        .drop("update_flag", "_rank", "_earliest")
     )
 
 
@@ -140,22 +151,21 @@ def expresses(data) -> pl.DataFrame:
       预告只给变动幅度时中点 = 预告里的上年同期 × (1 + 幅度中点)；
       预告取同一报告期、公告日严格早于快报的最近一次（没有预告为空）；``forecast_position``
       是净利润在预告区间里的位置（0 下限、1 上限，可越界）。
-    - 更正公告：同一报告期多条快报（实测 20 组）只用最早一条，``versions`` 记条数；更正后的
-      数字晚于事件日才可知，不回写。
+    - 更正公告：同一报告期多条快报（实测 20 组）只用最早一条；更正后的数字晚于事件日才可知，
+      不回写，「之后还有几条更正」这种未来信息也不输出。
     """
     ex = (
-        _raw(data, "express")
+        data.table("express")
         .select(
-            pl.col("ts_code").alias("symbol"),
-            pl.col("ann_date").alias("date"),
-            pl.col("end_date").alias("period_end"),
-            pl.col("revenue"),
-            pl.col("n_income").alias("net_income"),
+            "symbol",
+            pl.col("announcement_date").alias("date"),
+            "period_end",
+            "revenue",
+            "net_income",
         )
         .drop_nulls(["symbol", "date", "period_end"])
         .collect()
         .sort(["symbol", "period_end", "date"])
-        .with_columns(pl.len().over(["symbol", "period_end"]).alias("versions"))
         .unique(["symbol", "period_end"], keep="first", maintain_order=True)
     )
     inc = _income_first(data).sort(["symbol", "period", "known", "update_flag"])
@@ -231,45 +241,57 @@ def dividends(data, stage: str = "report") -> pl.DataFrame:
     """分红（现金与送转），三个进度日任选其一作事件日。
 
     本地分红表几乎只有「实施」行（实测 55,842 行里非实施 74 行），每行带三个日期：
-    ``ann_date`` 实测落在同一报告期财报公告日之后 21–29 天（中位 24 天，峰值 21–22 天，
-    与年度股东大会「召开 20 日前通知」的最短间隔吻合；22% 落在周六），是股东大会决议日，
-    不是预案公告日；``imp_ann_date`` 是实施公告日（中位再晚 25 天）；``ex_date`` 是除权除息日。
+    公告日（源 ``ann_date``）实测落在同一报告期财报公告日之后 21–29 天（中位 24 天，峰值
+    21–22 天，与年度股东大会「召开 20 日前通知」的最短间隔吻合；22% 落在周六），是股东大会
+    决议日，不是预案公告日；实施公告日中位再晚 25 天；然后是除权除息日。
 
     ``stage``：
 
-    - ``"report"``（默认，近似预案日）：``date`` = 同一报告期财报首次公告日。A 股利润分配
-      预案由审议定期报告的同一次董事会提出、随报告一起披露，所以用报告公告日近似预案日；
-      要求它不晚于股东大会决议日，否则丢弃。**这是代理**：预案内容取最终实施的数值
-      （预案在股东大会上被修改的极少数情况会前视）；从未实施的预案不在表里（选择偏差，
-      偏向「说到做到」的公司）；季度报告期之外的特别分红没有对应的报告，丢弃。
-    - ``"resolution"``：``date`` = 股东大会决议日（源 ``ann_date``）。
+    - ``"report"``（默认，近似预案日）：**只对年报期（1231）**用年报首次公告日作事件日——
+      年度利润分配预案由审议年报的同一次董事会提出、随年报披露；要求它不晚于股东大会决议日。
+      中报、季报期的分红大多在报告之后另行公告（0930 期 37% 的报告日比决议日早 30 天以上），
+      用报告日会前视，所以这些报告期**落到决议日**（``date_source="resolution"``）。
+      代理的偏差：预案内容取最终实施的数值；从未实施的预案不在表里（选择偏差）。
+    - ``"resolution"``：``date`` = 股东大会决议日。
     - ``"implementation"``：``date`` = 实施公告日。
 
     数值：``cash_per_share``（税前每股派现，元）、``stock_per_share``（每股送转股）。
-    同一证券、报告期、除权日的重复行（经济条款相同）只留一条。
+    同一证券、报告期、除权日有多条实施行时按进度分别去重：决议日取最晚的一条（实测这类重复
+    里较早的一条常是年报日，例如 600519.SH FY2024 的 20250403 与 20250520），实施公告日取
+    最早的一条。
     """
     if stage not in DIVIDEND_STAGES:
         raise ValueError(f"stage 只能是 {DIVIDEND_STAGES}")
+    keys = ["symbol", "period_end", "ex_date"]
     raw = (
-        _raw(data, "dividend")
-        .filter(pl.col("div_proc").str.strip_chars() == "实施")
+        data.table("dividend")
+        .filter(pl.col("status").str.strip_chars() == "实施")
         .select(
-            pl.col("ts_code").alias("symbol"),
-            pl.col("end_date").alias("period_end"),
-            pl.col("ann_date").alias("resolution_date"),
-            pl.col("imp_ann_date").alias("implementation_date"),
-            pl.col("record_date"),
-            pl.col("ex_date"),
-            pl.col("cash_div_tax")
+            "symbol",
+            "period_end",
+            pl.col("announcement_date").alias("resolution_date"),
+            pl.col("implementation_announcement_date").alias("implementation_date"),
+            "record_date",
+            "ex_date",
+            pl.col("cash_dividend")
             .cast(pl.Float64)
             .fill_null(0.0)
             .alias("cash_per_share"),
-            pl.col("stk_div").cast(pl.Float64).fill_null(0.0).alias("stock_per_share"),
+            pl.col("stock_dividend")
+            .cast(pl.Float64)
+            .fill_null(0.0)
+            .alias("stock_per_share"),
         )
-        .drop_nulls(["symbol", "period_end", "ex_date"])
+        .drop_nulls(keys)
         .collect()
-        .sort(["symbol", "period_end", "ex_date", "resolution_date"])
-        .unique(["symbol", "period_end", "ex_date"], keep="first", maintain_order=True)
+        .group_by(keys, maintain_order=True)
+        .agg(
+            pl.col("resolution_date").max(),
+            pl.col("implementation_date").min(),
+            pl.col("record_date").first(),
+            pl.col("cash_per_share").first(),
+            pl.col("stock_per_share").first(),
+        )
     )
     if stage == "report":
         reports = (
@@ -279,14 +301,26 @@ def dividends(data, stage: str = "report") -> pl.DataFrame:
             .rename({"period": "period_end"})
         )
         raw = raw.join(reports, on=["symbol", "period_end"], how="left")
+        annual = pl.col("period_end").str.ends_with("1231")
         raw = raw.filter(
-            pl.col("report_date").is_not_null()
-            & (
-                pl.col("resolution_date").is_null()
-                | (pl.col("report_date") <= pl.col("resolution_date"))
+            ~annual
+            | (
+                pl.col("report_date").is_not_null()
+                & (
+                    pl.col("resolution_date").is_null()
+                    | (pl.col("report_date") <= pl.col("resolution_date"))
+                )
             )
         ).with_columns(
-            pl.col("report_date").alias("date"), pl.lit("dividend_plan").alias("kind")
+            pl.when(annual)
+            .then(pl.col("report_date"))
+            .otherwise(pl.col("resolution_date"))
+            .alias("date"),
+            pl.when(annual)
+            .then(pl.lit("report"))
+            .otherwise(pl.lit("resolution"))
+            .alias("date_source"),
+            pl.lit("dividend_plan").alias("kind"),
         )
     elif stage == "resolution":
         raw = raw.with_columns(
@@ -315,7 +349,8 @@ def index_changes(data, index: str = "csi300") -> pl.DataFrame:
     **只能用生效日之后的快照，推不出公告日**：中证指数的定期调样一般在 5 月底、11 月底
     公告，6 月、12 月第二个星期五的下一交易日生效；月末快照最早在生效后约两到三周、公告后
     约五周才反映。所以这里的事件晚于真实公告，**会低估甚至完全错过公告效应**，只能研究
-    「生效之后」的走势。``regular_review`` 标记快照月是 6 月或 12 月（定期调样所在月）。
+    「生效之后」的走势。``regular_review`` 标记定期调样所在的快照月：2013 年 11 月以前是
+    1 月、7 月（实测沪深 300、中证 500 的调入在这两个月成批出现），之后是 6 月、12 月。
     调出里包括退市、吸收合并（``delisted_by`` 标记快照日前已退市或退市日在两期快照之间）。
     ``weight`` 是调入后的权重或调出前的权重（%）。
     """
@@ -368,7 +403,10 @@ def index_changes(data, index: str = "csi300") -> pl.DataFrame:
         out.with_columns(
             pl.lit("after_close").alias("timing"),
             pl.lit(index).alias("index"),
-            pl.col("date").str.slice(4, 2).is_in(["06", "12"]).alias("regular_review"),
+            pl.when(pl.col("date") < REVIEW_SWITCH)
+            .then(pl.col("date").str.slice(4, 2).is_in(["01", "07"]))
+            .otherwise(pl.col("date").str.slice(4, 2).is_in(["06", "12"]))
+            .alias("regular_review"),
             (
                 (pl.col("kind") == "index_remove")
                 & pl.col("delisting_date").is_not_null()

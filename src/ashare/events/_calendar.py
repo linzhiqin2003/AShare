@@ -1,41 +1,12 @@
-"""信号日到成交日的错位（包内私有，临时）。
+"""公告日到第一个可成交日：信号日经 ``ashare.backtest.timing.execution_days`` 错一天。
 
-``docs/DESIGN.md`` 4.3：``panelbt`` 不做任何移位，错位在 ``ashare`` 里处理。
-
-TODO(合入主干后替换)：主干已有公共函数 ``ashare.backtest.timing.execution_days``
-（``execution_days(signal_days, t, *, lag=1, tail="drop")``）。本 worktree 切出时还没有
-这个包，所以下面的 :func:`execution_days` 按同样的语义和参数名写了一份私有副本：
-信号日行号严格递增、第 t 行收盘后可知的信息最早在第 t + lag 行成交、末尾没有成交日的
-信号按 ``tail`` 丢弃或报错。合入后删掉这份副本，改成
-``from ashare.backtest.timing import execution_days``，:func:`first_trade_index` 不变。
+``docs/DESIGN.md`` 4.3：``panelbt`` 不做任何移位，信号与成交的错位只在 ``ashare`` 里做，
+整个项目共用 ``execution_days``。
 """
 
 import numpy as np
 
-TAILS = ("drop", "error")
-
-
-def execution_days(signal_days, t, *, lag=1, tail="drop"):
-    """信号日行号 → 成交日行号（+lag）；超出面板的按 ``tail`` 丢弃或报错。
-
-    与 ``ashare.backtest.timing.execution_days`` 同口径（私有副本，见模块说明）。
-    """
-    if isinstance(lag, bool) or not isinstance(lag, (int, np.integer)) or lag < 1:
-        raise ValueError("lag: 必须是正整数")
-    if tail not in TAILS:
-        raise ValueError(f"tail: 只能是 {TAILS}")
-    days = np.asarray(signal_days)
-    if days.ndim != 1 or (days.size and days.dtype.kind not in "iu"):
-        raise ValueError("signal_days: 需要一维整数行号")
-    days = days.astype(np.int64)
-    if days.size and (days.min() < 0 or days.max() >= t):
-        raise ValueError(f"signal_days: 行号必须在 [0, {t}) 内")
-    if np.any(np.diff(days) <= 0):
-        raise ValueError("signal_days: 必须严格递增")
-    keep = days + lag < t
-    if tail == "error" and not keep.all():
-        raise ValueError(f"信号日 {days[~keep].tolist()} 之后不足 {lag} 个交易日")
-    return days[keep] + int(lag)
+from ashare.backtest.timing import execution_days
 
 
 def signal_index(dates, event_dates, pre_open):

@@ -38,6 +38,9 @@ PARAMS = {
         "max_positions": 50,
         "max_weight": 0.05,
     },
+    # 名额不够时的先后：例一按预告同比下限，例二按快报同比（从大到小）；再相同按哈希
+    "priority": {"forecast_strong": "change_low", "express_growth": "yoy"},
+    # 佣金、滑点由调用方给；印花税、过户费用 panelbt 的 A 股历史费率档案
     "costs": {"commission_rate": 2.5e-4, "commission_min": 5.0, "slippage": 5e-4},
 }
 
@@ -61,8 +64,84 @@ def strong_expresses(ds):
 
 
 def _tables(study, mask=None):
-    rows = [study.test(a, b, mask) for a, b in PARAMS["tests"]]
+    """每个区间一行：按事件平均的 CAR 与朴素/按月聚类/自助法，加日历时间组合的 NW t。"""
+    rows = []
+    for a, b in PARAMS["tests"]:
+        row = study.test(a, b, mask)
+        ct = study.calendar_time(a, b, mask).select(
+            "t_nw", "p_nw", "implied_car", pl.col("days").alias("ct_days")
+        )
+        rows.append(pl.concat([row, ct], how="horizontal"))
     return pl.concat(rows, how="diagonal_relaxed")
+
+
+def _size_pct(m):
+    """每日按上一交易日总市值的横截面分位（0 最小、1 最大），T×N。"""
+    cap = np.full(m["total_market_cap"].shape, np.nan)
+    cap[1:] = m["total_market_cap"][:-1]
+    cap[~(np.isfinite(cap) & (cap > 0))] = np.nan
+    order = np.argsort(np.where(np.isnan(cap), np.inf, cap), axis=1)
+    rank = np.empty_like(order)
+    np.put_along_axis(rank, order, np.arange(cap.shape[1])[None, :], axis=1)
+    count = np.isfinite(cap).sum(axis=1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pct = rank / np.maximum(count - 1, 1)
+    return np.where(np.isfinite(cap), pct, np.nan)
+
+
+def _size_profile(study, pct, plan, m):
+    """事件和持仓的市值分位，以及按市值五分位分组的 CAR[1,20]（同行业同市值基准）。"""
+    ev = study.events
+    p = pct[study.avail, ev["col"].to_numpy()]
+    q = np.floor(np.clip(p, 0, 0.999999) * 5)
+    by_q = []
+    for k in range(5):
+        mask = q == k
+        if mask.sum() >= 2:
+            r = study.test(1, 20, mask).row(0, named=True)
+            ct = study.calendar_time(1, 20, mask).row(0, named=True)
+            by_q.append(
+                {
+                    "quintile": k + 1,
+                    "events": int(mask.sum()),
+                    "car_1_20": r["mean"],
+                    "t_month": r.get("t_cluster"),
+                    "t_nw": ct.get("t_nw"),
+                }
+            )
+    tg = plan.targets
+    rows = np.repeat(np.arange(len(tg.days)), np.diff(tg.indptr))
+    span = (
+        np.append(np.diff(tg.days), len(m.dates) - tg.days[-1]) if len(tg.days) else []
+    )
+    hold_pct = pct[tg.days[rows], tg.cols]
+    w = tg.weights * np.asarray(span)[rows]
+    ok = np.isfinite(hold_pct) & (w > 0)
+    return {
+        "event_size_pct_mean": float(np.nanmean(p)),
+        "holding_size_pct_weighted_mean": float(
+            np.average(hold_pct[ok], weights=w[ok])
+        ),
+        "car_1_20_by_size_quintile": by_q,
+    }
+
+
+def _open_rate_by_board(plan):
+    prefix = plan.events["symbol"].str.slice(0, 3)
+    return (
+        plan.events.with_columns(prefix.alias("prefix"))
+        .group_by("prefix")
+        .agg(
+            pl.len().alias("events"),
+            (pl.col("status").is_in(["opened", "deferred"]))
+            .mean()
+            .alias("opened_share"),
+            (pl.col("status") == "capacity").mean().alias("capacity_share"),
+        )
+        .filter(pl.col("events") >= 50)
+        .sort("prefix")
+        .to_dicts()
+    )
 
 
 def _curve(study, mask=None):
@@ -84,12 +163,13 @@ def _open_entry_car(m, study, bench_full, horizon=20):
     return day0 + study.car(1, horizon)
 
 
-def run_example(name, ev, m, groups_bench):
+def run_example(key, name, ev, m, groups_bench, pct):
     out = {"name": name, "events_raw": ev.height}
     aligned = align(ev, m.dates, m.symbols)
     out["dropped"] = aligned.dropped
     out["by_year"] = aligned.by_year().rows()
     p = PARAMS
+    studies = {}
     for label, bench in (("market", m.market_return), ("industry_size", groups_bench)):
         t0 = time.perf_counter()
         st = event_study(
@@ -125,24 +205,28 @@ def run_example(name, ev, m, groups_bench):
             "buyable": float(np.mean(oc[buy])),
             "close_to_close_all": float(st.car(0, 20).mean()),
         }
-        res["month_cluster_1_20"] = st.test(1, 20, cluster=_month(st)).to_dicts()
+        res["date_cluster_1_20"] = st.test(1, 20, cluster="date").to_dicts()
         out[label] = res
-    out["backtest"] = backtest(aligned, m)
+        studies[label] = st
+    plan = to_targets(
+        aligned,
+        m.dates,
+        m.symbols,
+        m["can_buy_open"],
+        can_sell=m["can_sell_open"],
+        priority=PARAMS["priority"][key],
+        **PARAMS["backtest"],
+    )
+    out["backtest"] = backtest(plan, m)
+    out["size"] = _size_profile(studies["industry_size"], pct, plan, m)
+    out["open_rate_by_board"] = _open_rate_by_board(plan)
     return out
 
 
-def _month(study):
-    return np.array([int(d[:6]) for d in study.events["avail_date"].to_list()])
-
-
-def backtest(aligned, m):
+def backtest(plan, m):
     import panelbt
     from panelbt.metrics import summarize
 
-    b = PARAMS["backtest"]
-    t0 = time.perf_counter()
-    plan = to_targets(aligned, m.dates, m.symbols, m["can_buy_open"], **b)
-    gen = time.perf_counter() - t0
     bt = m.backtest
     t0 = time.perf_counter()
     result = panelbt.run(
@@ -153,12 +237,13 @@ def backtest(aligned, m):
         bt.market,
         plan.targets,
         bt.costs(
-            commission_rate=0,
-            commission_min=0,
-            slippage=0,
-            fee_rate_buy=0,
-            fee_rate_sell=0,
+            commission_rate=0.0,
+            commission_min=0.0,
+            slippage=0.0,
+            tax_buy=0.0,
             tax_sell=0.0,
+            fee_rate_buy=0.0,
+            fee_rate_sell=0.0,
         ),
         bt.config(),
     )
@@ -201,7 +286,6 @@ def backtest(aligned, m):
         "counts": plan.counts,
         "positions": plan.positions.height,
         "rebalance_days": len(plan.targets.days),
-        "seconds_targets": gen,
         "seconds_run": run,
         "first_day": str(m.dates[first]),
         "years": years,
@@ -240,16 +324,17 @@ def main(argv=None):
     timings = {"load": time.perf_counter() - t0}
     t0 = time.perf_counter()
     groups = size_industry_groups(
-        m["industry"], m["total_market_cap"], PARAMS["size_buckets"]
+        m["industry"], m["total_market_cap"], PARAMS["size_buckets"], m["is_listed"]
     )
-    gb = group_benchmark(m.returns, groups)
+    gb = group_benchmark(m.returns, groups, member=m["has_quote"])
+    pct = _size_pct(m)
     timings["group_benchmark"] = time.perf_counter() - t0
     report = {"params": PARAMS, "data_version": m.version, "timings": timings}
     report["forecast_strong"] = run_example(
-        "业绩预告大幅预增", strong_forecasts(ds), m, gb
+        "forecast_strong", "业绩预告大幅预增", strong_forecasts(ds), m, gb, pct
     )
     report["express_growth"] = run_example(
-        "业绩快报高增长", strong_expresses(ds), m, gb
+        "express_growth", "业绩快报高增长", strong_expresses(ds), m, gb, pct
     )
     with open(args.out, "w") as f:
         json.dump(report, f, ensure_ascii=False, indent=1, default=str)

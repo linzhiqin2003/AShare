@@ -64,7 +64,11 @@ def run(ds, repeat=3):
     )
     out["group_benchmark_seconds"], gb = _median(
         lambda: group_benchmark(
-            m.returns, size_industry_groups(m["industry"], m["total_market_cap"])
+            m.returns,
+            size_industry_groups(
+                m["industry"], m["total_market_cap"], 5, m["is_listed"]
+            ),
+            member=m["has_quote"],
         ),
         repeat,
     )
@@ -81,6 +85,9 @@ def run(ds, repeat=3):
             repeat,
         )
         res["study_test_1000_boot"], _ = _median(lambda st=st: st.test(1, 20), repeat)
+        res["study_calendar_time"], _ = _median(
+            lambda st=st: st.calendar_time(1, 20), repeat
+        )
         for name, kw in (
             ("targets_no_cap", {}),
             ("targets_cap50", {"max_positions": 50}),

@@ -1,5 +1,7 @@
 """直白的参考实现：逐日、逐事件循环，不调用 ashare.events 的任何代码。"""
 
+import zlib
+
 import numpy as np
 
 
@@ -19,6 +21,8 @@ def reference_targets(
     symbols,
     can_buy,
     *,
+    can_sell=None,
+    seed=0,
     entry_lag,
     holding,
     weight,
@@ -30,8 +34,17 @@ def reference_targets(
 ):
     """返回 T×N 稠密目标（不调仓的行全为 NaN）。
 
-    ``events``：字典列表，键 symbol/date/timing/value/priority；按 (date, symbol) 顺序给出。
+    ``events``：字典列表，键 symbol/date/timing/value/priority。同日同 priority 的先后按
+    ``crc32(f"{seed}|{symbol}|{date}")``，再按给出的顺序。
     """
+
+    def sell(c, day):
+        if can_sell is None:
+            return day
+        while day < t and not can_sell[day, c]:
+            day += 1
+        return day
+
     t, n = len(dates), len(symbols)
     col_of = {s: i for i, s in enumerate(symbols)}
     decided = []
@@ -42,17 +55,21 @@ def reference_targets(
         d = a + entry_lag
         if a >= t or d >= t:
             continue
-        decided.append((d, -ev["priority"], k, col_of[ev["symbol"]], ev["value"]))
+        tie = zlib.crc32(f"{seed}|{ev['symbol']}|{ev['date']}".encode())
+        decided.append((d, -ev["priority"], tie, k, col_of[ev["symbol"]], ev["value"]))
     decided.sort()
     revalued = set()
-    slots = []  # 每个名额：[col, entry 或 None（没买到）, 释放日, value, 决策日]
-    for d, _, _, c, v in decided:
-        live = [s for s in slots if s[4] <= d < s[2]]
-        mine = [s for s in live if s[0] == c]
+    # 每个名额：[col, entry 或 None（没买到）, 计划结束日, value, 决策日, 实际让出日]
+    slots = []
+    for d, _, _, _, c, v in decided:
+        live = [s for s in slots if s[4] <= d < s[5]]
+        mine = [s for s in slots if s[0] == c and s[4] <= d < s[2]]
         if overlap != "stack" and mine:
             s = mine[-1]
             if overlap == "extend" and s[1] is not None:
-                s[2] = max(s[2], d + holding)
+                if d + holding > s[2]:
+                    s[2] = d + holding
+                    s[5] = sell(c, s[2])
                 if s[1] < d:
                     s[3].append((d, v))  # 已经持有：从今天起用新数值
                     revalued.add(d)
@@ -67,9 +84,10 @@ def reference_targets(
                 buy = d + k
                 break
         if buy is None:
-            slots.append([c, None, d + defer + 1, [(d, v)], d])
+            slots.append([c, None, d + defer + 1, [(d, v)], d, d + defer + 1])
         else:
-            slots.append([c, buy, buy + holding, [(buy, v)], d])
+            end = buy + holding
+            slots.append([c, buy, end, [(buy, v)], d, sell(c, end)])
     slots = [s for s in slots if s[1] is not None]
     dense = np.full((t, n), np.nan)
     previous = set()

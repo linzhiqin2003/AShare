@@ -207,6 +207,54 @@ def test_input_checks():
         to_targets(ev, DATES, SYMS, np.ones((3, 3), bool))
     with pytest.raises(ValueError):
         to_targets(ev, DATES, SYMS, weight="fixed")
+    with pytest.raises(ValueError, match="can_sell 形状"):
+        to_targets(ev, DATES, SYMS, can_sell=np.ones((10, 2), bool))
+    with pytest.raises(ValueError, match="can_buy 形状"):
+        to_targets(ev, DATES, SYMS, np.ones((10, 2), bool))
+
+
+def test_capacity_ties_do_not_depend_on_code_or_row_order():
+    """同一天、同一 priority 抢一个名额：按 tie_key 哈希定先后，与代码大小和表的行序无关。"""
+    from ashare.events import tie_key
+
+    syms = np.array([f"{i:06d}.SZ" for i in range(8)])
+    ev = pl.DataFrame(
+        {
+            "symbol": syms.tolist(),
+            "date": ["20240103"] * 8,
+            "kind": ["k"] * 8,
+            "timing": ["after_close"] * 8,
+        }
+    )
+    picks = {}
+    for seed in range(4):
+        out = to_targets(ev, DATES, syms, holding=3, max_positions=1, seed=seed)
+        chosen = out.positions["symbol"].to_list()
+        expect = syms[np.argmin(tie_key(syms, ["20240103"] * 8, seed))]
+        assert chosen == [expect]
+        shuffled = ev.sample(fraction=1.0, shuffle=True, seed=seed)
+        again = to_targets(shuffled, DATES, syms, holding=3, max_positions=1, seed=seed)
+        assert again.positions["symbol"].to_list() == chosen
+        picks[seed] = chosen[0]
+    assert len(set(picks.values())) > 1  # 换种子换人：不是总挑代码最小的
+
+
+def test_capacity_released_after_actual_sell():
+    """卖出日跌停卖不出：给了 can_sell 时名额等到实际卖出那天才释放。"""
+    ev = pl.DataFrame(
+        {
+            "symbol": ["A", "B"],
+            "date": ["20240102", "20240105"],
+            "kind": ["k", "k"],
+            "timing": ["after_close", "after_close"],
+        }
+    )
+    can_sell = np.ones((10, 3), dtype=bool)
+    can_sell[4:6, 0] = False  # A 计划第 4 天卖，第 4、5 天卖不出，第 6 天卖出
+    plain = to_targets(ev, DATES, SYMS, holding=3, max_positions=1)
+    assert plain.events["status"].to_list() == ["opened", "opened"]  # B 第 4 天拿到名额
+    blocked = to_targets(ev, DATES, SYMS, holding=3, max_positions=1, can_sell=can_sell)
+    assert blocked.events["status"].to_list() == ["opened", "capacity"]
 
 
 def random_case(seed, t=40, n=6, m=30):
@@ -240,8 +288,16 @@ def test_matches_reference(seed):
         "max_weight": [None, 0.3][seed % 2],
         "overlap": ["extend", "ignore", "stack"][(seed // 3) % 3],
         "defer": int(rng.integers(0, 3)),
+        "seed": seed % 5,
     }
-    out = to_targets(ev, days, syms, can_buy, value="value", **kw)
+    can_sell = rng.random(can_buy.shape) > 0.4 if seed % 2 else None
+    prio = (
+        "value" if seed % 4 else "flat"
+    )  # 四分之一的用例 priority 全相同，全靠哈希定先后
+    ev = ev.with_columns(pl.lit(1.0).alias("flat"))
+    out = to_targets(
+        ev, days, syms, can_buy, can_sell=can_sell, value="value", priority=prio, **kw
+    )
     ordered = align(ev, days, syms).frame  # 与正式实现相同的事件顺序（按日期、证券）
     rows = [
         {
@@ -249,14 +305,14 @@ def test_matches_reference(seed):
             "date": r["date"],
             "timing": r["timing"],
             "value": r["value"],
-            "priority": r["value"],
+            "priority": r[prio],
         }
         for r in ev.with_row_index("_o")
         .sort(["date", "symbol", "kind", "_o"])
         .iter_rows(named=True)
     ]
     assert len(ordered) <= len(rows)
-    ref = reference_targets(rows, days, syms, can_buy, **kw)
+    ref = reference_targets(rows, days, syms, can_buy, can_sell=can_sell, **kw)
     got = to_dense(out.targets, len(days), len(syms))
     np.testing.assert_array_equal(np.isnan(got[:, 0]), np.isnan(ref[:, 0]))
     np.testing.assert_allclose(
@@ -339,15 +395,22 @@ def test_no_lookahead_drop_future_events(seed):
 def test_no_lookahead_future_market_data(seed):
     """把第 t 天之后的可买掩码随机改掉，t 天及以前的目标不变。"""
     days, syms, ev, can_buy = lookahead_case(seed)
+    can_sell = np.random.default_rng(seed + 7).random(can_buy.shape) > 0.3
     full = to_dense(
-        to_targets(ev, days, syms, can_buy, **KW).targets, len(days), len(syms)
+        to_targets(ev, days, syms, can_buy, can_sell=can_sell, **KW).targets,
+        len(days),
+        len(syms),
     )
     rng = np.random.default_rng(seed + 99)
     for cut in range(5, 55, 7):
         changed = can_buy.copy()
         changed[cut + 1 :] = rng.random(changed[cut + 1 :].shape) > 0.5
+        sell = can_sell.copy()
+        sell[cut + 1 :] = rng.random(sell[cut + 1 :].shape) > 0.5
         got = to_dense(
-            to_targets(ev, days, syms, changed, **KW).targets, len(days), len(syms)
+            to_targets(ev, days, syms, changed, can_sell=sell, **KW).targets,
+            len(days),
+            len(syms),
         )
         np.testing.assert_array_equal(
             np.nan_to_num(got[: cut + 1], nan=-1),

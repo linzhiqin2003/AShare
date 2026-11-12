@@ -1,10 +1,8 @@
-"""从数据层取事件研究与回测要用的数组，并建 ``panelbt`` 行情、费用和账户。
+"""从数据层取事件研究与回测要用的数组。
 
-TODO(合入主干后替换)：主干已有 ``ashare.backtest.market_from_panel``。本 worktree 切出时
-还没有这个包，下面的 :func:`market_from_panel` 是照它的做法写的最小私有副本（只支持开盘价
-成交、用面板的 ``can_buy_open``/``can_sell_open``，板块取证券表、空缺时按代码推断，费用用
-``panelbt.markets.ASHARE``）。合入后删掉副本，改成
-``from ashare.backtest import market_from_panel``，调用处（``load``、``examples``）不变。
+回测行情、费用和账户规则直接用 ``ashare.backtest.market_from_panel``（开盘价成交、面板的
+开盘可买可卖掩码、按板块的整手、``panelbt`` 的 A 股历史费率档案，见 ``docs/ASHARE_FEES.md``）；
+这里只在同一份面板上多读事件研究要用的字段，并算复权收益和市场指数收益。
 
 最小例子::
 
@@ -17,131 +15,37 @@ TODO(合入主干后替换)：主干已有 ``ashare.backtest.market_from_panel``
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import polars as pl
 
-BASE = (
+from ashare.backtest import market_from_panel
+
+STUDY = (
     "open",
-    "close",
-    "volume",
-    "split",
-    "cash_dividend",
-    "delist",
+    "adj_factor",
+    "has_quote",
+    "is_listed",
+    "total_market_cap",
+    "industry",
     "can_buy_open",
     "can_sell_open",
 )
-STUDY = ("adj_factor", "has_quote", "is_listed", "total_market_cap", "industry")
-MARKET_INDEX = "000985.CSI"  # 中证全指
-_CODE = re.compile(r"^[A-Z]?(\d{6})\.(SH|SZ|BJ)$")
-
-
-def iso_dates(dates):
-    days = np.asarray(dates).astype(str)
-    return np.asarray([f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in days], "datetime64[D]")
-
-
-def _boards(data, symbols):
-    from panelbt.markets import Board, infer_board
-
-    names = {
-        "主板": Board.MAIN,
-        "创业板": Board.CHINEXT,
-        "科创板": Board.STAR,
-        "北交所": Board.BSE,
-    }
-    sec = data.securities().select("symbol", "board").collect()
-    table = dict(zip(sec["symbol"].to_list(), sec["board"].to_list(), strict=True))
-    out = np.empty(len(symbols), dtype=np.int64)
-    for j, symbol in enumerate(str(s) for s in symbols):
-        name = table.get(symbol)
-        if name in names:
-            out[j] = int(names[name])
-            continue
-        match = _CODE.match(symbol)
-        if match is None:
-            raise ValueError(f"认不出 {symbol} 的板块")
-        out[j] = int(infer_board([match.group(1)])[0])
-    return out
-
-
-@dataclass(frozen=True)
-class BacktestMarket:
-    """与 ``ashare.backtest.BacktestMarket`` 同形状：行情、日期、证券、板块、面板。"""
-
-    market: object
-    dates: np.ndarray
-    symbols: np.ndarray
-    board: np.ndarray
-    panel: object = field(repr=False)
-
-    def config(self, **overrides):
-        from panelbt.markets import ASHARE
-
-        return ASHARE.config(board=self.board, **overrides)
-
-    def costs(self, **overrides):
-        """按面板日期展开 A 股费用：印花税按历史税率，过户费默认 1e-5 双边，佣金、滑点用
-        ``panelbt.Costs`` 默认值；``overrides`` 覆盖任意一项。
-
-        ``ASHARE`` 档案从 2008-09-19 开始、2022-04-29 前要求显式给过户费，直接调用会在更早的
-        日期上报错；2008-09-19 前的卖出印花税在这里补（2008-04-24 前 0.3%，之后 0.1%）。
-        """
-        import panelbt
-        from panelbt.markets import ASHARE
-
-        days = iso_dates(self.dates)
-        tax = np.where(days < np.datetime64("2008-04-24"), 0.003, 0.001)
-        late = days >= np.datetime64("2008-09-19")
-        if late.any():
-            tax[late] = ASHARE.fees.expand(days[late])["tax_sell"]
-        values = {
-            "tax_sell": tax,
-            "fee_rate_buy": 1e-5,
-            "fee_rate_sell": 1e-5,
-        } | overrides
-        return panelbt.Costs(**values)
-
-
-def market_from_panel(data, start=None, end=None, *, fields=(), panel=None):
-    """开盘价成交的 A 股回测行情（``ashare.backtest.market_from_panel`` 的私有副本）。"""
-    import panelbt
-
-    if panel is None:
-        names = list(dict.fromkeys([*BASE, *fields]))
-        panel = data.panel(names, start=start, end=end)
-    split = np.asarray(panel["split"])
-    market = panelbt.Market(
-        exec_price=np.asarray(panel["open"]),
-        close=np.asarray(panel["close"]),
-        can_buy=np.asarray(panel["can_buy_open"]),
-        can_sell=np.asarray(panel["can_sell_open"]),
-        volume=np.asarray(panel["volume"]),
-        split=np.where(np.isnan(split), 1.0, split),
-        cash_div=np.nan_to_num(np.asarray(panel["cash_dividend"])),
-        delist=np.asarray(panel["delist"]),
-    )
-    return BacktestMarket(
-        market,
-        np.asarray(panel.dates),
-        np.asarray(panel.symbols),
-        _boards(data, panel.symbols),
-        panel,
-    )
+MARKET_INDEX = "000985.CSI"  # 中证全指（价格指数，不含分红）
 
 
 @dataclass
 class MarketData:
-    """事件研究与回测共用的一份数据。``arrays`` 是面板字段（numpy 数组）。"""
+    """事件研究与回测共用的一份数据。``arrays`` 是面板字段（numpy 数组），
+    ``backtest`` 是 ``ashare.backtest.BacktestMarket``。"""
 
     dates: np.ndarray
     symbols: np.ndarray
     arrays: dict
     returns: np.ndarray
     market_return: np.ndarray
-    backtest: BacktestMarket
+    backtest: object
     version: str
 
     def __getitem__(self, name):
@@ -171,7 +75,8 @@ def load(data, start=None, end=None, market_index=MARKET_INDEX) -> MarketData:
 
     bt = market_from_panel(data, start, end, fields=STUDY)
     p = bt.panel
-    arrays = {name: np.asarray(p[name]) for name in (*BASE, *STUDY)}
+    names = ("close", "volume", "split", "cash_dividend", "delist", *STUDY)
+    arrays = {name: np.asarray(p[name]) for name in names}
     dates = np.asarray(p.dates).astype("U8")
     returns = daily_returns(
         arrays["close"], arrays["adj_factor"], arrays["has_quote"], arrays["is_listed"]

@@ -11,12 +11,16 @@
   按新开一份处理，与原持仓首尾相接、``panelbt`` 里表现为继续持有）：
   ``"extend"`` 把卖出日延到「新决策日 + holding」，数值取最新事件；
   ``"ignore"`` 忽略新事件；``"stack"`` 新开一份，权重叠加。延长不需要买入，不检查 ``can_buy``。
-- 同时持有数上限 ``max_positions``：按决策日先后、同日按 ``priority`` 列从大到小处理，
-  满了就放弃；名额在决策日占用（只看决策日已知的情况），卖出日开盘释放；顺延期满仍没买到
-  的名额在最后一次尝试的次日释放。同一证券的买单还在顺延中时来的新事件并入这张买单
-  （``absorbed``），不另占名额。
+- 同时持有数上限 ``max_positions``：按决策日先后处理；同一决策日按 ``priority`` 列从大到小，
+  再相同时按 :func:`tie_key`（证券代码、公告日和 ``seed`` 的固定哈希）排序——只取决于事件
+  自身，与代码大小、事件表顺序无关，也不看其他事件。满了就放弃；名额在决策日占用（只看
+  决策日已知的情况）。名额释放：不给 ``can_sell`` 时在计划卖出日开盘释放；给了 ``can_sell``
+  时在计划卖出日起第一个可卖日释放（跌停、停牌卖不出时 ``panelbt`` 会顺延卖单，名额也跟着
+  多占几天）。顺延期满仍没买到的名额在最后一次尝试的次日释放。同一证券的买单还在顺延中时
+  来的新事件并入这张买单（``absorbed``），不另占名额。
 - 权重：``"equal"`` 当日所有持仓份额等权、满仓；``"value"`` 按事件数值（须为正）
-  占当日合计的比例、满仓；``"fixed"`` 每份固定 ``fixed_weight``，不再平衡。
+  占当日合计的比例、满仓；``"fixed"`` 每份固定 ``fixed_weight``（不给时取
+  ``1 / max_positions``），只在持仓集合变化的日子按这个固定值重写，不按市值漂移再平衡。
   之后单只权重截到 ``max_weight``（多出的留现金），合计超过 1 时同比例缩到 1。
 - 只在持仓集合变化的交易日写一行（其余日 ``panelbt`` 不调仓）；那一行对所有持仓重新
   按规则给权重，会产生少量再平衡交易，可用 ``panelbt.Config(trade_band=...)`` 抑制。
@@ -36,6 +40,7 @@
 from __future__ import annotations
 
 import heapq
+import zlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -58,6 +63,29 @@ class EventTargets:
     counts: dict
 
 
+def tie_key(symbols, dates, seed=0):
+    """同一决策日、同一 ``priority`` 时的先后键：``crc32(f"{seed}|{symbol}|{date}")``。
+
+    只由事件自己的证券代码和公告日决定，不随代码大小、事件表顺序或其他事件变化；
+    换 ``seed`` 可以检查结果对这个次序的敏感程度。
+    """
+    return np.array(
+        [
+            zlib.crc32(f"{seed}|{s}|{d}".encode())
+            for s, d in zip(symbols, dates, strict=True)
+        ],
+        dtype=np.int64,
+    )
+
+
+def _sell_day(can_sell, c, day, t):
+    """计划卖出日 ``day`` 起第一个可卖日（没有返回 ``t``）；不给 ``can_sell`` 时就是 ``day``。"""
+    if can_sell is None or day >= t:
+        return day
+    ok = can_sell[day:, c]
+    return day + int(ok.argmax()) if ok.any() else t
+
+
 def _buy_days(e0, col, can_buy, defer, t):
     """决策日起 ``defer`` 天内第一个可买日；没有返回 -1。"""
     buy = np.full(len(e0), -1, dtype=np.int64)
@@ -74,20 +102,31 @@ def _buy_days(e0, col, can_buy, defer, t):
 
 
 def _select(
-    e0, buy, col, value, priority, holding, overlap, max_positions, defer, revalue
+    e0,
+    buy,
+    col,
+    value,
+    priority,
+    tie,
+    holding,
+    overlap,
+    max_positions,
+    defer,
+    revalue,
+    can_sell=None,
+    t=None,
 ):
     """按时间顺序决定每个事件开仓、延长、忽略或放弃；返回持仓、计权分段与状态。
 
     计权分段：``revalue`` 为真（按数值加权）时，延长事件从它的决策日起改用新数值，
     把持仓切成前后两段；之前那段保持旧数值（否则后来的事件会改写更早的目标，即前视）。
     """
-    order = np.lexsort((np.arange(len(e0)), -priority, e0))
+    order = np.lexsort((np.arange(len(e0)), tie, -priority, e0))
     status = np.empty(len(e0), dtype=object)
     entry, exit_, pcol, pval, nev, cur = [], [], [], [], [], []
     seg_col, seg_entry, seg_exit, seg_val = [], [], [], []
-    release: list[
-        int
-    ] = []  # 每个名额的释放日（买入失败的名额在最后一次尝试的次日释放）
+    release: list[int] = []  # 每个名额的计划结束日（判断同一证券的事件是否重叠）
+    free: list[int] = []  # 每个名额实际让出的日子（有 can_sell 时是实际卖出日）
     held: dict[int, int] = {}  # 证券 -> 最近一个名额
     sid_of: dict[int, int] = {}  # 名额 -> 持仓（买入失败的名额没有）
     heap: list[tuple[int, int]] = []
@@ -96,7 +135,7 @@ def _select(
         d = int(e0[i])
         while heap and heap[0][0] <= d:
             x, rid = heapq.heappop(heap)
-            if release[rid] == x:
+            if free[rid] == x:
                 active -= 1
         c = int(col[i])
         rid = held.get(c, -1)
@@ -112,7 +151,12 @@ def _select(
                 if new_exit > exit_[sid]:
                     exit_[sid] = new_exit
                     release[rid] = new_exit
-                    heapq.heappush(heap, (new_exit, rid))
+                    nf = _sell_day(can_sell, c, new_exit, t)
+                    if (
+                        nf != free[rid]
+                    ):  # 卖不出时可能不变：不变就不重复入堆（否则会重复释放）
+                        free[rid] = nf
+                        heapq.heappush(heap, (nf, rid))
                 g = cur[sid]
                 if revalue and seg_entry[g] < d:
                     seg_exit[g] = d
@@ -137,12 +181,14 @@ def _select(
         held[c] = rid
         if buy[i] < 0:
             release.append(d + defer + 1)
+            free.append(d + defer + 1)
             heapq.heappush(heap, (d + defer + 1, rid))
             status[i] = "not_buyable"
             continue
         b = int(buy[i])
         release.append(b + holding)
-        heapq.heappush(heap, (b + holding, rid))
+        free.append(_sell_day(can_sell, c, b + holding, t))
+        heapq.heappush(heap, (free[rid], rid))
         sid_of[rid] = len(entry)
         entry.append(b)
         exit_.append(b + holding)
@@ -210,6 +256,7 @@ def to_targets(
     symbols,
     can_buy=None,
     *,
+    can_sell=None,
     entry_lag: int = 0,
     holding: int = 20,
     weight: str = "equal",
@@ -220,13 +267,15 @@ def to_targets(
     overlap: str = "extend",
     defer: int = 0,
     priority: str | None = None,
+    seed: int = 0,
 ) -> EventTargets:
     """把事件表变成 ``panelbt.Targets``；规则见模块说明。
 
     ``events``：事件表（polars DataFrame）或 :func:`align` 的结果；``dates``/``symbols``：
     面板日历与证券；``can_buy``：T×N 布尔（成交日能否买入，通常是面板的 ``can_buy_open``），
-    不给表示都能买；``value``：数值列名（``weight="value"`` 时必需）；``priority``：
-    同一天名额不够时的先后（列名，从大到小），默认取 ``value``。
+    不给表示都能买；``can_sell``：T×N 布尔（通常是 ``can_sell_open``），给了名额按实际卖出日
+    释放；``value``：数值列名（``weight="value"`` 时必需）；``priority``：同一天名额不够时的
+    先后（列名，从大到小），默认取 ``value``；``seed``：再相同时的哈希种子（见 :func:`tie_key`）。
     """
     dates = np.asarray(dates).astype("U8")
     symbols = np.asarray(symbols)
@@ -248,10 +297,16 @@ def to_targets(
         raise ValueError("max_positions 必须 >= 1")
     if max_weight is not None and not (0 < max_weight <= 1):
         raise ValueError("max_weight 必须在 (0, 1]")
+    if dates.ndim != 1 or symbols.ndim != 1:
+        raise ValueError("dates、symbols 必须是一维数组")
     if can_buy is not None:
         can_buy = np.asarray(can_buy, dtype=bool)
         if can_buy.shape != (t, n):
             raise ValueError(f"can_buy 形状应为 {(t, n)}，实际 {can_buy.shape}")
+    if can_sell is not None:
+        can_sell = np.asarray(can_sell, dtype=bool)
+        if can_sell.shape != (t, n):
+            raise ValueError(f"can_sell 形状应为 {(t, n)}，实际 {can_sell.shape}")
     aligned = (
         events if isinstance(events, AlignedEvents) else align(events, dates, symbols)
     )
@@ -264,6 +319,7 @@ def to_targets(
         aligned.column(prio_name) if prio_name is not None else np.zeros(len(aligned))
     )
     prio = np.where(np.isfinite(prio), prio, -np.inf)
+    tie = tie_key(frame["symbol"].to_list(), frame["date"].to_list(), seed)
     e0 = aligned.avail + entry_lag
     inside = e0 < t
     buy = _buy_days(np.where(inside, e0, 0), aligned.col, can_buy, defer, t)
@@ -275,11 +331,14 @@ def to_targets(
         aligned.col[sel],
         vals[sel],
         prio[sel],
+        tie[sel],
         holding,
         overlap,
         max_positions,
         defer,
         weight == "value",
+        can_sell,
+        t,
     )
     status = np.full(len(aligned), "after_panel_end", dtype=object)
     status[sel] = status_sel
