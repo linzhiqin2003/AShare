@@ -140,7 +140,7 @@ vectorbt 是向量化的，核心用 numba 编译，1.x 起还有可选的 Rust 
 | backtrader 1.9.78 | 330.8 s | 12.3 万倍 | 278.5 s | 335.6 s |
 
 - **完整 A 股规则**（涨跌停、停牌、T+1、最低佣金、分红送转、退市、未成交顺延）只有 `panelbt` 和参考实现能跑：3.2 ms 对 17.5 s。第三方引擎和整块向量化写法都表达不了这组规则，所以没有可比的对手。
-- **峰值内存**（同一场景）：`panelbt` 0.47 GB，backtrader 3.0 GB，vectorbt 8.4 GB。
+- **峰值内存**（同一场景，含约 0.45 GB 的输入面板）：`panelbt` 0.46 GB，手写 NumPy 逐日 0.47 GB，bt 2.6 GB，backtrader 2.9 GB，vectorbt 6.6–8.2 GB。
 - **1000 组小面板批量**（1000 日 × 100 只，15 线程）：`panelbt` 56 ms，手写 NumPy 全截面 93 ms，NumPy 整块近似 53 ms，vectorbt 1.08 s，bt 32 s，backtrader 140 s。
 
 **不占优的地方**（如实记录，是后续优化的对象）：
