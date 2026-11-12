@@ -77,7 +77,7 @@ def worker(kind, threads, data):
             default_registry()["reversal_20"].expression, panel
         )
         batch = plans(score, panel.shape[0], True, BATCH)
-        cost, cfg = costs(panel.dates), config(panel.symbols)
+        cost, cfg = costs(panel.dates), config(data, panel.symbols)
 
         def work():
             panelbt.run_batch(market, batch, cost, cfg, threads=threads)

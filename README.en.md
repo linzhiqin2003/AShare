@@ -90,7 +90,7 @@ The round changed 13 things, one commit each, and none of them was allowed to ch
 | [`panelops`](packages/panelops/) | Panel operators for factor research and factor tests (IC, group returns, turnover). |
 | [`portopt`](packages/portopt/) | Risk-model kernels and conic solver bindings. |
 | [`paperbroker`](packages/paperbroker/) | Deterministic paper-trading engine: orders, matching, accounts, settlement. |
-| [`src/ashare`](src/ashare/) | The research layer: Tushare data store and point-in-time panel, factor expressions and cache, fundamental risk model, portfolio construction, paper trading. |
+| [`src/ashare`](src/ashare/) | The research layer: Tushare data store and point-in-time panel, factor expressions and cache, fundamental risk model, portfolio construction, backtest reports, paper trading. |
 
 The four packages depend only on NumPy and do not import `ashare`. Design notes are in [docs/DESIGN.md](docs/DESIGN.md) (Chinese).
 
@@ -132,7 +132,19 @@ forward = np.vstack([ret[1:], np.full((1, 300), np.nan)])                # next-
 ic = panelops.rank_ic(momentum, forward)                                 # one value per day
 ```
 
-Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare`.
+A report after a backtest (a self-contained HTML file that opens offline and prints to A4; needs `Config(record_trades=True)`; the page is in Chinese):
+
+```python
+import ashare.data, ashare.report
+
+ashare.report.tearsheet(result, market, targets, dates, symbols,
+                        data=ashare.data.open(), benchmark="000300.SH",
+                        benchmark_kind="price").save("report.html")
+```
+
+Metric definitions are in [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md) (Chinese).
+
+Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare` (`ashare.backtest.execution_targets`).
 
 ## Data
 

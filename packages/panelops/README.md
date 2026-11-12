@@ -57,7 +57,9 @@ Native computation releases the GIL; callers must not mutate borrowed inputs
 concurrently. Thread count never changes the order of an individual reduction.
 
 Windows include today and never look ahead. The default minimum valid count is
-the whole window. Average ranks handle ties. `ts_std` defaults to ddof=1;
+the whole window. Average ranks handle ties. Extremum positions (`ts_argmin`,
+`ts_argmax`, `ts_idxmin`, `ts_idxmax`) pick the most recent tie by default;
+`ties="earliest"` picks the oldest, as `numpy.argmax` does. `ts_std` defaults to ddof=1;
 `cs_zscore` defaults to ddof=0. Zero-variance correlations and z-scores are NaN.
 `ts_ema` is recursive `adjust=False, ignore_na=True`; its effective history is
 unbounded and min_periods counts all valid observations since the start. Regression includes an intercept and handles dependent exposures.

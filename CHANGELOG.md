@@ -22,3 +22,10 @@
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。
+- 回测报告 `ashare.report`：`build_tearsheet` 从一次 `panelbt` 回测算出报告的全部序列和指标（口径见 `docs/REPORT_NOTES.md`），`render_html` 生成自包含、离线可打开的 HTML（共用时间轴的轨道图、十字线联动、区间切换与回撤定位、净值图上直接标注最深几次回撤、月度热力图、分年度表；打印为 A4 纵向单栏）。`tearsheet()` 一行出报告，从数据层补齐名称、行业、行业换版日和基准。在真实面板上重跑设计稿的低波策略，`summary` 与旧导出逐项一致。
+- 易用性（写教程时暴露的四处绕路）：
+  - 信号日 → 成交日的错位有了唯一入口 `ashare.backtest.execution_targets`（稠密或稀疏目标；末尾信号默认丢掉，`tail="error"` 报错；成交日停牌交给引擎顺延）和 `execution_days`。
+  - `ashare.backtest.market_from_panel(data, start, end, exec="open"|"close"|"vwap")` 一步建好行情、板块整手和按面板日期展开的费用；板块取证券表的板块列，认不出就报错。`panelbt.markets.ashare.infer_board` 认 `302` 开头的创业板代码和 `.SH/.SZ/.BJ` 后缀。
+  - `ASHARE.costs` 的费率表补到 2005-01-24（印花税和过户费每次调整，依据见 `docs/ASHARE_FEES.md`，2015 年以前的过户费标「未核实」并取保守值），全历史回测不用再手填；新增 `FeeSchedule.components`，覆盖一种过户费写法时同方向另一种清零。改动前能用的写法结果逐位不变。
+  - `ashare.risk.from_panel(data, start=...)` 把面板接到风险模型（字段改名、行业重编号），行业因子用申万一级名称（`industry_银行`，新增 `FundamentalConfig.industry_names`，不给名字时缓存键不变）；`PortfolioProblem` 的 `industry_factors`、`style_factors` 可按因子名给；导出 `ashare.risk.STYLE_NAMES`。
+  - `bench/e2e` 改用这些入口，真实面板上与旧手写做法逐位相同（`bench/e2e/usability_equivalence.py`）。`DESIGN.md` 3、4.3、4.4、6.1、6.3、6.4 同步，组合优化的选型改成实际的「直接调 Clarabel，cvxpy 只作后备和参考」。

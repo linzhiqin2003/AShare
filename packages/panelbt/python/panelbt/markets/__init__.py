@@ -18,6 +18,11 @@ class FeeSchedule:
 
     periods: tuple
     required_overrides_before: tuple = ()
+    # Groups of keys that express one charge (e.g. a transfer fee quoted per
+    # share in one era and per amount in another). Overriding any key of a
+    # group replaces the whole charge: the group's other scheduled keys become
+    # zero unless they are overridden too.
+    components: tuple = ()
 
     def __post_init__(self):
         periods = tuple(
@@ -45,6 +50,11 @@ class FeeSchedule:
                 "FeeSchedule accepts directional taxes/fees; broker commission belongs in overrides"
             )
         object.__setattr__(self, "periods", periods)
+        components = tuple(tuple(group) for group in self.components)
+        flat = [key for group in components for key in group]
+        if len(flat) != len(set(flat)) or set(flat) - allowed:
+            raise ValueError("FeeSchedule components must be disjoint fee keys")
+        object.__setattr__(self, "components", components)
 
     def expand(self, dates):
         dates = np.asarray(dates, dtype="datetime64[D]")
@@ -106,6 +116,10 @@ class MarketProfile:
                     f"dates before {before} require explicit overrides: {', '.join(fields)}"
                 )
         values = self.fees.expand(dates)
+        for group in self.fees.components:
+            if overrides.keys() & set(group):
+                for key in group:
+                    values[key] = np.zeros_like(values[key])
         values.update(overrides)
         return Costs(**values)
 
@@ -165,17 +179,79 @@ class MarketProfile:
         return Config(**values)
 
 
+# A-share stamp duty and ChinaClear transfer fee, as cumulative effective-date
+# patches. Sources and the venue caveat are documented in docs/ASHARE_FEES.md of
+# the AShare repository and summarised in this package's README. Every entry:
+#
+# 2005-01-24  stamp duty 0.1% both sides (MOF, approved by the State Council,
+#             announced 2005-01-23). In force when A-share panels usually start.
+# 2005-01-24  transfer fee, UNVERIFIED and deliberately conservative: Shanghai
+#             charged on par value (investors commonly paid 1 yuan per 1000
+#             shares, i.e. 0.001 per share; ChinaClear's own share was 0.5 per
+#             mille of par), Shenzhen 0.0255 per mille of turnover. Engine fees
+#             cannot differ by venue, so both are charged to every security:
+#             fee_per_share 0.001 plus fee_rate 2.55e-5. Start date unverified.
+# 2007-05-30  stamp duty 0.3% both sides (MOF/SAT notice issued and effective
+#             2007-05-30).
+# 2008-04-24  stamp duty 0.1% both sides (MOF/SAT notice, 2008-04-24).
+# 2008-09-19  stamp duty 0.1% sell side only (MOF/SAT, announced 2008-09-18).
+# 2012-09-01  Shanghai transfer fee 0.3 per mille of par (ChinaClear notice of
+#             August 2012; rate confirmed by the SSE/SZSE/ChinaClear Q&A of
+#             2015-07-03). The 2012-06-01 step to 0.375 per mille of par is
+#             not modelled: the investor-facing rate between June and August
+#             2012 is unverified, so the higher 2005 value is kept.
+# 2015-08-01  transfer fee 0.02 per mille of turnover both sides on both
+#             exchanges, per-share charge dropped (ChinaClear, announced
+#             2015-07-03).
+# 2021-11-15  0.025 per mille: Beijing Stock Exchange rate from its opening
+#             until 2022-04-28 (secondary source). Applied to all securities
+#             as the conservative choice; SH/SZ stayed at 0.02 per mille.
+# 2022-04-29  transfer fee 0.01 per mille of turnover both sides, all three
+#             exchanges (ChinaClear notice of 2022-04-28).
+# 2023-08-28  stamp duty 0.05% sell side (MOF/STA announcement 2023 No. 39).
+#
+# Broker commission (and the exchange handling fee usually bundled into it)
+# is not market data: pass commission_rate/commission_min explicitly.
 ASHARE = MarketProfile(
     "A shares",
     "CNY",
     252,
     FeeSchedule(
         (
-            ("2008-09-19", {"tax_sell": 0.001}),
+            (
+                "2005-01-24",
+                {
+                    "tax_buy": 0.001,
+                    "tax_sell": 0.001,
+                    "fee_rate_buy": 0.0000255,
+                    "fee_rate_sell": 0.0000255,
+                    "fee_per_share_buy": 0.001,
+                    "fee_per_share_sell": 0.001,
+                },
+            ),
+            ("2007-05-30", {"tax_buy": 0.003, "tax_sell": 0.003}),
+            ("2008-04-24", {"tax_buy": 0.001, "tax_sell": 0.001}),
+            ("2008-09-19", {"tax_buy": 0.0, "tax_sell": 0.001}),
+            ("2012-09-01", {"fee_per_share_buy": 0.0003, "fee_per_share_sell": 0.0003}),
+            (
+                "2015-08-01",
+                {
+                    "fee_rate_buy": 0.00002,
+                    "fee_rate_sell": 0.00002,
+                    "fee_per_share_buy": 0.0,
+                    "fee_per_share_sell": 0.0,
+                },
+            ),
+            ("2021-11-15", {"fee_rate_buy": 0.000025, "fee_rate_sell": 0.000025}),
             ("2022-04-29", {"fee_rate_buy": 0.00001, "fee_rate_sell": 0.00001}),
             ("2023-08-28", {"tax_sell": 0.0005}),
         ),
-        required_overrides_before=(("2022-04-29", ("fee_rate_buy", "fee_rate_sell")),),
+        components=(
+            ("tax_buy",),
+            ("tax_sell",),
+            ("fee_rate_buy", "fee_per_share_buy"),
+            ("fee_rate_sell", "fee_per_share_sell"),
+        ),
     ),
     lot_rule="ashare",
     price_limits=True,

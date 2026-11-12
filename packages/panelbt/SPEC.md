@@ -203,9 +203,14 @@ and zero for fractional shares. No-limit profiles require only valid prices and
 no suspension. A-share adapters preserve the original board and price-limit
 rules; `rules.ashare` remains an import facade over `markets.ashare`.
 
-ASHARE is the only built-in market. Before 2022-04-29 callers must explicitly
-override both other-fee rates: historical transfer fees differed by venue. The
-tax adapter still supports dates from 2008-09-19. HK-style bilateral tax/heterogeneous lots
+ASHARE is the only built-in market. Its schedule starts on 2005-01-24 and
+covers every stamp-duty and transfer-fee change since (sources beside the
+`ASHARE` definition). Before 2015-08-01 the transfer fee differed by venue (per
+share in Shanghai, per amount in Shenzhen); fees cannot vary by security, so
+both forms are charged (an upper bound). `FeeSchedule.components` groups keys
+that express one charge: overriding any key in a group zeroes the group's other
+scheduled keys, so explicit fixed rates never double count. The standalone
+`stamp_tax_sell` adapter still supports dates from 2008-09-19. HK-style bilateral tax/heterogeneous lots
 and US-style per-share commission/caps/fractional shares are illustrative tests
 and README examples, not trusted market defaults.
 

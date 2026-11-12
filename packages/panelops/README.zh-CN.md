@@ -13,7 +13,7 @@ score = po.cs_rank(po.ts_mean(r, 2, min_periods=1), normalize=True)
 targets = po.targets(score, k=1)
 ```
 
-- 时序：delay、delta、sum、mean、std、var、zscore、median、mad、count、sumif、ffill、min、max、rank、quantile、skew、kurt、product、argmin/argmax、idxmin/idxmax、corr、cov、decay_linear、ema、时间回归 slope/residual/rsquare、双序列 regression_slope/regression_residual，统一加 `ts_` 前缀。
+- 时序：delay、delta、sum、mean、std、var、zscore、median、mad、count、sumif、ffill、min、max、rank、quantile、skew、kurt、product、argmin/argmax、idxmin/idxmax（并列默认取最近一次，`ties="earliest"` 取最早一次，同 `numpy.argmax`）、corr、cov、decay_linear、ema、时间回归 slope/residual/rsquare、双序列 regression_slope/regression_residual，统一加 `ts_` 前缀。
 - 截面：rank、zscore、winsor_quantile、winsor_mad、group_demean、neutralize、scale、demean，统一加 `cs_` 前缀。
 - 逐元素：`elementwise(op, ...)` 支持 gt/ge/lt/le/eq/ne、and_/or_/not_、where、maximum/minimum、sign、power/signed_power、sqrt、exp、clip、is_nan、fill_nan。
 - 评估：ic、rank_ic、rank_ic_many（多个因子共用一次收益排序）、factor_autocorr、group_returns、group_turnover、targets。

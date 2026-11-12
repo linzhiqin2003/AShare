@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TEARSHEET_TITLE__</title>
+<style>
+:root{
+  --ink:#16181d; --ink2:#4a505c; --ink3:#7d8490; --ink4:#a9aeb7;
+  --line:#e9ebef; --line2:#f2f3f5; --bg:#ffffff; --tint:#f6f7f9;
+  --strat:#3b4bd8; --strat-pale:#eef0fd;
+  --bench:#9da2ab;
+  --up:#d1373f; --down:#13914a;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font-family:var(--font);font-size:13px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+.up{color:var(--up)} .down{color:var(--down)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.print-only{display:none}
+
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px 24px;flex-wrap:wrap;
+  padding:22px 32px 16px;border-bottom:1px solid var(--line)}
+.top h1{margin:0;font-size:20px;font-weight:650;letter-spacing:-.01em}
+.top .meta{margin-top:4px;color:var(--ink3);font-size:13px}
+.top .meta b{font-weight:500;color:var(--ink2)}
+.ranges{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.seg{display:flex;gap:2px;flex-wrap:wrap}
+.seg button{height:30px;padding:0 11px;border:1px solid transparent;border-radius:7px;color:var(--ink2);font-size:13px}
+.seg button:hover{background:var(--tint)}
+.seg button.on{background:var(--strat-pale);border-color:var(--strat);color:var(--strat);font-weight:600}
+.seg .lab{color:var(--ink3);font-size:12px;align-self:center;margin-right:4px}
+.vsep{width:1px;height:20px;background:var(--line)}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;padding:0 0 0 32px}
+.leftcol{min-width:0;border-right:1px solid var(--line);padding-right:28px}
+.stackwrap{padding:14px 0 18px;min-width:0}
+.heatpanel{border-top:1px solid var(--line);padding:22px 0 24px}
+#stack{display:block;width:100%;user-select:none;-webkit-user-select:none}
+svg text{font-family:var(--font)}
+.side{padding:18px 32px 24px 26px;min-width:0}
+.sec{padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0;margin-bottom:0}
+.sh{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px}
+.sh h2{margin:0;font-size:14px;font-weight:650;white-space:nowrap}
+.sh .r{color:var(--ink3);font-size:12px;text-align:right}
+
+.heroL{color:var(--ink3);font-size:12px}
+.hero{display:flex;align-items:baseline;gap:14px;margin:2px 0 4px;flex-wrap:wrap}
+.hero .big{font-size:34px;font-weight:650;letter-spacing:-.02em;line-height:1.1}
+.hero .vs{color:var(--ink3);font-size:13px}
+.hero .vs b{font-weight:600;color:var(--ink2)}
+.excess{margin:6px 0 14px;font-size:13px;color:var(--ink2)}
+.excess b{font-weight:650}
+.excess .dot{color:var(--ink4);margin:0 4px}
+table.kv{width:100%;border-collapse:collapse}
+table.kv th{font-weight:500;color:var(--ink3);font-size:12px;text-align:right;padding:0 0 6px 10px;white-space:nowrap}
+table.kv th:first-child{text-align:left}
+table.kv td{padding:5px 0;text-align:right;border-top:1px solid var(--line2)}
+table.kv td:first-child{text-align:left;color:var(--ink2)}
+table.kv td.s{font-weight:600}
+table.kv td.b{color:var(--ink3);width:74px;padding-left:10px}
+table.kv tr.gap td{border-top:1px solid var(--line)}
+
+.dd{display:block;text-align:left;padding:8px 10px;margin:0 -10px;border:1px solid transparent;border-radius:8px;width:calc(100% + 20px)}
+.dd:hover{background:var(--tint)}
+.dd.on{background:var(--strat-pale);border-color:var(--strat)}
+.dd .l1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.dd .depth{font-size:15px;font-weight:650}
+.dd .dur{color:var(--ink3);font-size:12px;text-align:right}
+.dd .l2{color:var(--ink2);font-size:12px;margin-top:2px}
+.dd .l2 .na{color:var(--ink3)}
+
+table.hold{width:100%;border-collapse:collapse}
+table.hold th{font-weight:500;color:var(--ink3);font-size:12px;text-align:left;padding:0 0 6px}
+table.hold th:last-child{text-align:right}
+table.hold td{padding:3px 0;border-top:1px solid var(--line2);white-space:nowrap}
+table.hold td.n{font-weight:500;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+table.hold td.n span{color:var(--ink3);font-size:11px;font-weight:400;margin-left:6px}
+table.hold td.i{color:var(--ink2);padding-left:8px}
+table.hold td.w{text-align:right;width:92px}
+.wbar{display:inline-block;height:5px;background:var(--strat);opacity:.55;border-radius:1px;vertical-align:middle;margin-right:6px}
+.more{margin-top:10px;color:var(--strat);font-size:12px;font-weight:600}
+
+.layer2{border-top:1px solid var(--line);padding:26px 32px 10px}
+.panel h2{margin:0;font-size:14px;font-weight:650}
+.panel .sh{margin-bottom:14px}
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.heat{border-collapse:separate;border-spacing:2px;width:100%;min-width:600px}
+table.heat th{font-weight:500;color:var(--ink3);font-size:12px;padding:0 0 4px;text-align:center}
+table.heat td{height:28px;text-align:center;font-size:12px;border-radius:3px;color:var(--ink)}
+table.heat td.y{color:var(--ink2);text-align:left;font-weight:500;width:46px;padding-left:2px}
+table.heat td.tot{font-weight:650;width:56px}
+table.heat td.tot.up{color:var(--up)} table.heat td.tot.down{color:var(--down)}
+table.heat td.cell:hover{outline:1.5px solid var(--strat);outline-offset:-1px}
+table.heat .ast{color:var(--ink3)}
+.tip{position:fixed;pointer-events:none;background:#fff;border:1px solid var(--line);box-shadow:0 4px 18px rgba(20,24,40,.08);
+  border-radius:8px;padding:8px 10px;font-size:12px;z-index:9;display:none;min-width:150px}
+.tip .t{font-weight:600;margin-bottom:4px}
+.tip .row{display:flex;justify-content:space-between;gap:16px;color:var(--ink2)}
+table.yr{border-collapse:collapse;width:100%;min-width:640px}
+table.yr th{font-weight:500;color:var(--ink3);font-size:12px;text-align:right;padding:0 0 6px 4px;white-space:nowrap}
+table.yr th:first-child{text-align:left;padding-left:0}
+table.yr td{padding:4px 0 4px 4px;text-align:right;border-top:1px solid var(--line2);white-space:nowrap}
+table.yr td:first-child{text-align:left;padding-left:0;color:var(--ink2);font-weight:500;width:96px}
+table.yr td.bars{padding:4px 6px 4px 12px}
+table.yr col.num1{width:64px}
+table.yr col.num{width:84px}
+table.yr td .p{color:var(--ink3);font-size:11px;font-weight:400;margin-left:3px}
+.bp{position:relative;height:18px}
+.bp i{position:absolute;height:7px;border-radius:1px}
+.bp i.s{top:1px;background:var(--strat)}
+.bp i.b{top:10px;background:var(--bench)}
+.bp i.solo{top:5px}
+.bp em{position:absolute;top:-3px;bottom:-3px;width:1px;background:#c9ccd2}
+.legend{color:var(--ink3);font-size:12px;white-space:nowrap}
+.legend i{display:inline-block;width:10px;height:7px;margin:0 5px 0 12px;vertical-align:1px}
+.toggle{display:flex;gap:2px}
+.toggle button{height:26px;padding:0 9px;border-radius:6px;border:1px solid transparent;color:var(--ink3);font-size:12px}
+.toggle button.on{color:var(--strat);background:var(--strat-pale);border-color:var(--strat);font-weight:600}
+.foot{padding:16px 32px 28px;color:var(--ink3);font-size:12px;border-top:1px solid var(--line);margin-top:22px;line-height:1.7}
+.foot p{margin:0}
+
+/* print-only blocks (A4 portrait, single column) */
+.psec{break-inside:avoid;page-break-inside:avoid;padding:14px 0 8px}
+.psec h2{margin:0 0 10px;font-size:14px;font-weight:650}
+.psec svg{display:block;width:100%;height:auto}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+table.pdd{width:100%;border-collapse:collapse;font-size:12px}
+table.pdd th{font-weight:500;color:var(--ink3);text-align:right;padding:0 0 6px 10px}
+table.pdd th:first-child{text-align:left}
+table.pdd td{padding:4px 0 4px 10px;border-top:1px solid var(--line2);text-align:right;white-space:nowrap}
+table.pdd td:first-child,table.pdd th:first-child{text-align:left;padding-left:0}
+table.pdd td:first-child{font-weight:600}
+
+@media (max-width:1080px){
+  .main{grid-template-columns:minmax(0,1fr);padding:0 16px}
+  .leftcol{display:contents}
+  .stackwrap{order:1} .side{order:2} .heatpanel{order:3}
+  .stackwrap{padding:12px 0 8px}
+  .side{padding:16px 0 8px;border-top:1px solid var(--line)}
+  .layer2{padding:22px 16px 6px}
+  .top{padding:16px 16px 12px}
+  .foot{padding:14px 16px 24px}
+}
+@media (max-width:520px){
+  .vsep{display:none}
+  .top h1{font-size:18px}
+  .seg button{padding:0 8px;height:28px}
+  .hero .big{font-size:30px}
+}
+@page{size:A4 portrait;margin:12mm 12mm 13mm}
+@media print{
+  html,body{background:#fff}
+  .screen-only,.ranges,.stackwrap,.side,.toggle,.tip,.more{display:none!important}
+  .print-only{display:block}
+  .top{padding:0 0 10px;border-bottom:1px solid var(--line)}
+  .main{display:block;padding:0}
+  .leftcol{border:0;padding:0}
+  .heatpanel,.layer2{border-top:1px solid var(--line);padding:14px 0 8px;break-inside:avoid;page-break-inside:avoid}
+  .layer2{padding-left:0;padding-right:0}
+  .scrollx{overflow:visible}
+  table.heat,table.yr{min-width:0}
+  table.heat td{height:22px;font-size:11px}
+  table.yr td{padding:3px 0 3px 4px}
+  table.yr col.num{width:60px} table.yr col.num1{width:58px}
+  table.kv td{padding:3px 0}
+  .hero .big{font-size:30px}
+  .psec{padding:10px 0 4px}
+  .hold-print{break-inside:auto}
+  .hold-print table.hold tr{break-inside:avoid}
+  .foot{padding:12px 0 0;margin-top:8px;break-inside:avoid}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1 id="title"></h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="ranges">
+    <div class="seg" id="segRange"></div>
+    <div class="vsep" id="segSep"></div>
+    <div class="seg" id="segDD"><span class="lab">回撤</span></div>
+  </div>
+</header>
+
+<section class="psec print-only" id="pSummary"></section>
+<section class="psec print-only"><svg id="pChart1"></svg></section>
+
+<div class="main">
+  <div class="leftcol">
+    <div class="stackwrap" id="stackwrap"><svg id="stack"></svg></div>
+    <section class="panel heatpanel">
+      <div class="sh"><h2>月度收益</h2>
+        <div class="toggle" id="heatToggle"><button data-m="abs" class="on">策略</button><button data-m="ex">相对基准</button></div></div>
+      <div class="scrollx"><table class="heat" id="heat"></table></div>
+    </section>
+  </div>
+  <aside class="side">
+    <section class="sec">
+      <div class="sh"><h2>区间表现</h2><span class="r" id="perfRange"></span></div>
+      <div id="perf"></div>
+    </section>
+    <section class="sec" id="ddsec">
+      <div class="sh"><h2>最深回撤</h2><span class="r">峰 → 谷 → 恢复</span></div>
+      <div id="ddlist"></div>
+    </section>
+    <section class="sec">
+      <div class="sh"><h2>最新持仓</h2><span class="r" id="holdMeta"></span></div>
+      <table class="hold" id="hold"></table>
+      <button class="more" id="holdMore"></button>
+    </section>
+  </aside>
+</div>
+
+<div class="layer2">
+  <section class="panel">
+    <div class="sh"><h2>分年度</h2><span class="legend" id="yrLegend"></span></div>
+    <div class="scrollx"><table class="yr" id="yr"></table></div>
+  </section>
+</div>
+
+<section class="psec print-only"><svg id="pChart2"></svg></section>
+<section class="psec print-only" id="pIndSec"><svg id="pChart3"></svg></section>
+<section class="psec print-only hold-print" id="pHold"></section>
+
+<div class="foot" id="foot"></div>
+<div class="tip" id="tip"></div>
+
+<script type="application/json" id="data">__TEARSHEET_DATA__</script>
+<script>
+(function(){
+"use strict";
+const D = JSON.parse(document.getElementById('data').textContent);
+const S = D.summary, M = D.meta, dl = D.daily, N = dl.date.length;
+const RL = D.rolling; RL.date = RL.start_index==null? [] : dl.date.slice(RL.start_index, RL.start_index+RL.length);
+const HASB = !!(M.benchmark && dl.benchmark_nav);
+const BN = HASB? M.benchmark.name : '';
+const BS = HASB? dl.benchmark_nav.findIndex(v=>v!=null) : -1;
+const IW = D.industry_weights, HASI = !!(IW && IW.industries.length);
+const T = dl.date.map(s => Date.parse(s + 'T00:00:00Z'));
+const idxOf = {}; dl.date.forEach((d,i)=>idxOf[d]=i);
+const C = {strat:'#3b4bd8', bench:'#9da2ab', up:'#d1373f', down:'#13914a', ink:'#16181d', ink2:'#4a505c', ink3:'#7d8490', ink4:'#a9aeb7', grid:'#eef0f3', line:'#e3e5e9', band:'#f4f5f7'};
+const MINUS = '−';
+const FONT = getComputedStyle(document.body).fontFamily;
+const mctx = document.createElement('canvas').getContext('2d');
+function textW(s, size, weight){ mctx.font = `${weight||400} ${size}px ${FONT}`; return mctx.measureText(s).width; }
+
+/* ---------- formatting ---------- */
+function pct(x, d=1, sign=false){ if(x==null||!isFinite(x)) return '—'; const v=(x*100).toFixed(d); const neg=v.startsWith('-'); const a=neg? v.slice(1):v; if(+a===0) return (0).toFixed(d)+'%'; return (neg?MINUS:(sign?'+':''))+a+'%'; }
+function num(x, d=2){ if(x==null||!isFinite(x)) return '—'; let v=x.toFixed(d); if(+v===0) v=(0).toFixed(d); return v.startsWith('-')? MINUS+v.slice(1):v; }
+function cls(x){ if(x==null) return ''; const v=Math.round(x*1000); return v>0?'up':(v<0?'down':''); }
+function col(x){ if(x==null) return C.ink3; const v=Math.round(x*1000); return v>0?C.up:(v<0?C.down:C.ink2); }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const yrs = n => n/(M.periods_per_year||252);
+
+/* ---------- header ---------- */
+document.getElementById('title').textContent = M.title;
+(function(){
+  const parts = [`<b>${S.first_trade_day} — ${S.end}</b>`, `${S.trading_days} 个交易日`];
+  if(M.initial_capital) parts.push(`初始资金 ${M.initial_capital>=1e4? (M.initial_capital/1e4).toLocaleString('zh-CN',{maximumFractionDigits:2})+' 万元' : M.initial_capital+' 元'}`);
+  if(HASB){ let b=`基准 <b>${esc(BN)} ${esc(M.benchmark.kind_label)}</b>`; if(BS>1) b+=`，自 ${dl.date[BS]} 起`; parts.push(b); }
+  else parts.push('无基准');
+  document.getElementById('meta').innerHTML = parts.join(' · ');
+})();
+
+/* ---------- range metrics ---------- */
+const RB = D.rebalances, rebIdx = RB.map(r => idxOf[r.date]);
+const DENSE = RB.length >= 2 && (N-1)/RB.length < 12;
+const PY = M.periods_per_year||252;
+function stats(v){ const n=v.length; let s=0; for(const x of v) s+=x; const m=s/n; let q=0; for(const x of v) q+=(x-m)*(x-m); return {m, sd: n>1? Math.sqrt(q/(n-1)) : NaN}; }
+function mddOf(arr){ let pk=-Infinity, m=0; for(const x of arr){ if(x==null) continue; if(x>pk) pk=x; m=Math.min(m, x/pk-1);} return m; }
+function metrics(a, b){
+  const full = (a===0 && b===N-1);
+  const n = b - a;
+  const r = dl.return.slice(a+1, b+1);
+  const cum = dl.nav[b]/dl.nav[a]-1;
+  const ann = Math.pow(1+cum, PY/n)-1;
+  const sr = stats(r);
+  const vol = sr.sd*Math.sqrt(PY), sharpe = sr.sd>0? sr.m/sr.sd*Math.sqrt(PY) : null;
+  let to=0; for(let i=a+1;i<=b;i++) to+=dl.turnover[i];
+  let fees=0, slip=0; RB.forEach((rb,k)=>{ if(rebIdx[k]>a && rebIdx[k]<=b){ fees+=rb.fees; slip+=rb.slippage; } });
+  const eq0 = dl.nav[a]*(M.initial_capital||1);
+  const m = {n, cum, ann, vol, sharpe, mdd:mddOf(dl.nav.slice(a,b+1)), turnover: to/yrs(n), fees: fees/eq0, slip: slip/eq0,
+    bcum:null, bann:null, bvol:null, bsharpe:null, bmdd:null, excess:null, te:null, ir:null, beta:null, bn:0};
+  const o = HASB? Math.max(a, BS) : -1;
+  if(HASB && b-o>=2){
+    const bn=b-o; const q=dl.benchmark_return.slice(o+1,b+1), rr=dl.return.slice(o+1,b+1);
+    const bcum=dl.benchmark_nav[b]/dl.benchmark_nav[o]-1, scum=dl.nav[b]/dl.nav[o]-1;
+    const sq=stats(q); const ex=rr.map((x,i)=>x-q[i]); const se=stats(ex); const te=se.sd*Math.sqrt(PY);
+    const sr2=stats(rr); let cv=0; for(let i=0;i<rr.length;i++) cv+=(rr[i]-sr2.m)*(q[i]-sq.m); cv/=(rr.length-1);
+    Object.assign(m, {bn, bcum, bann:Math.pow(1+bcum,PY/bn)-1, bvol:sq.sd*Math.sqrt(PY), bsharpe: sq.sd>0? sq.m/sq.sd*Math.sqrt(PY):null,
+      bmdd:mddOf(dl.benchmark_nav.slice(o,b+1)), te, ir: te>0? se.m*PY/te : null, beta: sq.sd>0? cv/(sq.sd*sq.sd) : null});
+    m.excess = (Math.pow(1+scum,PY/bn)-1) - m.bann; m.excum = scum - bcum;
+  }
+  if(full){ // 全区间直接用报告里的数，与导出的 summary 完全一致
+    Object.assign(m, {cum:S.cumulative_return, ann:S.annual_return, vol:S.annual_volatility, sharpe:S.sharpe, mdd:S.max_drawdown,
+      turnover:S.annual_turnover, fees:S.total_fees_to_initial, slip:S.total_slippage_to_initial});
+    if(HASB) Object.assign(m, {bcum:S.benchmark_cumulative_return, bann:S.benchmark_annual_return, bvol:S.benchmark_annual_volatility,
+      bsharpe:S.benchmark_sharpe, bmdd:S.benchmark_max_drawdown, excess:S.excess_annual_return, te:S.tracking_error, ir:S.information_ratio, beta:S.beta});
+  }
+  return m;
+}
+
+/* ---------- state ---------- */
+const st = { a:0, b:N-1, ma:0, mb:N-1, key:'all', dd:-1, roll:'sharpe', hover:null };
+function lastIdxOnOrBefore(ms){ let lo=0, hi=N-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(T[m]<=ms) lo=m; else hi=m-1; } return lo; }
+function setRange(key){
+  st.key=key; st.dd=-1;
+  if(key==='all'){ st.a=0; st.b=N-1; }
+  else { const e=new Date(T[N-1]); e.setUTCFullYear(e.getUTCFullYear()-(+key)); st.a=lastIdxOnOrBefore(e.getTime()); st.b=N-1; }
+  st.ma=st.a; st.mb=st.b; renderAll();
+}
+function setDD(k){
+  const d=D.drawdowns[k]; if(!d) return setRange('all');
+  st.key='dd'+k; st.dd=k;
+  const p=idxOf[d.peak], r=d.recovery? idxOf[d.recovery] : N-1;
+  const pad=Math.max(25, Math.round((r-p)*0.35));
+  st.a=Math.max(0,p-pad); st.b=Math.min(N-1, r+pad);
+  st.ma=p; st.mb=idxOf[d.trough]; renderAll();
+}
+
+/* ---------- controls ---------- */
+const spanYears = (T[N-1]-T[0])/(365.25*864e5);
+const segR=document.getElementById('segRange');
+[['all','全部'],['5','近5年'],['3','近3年'],['1','近1年']].forEach(([k,l])=>{
+  if(k!=='all' && spanYears < +k + 0.25) return;
+  const b=document.createElement('button'); b.textContent=l; b.dataset.k=k; b.onclick=()=>setRange(k); segR.appendChild(b); });
+if(segR.children.length<2) segR.style.display='none';
+const segD=document.getElementById('segDD');
+D.drawdowns.slice(0,3).forEach((d,k)=>{ const b=document.createElement('button'); b.textContent=pct(d.depth); b.dataset.k='dd'+k;
+  b.title=`${d.peak} → ${d.trough}`; b.onclick=()=>setDD(k); segD.appendChild(b); });
+if(!D.drawdowns.length){ segD.style.display='none'; document.getElementById('segSep').style.display='none'; }
+if(segR.style.display==='none') document.getElementById('segSep').style.display='none';
+function syncButtons(){ document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on', b.dataset.k===st.key));
+  document.querySelectorAll('.dd').forEach(b=>b.classList.toggle('on', +b.dataset.k===st.dd)); }
+
+/* ---------- performance panel (screen and print share it) ---------- */
+function perfHTML(m, label){
+  const annual = m.n >= 240 && label!=='dd';
+  const heroV = annual? m.ann : m.cum, heroB = annual? m.bann : m.bcum;
+  const exV = annual? m.excess : m.excum;
+  let h = `<div class="heroL">${annual?'年化收益':'区间收益'}</div>
+  <div class="hero"><span class="big ${cls(heroV)}">${pct(heroV,1,true)}</span>${HASB&&heroB!=null?`<span class="vs">${esc(BN)} <b class="${cls(heroB)}">${pct(heroB,1,true)}</b></span>`:''}</div>
+  <div class="excess">`;
+  const span = yrs(m.n)>=0.95? yrs(m.n).toFixed(1)+' 年' : m.n+' 个交易日';
+  if(HASB && exV!=null) h += `${annual?'年化超额':'超额'} <b class="${cls(exV)}">${pct(exV,1,true)}</b><span class="dot">·</span>信息比率 <b>${num(m.ir)}</b><span class="dot">·</span>${span}`;
+  else h += `夏普 <b>${num(m.sharpe)}</b><span class="dot">·</span>${span}`;
+  h += `</div><table class="kv"><tr><th></th><th>策略</th>${HASB?`<th>${esc(BN)}</th>`:''}</tr>`;
+  const row=(l,s,b,sc='')=>`<tr><td>${l}</td><td class="s ${sc}">${s}</td>${HASB?`<td class="b">${b}</td>`:''}</tr>`;
+  const bspan = v => `<span class="${cls(v)}">${pct(v,1,true)}</span>`;
+  h += row('累计收益', pct(m.cum,1,true), bspan(m.bcum), cls(m.cum));
+  if(annual) h += row('年化收益', pct(m.ann,1,true), bspan(m.bann), cls(m.ann));
+  h += row('年化波动', pct(m.vol), pct(m.bvol));
+  h += row('夏普', num(m.sharpe), num(m.bsharpe));
+  h += row('最大回撤', pct(m.mdd), pct(m.bmdd), m.mdd<0?'down':'');
+  if(HASB){ h += row('Beta', num(m.beta), ''); h += row('跟踪误差', pct(m.te), ''); }
+  h += `<tr class="gap"><td>年化换手（双边）</td><td class="s">${pct(m.turnover,0)}</td>${HASB?'<td class="b"></td>':''}</tr>`;
+  h += row('费用 / 期初权益', pct(m.fees,2), '');
+  h += row('滑点 / 期初权益', pct(m.slip,2), '');
+  return h + `</table>`;
+}
+function renderPerf(){
+  const m = metrics(st.ma, st.mb);
+  document.getElementById('perfRange').textContent = `${dl.date[st.ma===0?1:st.ma]} — ${dl.date[st.mb]}`;
+  document.getElementById('perf').innerHTML = perfHTML(m, st.dd>=0? 'dd' : 'range');
+}
+
+/* ---------- drawdown list ---------- */
+const sd2=(a,b)=> a.slice(0,4)===b.slice(0,4)? b.slice(5) : b;
+function ddDur(d){ return `${d.days_to_trough} 天见底 · ${d.recovered? d.duration_days+' 天修复' : '未修复 · 已 '+d.duration_days+' 天'}`; }
+(function(){
+  const el=document.getElementById('ddlist');
+  if(!D.drawdowns.length){ document.getElementById('ddsec').style.display='none'; return; }
+  el.innerHTML = D.drawdowns.map((d,k)=>`<button class="dd" data-k="${k}"><div class="l1"><span class="depth down">${pct(d.depth)}</span>
+      <span class="dur">${ddDur(d)}</span></div>
+      <div class="l2">${d.peak} → ${sd2(d.peak,d.trough)} → ${d.recovered? sd2(d.trough,d.recovery) : '<span class="na">—</span>'}</div></button>`).join('');
+  el.querySelectorAll('.dd').forEach(b=>b.onclick=()=>{ const k=+b.dataset.k; if(st.dd===k) setRange('all'); else setDD(k); });
+})();
+
+/* ---------- holdings ---------- */
+const H = D.holdings_latest;
+function holdRows(list){ const mx=Math.max(1e-12,...H.map(h=>h.weight));
+  return `<tr><th>名称</th>${HASI?'<th>行业</th>':''}<th>权重</th></tr>` +
+    list.map(h=>`<tr><td class="n">${h.name? esc(h.name)+`<span>${esc(h.symbol.split('.')[0])}</span>` : esc(h.symbol)}</td>${HASI?`<td class="i">${esc(h.industry||'')}</td>`:''}
+    <td class="w"><span class="wbar" style="width:${(h.weight/mx*30).toFixed(1)}px"></span>${pct(h.weight,2)}</td></tr>`).join(''); }
+(function(){
+  const head = `${dl.date[N-1]} · ${H.length} 只 · 现金 ${pct(dl.cash_weight[N-1],2)}`;
+  document.getElementById('holdMeta').textContent = head;
+  const LIM=30, more=document.getElementById('holdMore'); let open=false;
+  const draw=()=>{ document.getElementById('hold').innerHTML = holdRows(open? H : H.slice(0,LIM));
+    more.textContent = open? '收起' : `全部 ${H.length} 只`; };
+  if(H.length>LIM) more.onclick=()=>{ open=!open; draw(); }; else more.style.display='none';
+  if(!H.length) document.getElementById('hold').closest('.sec').querySelector('table').style.display='none';
+  draw();
+  document.getElementById('pHold').innerHTML = H.length? `<div class="sh"><h2>最新持仓</h2><span class="r">${head}</span></div><table class="hold">${holdRows(H)}</table>` : '';
+})();
+
+/* ---------- shared chart helpers ---------- */
+let indTop=[], indRows=[], iwT=[];
+if(HASI){
+  const order = IW.industries.map((n,i)=>({n,i,avg:IW.weights[i].reduce((s,x)=>s+x,0)/IW.dates.length})).sort((x,y)=>y.avg-x.avg);
+  const TOPN = order.length<=12? order.length : 11;
+  indTop = order.slice(0,TOPN);
+  indRows = indTop.map(o=>({n:o.n, w:IW.weights[o.i]}));
+  if(order.length>TOPN){ const rest=order.slice(TOPN); indRows.push({n:'其他', w:IW.dates.map((_,j)=>rest.reduce((s,o)=>s+IW.weights[o.i][j],0))}); }
+  iwT = IW.dates.map(d=>Date.parse(d+'T00:00:00Z'));
+}
+const RT = RL.date.map(s=>Date.parse(s+'T00:00:00Z'));
+const ROLL = {sharpe:{l:'夏普', ref:0}, volatility:{l:'波动', ref:null}};
+if(RL.beta) ROLL.beta = {l:'Beta', ref:1};
+
+function niceTicks(lo,hi,count){ const span=hi-lo||1; let step=Math.pow(10,Math.floor(Math.log10(span/count))); const e=span/count/step;
+  if(e>=7.5) step*=10; else if(e>=3.5) step*=5; else if(e>=1.5) step*=2; const t=[];
+  for(let v=Math.ceil(lo/step-1e-9)*step; v<=hi+1e-9; v+=step) t.push(+v.toFixed(10)); return t; }
+function spaced(ticks, pos, minGap){ const out=[]; let lastP=-1e9; for(const t of ticks){ const p=pos(t); if(Math.abs(p-lastP)>=minGap){ out.push(t); lastP=p; } } return out; }
+function decimals(x){ const s=String(x); const i=s.indexOf('.'); return i<0?0:s.length-i-1; }
+/* 对数轴刻度：在等差步长里取最密、且相邻刻度至少相隔 minGap 像素的一组；跨度太大时改用 1-2-5。 */
+function logTicks(lo, hi, Y, minGap){
+  if(hi/lo >= 1.8 && hi/lo <= 8){ // 跨度适中：用近似等比的整数序列，刻度在对数轴上大致等距
+    const base=[1,1.2,1.5,2,2.5,3,4,5,6,8], c=[];
+    for(let e=Math.floor(Math.log10(lo))-1; e<=Math.ceil(Math.log10(hi)); e++) for(const k of base){ const v=+(k*Math.pow(10,e)).toPrecision(6); if(v>=lo&&v<=hi) c.push(v); }
+    const out=[]; for(const v of c){ if(!out.length || Math.abs(Y(out[out.length-1])-Y(v))>=minGap) out.push(v); }
+    if(out.length>=4) return {ticks: out, dec: 2};
+  }
+  if(hi/lo > 8){ const out=[]; for(let e=Math.floor(Math.log10(lo))-1; e<=Math.ceil(Math.log10(hi)); e++) for(const k of [1,2,5]){ const v=+(k*Math.pow(10,e)).toPrecision(6); if(v>=lo&&v<=hi) out.push(v); }
+    return {ticks: spaced(out, v=>-Y(v), minGap), dec: 2}; }
+  for(const step of [0.01,0.02,0.05,0.1,0.2,0.25,0.5,1,2,2.5,5,10,20,25,50]){
+    const t=[]; for(let v=Math.ceil(lo/step-1e-9)*step; v<=hi+1e-9; v+=step) t.push(+v.toFixed(6));
+    if(t.length<2 || t.length>9) continue;
+    let ok=true; for(let i=1;i<t.length;i++) if(Math.abs(Y(t[i-1])-Y(t[i]))<minGap){ ok=false; break; }
+    if(ok) return {ticks:t, dec: decimals(step)};
+  }
+  return {ticks: [lo, hi].map(v=>+v.toPrecision(2)), dec: 2};
+}
+function lastLE(arr, x){ let lo=0, hi=arr.length-1; if(!arr.length || x<arr[0]) return -1; while(lo<hi){ const m=(lo+hi+1)>>1; if(arr[m]<=x) lo=m; else hi=m-1; } return lo; }
+function firstGE(arr, x){ let lo=0, hi=arr.length; while(lo<hi){ const m=(lo+hi)>>1; if(arr[m]<x) lo=m+1; else hi=m; } return lo; }
+function bisect(arr, x){ let lo=0, hi=arr.length-1; if(x<=arr[0]) return 0; if(x>=arr[hi]) return hi; while(hi-lo>1){ const m=(lo+hi)>>1; if(arr[m]<=x) lo=m; else hi=m; } return (x-arr[lo] < arr[hi]-x)? lo:hi; }
+
+/* 标签避让：框与已放置的框、与折线（逐段）都不能相交。 */
+function boxHit(a, b){ return a.x < b.x+b.w+4 && b.x < a.x+a.w+4 && a.y < b.y+b.h+2 && b.y < a.y+a.h+2; }
+function curveHit(box, curves){
+  for(const c of curves){ const xs=c.xs, ys=c.ys; if(!xs.length) continue;
+    let i=Math.max(0, firstGE(xs, box.x-2)-1); const x1=box.x+box.w+2;
+    for(; i<xs.length; i++){ const y0=ys[i]; const j=i+1<xs.length? i+1 : i; const y1=ys[j];
+      if(xs[i]>x1) break; if(xs[j]<box.x-2 || y0==null || y1==null || !isFinite(y0) || !isFinite(y1)) continue;
+      const lo=Math.min(y0,y1), hi=Math.max(y0,y1);
+      if(hi>=box.y-3 && lo<=box.y+box.h+3) return true; } }
+  return false;
+}
+function place(cands, placed, curves, bounds){
+  for(const b of cands){ if(b.x<bounds.x0 || b.x+b.w>bounds.x1 || b.y<bounds.y0 || b.y+b.h>bounds.y1) continue;
+    if(placed.some(p=>boxHit(b,p))) continue; if(curveHit(b, curves)) continue; placed.push(b); return b; }
+  return null;
+}
+
+/* ---------- stack chart ----------
+   W: 宽度；a,b: 区间；keys: 要画的轨道；opts.static: 打印用（无交互、读数固定在区间末日），opts.id: 元素 id 前缀 */
+function buildStack(W, a, b, keys, opts){
+  const narrow = W < 640, pre = opts.id;
+  const endNames = [['策略',600]].concat(HASB? [[BN,400]] : []);
+  const endW = Math.max(...endNames.map(([s,w])=>textW(s,12,w)));
+  const indW = HASI && keys.includes('ind')? Math.max(...indRows.map(r=>textW(r.n,11)))+14 : 0;
+  const ML = Math.max(narrow? 48 : 66, Math.ceil(indW)), MR = Math.max(narrow? 44 : 60, Math.ceil(endW)+12);
+  const PW = W-ML-MR, TX0 = narrow? 2 : ML;
+  const t0=T[a], t1=T[b];
+  const X = t => ML + (t-t0)/(t1-t0||1)*PW;
+  const HH = narrow? 40 : 24, GAP = 16;
+  const PR = !!opts.static;
+  const DEF = {
+    nav:{title:'净值', sub:'对数坐标，区间起点 = 1', h: narrow?190:(PR?200:240)},
+    ex:{title:'超额净值', sub:`策略 ÷ ${BN}`, h: narrow?80:(PR?72:92)},
+    dd:{title:'回撤', h: narrow?96:(PR?92:110)},
+    roll:{title:'滚动一年', h: narrow?80:92},
+    hold:{title:'持仓只数', h: 50},
+    cash:{title:'现金占比', h: 42},
+    to:{title:'调仓换手', h: 62, extra: 22},
+    ind:{title:'行业权重', h: (indRows.length||1)*15},
+  };
+  const tracks = keys.filter(k=> (k!=='ex'||HASB) && (k!=='ind'||HASI)).map(k=>Object.assign({k}, DEF[k]));
+  let y=4; tracks.forEach(t=>{ t.y=y; t.top=y+HH; t.bot=t.top+t.h; y=t.bot+(t.extra||0)+GAP+6; });
+  const axisY = y-GAP+2, H = axisY + 26;
+  const span=(t1-t0)/(365.25*864e5);
+  const y0=new Date(t0).getUTCFullYear(), y1=new Date(t1).getUTCFullYear();
+  const mode = span>4? 'y' : span>1.6? 'h' : span>0.6? 'q' : 'm';
+  const cand=[]; for(let yy=y0; yy<=y1+1; yy++) for(let mo=0; mo<12; mo++){
+    if(mode==='y' && mo) continue; if(mode==='h' && mo%6) continue; if(mode==='q' && mo%3) continue;
+    const ms=Date.UTC(yy,mo,1); if(ms>=t0 && ms<=t1) cand.push(ms); }
+  const xt = spaced(cand, X, narrow? 52 : 64);
+  const xlab = ms => { const d=new Date(ms); return (mode==='y'||(d.getUTCMonth()===0&&mode!=='m'))? String(d.getUTCFullYear()) : d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0'); };
+  const cp = pre+'cp';
+  let s = `<defs><clipPath id="${cp}"><rect x="${ML}" y="0" width="${PW}" height="${H}"/></clipPath></defs>`;
+  const dd = opts.dd>=0? D.drawdowns[opts.dd] : null;
+  if(dd){ const xp=X(T[idxOf[dd.peak]]), xr=X(T[dd.recovery?idxOf[dd.recovery]:N-1]);
+    s += `<rect x="${xp}" y="${tracks[0].top}" width="${xr-xp}" height="${tracks[tracks.length-1].bot-tracks[0].top}" fill="${C.strat}" opacity="0.045"/>`; }
+  tracks.forEach(t=>{ xt.forEach(ms=>{ s+=`<line x1="${X(ms)}" x2="${X(ms)}" y1="${t.top}" y2="${t.bot}" stroke="${C.grid}"/>`; }); });
+  xt.forEach(ms=> s+=`<text x="${X(ms)}" y="${axisY+14}" font-size="11" fill="${C.ink3}" text-anchor="middle">${xlab(ms)}</text>`);
+  const header = (t, tail='') => {
+    let h = `<text x="${TX0}" y="${t.y+15}" font-size="13" font-weight="600" fill="${C.ink}">${t.title}`;
+    if(t.sub && !narrow) h += `<tspan dx="8" font-size="12" font-weight="400" fill="${C.ink3}">${esc(t.sub)}</tspan>`;
+    h += `</text>${tail}`;
+    h += `<text id="${pre}ro-${t.k}" x="${narrow? 2 : W-4}" y="${narrow? t.y+33 : t.y+15}" font-size="12" text-anchor="${narrow?'start':'end'}" fill="${C.ink2}"></text>`;
+    return h; };
+  const yaxis = (ticks, Y, fmt, strong) => ticks.map(v=>{ const yy=Y(v); const st_=strong&&strong(v);
+    return `<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${st_?'#cfd2d8':C.grid}" ${st_?'stroke-dasharray="3 3"':''}/>`+
+      `<text x="${ML-8}" y="${yy+4}" font-size="11" fill="${C.ink3}" text-anchor="end">${fmt(v)}</text>`; }).join('');
+  const path = (xs, ys) => { let p='', pen=false; for(let i=0;i<xs.length;i++){ const v=ys[i]; if(v==null||!isFinite(v)){ pen=false; continue; } p += (pen?'L':'M')+xs[i].toFixed(1)+','+v.toFixed(1); pen=true; } return p; };
+  const xs = []; for(let i=a;i<=b;i++) xs.push(X(T[i]));
+  const ro = {}, byK = {};
+  tracks.forEach(t=>byK[t.k]=t);
+  const halo = `stroke="#fff" stroke-width="3" paint-order="stroke" stroke-linejoin="round"`;
+
+  /* nav */
+  if(byK.nav){ const t=byK.nav; const n0=dl.nav[a];
+    const sv=[], bv=[]; const ob = HASB? Math.max(a,BS) : -1;
+    const bscale = HASB? (dl.nav[ob]/n0)/dl.benchmark_nav[ob] : 0;
+    for(let i=a;i<=b;i++){ sv.push(dl.nav[i]/n0); bv.push(HASB && i>=ob? dl.benchmark_nav[i]*bscale : null); }
+    const all = sv.concat(bv.filter(v=>v!=null));
+    let lo=Math.min(...all), hi=Math.max(...all); if(hi/lo<1.02){ lo/=1.01; hi*=1.01; }
+    const vis = D.drawdowns.slice(0,3).map((d,k)=>({d,k,p:idxOf[d.peak], tr:idxOf[d.trough], r:d.recovery?idxOf[d.recovery]:N-1})).filter(o=>o.r>a && o.p<b);
+    const LANE = vis.length? 42 : 0, BRY = t.top+33, lp=Math.log(hi/lo)*0.05;
+    lo=lo*Math.exp(-lp); hi=hi*Math.exp(lp);
+    const Y=v=> t.bot - (Math.log(v)-Math.log(lo))/(Math.log(hi)-Math.log(lo))*(t.h-LANE);
+    const lt = logTicks(lo, hi, Y, 14);
+    // 回撤区间（淡底）
+    // 淡底只铺「峰到谷」；修复期（或未修复的延续）用标注下方的细括线表示
+    vis.forEach(o=>{ if(o.tr<=a) return; const xp=X(T[Math.max(o.p,a)]), xt=X(T[Math.min(o.tr,b)]);
+      s+=`<rect x="${(xp+0.5).toFixed(1)}" y="${BRY}" width="${Math.max(1,xt-xp-1).toFixed(1)}" height="${(t.bot-BRY).toFixed(1)}" fill="${C.band}"/>`; });
+    vis.forEach(o=>{ const L=o.p>=a, R=o.d.recovered && o.r<=b; const xp=X(T[Math.max(o.p,a)])+(L?1.5:0), xr=X(T[Math.min(o.r,b)])-(R?1.5:0);
+      let d=`M${xp.toFixed(1)},${L?BRY+5:BRY}${L?`V${BRY}`:''}H${xr.toFixed(1)}${R?`V${BRY+5}`:''}`;
+      s+=`<path d="${d}" fill="none" stroke="${C.ink4}" stroke-width="1"/>`;
+      if(!o.d.recovered && o.r<=b) s+=`<path d="M${xr.toFixed(1)},${BRY}l-5,-3v6z" fill="${C.ink4}"/>`; });
+    s += header(t) + yaxis(lt.ticks, Y, v=>String(+v.toFixed(lt.dec)), v=>v===1);
+    const ys=sv.map(Y), yb=bv.map(v=>v==null?null:Y(v));
+    s += `<g clip-path="url(#${cp})">${HASB?`<path d="${path(xs,yb)}" fill="none" stroke="${C.bench}" stroke-width="1.5"/>`:''}`+
+         `<path d="${path(xs,ys)}" fill="none" stroke="${C.strat}" stroke-width="1.75"/></g>`;
+    // 线尾名称
+    let es=ys[ys.length-1], eb=yb[yb.length-1]; const placed=[];
+    if(HASB && eb!=null && Math.abs(es-eb)<14){ if(es<eb){ es-=(14-(eb-es))/2; eb=es+14; } else { eb-=(14-(es-eb))/2; es=eb+14; } }
+    s += `<text x="${ML+PW+6}" y="${es+4}" font-size="12" font-weight="600" fill="${C.strat}">策略</text>`;
+    placed.push({x:ML+PW+6, y:es-9, w:textW('策略',12,600), h:14});
+    if(HASB && eb!=null){ s += `<text x="${ML+PW+6}" y="${eb+4}" font-size="12" fill="${C.ink3}">${esc(BN)}</text>`; placed.push({x:ML+PW+6, y:eb-9, w:textW(BN,12), h:14}); }
+    // 最深几次回撤直接标在净值图上：深度、见底和修复天数；放不下就少标
+    const curves=[{xs, ys}]; if(HASB) curves.push({xs, ys:yb});
+    const bounds={x0:ML+2, x1:ML+PW-2, y0:t.top+1, y1:t.bot-1};
+    vis.forEach(o=>{ const d=o.d; const l1=pct(d.depth), l2=ddDur(d).replace(' · 已 ',' · ');
+      const w1=textW(l1,12,650), w2=textW(l2,11), wf=Math.max(w1,w2);
+      const xp=X(T[Math.max(o.p,a)]), xr=X(T[Math.min(o.r,b)]), xtr=X(T[Math.min(Math.max(idxOf[d.trough],a),b)]);
+      const cands=[];  // 标注贴在括线上方：先左对齐括线起点，再右对齐终点，再居中
+      for(const [w,hh,two] of [[wf,29,true],[w1,15,false]]){ const yy=BRY-2-hh;
+        cands.push({x:xp+2, y:yy, w, h:hh, two}, {x:xr-2-w, y:yy, w, h:hh, two}, {x:(xp+xr)/2-w/2, y:yy, w, h:hh, two}, {x:xtr-w/2, y:yy, w, h:hh, two}); }
+      const bx = place(cands, placed, curves, bounds); if(!bx) return;
+      s += `<text x="${bx.x.toFixed(1)}" y="${(bx.y+12).toFixed(1)}" font-size="12" font-weight="650" fill="${C.down}" ${halo}>${l1}</text>`;
+      if(bx.two) s += `<text x="${bx.x.toFixed(1)}" y="${(bx.y+26).toFixed(1)}" font-size="11" fill="${C.ink3}" ${halo}>${l2}</text>`; });
+    ro.nav = i => { const k=i-a; const x=sv[k]-1;
+      let h=(narrow?'':`<tspan fill="${C.ink3}">${dl.date[i]}</tspan>`)+`<tspan dx="${narrow?0:12}" fill="${C.strat}" font-weight="600">策略 ${num(sv[k],3)}</tspan><tspan dx="4" fill="${col(x)}">${pct(x,1,true)}</tspan>`;
+      if(HASB){ const bvk=bv[k]; h+=`<tspan dx="12" fill="${C.ink3}">${esc(BN)} ${bvk==null?'—':num(bvk,3)}</tspan>`+(bvk==null?'':`<tspan dx="4" fill="${col(bvk-1)}">${pct(bvk-1,1,true)}</tspan>`); }
+      return h; };
+    t.dots = i => [[ys[i-a], C.strat]].concat(HASB && yb[i-a]!=null? [[yb[i-a], C.bench]] : []);
+    t.sv=sv; t.bv=bv;
+  }
+  /* excess */
+  if(byK.ex){ const t=byK.ex; const ob=Math.max(a,BS); const ev=[];
+    for(let i=a;i<=b;i++) ev.push(i<ob? null : (dl.nav[i]/dl.nav[ob])/(dl.benchmark_nav[i]/dl.benchmark_nav[ob]));
+    const vv=ev.filter(v=>v!=null);
+    let lo=Math.min(...vv,1), hi=Math.max(...vv,1); const pd=(hi-lo)*0.08||0.01; lo-=pd; hi+=pd;
+    const Y=v=> t.bot-(v-lo)/(hi-lo)*t.h;
+    const tk=spaced(niceTicks(lo,hi,3), Y, 20);
+    s += header(t) + yaxis(tk, Y, v=>num(v, (hi-lo)<0.5?2:1), v=>Math.abs(v-1)<1e-9);
+    const ey=ev.map(v=>v==null?null:Y(v)); const pl=path(xs, ey); const y1v=Y(1);
+    const fx=xs.filter((_,k)=>ev[k]!=null);
+    if(fx.length) s += `<g clip-path="url(#${cp})"><path d="${pl}L${fx[fx.length-1].toFixed(1)},${y1v}L${fx[0].toFixed(1)},${y1v}Z" fill="${C.strat}" opacity="0.08"/>`+
+         `<path d="${pl}" fill="none" stroke="${C.strat}" stroke-width="1.6"/></g>`;
+    if(!tk.some(v=>Math.abs(v-1)<1e-9)) s+=`<line x1="${ML}" x2="${ML+PW}" y1="${y1v}" y2="${y1v}" stroke="#cfd2d8" stroke-dasharray="3 3"/>`;
+    ro.ex = i => { const v=ev[i-a]; return v==null? `<tspan fill="${C.ink3}">—</tspan>` : `<tspan fill="${C.strat}" font-weight="600">${num(v,3)}</tspan><tspan dx="6" fill="${col(v-1)}">${pct(v-1,1,true)}</tspan>`; };
+    t.dots = i => ey[i-a]==null? [] : [[ey[i-a], C.strat]];
+  }
+  /* drawdown */
+  if(byK.dd){ const t=byK.dd; const sd=dl.drawdown.slice(a,b+1), bd=HASB? dl.benchmark_drawdown.slice(a,b+1) : [];
+    let lo=Math.min(...sd,...bd.filter(v=>v!=null))*1.06; if(!(lo<-0.02)) lo=-0.02; const Y=v=> t.top+(v/lo)*t.h;
+    const tk=spaced(niceTicks(lo,0,3).reverse(), Y, 18);
+    s += header(t) + yaxis(tk, Y, v=>pct(v,0), v=>v===0);
+    const sy=sd.map(Y), by=bd.map(v=>v==null?null:Y(v)); const sp=path(xs, sy); const z=Y(0);
+    s += `<g clip-path="url(#${cp})" pointer-events="none">${HASB?`<path d="${path(xs,by)}" fill="none" stroke="${C.bench}" stroke-width="1.3"/>`:''}`+
+      `<path d="${sp}L${xs[xs.length-1].toFixed(1)},${z}L${xs[0].toFixed(1)},${z}Z" fill="${C.strat}" opacity="0.13"/>`+
+      `<path d="${sp}" fill="none" stroke="${C.strat}" stroke-width="1.5"/></g>`;
+    const curves=[{xs, ys:sy}]; if(HASB) curves.push({xs, ys:by}); const placed=[];
+    const bounds={x0:ML+2, x1:ML+PW-2, y0:t.top+1, y1:t.bot+14};
+    D.drawdowns.forEach(d=>{ const ti=idxOf[d.trough]; if(ti<a||ti>b) return; const xx=X(T[ti]), yy=Y(d.depth);
+      const lab=pct(d.depth), w=textW(lab,11,600), h=13;
+      const cands=[{x:xx-w/2, y:yy+5, w, h}, {x:xx+6, y:yy-h/2, w, h}, {x:xx-w-6, y:yy-h/2, w, h}, {x:xx+6, y:yy+3, w, h}, {x:xx-w-6, y:yy+3, w, h}];
+      const bx=place(cands, placed, curves, bounds); if(!bx) return;
+      s+=`<circle cx="${xx.toFixed(1)}" cy="${yy.toFixed(1)}" r="2.5" fill="${C.strat}"/><text x="${bx.x.toFixed(1)}" y="${(bx.y+10).toFixed(1)}" font-size="11" font-weight="600" fill="${C.ink2}" pointer-events="none">${lab}</text>`; });
+    ro.dd = i => `<tspan fill="${C.strat}" font-weight="600">策略 ${pct(dl.drawdown[i])}</tspan>`+(HASB?`<tspan dx="12" fill="${C.ink3}">${esc(BN)} ${pct(dl.benchmark_drawdown[i])}</tspan>`:'');
+    t.dots = i => [[Y(dl.drawdown[i]), C.strat]].concat(HASB && dl.benchmark_drawdown[i]!=null? [[Y(dl.benchmark_drawdown[i]), C.bench]] : []);
+  }
+  /* rolling */
+  if(byK.roll){ const t=byK.roll; const key=ROLL[opts.roll]? opts.roll : 'sharpe', R=ROLL[key]; const vals=RL[key]||[];
+    const ra=lastLE(RT, T[a]), rb=lastLE(RT, T[b]); const r0=Math.max(0,ra), r1=rb;
+    let tail='', tx=TX0+textW(t.title,13,600)+16;
+    if(!opts.static) Object.keys(ROLL).forEach(k=>{ const on=k===key; tail+=`<text class="rollbtn" data-k="${k}" x="${tx}" y="${t.y+15}" font-size="12" font-weight="${on?600:400}" fill="${on?C.strat:C.ink3}" style="cursor:pointer">${ROLL[k].l}</text>`; tx+=textW(ROLL[k].l,12,600)+18; });
+    else tail=`<text x="${TX0+textW(t.title,13,600)+8}" y="${t.y+15}" font-size="12" fill="${C.ink3}">夏普</text>`;
+    s += header(t, tail);
+    const seg=[]; for(let j=r0;j<=r1;j++) if(vals[j]!=null) seg.push(vals[j]);
+    if(rb>=0 && r1>r0 && seg.length>1){
+      let lo=Math.min(...seg), hi=Math.max(...seg); if(R.ref!=null){ lo=Math.min(lo,R.ref); hi=Math.max(hi,R.ref);} const pd=(hi-lo)*0.08||0.05; lo-=pd; hi+=pd;
+      const Y=v=> t.bot-(v-lo)/(hi-lo)*t.h;
+      const tk=spaced(niceTicks(lo,hi,3), Y, 20); const st_=tk.length>1? tk[1]-tk[0] : 1;
+      s += yaxis(tk, Y, v=> key==='volatility'? pct(v, st_<0.01?1:0) : num(v, st_<1? (st_<0.1?2:1) : 0), v=> R.ref!=null && Math.abs(v-R.ref)<1e-9);
+      const rx=[], ry=[]; for(let j=r0;j<=r1;j++){ rx.push(X(RT[j])); ry.push(vals[j]==null?null:Y(vals[j])); }
+      s += `<g clip-path="url(#${cp})"><path d="${path(rx,ry)}" fill="none" stroke="${C.strat}" stroke-width="1.5"/></g>`;
+      t.dots = i => { const j=lastLE(RT, T[i]); return j>=r0 && vals[j]!=null? [[Y(vals[j]), C.strat]] : []; };
+    } else { s += `<text x="${ML+PW/2}" y="${t.top+t.h/2+4}" font-size="12" fill="${C.ink3}" text-anchor="middle">不足一年</text>`; t.dots=()=>[]; }
+    ro.roll = i => { const j=lastLE(RT, T[i]); if(j<0) return RT.length? `<tspan fill="${C.ink3}">不足一年</tspan>` : '';
+      const item=(k,l,v,f)=>`<tspan dx="${f?0:10}" fill="${C.ink3}">${l} </tspan><tspan fill="${key===k?C.strat:C.ink2}" font-weight="${key===k?600:400}">${v}</tspan>`;
+      let h=item('sharpe','夏普',num(RL.sharpe[j]),true)+item('volatility','波动',pct(RL.volatility[j]));
+      if(RL.beta && !narrow) h+=item('beta','Beta',num(RL.beta[j]));
+      return h+`<tspan dx="10" fill="${C.ink3}">收益 </tspan><tspan fill="${col(RL.annual_return[j])}">${pct(RL.annual_return[j],1,true)}</tspan>`; };
+  }
+  /* holdings */
+  if(byK.hold){ const t=byK.hold; const a1=Math.max(a,1); const hv=dl.holdings.slice(a1,b+1);
+    let lo=Math.min(...hv), hi=Math.max(...hv);
+    const tk0=niceTicks(lo, hi===lo? lo+1 : hi, 2).filter(v=>v%1===0); const pad=Math.max(1,(hi-lo)*0.15);
+    lo=Math.max(0, Math.min(lo, tk0[0])-pad); hi=Math.max(hi, tk0[tk0.length-1])+pad;
+    const Y=v=> t.bot-(v-lo)/(hi-lo)*t.h;
+    const tk=spaced(niceTicks(lo,hi,2).filter(v=>v%1===0 && v>=lo && v<=hi), Y, 16);
+    s += header(t) + yaxis(tk, Y, v=>String(v));
+    let p=''; for(let i=a1;i<=b;i++){ const xx=X(T[i]).toFixed(1), yy=Y(dl.holdings[i]).toFixed(1); p+= p? `H${xx}V${yy}` : `M${xx},${yy}`; }
+    s += `<g clip-path="url(#${cp})"><path d="${p}" fill="none" stroke="${C.strat}" stroke-width="1.5"/></g>`;
+    ro.hold = i => `<tspan fill="${C.strat}" font-weight="600">${dl.holdings[i]} 只</tspan>`;
+    t.dots = i => i>0? [[Y(dl.holdings[i]), C.strat]] : [];
+  }
+  /* cash */
+  if(byK.cash){ const t=byK.cash; const a1=Math.max(a,1); const cv=dl.cash_weight.slice(a1,b+1);
+    let hi=Math.max(...cv,0.001)*1.1; const tk0=niceTicks(0,hi,2); hi=Math.max(hi, tk0[tk0.length-1]);
+    const Y=v=> t.bot-v/hi*t.h;
+    const tk=spaced(tk0, Y, 14); const st_=tk.length>1? tk[1]-tk[0] : 1;
+    s += header(t) + yaxis(tk, Y, v=>pct(v, st_<0.01? (st_<0.001?2:1) : 0));
+    const cx=[], cy=[]; for(let i=a1;i<=b;i++){ cx.push(X(T[i])); cy.push(Y(dl.cash_weight[i])); }
+    const pl=path(cx,cy);
+    s += `<g clip-path="url(#${cp})"><path d="${pl}L${cx[cx.length-1].toFixed(1)},${t.bot}L${cx[0].toFixed(1)},${t.bot}Z" fill="${C.strat}" opacity="0.12"/><path d="${pl}" fill="none" stroke="${C.strat}" stroke-width="1.2"/></g>`;
+    ro.cash = i => `<tspan fill="${C.strat}" font-weight="600">${pct(dl.cash_weight[i],2)}</tspan>`;
+    t.dots = i => i>0? [[Y(dl.cash_weight[i]), C.strat]] : [];
+  }
+  /* turnover + unfilled */
+  if(byK.to){ const t=byK.to; const vis=[]; RB.forEach((r,k)=>{ const ii=rebIdx[k]; if(ii>=a&&ii<=b) vis.push(k); });
+    const hi0=Math.max(0.05,...vis.map(k=>RB[k].turnover)); const tk0=niceTicks(0,hi0,2); const hi=Math.max(hi0, tk0[tk0.length-1]);
+    const Y=v=> t.bot-v/hi*t.h;
+    const tk=spaced(tk0, Y, 16);
+    const cnt={suspended:0,limit_up:0,limit_down:0}; vis.forEach(k=>{ const u=RB[k].unfilled_by_reason; for(const q in cnt) cnt[q]+=u[q]; });
+    const RC={limit_up:C.up, limit_down:C.down, suspended:'#8b919c'}, RN={suspended:'停牌',limit_up:'涨停',limit_down:'跌停'};
+    let tail=''; if(!narrow){ tail+=`<text x="${TX0+textW(t.title,13,600)+12}" y="${t.y+15}" font-size="12" fill="${C.ink3}">未成交`;
+      ['suspended','limit_up','limit_down'].forEach(q=>{ tail+=`<tspan dx="10" fill="${RC[q]}">${DENSE? '■' : '●'}</tspan><tspan dx="3" fill="${C.ink2}">${RN[q]} ${cnt[q]}</tspan>`; }); tail+=`</text>`; }
+    s += header(t, tail) + yaxis(tk, Y, v=>pct(v,0));
+    const bw=Math.max(1, Math.min(6, PW/Math.max(1,vis.length)*0.55));
+    const Q=['suspended','limit_up','limit_down'];
+    // 调仓很密（平均间隔不到 12 个交易日，如周度、日度）时，未成交改成按月（太窄再按季）分箱的堆叠小柱，高度是只数
+    const dense = DENSE;
+    let bins=[];
+    if(dense){
+      const months=(new Date(t1).getUTCFullYear()-new Date(t0).getUTCFullYear())*12+new Date(t1).getUTCMonth()-new Date(t0).getUTCMonth()+1;
+      const step = PW/months >= 6? 1 : 3;
+      const keyOf = ms => { const d=new Date(ms); const m=Math.floor(d.getUTCMonth()/step)*step; return Date.UTC(d.getUTCFullYear(), m, 1); };
+      const map=new Map();
+      vis.forEach(k=>{ const st0=keyOf(T[rebIdx[k]]); let o=map.get(st0); if(!o){ const e=new Date(st0); e.setUTCMonth(e.getUTCMonth()+step); o={s:st0, e:e.getTime(), c:{suspended:0,limit_up:0,limit_down:0}}; map.set(st0,o); bins.push(o); }
+        Q.forEach(q=>o.c[q]+=RB[k].unfilled_by_reason[q]); });
+      bins.forEach(o=>{ const d=new Date(o.s); o.label = step===1? `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}` : `${d.getUTCFullYear()} 年 ${d.getUTCMonth()/3+1} 季度`; o.tot=Q.reduce((x,q)=>x+o.c[q],0); });
+    }
+    s += `<g clip-path="url(#${cp})">`;
+    vis.forEach(k=>{ const r=RB[k]; const xx=X(T[rebIdx[k]]); s+=`<rect x="${(xx-bw/2).toFixed(1)}" y="${Y(r.turnover).toFixed(1)}" width="${bw.toFixed(1)}" height="${(t.bot-Y(r.turnover)).toFixed(1)}" fill="${C.strat}" opacity="0.8"/>`;
+      if(!dense && r.unfilled>0){ Q.forEach(q=>{ const c=r.unfilled_by_reason[q]; if(!c) return;
+        s+=`<circle cx="${xx.toFixed(1)}" cy="${t.bot+11}" r="${Math.min(6,2.2+c*0.9).toFixed(1)}" fill="${RC[q]}" opacity="0.85"/>`; }); } });
+    if(dense){ const mx=Math.max(1,...bins.map(o=>o.tot)), base=t.bot+21, hh=17;
+      bins.forEach(o=>{ if(!o.tot) return; const x0=X(Math.max(o.s,t0)), x1=X(Math.min(o.e,t1)); const w=Math.max(1, x1-x0-1); let y0=base;
+        Q.forEach(q=>{ const c=o.c[q]; if(!c) return; const h=c/mx*hh; y0-=h; s+=`<rect x="${(x0+0.5).toFixed(1)}" y="${y0.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(2)}" fill="${RC[q]}"/>`; }); }); }
+    s += `</g><line x1="${ML}" x2="${ML+PW}" y1="${t.bot}" y2="${t.bot}" stroke="${C.line}"/>`;
+    s += `<text x="${ML-8}" y="${t.bot+15}" font-size="11" fill="${C.ink3}" text-anchor="end">未成交</text>`;
+    const binAt = i => { for(const o of bins){ if(T[i]>=o.s && T[i]<o.e) return o; } return null; };
+    ro.to = i => { let k=-1; for(let j=vis.length-1;j>=0;j--){ if(rebIdx[vis[j]]<=i){ k=vis[j]; break; } } if(k<0) return `<tspan fill="${C.ink3}">区间内尚未调仓</tspan>`;
+      const r=RB[k];
+      let h=(narrow?'':`<tspan fill="${C.ink3}">${r.date}</tspan>`)+`<tspan dx="${narrow?0:10}" fill="${C.strat}" font-weight="600">换手 ${pct(r.turnover)}</tspan>`+
+        `<tspan dx="10" fill="${C.ink2}">新进 ${r.new_names} · 剔除 ${r.dropped_names}</tspan>`;
+      if(dense){ const o=binAt(i); if(o) h+=`<tspan dx="10" fill="${C.ink3}">${o.label} 未成交</tspan>`+(o.tot? Q.filter(q=>o.c[q]).map(q=>`<tspan dx="6" fill="${C.ink}">${RN[q]} ${o.c[q]}</tspan>`).join('') : `<tspan dx="6" fill="${C.ink3}">0</tspan>`); }
+      else { const u=Q.filter(q=>r.unfilled_by_reason[q]).map(q=>`${RN[q]} ${r.unfilled_by_reason[q]}`).join(' ');
+        h+=`<tspan dx="10" fill="${r.unfilled?C.ink:C.ink3}">${r.unfilled? '未成交 '+u : '全部成交'}</tspan>`; }
+      return h; };
+    t.dots = () => [];
+  }
+  /* industry */
+  if(byK.ind){ const t=byK.ind; const rows=indRows; const rh=t.h/rows.length;
+    s += header(t) + `<g clip-path="url(#${cp})">`;
+    for(let j=0;j<IW.dates.length;j++){ const tj=iwT[j], tn = j+1<IW.dates.length? iwT[j+1] : T[N-1]+864e5;
+      if(tn<t0 || tj>t1) continue; const x0=X(Math.max(tj,t0)), x1=X(Math.min(tn,t1)); const w=Math.max(0.6, x1-x0+0.4);
+      rows.forEach((r,ri)=>{ const v=r.w[j]; if(v<=0.0005) return; const op=Math.min(1, Math.pow(v/0.45, 0.75))*0.92+0.04;
+        s+=`<rect x="${x0.toFixed(1)}" y="${(t.top+ri*rh+0.5).toFixed(1)}" width="${w.toFixed(1)}" height="${(rh-1).toFixed(1)}" fill="${C.strat}" fill-opacity="${op.toFixed(3)}"/>`; }); }
+    s += `</g>`;
+    rows.forEach((r,ri)=> s+=`<text x="${ML-8}" y="${(t.top+ri*rh+rh/2+4).toFixed(1)}" font-size="11" fill="${C.ink2}" text-anchor="end">${esc(r.n)}</text>`);
+    const sw = M.industry_switch;
+    if(sw){ const ms=Date.parse(sw+'T00:00:00Z'); if(ms>t0 && ms<t1){ const xx=X(ms);
+      s+=`<line x1="${xx}" x2="${xx}" y1="${t.top-4}" y2="${t.bot}" stroke="${C.ink2}" stroke-dasharray="2 3"/>`;
+      const L=M.industry_switch_labels;
+      if(L && !narrow){ const lw=textW(L[0],11), rw=textW(L[1],11); const titleEnd=TX0+textW(t.title,13,600)+10;
+        if(xx-6-lw>titleEnd && xx+6+rw < W-4-textW('0000-00-00 银行 00.0% 交通运输 00.0% 公用事业 00.0%',12)) s+=`<text x="${xx-6}" y="${t.y+15}" font-size="11" fill="${C.ink3}" text-anchor="end">${esc(L[0])}</text><text x="${xx+6}" y="${t.y+15}" font-size="11" fill="${C.ink3}">${esc(L[1])}</text>`; } } }
+    ro.ind = i => { const j=lastLE(iwT, T[i]); if(j<0) return `<tspan fill="${C.ink3}">—</tspan>`;
+      const all=IW.industries.map((n,k)=>[n,IW.weights[k][j]]).sort((x,y)=>y[1]-x[1]).filter(x=>x[1]>0).slice(0, narrow?2:3);
+      return (narrow?'':`<tspan fill="${C.ink3}">${IW.dates[j]}</tspan>`) + all.map(([n,v],q)=>`<tspan dx="${narrow&&q===0?0:10}" fill="${C.ink2}">${esc(n)} </tspan><tspan fill="${C.strat}" font-weight="600">${pct(v)}</tspan>`).join(''); };
+    t.dots = () => [];
+  }
+  if(!opts.static){
+    s += `<g id="xh" style="display:none"><line id="xhl" y1="${tracks[0].top}" y2="${axisY}" stroke="${C.ink2}" stroke-width="1" stroke-dasharray="2 2"/><g id="xhd"></g>`+
+         `<rect id="xhb" y="${axisY+1}" height="18" rx="4" fill="#fff" stroke="${C.ink2}"/><text id="xht" y="${axisY+14}" font-size="11" font-weight="600" fill="${C.ink}" text-anchor="middle"></text></g>`;
+    s += `<rect id="hit" x="${ML}" y="${tracks[0].top}" width="${PW}" height="${axisY-tracks[0].top}" fill="transparent"/>`;
+  }
+  return {s, W, H, G:{X, ML, PW, a, b, tracks, ro, axisY, pre}};
+}
+
+let G = null;
+const svg=document.getElementById('stack');
+const SCREEN_KEYS=['nav','ex','dd','roll','hold','cash','to','ind'];
+function renderStack(){
+  const W = Math.max(300, document.getElementById('stackwrap').clientWidth);
+  const r = buildStack(W, st.a, st.b, SCREEN_KEYS, {id:'s-', dd:st.dd, roll:st.roll});
+  svg.setAttribute('viewBox', `0 0 ${r.W} ${r.H}`); svg.setAttribute('width', r.W); svg.setAttribute('height', r.H);
+  svg.innerHTML = r.s; G = r.G;
+  const hit=svg.querySelector('#hit');
+  hit.addEventListener('mousemove', onMove); hit.addEventListener('mouseleave', onLeave);
+  hit.addEventListener('touchmove', e=>{ onMove(e.touches[0]); }, {passive:true});
+  hit.addEventListener('click', e=>{ const t=G.tracks.find(x=>x.k==='dd'); if(!t) return;
+    const rc=svg.getBoundingClientRect(); const yy=(e.clientY-rc.top)*svg.viewBox.baseVal.width/rc.width;
+    if(yy<t.top||yy>t.bot||st.dd>=0) return; const i=idxAt(e);
+    D.drawdowns.forEach((d,k)=>{ const p=idxOf[d.peak], q=d.recovery?idxOf[d.recovery]:N-1; if(i>=p&&i<=q) setDD(k); }); });
+  svg.querySelectorAll('.rollbtn').forEach(el=>{ el.addEventListener('click', ()=>{ st.roll=el.dataset.k; renderStack(); }); svg.appendChild(el); });
+  updateReadouts(G, st.hover!=null && st.hover>=st.a && st.hover<=st.b ? st.hover : st.b);
+}
+function idxAt(e){ const r=svg.getBoundingClientRect(); const x=(e.clientX-r.left)*svg.viewBox.baseVal.width/r.width;
+  const ms = T[G.a] + (x-G.ML)/G.PW*(T[G.b]-T[G.a]); return Math.max(G.a, Math.min(G.b, bisect(T, ms))); }
+function updateReadouts(g, i){ for(const k in g.ro){ const el=document.getElementById(g.pre+'ro-'+k); if(el) el.innerHTML=g.ro[k](i); } }
+function onMove(e){ const i=idxAt(e); st.hover=i; const x=G.X(T[i]);
+  document.getElementById('xh').style.display='';
+  const l=document.getElementById('xhl'); l.setAttribute('x1',x); l.setAttribute('x2',x);
+  let d=''; G.tracks.forEach(t=>{ if(t.dots) t.dots(i).forEach(([y,c])=>{ if(y!=null && isFinite(y)) d+=`<circle cx="${x}" cy="${y}" r="3.2" fill="#fff" stroke="${c}" stroke-width="1.6"/>`; }); });
+  document.getElementById('xhd').innerHTML=d;
+  const tw=74, bx=Math.max(G.ML+tw/2, Math.min(G.ML+G.PW-tw/2, x));
+  const b=document.getElementById('xhb'); b.setAttribute('x', bx-tw/2); b.setAttribute('width', tw);
+  const tt=document.getElementById('xht'); tt.setAttribute('x', bx); tt.textContent=dl.date[i];
+  updateReadouts(G, i); }
+function onLeave(){ st.hover=null; const xh=document.getElementById('xh'); if(xh) xh.style.display='none'; updateReadouts(G, G.b); }
+
+/* ---------- monthly heatmap ---------- */
+let heatMode='abs';
+if(!HASB) document.getElementById('heatToggle').style.display='none';
+function heatColor(v){ if(v==null) return 'transparent'; const t=Math.min(1, Math.abs(v)/0.10); const k=Math.pow(t,0.8)*0.62;
+  const [r,g,b]= v>=0? [209,55,63] : [19,145,74]; const mix=c=>Math.round(255+(c-255)*k); return `rgb(${mix(r)},${mix(g)},${mix(b)})`; }
+const fmt1 = v => v==null? '' : (v*100).toFixed(1).replace('-',MINUS).replace(/^−0\.0$/,'0.0');
+function renderHeat(){
+  const MO=D.monthly, map={}; MO.month.forEach((m,i)=>map[m]={r:MO.return[i], b: HASB? MO.benchmark_return[i] : null});
+  const lastM = MO.month[MO.month.length-1];
+  let h=`<tr><th></th>${[...Array(12)].map((_,i)=>`<th>${i+1}月</th>`).join('')}<th>全年</th></tr>`;
+  D.yearly.forEach(Y=>{ const y=Y.year;
+    h+=`<tr><td class="y">${y}</td>`;
+    for(let m=1;m<=12;m++){ const key=`${y}-${String(m).padStart(2,'0')}`; const o=map[key];
+      if(!o){ h+=`<td></td>`; continue; }
+      const v= heatMode==='abs'? o.r : (o.b==null? null : o.r-o.b);
+      const star = (key===lastM && MO.last_partial) || (key===MO.month[0] && MO.first_partial);
+      h+=`<td class="cell" data-k="${key}" style="background:${heatColor(v)}">${fmt1(v)}${star&&v!=null?'<span class="ast">*</span>':''}</td>`; }
+    const v = heatMode==='abs'? Y.return : (Y.benchmark_return==null? null : Y.return-Y.benchmark_return);
+    h+=`<td class="tot ${cls(v)}">${fmt1(v)}</td></tr>`; });
+  const tb=document.getElementById('heat'); tb.innerHTML=h;
+  const tip=document.getElementById('tip');
+  tb.querySelectorAll('td.cell').forEach(td=>{
+    td.addEventListener('mousemove', e=>{ const o=map[td.dataset.k];
+      let t=`<div class="t">${td.dataset.k}</div><div class="row"><span>策略</span><b class="${cls(o.r)}">${pct(o.r,1,true)}</b></div>`;
+      if(HASB && o.b!=null) t+=`<div class="row"><span>${esc(BN)}</span><b class="${cls(o.b)}">${pct(o.b,1,true)}</b></div><div class="row"><span>相对基准</span><b class="${cls(o.r-o.b)}">${pct(o.r-o.b,1,true)}</b></div>`;
+      tip.innerHTML=t; tip.style.display='block'; tip.style.left=Math.min(innerWidth-180, e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; });
+    td.addEventListener('mouseleave', ()=>tip.style.display='none'); });
+}
+document.querySelectorAll('#heatToggle button').forEach(b=>b.onclick=()=>{ heatMode=b.dataset.m;
+  document.querySelectorAll('#heatToggle button').forEach(x=>x.classList.toggle('on', x===b)); renderHeat(); });
+
+/* ---------- yearly ---------- */
+function renderYearly(){
+  const Yr=D.yearly, A={}; D.attribution.forEach(o=>A[o.year]=o);
+  document.getElementById('yrLegend').innerHTML = `<i style="background:var(--strat)"></i>策略`+(HASB?`<i style="background:var(--bench)"></i>${esc(BN)}`:'');
+  const vals=Yr.flatMap(y=>[y.return].concat(HASB&&y.benchmark_return!=null?[y.benchmark_return]:[])); const lo=Math.min(0,...vals), hi=Math.max(0,...vals);
+  const P=v=> (v-lo)/((hi-lo)||1)*100;
+  const nc = HASB? 7 : 5;
+  let h=`<colgroup><col><col><col class="num1">${'<col class="num">'.repeat(nc-1)}</colgroup><tr><th>年份</th><th></th><th>策略</th>${HASB?`<th>${esc(BN)}</th><th>超额</th>`:''}<th>波动</th><th>最大回撤</th><th>分红</th><th>成本</th></tr>`;
+  Yr.forEach(y=>{ const at=A[y.year]; const hb=HASB && y.benchmark_return!=null; const ex=hb? y.return-y.benchmark_return : null; const z=P(0);
+    const bar=(v,c)=>{ const x=P(v); return `<i class="${c}" style="left:${Math.min(x,z).toFixed(2)}%;width:${Math.max(0.6,Math.abs(x-z)).toFixed(2)}%"></i>`; };
+    h+=`<tr><td>${y.year}${y.partial?`<span class="p">${y.year===Yr[Yr.length-1].year? '至 '+S.end.slice(5) : '自 '+S.first_trade_day.slice(5)}</span>`:''}</td>
+      <td class="bars"><div class="bp">${bar(y.return, HASB?'s':'s solo')}${hb?bar(y.benchmark_return,'b'):''}<em style="left:${z.toFixed(2)}%"></em></div></td>
+      <td class="${cls(y.return)}" style="font-weight:600">${pct(y.return,1,true)}</td>
+      ${HASB?`<td class="${cls(y.benchmark_return)}">${hb?pct(y.benchmark_return,1,true):'—'}</td><td class="${cls(ex)}">${hb?pct(ex,1,true):'—'}</td>`:''}
+      <td>${pct(y.volatility)}</td>
+      <td>${pct(y.max_drawdown)}</td>
+      <td>${pct(at.dividend_net,1,true)}</td>
+      <td>${pct(at.fees+at.slippage,2)}</td></tr>`; });
+  document.getElementById('yr').innerHTML=h;
+}
+
+/* ---------- footer ---------- */
+(function(){ const c=M.costs||{}, out=[];
+  if(M.description) out.push(esc(M.description));
+  if(HASB){ let t=`基准${esc(BN)}为${M.benchmark.kind==='price'?'价格指数，不含分红再投资':'全收益指数，含分红再投资'}`;
+    if(M.benchmark.kind==='price' && S.total_dividend_gross>0) t+='；策略收益含现金分红，超额收益因此偏高';
+    if(M.benchmark.filled_days) t+=`；基准缺 ${M.benchmark.filled_days} 天，按前值填充`;
+    out.push(t+'。'); }
+  if(M.rules) out.push(esc(M.rules));
+  const rate = v => v==null? null : Array.isArray(v)? `${pct(v[0],3).replace(/0+%$/,'%').replace(/\.%$/,'%')}–${pct(v[1],3).replace(/0+%$/,'%').replace(/\.%$/,'%')}（按日）` : pct(v,3).replace(/0+%$/,'%').replace(/\.%$/,'%');
+  const f=[];
+  if(c.commission_rate!=null) f.push(`佣金 ${rate(c.commission_rate)}${c.commission_min?`（最低 ${c.commission_min} 元）`:''}`);
+  if(c.stamp_tax_sell!=null) f.push(`卖出印花税 ${rate(c.stamp_tax_sell)}`);
+  if(c.fee_rate_buy || c.fee_rate_sell) f.push(`其他费用 买 ${rate(c.fee_rate_buy||0)}、卖 ${rate(c.fee_rate_sell||0)}`);
+  if(c.slippage!=null) f.push(`滑点 ${rate(c.slippage)}`);
+  if(c.dividend_tax) f.push(`现金分红扣 ${pct(c.dividend_tax,0)} 红利税`);
+  if(f.length) out.push('费用：'+f.join('，')+'。');
+  if(DENSE) out.push('调仓较密时，未成交按月汇总为堆叠小柱，高度为只数。');
+  out.push('未成交按只数计：调仓日想买入的新进股票开盘不可买（涨停或一字板）、想卖出的剔除股票开盘不可卖（跌停或一字板），或停牌、无行情；之后每天按原目标重试。');
+  if(HASI && M.industry_switch) out.push(`行业为时点口径${M.industry_switch_labels?`，${M.industry_switch} 起由${esc(M.industry_switch_labels[0])}切换为${esc(M.industry_switch_labels[1])}`:`，${M.industry_switch} 分类换版`}。`);
+  if(D.monthly.last_partial || D.monthly.first_partial) out.push('月度收益中带 * 的月份不完整（区间在月中开始或结束）。');
+  if(HASI && IW.sampling==='month_end') out.push('调仓次数较多，行业权重按每月最后一个交易日取样。');
+  out.push(`区间指标按所选区间内的日收益计算，一年按 ${PY} 个交易日；回撤天数为交易日；费用和滑点为区间内各次调仓（含之后重试）的合计 ÷ 期初权益。`);
+  document.getElementById('foot').innerHTML = `<p>${out.join('')}</p>`;
+})();
+
+/* ---------- print (static, full range, A4 width) ---------- */
+(function(){
+  const PWD = 700;
+  const m = metrics(0, N-1);
+  const ddRows = D.drawdowns.map(d=>`<tr><td class="down">${pct(d.depth)}</td><td>${d.peak}</td><td>${d.trough}</td><td>${d.recovery||'未修复'}</td><td>${d.days_to_trough}</td><td>${d.duration_days}${d.recovered?'':'+'}</td></tr>`).join('');
+  document.getElementById('pSummary').innerHTML = `<div class="pgrid"><div>${perfHTML(m,'range')}</div>`+
+    (D.drawdowns.length? `<div><h2>最深回撤</h2><table class="pdd"><tr><th>深度</th><th>峰</th><th>谷</th><th>恢复</th><th>见底</th><th>持续</th></tr>${ddRows}</table></div>` : '<div></div>')+`</div>`;
+  const groups=[['pChart1',['nav','ex','dd']],['pChart2',['roll','hold','cash','to']],['pChart3',['ind']]];
+  groups.forEach(([id,keys],q)=>{ const el=document.getElementById(id);
+    if(id==='pChart3' && !HASI){ document.getElementById('pIndSec').remove(); return; }
+    const r=buildStack(PWD, 0, N-1, keys, {id:'p'+q+'-', dd:-1, roll:'sharpe', static:true});
+    el.setAttribute('viewBox', `0 0 ${r.W} ${r.H}`); el.innerHTML=r.s; updateReadouts(r.G, N-1); });
+})();
+
+function renderAll(){ syncButtons(); renderPerf(); renderStack(); }
+renderHeat(); renderYearly();
+(function(){ const h=new URLSearchParams(location.hash.slice(1)); const v=h.get('v')||'all';
+  if(v.startsWith('dd')) setDD(+v.slice(2)); else if(['all','1','3','5'].includes(v)) setRange(v); else setRange('all');
+  const hv=h.get('h'); if(hv && idxOf[hv]!=null){ const r=svg.getBoundingClientRect(); const x=G.X(T[idxOf[hv]])*r.width/svg.viewBox.baseVal.width+r.left; onMove({clientX:x, clientY:0}); } })();
+let rz; addEventListener('resize', ()=>{ clearTimeout(rz); rz=setTimeout(renderStack, 120); });
+})();
+</script>
+</body>
+</html>

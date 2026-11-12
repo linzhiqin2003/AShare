@@ -38,6 +38,33 @@ costs = ASHARE.costs(["2025-01-02", "2025-01-03", "2025-01-06"],
 config = ASHARE.config(board=[Board.MAIN, Board.STAR])
 ```
 
+`ASHARE.costs(dates)` expands the dated A-share stamp duty and ChinaClear
+transfer fee from 2005-01-24 onwards, so a full-history backtest needs no
+manual fee arrays:
+
+| Effective | Stamp duty | Transfer fee (both sides) |
+|---|---|---|
+| 2005-01-24 | 0.1% both sides | 0.001 per share + 0.0255‰ of amount (unverified, conservative; see below) |
+| 2007-05-30 | 0.3% both sides | |
+| 2008-04-24 | 0.1% both sides | |
+| 2008-09-19 | 0.1% sell only | |
+| 2012-09-01 | | 0.0003 per share + 0.0255‰ of amount |
+| 2015-08-01 | | 0.02‰ of amount |
+| 2021-11-15 | | 0.025‰ of amount (BSE rate, conservative) |
+| 2022-04-29 | | 0.01‰ of amount |
+| 2023-08-28 | 0.05% sell only | |
+
+Before 2015-08-01 Shanghai charged the transfer fee on par value (per share)
+and Shenzhen on amount. Engine fees vary by date, not by security, so both are
+charged to every security: an upper bound. Sources and verification status for
+every row are in the comment above `ASHARE` in `panelbt/markets/__init__.py`.
+Broker commission is not market data; pass it explicitly. Overriding one form
+of a directional transfer fee (`fee_rate_buy` or `fee_per_share_buy`) zeroes
+the other scheduled form, so a fixed-rate setup is explicit:
+`ASHARE.costs(dates, tax_buy=0, tax_sell=0.001, fee_rate_buy=1e-5, fee_rate_sell=1e-5)`.
+`infer_board` accepts six-digit codes with or without `.SH`/`.SZ`/`.BJ`; prefer
+an authoritative board column where you have one.
+
 Only A shares have a built-in profile. The following **illustrative rates are
 not verified market defaults; verify them before use**. These examples reuse
 `prices` and `targets` above.
