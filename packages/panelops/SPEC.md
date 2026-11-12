@@ -34,7 +34,7 @@ current mask always does). No operation reads future rows.
 | ts_min / ts_max | Minimum / maximum of valid observations |
 | ts_rank | Average one-based rank of today's value in valid window; missing today NaN; normalize=True maps (rank-1)/(count-1), singleton 0.5; default False |
 | ts_quantile | Linear interpolation at (count-1)*q in sorted valid values, 0 <= q <= 1 |
-| ts_argmin / ts_argmax | Days since most recent tied extremum (today=0); distance is in trading-row positions, including missing rows; non-trading dates have no rows |
+| ts_argmin / ts_argmax | Days since the tied extremum selected by `ties` (today=0): `ties="latest"` (default) picks the most recent, `ties="earliest"` the oldest; distance is in trading-row positions, including missing rows; non-trading dates have no rows |
 | ts_product | Product of valid values; overflow yields IEEE infinity, underflow zero; zero times an overflowing product is defined as zero |
 | ts_corr / ts_cov(x,y) | Pairwise complete windows; covariance denominator count-ddof (default 1); correlation requires >=2 pairs and positive variance in both series, otherwise NaN |
 | ts_decay_linear | Weights 1..window from oldest nominal position to today; ignore missing values and renormalize surviving weights |
@@ -149,7 +149,7 @@ any backtest package is present.
 | ts_count | Count of finite nonzero observations; min_periods counts all finite observations, including zeros |
 | ts_sumif(x, condition, window=20, min_periods=None) | Sum x where finite condition is nonzero; paired validity; min_periods counts finite pairs including false conditions; an eligible all-false window returns zero |
 | ts_ffill(x, limit=None) | Last finite unmasked value; optional positive limit is the maximum age in trading rows; None is unlimited; initial gaps and masked output remain NaN |
-| ts_idxmin / ts_idxmax | One-based position in the nominal window, including missing/padded leading positions; ties choose latest; idx = window - arg, where arg is ts_argmin/ts_argmax |
+| ts_idxmin / ts_idxmax | One-based position in the nominal window, including missing/padded leading positions; ties follow `ties` as above (default latest; `"earliest"` matches `numpy.argmax`/`argmin` on a full window); idx = window - arg, where arg is ts_argmin/ts_argmax with the same `ties` |
 | cs_scale | Divide finite values by their absolute sum; zero absolute sum gives NaN; an absolute sum that overflows to infinity gives NaN for the whole row (both backends) |
 | cs_demean | Subtract the finite cross-sectional mean; constant rows become exactly zero; values are centered on the first finite value first, so same-sign values near 1e308 still work, but if the centered mean overflows (opposite-sign values near +/-1e308) the whole row is NaN. cs_zscore also gives a NaN row when its sum of squares overflows (both backends) |
 

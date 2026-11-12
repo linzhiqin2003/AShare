@@ -95,10 +95,13 @@ def _ts(
     normalize=False,
     alpha=None,
     periods=1,
+    ties="latest",
     backend=None,
     layout=None,
 ):
     panel(x)
+    if ties not in ("latest", "earliest"):
+        raise ValueError("ties must be 'latest' or 'earliest'")
     yy, mm = optional(y, x, "y"), optional(mask, x, "mask", bool)
     window = integer(window, "window")
     mp = window if min_periods is None else integer(min_periods, "min_periods")
@@ -147,6 +150,7 @@ def _ts(
         periods,
         _THREADS,
         0 if layout is None else integer(layout, "layout", 0),
+        ties == "earliest",
     )
 
 
@@ -209,14 +213,34 @@ def ts_quantile(x, window=20, *, min_periods=None, mask=None, q=0.5, backend=Non
     )
 
 
-def ts_argmin(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing argmin; see SPEC.md for validity and degeneracy rules."""
-    return _ts("argmin", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_argmin(
+    x, window=20, *, min_periods=None, mask=None, ties="latest", backend=None
+):
+    """Trailing argmin; ties="latest" (default) or "earliest" picks among tied extrema."""
+    return _ts(
+        "argmin",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        ties=ties,
+        backend=backend,
+    )
 
 
-def ts_argmax(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing argmax; see SPEC.md for validity and degeneracy rules."""
-    return _ts("argmax", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_argmax(
+    x, window=20, *, min_periods=None, mask=None, ties="latest", backend=None
+):
+    """Trailing argmax; ties="latest" (default) or "earliest" picks among tied extrema."""
+    return _ts(
+        "argmax",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        ties=ties,
+        backend=backend,
+    )
 
 
 def ts_product(x, window=20, *, min_periods=None, mask=None, backend=None):
@@ -372,14 +396,34 @@ def ts_sumif(x, condition, window=20, *, min_periods=None, mask=None, backend=No
     )
 
 
-def ts_idxmin(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing idxmin; see SPEC.md for validity and degeneracy rules."""
-    return _ts("idxmin", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_idxmin(
+    x, window=20, *, min_periods=None, mask=None, ties="latest", backend=None
+):
+    """Trailing idxmin; ties="latest" (default) or "earliest" picks among tied extrema."""
+    return _ts(
+        "idxmin",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        ties=ties,
+        backend=backend,
+    )
 
 
-def ts_idxmax(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing idxmax; see SPEC.md for validity and degeneracy rules."""
-    return _ts("idxmax", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_idxmax(
+    x, window=20, *, min_periods=None, mask=None, ties="latest", backend=None
+):
+    """Trailing idxmax; ties="latest" (default) or "earliest" picks among tied extrema."""
+    return _ts(
+        "idxmax",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        ties=ties,
+        backend=backend,
+    )
 
 
 def ts_ffill(x, *, limit=None, mask=None, backend=None):
