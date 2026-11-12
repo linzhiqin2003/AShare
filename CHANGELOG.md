@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-13（港股、美股数据）
+- 新增港股、美股原始库与面板（`docs/DESIGN.md` 6.1.3、`docs/HKUS_DATA.md`）：Tushare 权限实测；按市场分目录的原始库（日历、证券表、日线、前复权因子快照、港股通名单与南向持股、汇率）；「交易日 × 证券」面板两套（近 3 年全部证券、2010 年起 200 只样本），读取入口 `ashare.data.open(root, market="hk"|"us")`；由因子比识别拆并股和等效现金；独立校验与逐条登记的已知例外。命令 `sync-overseas`、`select-sample-overseas`、`build-overseas`、`verify-overseas`。A 股侧输出逐位不变。
+
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。
 

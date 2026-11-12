@@ -51,6 +51,37 @@ def main():
     futures.add_argument("--budget", type=int, default=60000)
     commands.add_parser("build-futures", help="由期货原始库构建交易日×合约面板")
     commands.add_parser("verify-futures", help="期货原始库与面板的独立校验")
+    # 港股、美股（第 2 批）：配合 --market hk / --market us，数据根 <root>/hk、<root>/us。
+    overseas = commands.add_parser(
+        "sync-overseas", help="港股或美股原始库（--market hk|us）"
+    )
+    overseas.add_argument(
+        "--start", default=(date.today() - timedelta(days=3 * 365)).isoformat()
+    )
+    overseas.add_argument(
+        "--end", default=(date.today() - timedelta(days=1)).isoformat()
+    )
+    overseas.add_argument("--datasets", nargs="+")
+    overseas.add_argument("--force", action="store_true")
+    overseas.add_argument("--no-refresh", action="store_true")
+    overseas.add_argument("--workers", type=int, default=8)
+    overseas.add_argument("--rate", type=float, default=200)
+    overseas.add_argument("--budget", type=int, default=20000)
+    sample = commands.add_parser(
+        "select-sample-overseas", help="按当前市值分层抽 2010 年起的历史样本"
+    )
+    sample.add_argument("--asof", required=True)
+    sample.add_argument("--rate", type=float, default=60)
+    overseas_build = commands.add_parser(
+        "build-overseas", help="港股或美股「交易日 × 证券」面板"
+    )
+    overseas_build.add_argument("--universe", choices=("all", "sample"), default="all")
+    overseas_build.add_argument("--start")
+    overseas_build.add_argument("--end")
+    overseas_check = commands.add_parser(
+        "verify-overseas", help="港股或美股原始库与面板的独立校验"
+    )
+    overseas_check.add_argument("--universe", choices=("all", "sample"), default="all")
     panel = commands.add_parser("build-panel")
     panel.add_argument("--start")
     panel.add_argument("--end")
@@ -150,6 +181,15 @@ def main():
         if report["verdict"] == "fail":
             print(json.dumps(result, ensure_ascii=False, indent=2))
             raise SystemExit(1)
+    elif args.command in (
+        "sync-overseas",
+        "select-sample-overseas",
+        "build-overseas",
+        "verify-overseas",
+    ):
+        from .overseas_cli import run as run_overseas
+
+        result = run_overseas(args, store)
     elif args.command == "build-panel":
         meta = build(
             store,
@@ -207,6 +247,20 @@ def main():
         }
         if futures_status:
             result["futures"] = futures_status
+        # 港股、美股的数据集只出现在 <root>/hk、<root>/us 的清单里，A 股清单里永远没有。
+        from .catalog import OVERSEAS_DATASETS
+
+        overseas_status = {
+            name: dict(
+                partitions=len(entries),
+                rows=sum(e.get("rows", 0) for e in entries.values()),
+                failed=sum(e["status"] != "complete" for e in entries.values()),
+            )
+            for name in OVERSEAS_DATASETS
+            if (entries := store.entries(name))
+        }
+        if overseas_status:
+            result["overseas"] = overseas_status
     if args.command in ("status", "gc"):
         result["disk_usage"] = disk_usage(store.root)
     print(json.dumps(result, ensure_ascii=False, indent=2))
