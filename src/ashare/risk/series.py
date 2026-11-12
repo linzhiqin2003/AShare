@@ -21,6 +21,7 @@ from .model import RiskModel
 from .rolling import RollingDescriptors
 from .specific import SpecificMoments
 from .statistical import statistical_model
+from .window import ResidualWindow
 
 CACHE_SCHEMA = 3
 
@@ -158,10 +159,14 @@ def _iterate(
     batch_size,
 ):
     prepared, regressed = {}, {}
-    history_f, history_r, history_bias = [], [], []
-    # 特质方差逐日递推；从头算模式下为 None，与旧实现同一路径。
+    history_f, history_bias = [], []
+    # 残差历史放在预分配的双份环形缓冲里，窗口是连续视图（不再每天拼 48 MB 新数组）。
+    residual_window = ResidualWindow(len(source.symbols), c.history)
+    # 特质方差分块累加；从头算模式下为 None，与旧实现同一路径。
     moments = (
-        SpecificMoments(len(source.symbols), c) if c.specific_incremental else None
+        SpecificMoments(len(source.symbols), c, residual_window)
+        if c.specific_incremental
+        else None
     )
     previous = None
     previous_key = None
@@ -269,11 +274,13 @@ def _iterate(
             fs = np.asarray((history_f + [f])[-c.history :])
             if moments is not None:
                 moments.push(day, residual)
+            else:
+                residual_window.push(day, residual)
             good_f = np.isfinite(fs).all(axis=1)
             if good_f.sum() >= c.min_descriptor_days:
                 # 不压缩时间轴：没有回归的日期保留 NaN，NW 的 lag 仍是交易日。
                 if moments is None:
-                    rs = np.asarray((history_r + [residual])[-c.history :])
+                    rs = residual_window.window(max(0, day - c.history + 1), day)
                     covariance, d, base_f, base_d = estimate_covariances(
                         fs, rs, b, cap, c, est
                     )
@@ -337,14 +344,15 @@ def _iterate(
                     latest=day == end - 1,
                     checkpoint=rolling.checkpoint() if day == end - 1 else None,
                 )
-        if moments is not None and moments.latest < day:
-            moments.push(day, state["residual"])
+        if residual_window.latest < day:
+            if moments is not None:
+                moments.push(day, state["residual"])
+            else:
+                residual_window.push(day, state["residual"])
         history_f.append(state["f"])
-        history_r.append(state["residual"])
         history_bias.append(state["bias"])
         if len(history_f) > c.history:
             history_f.pop(0)
-            history_r.pop(0)
             history_bias.pop(0)
         previous = model, state
         previous_key = key

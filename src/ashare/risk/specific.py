@@ -26,7 +26,7 @@ import portopt
 
 from . import kernels
 from .engine import _short_factor_panel
-from .window import WindowVariances
+from .window import ResidualWindow, WindowVariances
 
 BLOCK = 32
 TAU = 32.0
@@ -62,13 +62,14 @@ def reference_variances(window, config):
 class SpecificMoments:
     """最近 history 天残差（双份环形缓冲，窗口是连续视图）、移位和已算好的整块矩。"""
 
-    def __init__(self, n, config):
+    def __init__(self, n, config, ring=None):
         c = config
         self.config = c
         self.n = n
         self.capacity = c.history
-        self.rows = np.full((2 * self.capacity, n), np.nan)
-        self.latest = -1
+        self.ring = ResidualWindow(n, c.history) if ring is None else ring
+        if self.ring.capacity != c.history:
+            raise ValueError("残差缓冲长度须等于 history")
         self.anchor = None
         self.shift = None
         self.blocks = {}  # (块号, 半衰期) → 块末端的矩
@@ -77,31 +78,28 @@ class SpecificMoments:
         self.count_day = None
         self.fallback_columns = 0  # 诊断：累计改用从头算的列数
 
+    @property
+    def latest(self):
+        return self.ring.latest
+
     # 残差窗口 ------------------------------------------------------------
 
     def push(self, day, residual):
-        if day != self.latest + 1:
-            raise ValueError("残差必须逐日连续推入")
-        slot = day % self.capacity
+        """推入第 day 天残差（缓冲由调用方共享时，调用方先推、再调 `counted`）。"""
+        self.counted(day, residual)
+        self.ring.push(day, residual)
+
+    def counted(self, day, residual):
         if self.count_day == day - 1 and self.count is not None:
             # 有效天数是整数，逐日加减精确；出界的一行在覆盖前减掉。
-            if day - self.capacity >= 0:
-                self.count -= np.isfinite(self.rows[slot])
+            leaving = self.ring.leaving(day)
+            if leaving is not None:
+                self.count -= np.isfinite(leaving)
             self.count += np.isfinite(residual)
             self.count_day = day
-        self.rows[slot] = residual
-        self.rows[slot + self.capacity] = residual
-        self.latest = day
 
     def window(self, first, last):
-        """第 first..last 天（含）的残差，按时间排列的连续视图。"""
-        length = last - first + 1
-        if not 0 <= first <= last <= self.latest or length > self.capacity:
-            raise ValueError("请求的残差窗口不在缓冲内")
-        if self.latest - self.capacity >= first:
-            raise ValueError("请求的残差窗口已被覆盖")
-        end = last % self.capacity + self.capacity + 1
-        return self.rows[end - length : end]
+        return self.ring.window(first, last)
 
     # 矩 -----------------------------------------------------------------
 

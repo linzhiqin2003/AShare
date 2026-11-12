@@ -174,6 +174,52 @@ CASES = {
             "test/risk/test_specific_incremental.py",
         ),
     ],
+    "P-005": [
+        (
+            "窗口末端差一行",
+            [
+                (
+                    "src/ashare/risk/window.py",
+                    "end = last % self.capacity + self.capacity + 1",
+                    "end = last % self.capacity + self.capacity",
+                )
+            ],
+            "test/risk/test_residual_window.py",
+        ),
+        (
+            "只写一份",
+            [
+                (
+                    "src/ashare/risk/window.py",
+                    "        self.rows[slot + self.capacity] = residual\n",
+                    "",
+                )
+            ],
+            "test/risk/test_residual_window.py",
+        ),
+        (
+            "出界行取错",
+            [
+                (
+                    "src/ashare/risk/window.py",
+                    "return self.rows[day % self.capacity]",
+                    "return self.rows[(day + 1) % self.capacity]",
+                )
+            ],
+            "test/risk/test_residual_window.py",
+        ),
+        (
+            "从头算模式窗口少取一天",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "rs = residual_window.window(max(0, day - c.history + 1), day)",
+                    "rs = residual_window.window(max(0, day - c.history + 2), day)",
+                )
+            ],
+            "test/risk/test_residual_window.py",
+        ),
+    ],
 }
 
 
