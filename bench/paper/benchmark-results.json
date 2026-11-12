@@ -1,0 +1,797 @@
+{
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "python": "3.13.13",
+  "numpy": "2.5.4",
+  "symbols": 5500,
+  "baseline_scope": "quote retention with no orders; Python/NumPy retain all 18 columns but omit native input validation and account/event machinery",
+  "contention": "Other workloads may be running; rerun on an idle machine.",
+  "batch": {
+    "python_loop": {
+      "median_ms": 1.6689625000435626,
+      "samples_ms": [
+        1.6582204100268427,
+        1.6468154099857202,
+        1.6581975000008242,
+        1.6689625000435626,
+        1.6701224999997066,
+        1.6761920799763175,
+        1.6980204200081062
+      ]
+    },
+    "numpy_vectorized": {
+      "median_ms": 0.12470374997064937,
+      "samples_ms": [
+        0.12535125002614222,
+        0.1250554099533474,
+        0.12510541004303377,
+        0.12470374997064937,
+        0.12400042003719136,
+        0.124587500031339,
+        0.12447166998754255
+      ]
+    },
+    "rust_kernel": {
+      "median_ms": 0.06439500000851694,
+      "samples_ms": [
+        0.06448249994718935,
+        0.06419332996301819,
+        0.06433875001675915,
+        0.06456041999626905,
+        0.06470957996498328,
+        0.06423582999559585,
+        0.06439500000851694
+      ]
+    }
+  },
+  "replay": {
+    "median_seconds": 0.7714427500031888,
+    "samples_seconds": [
+      0.7991061249995255,
+      0.7714427500031888,
+      0.7557586250040913
+    ],
+    "orders": 400,
+    "fills": 400,
+    "batches": 4800,
+    "quotes": 26400000
+  },
+  "retention_40_days": [
+    {
+      "day": 1,
+      "snapshot_bytes": 3472045,
+      "snapshot_count": 1,
+      "quote_files": 4,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 181010432,
+      "disk_bytes": {
+        "wal": 51249,
+        "snapshots": 3472045,
+        "quotes": 73460,
+        "daily_archives": 526215,
+        "reports": 0,
+        "other": 1314857,
+        "total": 5437826
+      }
+    },
+    {
+      "day": 2,
+      "snapshot_bytes": 3481901,
+      "snapshot_count": 2,
+      "quote_files": 8,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 202457088,
+      "disk_bytes": {
+        "wal": 102694,
+        "snapshots": 6953946,
+        "quotes": 146920,
+        "daily_archives": 1057486,
+        "reports": 0,
+        "other": 1314857,
+        "total": 9575903
+      }
+    },
+    {
+      "day": 3,
+      "snapshot_bytes": 3481901,
+      "snapshot_count": 3,
+      "quote_files": 12,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 220921856,
+      "disk_bytes": {
+        "wal": 154139,
+        "snapshots": 10435847,
+        "quotes": 220380,
+        "daily_archives": 1588757,
+        "reports": 0,
+        "other": 1314857,
+        "total": 13713980
+      }
+    },
+    {
+      "day": 4,
+      "snapshot_bytes": 3481901,
+      "snapshot_count": 3,
+      "quote_files": 16,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 238436352,
+      "disk_bytes": {
+        "wal": 205584,
+        "snapshots": 10445703,
+        "quotes": 293840,
+        "daily_archives": 2120028,
+        "reports": 0,
+        "other": 1314857,
+        "total": 14380012
+      }
+    },
+    {
+      "day": 5,
+      "snapshot_bytes": 3496078,
+      "snapshot_count": 3,
+      "quote_files": 20,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 263847936,
+      "disk_bytes": {
+        "wal": 257196,
+        "snapshots": 10459880,
+        "quotes": 367300,
+        "daily_archives": 2653087,
+        "reports": 0,
+        "other": 1314857,
+        "total": 15052320
+      }
+    },
+    {
+      "day": 6,
+      "snapshot_bytes": 3498316,
+      "snapshot_count": 3,
+      "quote_files": 24,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 281837568,
+      "disk_bytes": {
+        "wal": 309055,
+        "snapshots": 10476295,
+        "quotes": 440760,
+        "daily_archives": 3187364,
+        "reports": 0,
+        "other": 1314857,
+        "total": 15728331
+      }
+    },
+    {
+      "day": 7,
+      "snapshot_bytes": 3498316,
+      "snapshot_count": 3,
+      "quote_files": 28,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 301744128,
+      "disk_bytes": {
+        "wal": 360914,
+        "snapshots": 10492710,
+        "quotes": 514220,
+        "daily_archives": 3721641,
+        "reports": 0,
+        "other": 1314857,
+        "total": 16404342
+      }
+    },
+    {
+      "day": 8,
+      "snapshot_bytes": 3498316,
+      "snapshot_count": 3,
+      "quote_files": 32,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 318668800,
+      "disk_bytes": {
+        "wal": 412773,
+        "snapshots": 10494948,
+        "quotes": 587680,
+        "daily_archives": 4255918,
+        "reports": 0,
+        "other": 1314857,
+        "total": 17066176
+      }
+    },
+    {
+      "day": 9,
+      "snapshot_bytes": 3500191,
+      "snapshot_count": 3,
+      "quote_files": 36,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 335839232,
+      "disk_bytes": {
+        "wal": 464632,
+        "snapshots": 10496823,
+        "quotes": 661140,
+        "daily_archives": 4791232,
+        "reports": 0,
+        "other": 1314857,
+        "total": 17728684
+      }
+    },
+    {
+      "day": 10,
+      "snapshot_bytes": 3507745,
+      "snapshot_count": 3,
+      "quote_files": 40,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 353288192,
+      "disk_bytes": {
+        "wal": 516498,
+        "snapshots": 10506252,
+        "quotes": 734600,
+        "daily_archives": 5330522,
+        "reports": 0,
+        "other": 1314857,
+        "total": 18402729
+      }
+    },
+    {
+      "day": 11,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 44,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 361185280,
+      "disk_bytes": {
+        "wal": 568364,
+        "snapshots": 10517681,
+        "quotes": 808060,
+        "daily_archives": 5870812,
+        "reports": 0,
+        "other": 1314857,
+        "total": 19079774
+      }
+    },
+    {
+      "day": 12,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 48,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 364150784,
+      "disk_bytes": {
+        "wal": 620230,
+        "snapshots": 10527235,
+        "quotes": 881520,
+        "daily_archives": 6411102,
+        "reports": 0,
+        "other": 1314857,
+        "total": 19754944
+      }
+    },
+    {
+      "day": 13,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 52,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 367181824,
+      "disk_bytes": {
+        "wal": 672096,
+        "snapshots": 10529235,
+        "quotes": 954980,
+        "daily_archives": 6951392,
+        "reports": 0,
+        "other": 1314857,
+        "total": 20422560
+      }
+    },
+    {
+      "day": 14,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 56,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 366051328,
+      "disk_bytes": {
+        "wal": 723962,
+        "snapshots": 10529235,
+        "quotes": 1028440,
+        "daily_archives": 7491682,
+        "reports": 0,
+        "other": 1314857,
+        "total": 21088176
+      }
+    },
+    {
+      "day": 15,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 60,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 343031808,
+      "disk_bytes": {
+        "wal": 775828,
+        "snapshots": 10529235,
+        "quotes": 1101900,
+        "daily_archives": 8031972,
+        "reports": 0,
+        "other": 1314857,
+        "total": 21753792
+      }
+    },
+    {
+      "day": 16,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 64,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 348651520,
+      "disk_bytes": {
+        "wal": 827694,
+        "snapshots": 10529235,
+        "quotes": 1175360,
+        "daily_archives": 8572262,
+        "reports": 0,
+        "other": 1314857,
+        "total": 22419408
+      }
+    },
+    {
+      "day": 17,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 68,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 357892096,
+      "disk_bytes": {
+        "wal": 879560,
+        "snapshots": 10529235,
+        "quotes": 1248820,
+        "daily_archives": 9112552,
+        "reports": 0,
+        "other": 1314857,
+        "total": 23085024
+      }
+    },
+    {
+      "day": 18,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 72,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 360366080,
+      "disk_bytes": {
+        "wal": 931426,
+        "snapshots": 10529235,
+        "quotes": 1322280,
+        "daily_archives": 9652842,
+        "reports": 0,
+        "other": 1314857,
+        "total": 23750640
+      }
+    },
+    {
+      "day": 19,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 76,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 304005120,
+      "disk_bytes": {
+        "wal": 983292,
+        "snapshots": 10529235,
+        "quotes": 1395740,
+        "daily_archives": 10193132,
+        "reports": 0,
+        "other": 1314857,
+        "total": 24416256
+      }
+    },
+    {
+      "day": 20,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 310820864,
+      "disk_bytes": {
+        "wal": 1035158,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 10733422,
+        "reports": 0,
+        "other": 1314857,
+        "total": 25081872
+      }
+    },
+    {
+      "day": 21,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 321912832,
+      "disk_bytes": {
+        "wal": 1087024,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 11273712,
+        "reports": 0,
+        "other": 1314892,
+        "total": 25674063
+      }
+    },
+    {
+      "day": 22,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 323092480,
+      "disk_bytes": {
+        "wal": 1138890,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 11814002,
+        "reports": 0,
+        "other": 1314892,
+        "total": 26266219
+      }
+    },
+    {
+      "day": 23,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 331415552,
+      "disk_bytes": {
+        "wal": 1190756,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 12354292,
+        "reports": 0,
+        "other": 1314892,
+        "total": 26858375
+      }
+    },
+    {
+      "day": 24,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 339771392,
+      "disk_bytes": {
+        "wal": 1242622,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 12894582,
+        "reports": 0,
+        "other": 1314892,
+        "total": 27450531
+      }
+    },
+    {
+      "day": 25,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 345849856,
+      "disk_bytes": {
+        "wal": 1294488,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 13434872,
+        "reports": 0,
+        "other": 1314892,
+        "total": 28042687
+      }
+    },
+    {
+      "day": 26,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 351059968,
+      "disk_bytes": {
+        "wal": 1346354,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 13975162,
+        "reports": 0,
+        "other": 1314892,
+        "total": 28634843
+      }
+    },
+    {
+      "day": 27,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 335675392,
+      "disk_bytes": {
+        "wal": 1398220,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 14515452,
+        "reports": 0,
+        "other": 1314892,
+        "total": 29226999
+      }
+    },
+    {
+      "day": 28,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 341786624,
+      "disk_bytes": {
+        "wal": 1450086,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 15055742,
+        "reports": 0,
+        "other": 1314892,
+        "total": 29819155
+      }
+    },
+    {
+      "day": 29,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 341295104,
+      "disk_bytes": {
+        "wal": 1501952,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 15596032,
+        "reports": 0,
+        "other": 1314892,
+        "total": 30411311
+      }
+    },
+    {
+      "day": 30,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 348700672,
+      "disk_bytes": {
+        "wal": 1553818,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 16136322,
+        "reports": 0,
+        "other": 1314892,
+        "total": 31003467
+      }
+    },
+    {
+      "day": 31,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 352714752,
+      "disk_bytes": {
+        "wal": 1605684,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 16676612,
+        "reports": 0,
+        "other": 1314892,
+        "total": 31595623
+      }
+    },
+    {
+      "day": 32,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 305037312,
+      "disk_bytes": {
+        "wal": 1657550,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 17216902,
+        "reports": 0,
+        "other": 1314892,
+        "total": 32187779
+      }
+    },
+    {
+      "day": 33,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 310853632,
+      "disk_bytes": {
+        "wal": 1709416,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 17757192,
+        "reports": 0,
+        "other": 1314892,
+        "total": 32779935
+      }
+    },
+    {
+      "day": 34,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 322027520,
+      "disk_bytes": {
+        "wal": 1761282,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 18297482,
+        "reports": 0,
+        "other": 1314892,
+        "total": 33372091
+      }
+    },
+    {
+      "day": 35,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 324468736,
+      "disk_bytes": {
+        "wal": 1813148,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 18837772,
+        "reports": 0,
+        "other": 1314892,
+        "total": 33964247
+      }
+    },
+    {
+      "day": 36,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 330481664,
+      "disk_bytes": {
+        "wal": 1865014,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 19378062,
+        "reports": 0,
+        "other": 1314892,
+        "total": 34556403
+      }
+    },
+    {
+      "day": 37,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 333185024,
+      "disk_bytes": {
+        "wal": 1916880,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 19918352,
+        "reports": 0,
+        "other": 1314892,
+        "total": 35148559
+      }
+    },
+    {
+      "day": 38,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 337494016,
+      "disk_bytes": {
+        "wal": 1968746,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 20458642,
+        "reports": 0,
+        "other": 1314892,
+        "total": 35740715
+      }
+    },
+    {
+      "day": 39,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 315834368,
+      "disk_bytes": {
+        "wal": 2020612,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 20998932,
+        "reports": 0,
+        "other": 1314892,
+        "total": 36332871
+      }
+    },
+    {
+      "day": 40,
+      "snapshot_bytes": 3509745,
+      "snapshot_count": 3,
+      "quote_files": 80,
+      "history_events": 1204,
+      "daily_states": 1,
+      "rss_bytes": 329531392,
+      "disk_bytes": {
+        "wal": 2072478,
+        "snapshots": 10529235,
+        "quotes": 1469200,
+        "daily_archives": 21539222,
+        "reports": 0,
+        "other": 1314892,
+        "total": 36925027
+      }
+    }
+  ],
+  "full_day_persistence": {
+    "symbols": 5500,
+    "batches": 2400,
+    "interval_seconds": 6,
+    "orders": 200,
+    "wal_entries": 2603,
+    "elapsed_seconds": 71.41793949999555,
+    "disk_bytes": {
+      "wal": 866604,
+      "snapshots": 9051417,
+      "quotes": 44119200,
+      "daily_archives": 531243,
+      "reports": 0,
+      "other": 1314857,
+      "total": 55883321
+    }
+  }
+}

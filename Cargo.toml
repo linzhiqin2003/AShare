@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/panelbt-core", "packages/panelbt"]
+members = ["crates/panelbt-core", "packages/panelbt", "crates/paperbroker-core", "packages/paperbroker"]
 exclude = ["bench/spike"]
 resolver = "3"
 
@@ -11,3 +11,12 @@ numpy = "0.30.0"
 [profile.release]
 lto = true
 codegen-units = 1
+
+# Money and share counts in the paper broker are integers: trap on overflow instead of wrapping.
+# The engine is generic, so its code is generated in the binding crate; both need the check.
+# Kept per package so the numeric kernels of the other crates are not slowed down.
+[profile.release.package.paperbroker-core]
+overflow-checks = true
+
+[profile.release.package.paperbroker-python]
+overflow-checks = true
