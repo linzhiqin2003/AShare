@@ -598,7 +598,9 @@ for _index in INDEXES:
 
 
 # 境内全部期货交易所（第 1 批期货数据）。与上方中金所对冲腿用的 fut_basic、fut_daily 互不影响：
-# 原始文件按数据集名单独成目录，默认的股票同步与校验不包含它们，由 ashare.data.futures_sync 采集。
+# 原始文件按数据集名单独成目录，由 ashare.data.futures_sync 采集。它们不并入 DATASETS：
+# 股票的同步、状态、校验、版本只看 DATASETS，共用清单里多出期货条目时股票侧的输出逐位不变。
+# 只有 Store 这类按名字找声明的地方用 ALL_DATASETS。
 FUTURES_EXCHANGES = ("CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX")
 FUTURES_DATASETS = {
     d.name: d
@@ -662,4 +664,5 @@ FUTURES_DATASETS = {
         ),
     ]
 }
-DATASETS.update(FUTURES_DATASETS)
+ALL_DATASETS = {**DATASETS, **FUTURES_DATASETS}
+assert not set(DATASETS) & set(FUTURES_DATASETS)

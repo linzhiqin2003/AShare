@@ -1,5 +1,5 @@
 """与来源无关的期货统一字段。任何来源（Tushare、以后的 Databento、Bloomberg）的适配器
-都交出下面五张表，字段名、单位和时点以此为准；面板构建与校验只认这些表。
+都交出下面几张表（multipliers、mapping 可选），字段名、单位和时点以此为准；面板构建与校验只认这些表。
 
 合约标识统一写成「品种代码 + 四位年月 + . + 交易所」，例如 ``SC2612.INE``、
 ``RB2701.SHFE``、``TA2611.CZCE``、``IF2612.CFFEX``；境外如 ``CL2612.NYMEX``、
@@ -36,7 +36,12 @@ CONTRACTS = _cols(
     ("last_trade_date", S, DATE + "；最后交易日", "挂牌前公布；可能因节假日调整"),
     ("delivery_date", S, DATE + "；最后交割日，源缺失时为空", "挂牌前公布", False),
     ("delivery_month", S, "YYYYMM", "静态", False),
-    ("multiplier", F, "每手对应的报价单位数量（合约乘数/交易单位）", "挂牌前公布"),
+    (
+        "multiplier",
+        F,
+        "每手对应的报价单位数量，取最后交易日的值；存续期内改过交易单位的合约按日取值见 multipliers 表与面板 multiplier 字段",
+        "挂牌前公布",
+    ),
     ("quote_unit", S, "报价单位，如 元/吨、指数点", "静态", False),
     ("tick_size", F, "最小变动价位，报价单位", "挂牌前公布", False),
     ("settlement_type", S, "physical 或 cash", "静态", False),
@@ -44,7 +49,7 @@ CONTRACTS = _cols(
     (
         "multiplier_source",
         S,
-        "contract_table（合约表）或 implied_from_amount（按成交额反查，历史改过交易单位的旧合约）",
+        "最后一段乘数的来源，取值同 multipliers.source",
         "静态",
         False,
     ),
@@ -127,21 +132,54 @@ MAPPING = _cols(
     ("symbol", S, "被映射到的统一合约标识", "见各来源说明"),
 )
 
+MULTIPLIERS = _cols(
+    ("symbol", S, "统一合约标识", "—"),
+    (
+        "start_date",
+        S,
+        DATE + "；本段乘数生效的第一个交易日（首段为上市日）",
+        "生效前公布",
+    ),
+    ("multiplier", F, "每手对应的报价单位数量", "生效前公布"),
+    (
+        "source",
+        S,
+        "implied_from_amount（成交额反查）、contract_table（合约表，有成交额核对过）、"
+        "contract_table_unverified（合约表，无成交额可核对）、manual（人工修正表，见 basis）",
+        "—",
+    ),
+    ("basis", S, "依据；manual 必填，「未核实」开头表示依据只是推断", "—", False),
+)
+
 TABLES = {
     "contracts": CONTRACTS,
     "daily": DAILY,
     "params": PARAMS,
     "calendar": CALENDAR,
     "mapping": MAPPING,
+    "multipliers": MULTIPLIERS,
 }
-# 适配器必须交出的表；mapping 可选（没有就只能用自己判定的换月规则）。
+# 适配器必须交出的表；mapping 可选（没有就只能用自己判定的换月规则），
+# multipliers 可选（没有时每个合约整个存续期用 contracts.multiplier）。
 REQUIRED_TABLES = ("contracts", "daily", "params", "calendar")
 
 # 面板字段：每个都是「交易日 × 合约」矩阵。
 PANEL_FIELDS = {
     **{k: c for k, c in DAILY.items() if k not in ("date", "symbol")},
     **{k: c for k, c in PARAMS.items() if k not in ("date", "symbol")},
-    "has_quote": Column("has_quote", B, "布尔；当天有日线", "收盘后"),
+    "multiplier": Column(
+        "multiplier",
+        F,
+        "每手对应的报价单位数量，按 multipliers 表逐日取值",
+        "生效前公布",
+    ),
+    "has_quote": Column(
+        "has_quote",
+        B,
+        "布尔；当天日线的开盘价、结算价、成交量至少一个非空。只有持仓量的行（源里极少，"
+        "都是零成交）为假；有行情不等于有成交，成交看 volume 与 open",
+        "收盘后",
+    ),
     "is_listed": Column("is_listed", B, "布尔；上市日到最后交易日（含两端）", "盘前"),
 }
 

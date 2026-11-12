@@ -2,11 +2,13 @@
 只在这里出现；单位换算规则都由真实数据核对过，证据见 docs/FUTURES_DATA.md。
 """
 
+import math
 import re
 
 import polars as pl
 
 from .futures_schema import conform
+from .futures_specs import MANUAL_MULTIPLIERS
 
 # Tushare 合约代码后缀 → 交易所
 SUFFIX = {
@@ -61,6 +63,11 @@ PER_CONTRACT = {
 # 中金所：股指期货按金额（万分之几），国债期货按手（元/手）；trading_fee_rate 与 trading_fee 两列填同一个数。
 CFFEX_INDEX = {"IF", "IH", "IC", "IM"}
 
+# 不进统一字段的品种：SCTAS 是原油的 TAS（按结算价交易）指令，源里当成独立合约
+# （SCTAS2108.INE），没有开盘价、成交额折算的乘数是原油的两倍，不是可单独持有的合约。
+# 原始分区照常保留。
+EXCLUDED_PRODUCTS = {"SCTAS"}
+
 
 def product_of(code):
     match = re.match(r"^([A-Z]+)", code)
@@ -104,8 +111,125 @@ def _symbol_expr(column="ts_code"):
     )
 
 
+def _product_expr(symbol="symbol"):
+    return pl.col(symbol).str.extract(r"^([A-Z_]+)\d{4}\.")
+
+
+def listing(store, raw=None):
+    """合约表里每个合约的统一代码、品种、四位年月和上市窗口（不含 EXCLUDED_PRODUCTS）。"""
+    raw = raw if raw is not None else store.read("futures_contracts")
+    return (
+        raw.with_columns(symbol=_symbol_expr())
+        .filter(pl.col("symbol").is_not_null())
+        .with_columns(
+            product=_product_expr(),
+            month=pl.col("symbol").str.extract(r"(\d{4})\.\w+$"),
+            exchange=pl.col("symbol").str.extract(r"\.(\w+)$"),
+        )
+        .filter(~pl.col("product").is_in(list(EXCLUDED_PRODUCTS)))
+        .select(
+            "symbol",
+            "exchange",
+            "product",
+            "month",
+            "list_date",
+            "delist_date",
+        )
+        .unique("symbol", keep="first", maintain_order=True)
+    )
+
+
+RESOLUTIONS = ("exact", "czce_decade", "exchange_suffix", "unmatched", "ambiguous")
+
+
+def resolve(frame, table, *, code="ts_code", date="trade_date"):
+    """把源代码对到合约表里「当天在上市期内」的唯一合约，加列 symbol 与 resolution。
+
+    - exact：代码照字面换成统一代码后就是当天上市的合约。
+    - czce_decade：郑商所原生代码只有三位年月，Tushare 补年代时会补错（2019 年的
+      结算参数里 ``AP1003.ZCE`` 实为 AP2003，``WH1001`` 还与 2010 年的真合约同名）。
+      按「品种 + 年份末位 + 月份」找当天上市的合约，唯一时采用。
+    - exchange_suffix：交易所后缀写错（2024 年的结算参数里有 ``BC2407.SHF``，BC 在能源中心挂牌）。
+      同品种同年月、当天上市且唯一时采用。
+    - unmatched / ambiguous：找不到或不唯一，symbol 为空；调用方计数并在校验里逐条列出，不静默丢弃。
+    """
+    parsed = frame.with_row_index("_row").with_columns(_literal=_symbol_expr(code))
+    parsed = parsed.with_columns(
+        _product=_product_expr("_literal"),
+        _month=pl.col("_literal").str.extract(r"(\d{4})\.\w+$"),
+        _exchange=pl.col("_literal").str.extract(r"\.(\w+)$"),
+    )
+    window = (pl.col(date) >= pl.col("list_date")) & (
+        pl.col(date) <= pl.col("delist_date")
+    )
+    exact = (
+        parsed.select("_row", "_literal", date)
+        .join(
+            table.select("symbol", "list_date", "delist_date"),
+            left_on="_literal",
+            right_on="symbol",
+        )
+        .filter(window)
+        .select("_row", symbol=pl.col("_literal"), resolution=pl.lit("exact"))
+    )
+    rest = parsed.join(exact.select("_row"), on="_row", how="anti").filter(
+        pl.col("_product").is_not_null()
+    )
+    candidates = (
+        rest.select("_row", "_product", "_month", "_exchange", date)
+        .join(
+            table.select(
+                "symbol",
+                "exchange",
+                "list_date",
+                "delist_date",
+                _product=pl.col("product"),
+                _year_digit=pl.col("month").str.slice(1, 3),
+                _cand_month=pl.col("month"),
+            ),
+            left_on=["_product", pl.col("_month").str.slice(1, 3)],
+            right_on=["_product", "_year_digit"],
+        )
+        .filter(window)
+        .with_columns(
+            same_exchange=pl.col("exchange") == pl.col("_exchange"),
+            same_month=pl.col("_cand_month") == pl.col("_month"),
+        )
+        # 同交易所的候选优先；只换年代限郑商所，只换后缀要求四位年月相同。
+        .filter(
+            (pl.col("same_exchange") & (pl.col("_exchange") == "CZCE"))
+            | (~pl.col("same_exchange") & pl.col("same_month"))
+        )
+    )
+    counted = candidates.group_by("_row").agg(
+        n=pl.len(),
+        symbol=pl.col("symbol").first(),
+        same=pl.col("same_exchange").first(),
+    )
+    fixed = counted.filter(pl.col("n") == 1).select(
+        "_row",
+        "symbol",
+        resolution=pl.when(pl.col("same"))
+        .then(pl.lit("czce_decade"))
+        .otherwise(pl.lit("exchange_suffix")),
+    )
+    ambiguous = counted.filter(pl.col("n") > 1).select(
+        "_row", symbol=pl.lit(None, pl.String), resolution=pl.lit("ambiguous")
+    )
+    found = pl.concat([exact, fixed, ambiguous])
+    out = parsed.join(found, on="_row", how="left").with_columns(
+        resolution=pl.when(pl.col("_literal").is_null())
+        .then(pl.lit("continuous"))
+        .otherwise(pl.col("resolution").fill_null("unmatched"))
+    )
+    return out.drop("_row", "_literal", "_product", "_month", "_exchange")
+
+
 def contracts(store):
     raw = store.read("futures_contracts")
+    raw = raw.filter(
+        ~pl.col("fut_code").str.to_uppercase().is_in(list(EXCLUDED_PRODUCTS))
+    )
     tick = raw["quote_unit_desc"].str.extract(r"^([0-9.]+)").cast(pl.Float64)
     frame = raw.with_columns(
         symbol=_symbol_expr(),
@@ -128,17 +252,18 @@ def contracts(store):
         delivery_date=pl.col("last_ddate"),
         delivery_month=pl.col("d_month"),
     ).filter(pl.col("symbol").is_not_null())
-    implied = implied_multipliers(store, raw)
-    frame = frame.join(implied, on="ts_code", how="left").with_columns(
-        off=(pl.col("implied") / pl.col("declared") - 1).abs() > SPEC_TOLERANCE
+    history = multipliers(store, raw)
+    last = (
+        history.sort("symbol", "start_date")
+        .group_by("symbol")
+        .agg(
+            multiplier=pl.col("multiplier").last(),
+            multiplier_source=pl.col("source").last(),
+        )
     )
-    frame = frame.with_columns(
-        multiplier=pl.when(pl.col("off"))
-        .then(pl.col("implied").round(0))
-        .otherwise(pl.col("declared")),
-        multiplier_source=pl.when(pl.col("off"))
-        .then(pl.lit("implied_from_amount"))
-        .otherwise(pl.lit("contract_table")),
+    frame = frame.join(last, on="symbol", how="left").with_columns(
+        multiplier=pl.coalesce("multiplier_right", "declared"),
+        multiplier_source=pl.col("multiplier_source").fill_null("contract_table"),
     )
     return (
         conform(
@@ -165,38 +290,227 @@ def contracts(store):
     )
 
 
-# 合约表的交易单位是现值；历史上改过交易单位的品种（RU 5→10 吨、PB 25→5 吨、FU 50→10 吨、
-# FB 500 张→10 立方米）旧合约要按成交额反查：每个合约取「成交额 ÷ (成交量 × 结算价)」的中位数，
-# 与合约表相差超过 2% 就用反查值（取整），并在 multiplier_source 标明。
-SPEC_TOLERANCE = 0.02
-MIN_ROWS = 3
+# ---- 合约乘数（按日期） -------------------------------------------------------------
+# 合约表的交易单位是现值；历史上改过交易单位的品种，旧合约甚至同一个合约存续期中途的乘数都
+# 可能不同（PB1309–1311 在 2013-09-02 由 25 吨改 5 吨，FB2001 在 2019-12 由 500 张改 10 立方米）。
+# 来源优先级：
+#   1. 成交额反查：每个「合约 × 自然月」取「成交额 ÷ (成交量 × 结算价)」的中位数。与合约表相差
+#      不超过 SPEC_NOISE 的月份视为与合约表一致；相差超过 SPEC_CHANGE 倍的月份视为交易单位不同，
+#      取反查值（取整）；介于两者之间的是稀疏成交或成交额口径的噪声（见文档），不改乘数。
+#      同一合约前后月份的取值不同，就在存续期内分段：分界日取「新值的第一个成交日」，此前
+#      保持旧值。新旧值交错（不是一次切换）时不分段，整段用合约表值并标为 contract_table_unverified，
+#      由校验列出。
+#   2. 人工修正表（futures_specs.MANUAL_MULTIPLIERS）：没有任何可反查行的合约（上期所 2008 年前
+#      成交额为空）且命中修正表时采用，每行写明依据。
+#   3. 合约表现值：有反查行且一致时为 contract_table；没有可反查行时为 contract_table_unverified。
+SPEC_NOISE = 0.02
+SPEC_CHANGE = 1.5
 
 
-def implied_multipliers(store, raw_contracts=None):
+def _declared(raw):
+    return raw.with_columns(
+        symbol=_symbol_expr(),
+        declared=pl.coalesce("multiplier", "per_unit").cast(pl.Float64)
+        * pl.when(
+            pl.col("quote_unit").str.contains("500千克")
+            & (pl.col("trade_unit") == "吨")
+        )
+        .then(2.0)
+        .otherwise(1.0),
+    ).filter(pl.col("symbol").is_not_null())
+
+
+def implied_rows(store, raw_contracts=None):
+    """逐行反查值：只取成交量、成交额、结算价都为正的行（统一代码、单边口径之前的原始量纲）。"""
     raw = (
         raw_contracts if raw_contracts is not None else store.read("futures_contracts")
     )
-    listing = raw.select("ts_code", "list_date")
-    rows = (
+    listing_dates = raw.select("ts_code", "list_date", "delist_date")
+    return (
         store.scan("futures_daily")
         .select("ts_code", "trade_date", "vol", "amount", "settle")
-        .join(listing.lazy(), on="ts_code", how="inner")
+        .join(listing_dates.lazy(), on="ts_code", how="inner")
         .filter(
             (pl.col("trade_date") >= pl.col("list_date"))
+            & (pl.col("trade_date") <= pl.col("delist_date"))
             & (pl.col("vol") > 0)
             & (pl.col("amount") > 0)
             & (pl.col("settle") > 0)
         )
         .with_columns(
-            ratio=pl.col("amount") * 10000 / (pl.col("vol") * pl.col("settle"))
+            ratio=pl.col("amount") * 10000 / (pl.col("vol") * pl.col("settle")),
+            month=pl.col("trade_date").str.slice(0, 6),
         )
-        .group_by("ts_code")
-        .agg(implied=pl.col("ratio").median(), rows=pl.len())
-        .filter(pl.col("rows") >= MIN_ROWS)
-        .select("ts_code", "implied")
+        .select("ts_code", "trade_date", "month", "ratio")
         .collect()
     )
-    return rows
+
+
+def multipliers(store, raw_contracts=None):
+    """统一字段 multipliers 表：每个合约一段或多段 (start_date, multiplier, source, basis)。"""
+    raw = (
+        raw_contracts if raw_contracts is not None else store.read("futures_contracts")
+    )
+    raw = raw.filter(
+        ~pl.col("fut_code").str.to_uppercase().is_in(list(EXCLUDED_PRODUCTS))
+    )
+    declared = _declared(raw).select(
+        "ts_code",
+        "symbol",
+        "declared",
+        "list_date",
+        "delist_date",
+        "exchange",
+        "fut_code",
+    )
+    rows = implied_rows(store, raw).join(
+        declared.select("ts_code", "declared"), on="ts_code"
+    )
+    months = (
+        rows.group_by("ts_code", "month")
+        .agg(median=pl.col("ratio").median(), first=pl.col("trade_date").min())
+        .join(declared.select("ts_code", "declared"), on="ts_code")
+        .with_columns(q=pl.col("median") / pl.col("declared"))
+        .with_columns(
+            value=pl.when((pl.col("q") - 1).abs() <= SPEC_NOISE)
+            .then(pl.col("declared"))
+            .when((pl.col("q") >= SPEC_CHANGE) | (pl.col("q") <= 1 / SPEC_CHANGE))
+            .then(pl.col("median").map_elements(_nice, return_dtype=pl.Float64))
+            .otherwise(None)
+        )
+        .filter(pl.col("value").is_not_null())
+        .sort("ts_code", "month")
+    )
+    # 逐行把成交日归到该合约出现过的取值上，找分界日。
+    values = months.group_by("ts_code").agg(
+        vals=pl.col("value").unique().sort(), months=pl.len()
+    )
+    by_code = {r["ts_code"]: r["vals"] for r in values.iter_rows(named=True)}
+    multi = {k: v for k, v in by_code.items() if len(v) > 1}
+    change_rows = (
+        rows.filter(pl.col("ts_code").is_in(list(multi)))
+        .sort("ts_code", "trade_date")
+        .to_dicts()
+        if multi
+        else []
+    )
+    days = {}
+    for row in change_rows:
+        days.setdefault(row["ts_code"], []).append(row)
+    info = {r["ts_code"]: r for r in declared.iter_rows(named=True)}
+    out, switches, labels_of = [], {}, {}
+    for code, item in info.items():
+        symbol, start = item["symbol"], item["list_date"]
+        vals = by_code.get(code)
+        if vals is None:
+            manual = _manual(item)
+            if manual is not None:
+                out.append(
+                    (symbol, start, manual["multiplier"], "manual", manual["basis"])
+                )
+            else:
+                out.append(
+                    (symbol, start, item["declared"], "contract_table_unverified", None)
+                )
+            continue
+        if len(vals) == 1:
+            value = vals[0]
+            source = (
+                "contract_table" if value == item["declared"] else "implied_from_amount"
+            )
+            out.append((symbol, start, value, source, None))
+            continue
+        # 每个成交日取离它最近（对数距离）的取值，要求取值序列只切换一次。
+        labels = []
+        for row in days[code]:
+            best = min(vals, key=lambda v: abs(_log(row["ratio"]) - _log(v)))
+            if abs(row["ratio"] / best - 1) <= SPEC_CHANGE - 1:
+                labels.append((row["trade_date"], best))
+        labels_of[code] = labels
+        runs = [labels[0]] if labels else []
+        for day, value in labels[1:]:
+            if value != runs[-1][1]:
+                runs.append((day, value))
+        if len(runs) == len(vals):
+            switches[code] = runs
+            continue
+        out.append(
+            (
+                symbol,
+                start,
+                item["declared"],
+                "contract_table_unverified",
+                f"未核实：反查值在 {vals} 之间交错，无法分段",
+            )
+        )
+    # 同一品种同一种「旧值→新值」切换取最早的分界日：交易所改单位是全品种同日生效，
+    # 某个合约在那天之后才有第一笔新值成交时，分界日落在它最后一笔旧值成交之后、第一笔新值成交
+    # 之前的这个统一日期上。
+    earliest = {}
+    for code, runs in switches.items():
+        product = info[code]["fut_code"]
+        for (_, old), (day, new) in zip(runs, runs[1:], strict=False):
+            key = (product, old, new)
+            earliest[key] = min(earliest.get(key, day), day)
+    for code, runs in switches.items():
+        item = info[code]
+        symbol, start, product = item["symbol"], item["list_date"], item["fut_code"]
+        dated = []
+        for k, (day, value) in enumerate(runs):
+            if k:
+                common = earliest[(product, runs[k - 1][1], value)]
+                previous_old = max(
+                    d for d, v in labels_of[code] if v == runs[k - 1][1] and d < day
+                )
+                if previous_old < common <= day:
+                    day = common
+            dated.append((day, value))
+        for k, (day, value) in enumerate(dated):
+            source = (
+                "contract_table" if value == item["declared"] else "implied_from_amount"
+            )
+            out.append((symbol, start if k == 0 else day, value, source, None))
+    return conform(
+        "multipliers",
+        pl.DataFrame(
+            out,
+            schema={
+                "symbol": pl.String,
+                "start_date": pl.String,
+                "multiplier": pl.Float64,
+                "source": pl.String,
+                "basis": pl.String,
+            },
+            orient="row",
+        ),
+    ).sort("symbol", "start_date")
+
+
+def _log(x):
+    return math.log(x)
+
+
+def _nice(x):
+    """反查值取最短的有效数字（1–3 位）使相对误差不超过 1%：500.7 → 500，24.9 → 25。"""
+    for digits in (1, 2, 3):
+        scale = 10 ** (digits - 1 - math.floor(math.log10(abs(x))))
+        value = round(x * scale) / scale
+        if abs(value / x - 1) <= 0.01:
+            return float(value)
+    return float(round(x))
+
+
+def _manual(item):
+    exchange = SUFFIX.get(item["ts_code"].rsplit(".", 1)[-1])
+    product = (item["fut_code"] or "").upper()
+    for rule in MANUAL_MULTIPLIERS:
+        if (
+            rule["exchange"] == exchange
+            and rule["product"] == product
+            and (item["delist_date"] or "") <= rule["last_trade_before"]
+        ):
+            return rule
+    return None
 
 
 def _sided(frame):
@@ -209,15 +523,33 @@ def _sided(frame):
 
 def daily(store, start=None, end=None):
     raw = store.read("futures_daily", start, end)
-    listing = store.read("futures_contracts").select("ts_code", "list_date")
-    # 上期所 2018 年燃料油改合约时沿用了旧代码：新合约挂牌日之前的行属于同名旧合约（交易单位不同），丢弃。
-    raw = raw.join(listing, on="ts_code", how="left").filter(
-        pl.col("list_date").is_null() | (pl.col("trade_date") >= pl.col("list_date"))
+    listing_dates = store.read("futures_contracts").select(
+        "ts_code", "list_date", "delist_date"
+    )
+    # 只留上市期内的行：上期所 2018 年燃料油改合约时沿用了旧代码，新合约挂牌日之前的行属于
+    # 同名旧合约（交易单位不同），丢弃；合约表里没有的代码（连续代码）在下面按代码形状丢弃。
+    raw = raw.join(listing_dates, on="ts_code", how="left").filter(
+        pl.col("list_date").is_null()
+        | (
+            (pl.col("trade_date") >= pl.col("list_date"))
+            & (pl.col("trade_date") <= pl.col("delist_date").fill_null("99999999"))
+        )
     )
     frame = (
         raw.with_columns(symbol=_symbol_expr(), date=pl.col("trade_date"))
-        .filter(pl.col("symbol").is_not_null())
+        .filter(
+            pl.col("symbol").is_not_null()
+            & ~_product_expr().is_in(list(EXCLUDED_PRODUCTS))
+        )
         .with_columns(exchange=pl.col("symbol").str.extract(r"\.(\w+)$"))
+    )
+    # 价格不可能为 0：2026-04-01 起大商所、郑商所、广期所（及中金所个别行）对零成交的行把开、高、
+    # 低价写成 0（此前为空）。不置空的话 0 会被当成可成交的开盘价。
+    frame = frame.with_columns(
+        [
+            pl.when(pl.col(c) > 0).then(pl.col(c)).alias(c)
+            for c in ("open", "high", "low", "close", "settle", "pre_settle")
+        ]
     )
     frame = _sided(frame).with_columns(
         volume=pl.col("vol") * pl.col("_halve"),
@@ -260,16 +592,65 @@ def tushare_main_daily(store, start=None, end=None):
     )
 
 
-def params(store, start=None, end=None):
+ZERO_DAY_SHARE = 0.9
+FEE_COLUMNS = ("trading_fee_rate", "trading_fee", "offset_today_fee", "delivery_fee")
+
+
+def _clean_fees(frame):
+    """手续费原始值的清洗，规则都由数据核对（见文档「手续费的空值与零」）：
+
+    - 负数一律置空：郑商所 2014-12-23 至 2017-06-22 的 offset_today_fee 是 -1、-2
+      （18 个品种），交易所没有负手续费，含义未查明，按缺失处理。
+    - 某交易所某天有费用的行里至少 ZERO_DAY_SHARE 是「两列都为 0」时，把这些 0 置空：
+      2026-09-28 上期所、能源中心、广期所全为 0，大商所 97% 为 0，次日恢复原值，是源错误
+      而不是免收。全历史其余交易所-交易日的这一比例都不超过 0.2，阈值不敏感。
+      单个品种为 0（如中金所国债平今免收）不在此列。
+    """
+    frame = frame.with_columns(
+        [pl.when(pl.col(c) >= 0).then(pl.col(c)).alias(c) for c in FEE_COLUMNS]
+    )
+    present = (
+        pl.col("trading_fee_rate").is_not_null() | pl.col("trading_fee").is_not_null()
+    )
+    zero = (
+        present
+        & (pl.col("trading_fee_rate").fill_null(0) == 0)
+        & (pl.col("trading_fee").fill_null(0) == 0)
+    )
+    share = zero.sum().over("exchange", "date") / present.sum().over("exchange", "date")
+    wipe = zero & (share >= ZERO_DAY_SHARE)
+    return frame.with_columns(
+        [pl.when(wipe).then(None).otherwise(pl.col(c)).alias(c) for c in FEE_COLUMNS]
+    )
+
+
+def resolved_settle(store, start=None, end=None):
+    """结算参数原始行逐行对到合约（见 resolve），保留 resolution 列，供 params 与校验共用。"""
     raw = store.read("futures_settle", start, end)
-    frame = raw.with_columns(
-        symbol=_symbol_expr(),
-        date=pl.col("trade_date"),
-        exchange=pl.col("ts_code")
-        .str.extract(r"\.(\w+)$")
-        .replace_strict(SUFFIX, default=None),
-        product=pl.col("ts_code").str.extract(r"^([A-Z]+)"),
-    ).filter(pl.col("symbol").is_not_null())
+    raw = raw.filter(
+        ~pl.col("ts_code").str.extract(r"^([A-Z]+)").is_in(list(EXCLUDED_PRODUCTS))
+    )
+    return resolve(raw, listing(store))
+
+
+def params(store, start=None, end=None):
+    resolved = resolved_settle(store, start, end)
+    # 同一天同一合约两行（错后缀与正确后缀并存）时保留字面正确的那行。
+    priority = pl.col("resolution").replace_strict(
+        {r: k for k, r in enumerate(RESOLUTIONS)}, default=len(RESOLUTIONS)
+    )
+    frame = (
+        resolved.filter(pl.col("symbol").is_not_null())
+        .with_columns(_priority=priority)
+        .sort("trade_date", "symbol", "_priority")
+        .unique(["trade_date", "symbol"], keep="first", maintain_order=True)
+        .with_columns(
+            date=pl.col("trade_date"),
+            exchange=pl.col("symbol").str.extract(r"\.(\w+)$"),
+            product=pl.col("symbol").str.extract(r"^([A-Z]+)"),
+        )
+    )
+    frame = _clean_fees(frame)
     ex, product = pl.col("exchange"), pl.col("product")
     rate_col, unit_col = pl.col("trading_fee_rate"), pl.col("trading_fee")
     today = pl.col("offset_today_fee")
@@ -290,22 +671,23 @@ def params(store, start=None, end=None):
         .when(is_index)
         .then(rate_col * 1e-4)
         .when(is_bond)
-        .then(0.0)
+        .then(unit_col * 0.0)
         .when(rate_based)
         .then(unit_col * 1e-4)
         .when(per_contract)
-        .then(0.0)
+        .then(unit_col * 0.0)
         .otherwise(None)
     )
+    # 「这一部分为 0」只在源给了这一行费用时成立（乘 0 让空值保持为空）。
     open_unit = (
         pl.when(shfe)
         .then(unit_col)
         .when(is_index)
-        .then(0.0)
+        .then(rate_col * 0.0)
         .when(is_bond)
         .then(unit_col)
         .when(rate_based)
-        .then(0.0)
+        .then(unit_col * 0.0)
         .when(per_contract)
         .then(unit_col)
         .otherwise(None)
@@ -319,14 +701,14 @@ def params(store, start=None, end=None):
         .when(rate_based)
         .then(today * 1e-4)
         .when(per_contract)
-        .then(0.0)
+        .then(today * 0.0)
         .otherwise(None)
     )
     close_today_unit = (
         pl.when(ex == "CFFEX")
         .then(open_unit * cffex_multiple)
         .when(rate_based)
-        .then(0.0)
+        .then(today * 0.0)
         .when(per_contract)
         .then(today)
         .otherwise(None)
@@ -390,6 +772,13 @@ def mapping(store, start=None, end=None):
     不能只看代码末尾的 L（``AL.SHF``、``TL.CFX`` 本身就是品种）：被映射合约的品种等于连续代码
     去掉后缀的部分时为主力，等于再去掉末尾 L 时为连续。
     """
+    if not store.entries("futures_mapping"):
+        return conform(
+            "mapping",
+            pl.DataFrame(
+                schema={c: pl.String for c in ("date", "continuous", "kind", "symbol")}
+            ),
+        )
     raw = store.read("futures_mapping", start, end)
     base = pl.col("ts_code").str.extract(r"^([A-Z_]+)\.")
     target = pl.col("mapping_ts_code").str.extract(r"^([A-Z]+)")
@@ -404,15 +793,18 @@ def mapping(store, start=None, end=None):
         )
         .then(pl.lit("nearby"))
         .otherwise(pl.lit("other")),
-        symbol=_symbol_expr("mapping_ts_code"),
-    ).filter(pl.col("symbol").is_not_null())
+    ).filter(~base.str.extract(r"^([A-Z]+?)L?$").is_in(list(EXCLUDED_PRODUCTS)))
+    frame = resolve(frame, listing(store), code="mapping_ts_code").filter(
+        pl.col("symbol").is_not_null()
+    )
     return conform(
         "mapping", frame.select("date", "continuous", "kind", "symbol")
     ).sort("continuous", "date")
 
 
 class TushareFutures:
-    """把原始库包成统一字段的适配器；任何来源的适配器都实现同样五个方法。"""
+    """把原始库包成统一字段的适配器。必备 contracts/daily/params/calendar，
+    可选 mapping、multipliers、source_continuous、diagnostics。"""
 
     name = "Tushare Pro"
 
@@ -434,9 +826,49 @@ class TushareFutures:
     def mapping(self, start=None, end=None):
         return mapping(self.store, start, end)
 
+    def multipliers(self):
+        return multipliers(self.store)
+
+    def diagnostics(self):
+        """代码对齐的统计：每张表每种 resolution 的行数，以及没能对上的行（逐条，供校验）。"""
+        table = listing(self.store)
+        settle = self.store.read("futures_settle").filter(
+            ~pl.col("ts_code").str.extract(r"^([A-Z]+)").is_in(list(EXCLUDED_PRODUCTS))
+        )
+        maps = (
+            None
+            if not self.store.entries("futures_mapping")
+            else self.store.read("futures_mapping").filter(
+                ~pl.col("mapping_ts_code")
+                .str.extract(r"^([A-Z]+)")
+                .is_in(list(EXCLUDED_PRODUCTS))
+            )
+        )
+        out = {}
+        for name, frame, code in (
+            ("params", settle, "ts_code"),
+            ("mapping", maps, "mapping_ts_code"),
+        ):
+            if frame is None:
+                continue
+            done = resolve(frame, table, code=code)
+            counts = done.group_by("resolution").len()
+            failed = done.filter(pl.col("resolution").is_in(["unmatched", "ambiguous"]))
+            out[name] = dict(
+                rows={r["resolution"]: r["len"] for r in counts.iter_rows(named=True)},
+                unresolved=failed.select(
+                    code=pl.col(code),
+                    date=pl.col("trade_date"),
+                    resolution="resolution",
+                )
+                .sort("date", "code")
+                .to_dicts(),
+            )
+        return out
+
     def source_continuous(self):
         """来源自带的主力连续日线，只用于对账，不进统一字段。"""
         return tushare_main_daily(self.store)
 
 
-__all__ = ["TushareFutures", "unify_symbol"]
+__all__ = ["TushareFutures", "multipliers", "resolve", "unify_symbol"]

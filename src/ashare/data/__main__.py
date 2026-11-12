@@ -141,10 +141,14 @@ def main():
 
         report = verify_futures(store)
         result = {
-            k: {p: v[p] for p in ("verdict", "checked", "failed")}
+            k: {p: v[p] for p in ("verdict", "checked", "failed", "explained")}
             for k, v in report["checks"].items()
         }
+        result["verdict"] = report["verdict"]
         result["report"] = str(store.root / "reports/futures_verify.md")
+        if report["verdict"] == "fail":
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            raise SystemExit(1)
     elif args.command == "build-panel":
         meta = build(
             store,
@@ -190,6 +194,18 @@ def main():
             for name in DATASETS
             if (entries := store.entries(name))
         }
+        # 期货单独一节，股票部分与没有期货时逐位相同。
+        futures_status = {
+            name: dict(
+                partitions=len(entries),
+                rows=sum(e.get("rows", 0) for e in entries.values()),
+                failed=sum(e["status"] != "complete" for e in entries.values()),
+            )
+            for name in FUTURES_DATASETS
+            if (entries := store.entries(name))
+        }
+        if futures_status:
+            result["futures"] = futures_status
     if args.command in ("status", "gc"):
         result["disk_usage"] = disk_usage(store.root)
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -231,8 +231,12 @@ def verify(store, *, output=None):
     extra = Audit()
     extra.add("unique_keys", total, duplicates, failed=duplicate_count)
     audit.merge(extra)
-    consistency = [key for key in manifest if not store.complete(key)]
-    audit.add("manifest_files", len(manifest), consistency)
+    # 共用清单里的期货条目由 verify-futures 检查；这里只看股票数据集，加不加期货结果逐位不变。
+    stock_keys = [
+        key for key, entry in manifest.items() if entry.get("dataset") in DATASETS
+    ]
+    consistency = [key for key in stock_keys if not store.complete(key)]
+    audit.add("manifest_files", len(stock_keys), consistency)
     for name, item in coverage.items():
         if DATASETS[name].partition == "day" and not DATASETS[name].empty_allowed:
             bad = item["suspicious_empty_partitions"] + item["missing_partitions"]

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import polars as pl
 
-from .catalog import DATASETS
+from .catalog import ALL_DATASETS, FUTURES_DATASETS
 from .manifest import Manifest
 
 
@@ -119,10 +119,12 @@ class Store:
             return self._write(name, partition, params, result)
 
     def _write(self, name, partition, params, result):
-        spec = DATASETS[name]
+        spec = ALL_DATASETS[name]
         table = result.table
         key = f"{name}/{partition}"
         previous = self.manifest().get(key, {})
+        if spec.partition == "fut_day":
+            self._guard_futures_refresh(key, spec, previous, len(table))
         suspicious = (
             spec.partition == "day"
             and not spec.empty_allowed
@@ -220,6 +222,27 @@ class Store:
         self.mark(key, entry)
         return entry
 
+    @staticmethod
+    def _guard_futures_refresh(key, spec, previous, rows):
+        """期货日分区的刷新保护。
+
+        期货各交易日的行数随交易所休市差异、品种上市而大幅变化，与前一交易日比没有意义；
+        危险的是「重抓同一天时源偶发空返回或截断，把已完成的好修订覆盖掉」。所以只和
+        同一分区上一个完成修订比：变成空表、或行数降到 drop_check_ratio 以下（上一修订
+        至少 drop_check_min_rows 行时）一律拒绝写入，旧修订保留，调用方记 refresh_error。
+        人工确认过的修订（confirm-partition）同样受保护。首次写入的空分区照常记完成，
+        由 verify-futures 按已知例外清单逐条判定。
+        """
+        if previous.get("status") != "complete" or not previous.get("rows"):
+            return
+        before = previous["rows"]
+        if rows == 0 or (
+            before >= spec.drop_check_min_rows and rows < before * spec.drop_check_ratio
+        ):
+            raise ValueError(
+                f"{key} 刷新返回 {rows} 行（上一修订 {before} 行），疑似空返回或截断，保留旧修订"
+            )
+
     def confirm(self, key, reason):
         """人工确认异常分区，只解除质量隔离，不跳过文件完整性检查。"""
         entry = self.manifest().get(key, {})
@@ -240,7 +263,7 @@ class Store:
     def validate_partitions(self, names):
         """批次完成后按日期重核，消除并发完成顺序对质量状态的影响。"""
         for name in names:
-            spec = DATASETS[name]
+            spec = ALL_DATASETS[name]
             if spec.partition != "day" or spec.empty_allowed:
                 continue
             previous = None
@@ -272,7 +295,7 @@ class Store:
 
     def scan(self, name, start=None, end=None):
         def in_range(entry):
-            kind = DATASETS[name].partition
+            kind = ALL_DATASETS[name].partition
             part = entry["partition"]
             if kind in ("day", "fut_day"):
                 return (start is None or part >= start) and (end is None or part <= end)
@@ -308,11 +331,21 @@ class Store:
     def read(self, name, start=None, end=None):
         return self.scan(name, start, end).collect()
 
-    @property
-    def version(self):
+    def _version(self, futures):
         values = {
             k: v["content_hash"]
             for k, v in self.manifest().items()
             if v["status"] == "complete"
+            and (v.get("dataset") in FUTURES_DATASETS) == futures
         }
         return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+
+    @property
+    def version(self):
+        """股票原始库的内容版本；共用清单里的期货条目不参与，加不加期货都不变。"""
+        return self._version(False)
+
+    @property
+    def futures_version(self):
+        """期货原始库（FUTURES_DATASETS）的内容版本，与股票版本互不影响。"""
+        return self._version(True)

@@ -94,9 +94,14 @@ class FuturesData:
         )
 
     def table(self, name, start=None, end=None, symbols=None, products=None):
-        """长表：daily（行情）、params（保证金和费用）、mapping（来源的主力/连续映射）。"""
-        if name not in ("daily", "params", "mapping"):
-            raise KeyError(f"期货长表 {name!r} 不存在；可用：daily, params, mapping")
+        """长表：daily（行情）、params（保证金和费用）、mapping（来源的主力/连续映射）、
+        multipliers（合约乘数分段，按 start_date 过滤）。
+
+        例：``fut.table("multipliers", products=["PB"]).collect()``
+        """
+        names = ("daily", "params", "mapping", "multipliers")
+        if name not in names:
+            raise KeyError(f"期货长表 {name!r} 不存在；可用：{', '.join(names)}")
         path = self._path / f"{name}.parquet"
         if not path.exists():
             raise FileNotFoundError(f"来源 {self.source} 没有提供 {name}")
@@ -105,7 +110,12 @@ class FuturesData:
             frame = frame.filter(
                 pl.col("symbol").str.extract(r"^([A-Z_]+)\d").is_in(list(products))
             )
-        return self._filter(frame, None, symbols, start, end)
+        day = "start_date" if name == "multipliers" else "date"
+        return self._filter(frame, None, symbols, start, end, day=day)
+
+    def diagnostics(self):
+        """构建时适配器给出的代码对齐统计（各 resolution 行数与没对上的行）。"""
+        return self._meta.get("diagnostics", {})
 
     def symbols(self, products=None):
         blocks = [

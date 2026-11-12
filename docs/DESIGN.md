@@ -352,11 +352,14 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 
 给纯期货回测（趋势、期限结构、跨品种）和石油研究项目用。口径、校验结果和已知问题见 `docs/FUTURES_DATA.md`。
 
-- **统一字段**（`ashare.data.futures_schema`）：与来源无关的五张表——合约表、日线、逐日结算参数（保证金、按金额和按手的开仓 / 平昨 / 平今手续费、交割费、涨跌停幅度）、交易所日历、来源的主力映射（可选）。合约标识写成「品种 + 四位年月 + . + 交易所全称」（`SC2612.INE`、`TA2611.CZCE`）。一个来源的适配器只要交出这几张表（`conform` 检查必填列），面板、连续合约、校验都不用改；Tushare 的代码、字段名和单位只出现在 `futures_tushare.py`。境外期货（WTI、布伦特）以后用 Databento / Bloomberg 适配器接入同一套字段。
-- **原始库**：五个数据集 `futures_calendar`、`futures_contracts`（按交易所分区）、`futures_daily`、`futures_mapping`、`futures_settle`（按交易日分区，交易日取六个期货交易所日历的并集）。沿用股票的存储、清单、断点续跑和按接口限速；原始文件各自成目录，不进默认的股票同步和校验，股票面板的版本也不受影响。中金所对冲腿原有的 `fut_basic`、`fut_daily` 不动。命令：`python -m ashare.data --root <根> sync-futures`、`build-futures`、`verify-futures`。
-- **面板**：「交易日 × 合约」，存储写法与股票面板相同（代次目录 + `current.json`），但按「交易所_品种」分块，每块只覆盖该品种合约存续的日子（全历史一万多个合约存成一个稠密矩阵每字段约 1 GB 且几乎全空）。读取入口 `ashare.data.open(root).futures()`：`panel`、`contracts`、`calendar`、`table`、`continuous`、`roll_schedule`；`futures_panelbt.panelbt_inputs` 直接给出 `panelbt.Market` 和 `panelbt.Futures` 的输入。
+- **统一字段**（`ashare.data.futures_schema`）：与来源无关的几张表——合约表、日线、逐日结算参数（保证金、按金额和按手的开仓 / 平昨 / 平今手续费、交割费、涨跌停幅度）、交易所日历，可选的来源主力映射和**合约乘数分段表**（`multipliers`：合约 × 生效日 → 乘数、来源、依据）。合约标识写成「品种 + 四位年月 + . + 交易所全称」（`SC2612.INE`、`TA2611.CZCE`）。一个来源的适配器只要交出这几张表（`conform` 检查必填列），面板、连续合约、校验都不用改；Tushare 的代码、字段名和单位只出现在 `futures_tushare.py`。境外期货（WTI、布伦特）以后用 Databento / Bloomberg 适配器接入同一套字段。
+  - 统一字段里的日线、参数、映射都只在合约上市期内，并且对得上合约表；源代码对不上的（郑商所年份补错、交易所后缀写错）由适配器按「当天上市且唯一」找回，找不回的计数并逐条进校验，不静默丢弃。
+  - 合约乘数按日期取值：来源优先级是成交额反查 → 人工修正表（每行写依据，推断的标「未核实」）→ 合约表现值。
+  - 价格为 0、负手续费、整交易所整天为 0 的手续费都是源错误或源的写法，统一字段置空，不当作真值。
+- **原始库**：五个数据集 `futures_calendar`、`futures_contracts`（按交易所分区）、`futures_daily`、`futures_mapping`、`futures_settle`（按交易日分区，交易日取六个期货交易所日历的并集）。沿用股票的存储、清单、断点续跑和按接口限速，日分区有同样的刷新保护（重抓返回空表或行数骤降时保留旧修订）。期货数据集登记在 `FUTURES_DATASETS`，**不并入 `DATASETS`**：股票的同步计划、状态、校验、内容版本只看 `DATASETS`，与期货共用一份清单时股票侧输出逐位不变；期货有自己的内容版本 `Store.futures_version` 和校验。中金所对冲腿原有的 `fut_basic`、`fut_daily` 不动。命令：`python -m ashare.data --root <根> sync-futures`、`build-futures`、`verify-futures`。
+- **面板**：「交易日 × 合约」，存储写法与股票面板相同（代次目录 + `current.json`），但按「交易所_品种」分块，每块只覆盖该品种合约存续的日子（全历史一万多个合约存成一个稠密矩阵每字段约 1 GB 且几乎全空）。字段含按日的 `multiplier`。读取入口 `ashare.data.open(root).futures()`：`panel`、`contracts`、`calendar`、`table`、`continuous`、`roll_schedule`；`futures_panelbt.panelbt_inputs` 直接给出 `panelbt.Market` 和 `panelbt.Futures` 的输入：参数只向前填补、不用以后的值回填，缺值由调用方用 `missing` 显式给；区间内改过交易单位的合约默认报错，可选在分界日拆列。
 - **连续合约**：换月规则三种（来源映射、按持仓量、按成交量；后两种只用前一交易日的数据，粘住、只向后、严格大于才换），主力和次主力；复权三种（不调整、差值后复权、比例后复权）；另给换月日程表。连续价格只用于信号，回测按合约逐个持有。
-- **校验**（`futures_verify`，与同步、适配器不共用代码）：清单对文件、日分区覆盖与页大小整数倍截断、主键唯一、交易所日历互相对照、合约存续期与日线覆盖、`pre_settle` 连续、成交额反查乘数与单双边、结算参数覆盖与缺失率、到期日结算价口径。
+- **校验**（`futures_verify`，原始库部分与同步、适配器不共用代码）：每项判 pass / explained / fail，「已解释」只认已知例外清单（`futures_known_exceptions.json`，逐条写合约、日期、原因）里的条目，清单外的不符一律 fail，命令行以非零状态退出。检查项：清单对文件、日分区覆盖与截断、主键唯一、日历对照与「休市日有日线」、合约覆盖、前结算连续、日线取值范围（价格为正、最高 ≥ 最低等）、结算参数取值范围、整天零手续费、单双边奇偶（含单边以后的双边复发）、合约表单位对成交额、代码对齐、按日乘数逐行核对成交额；面板部分（不允许例外）：统一参数取值范围、引用完整性。
 - 只做日频；分钟线、涨跌停幅度（Tushare 没有，以后取交易所每日交易参数文件）、交割结算价（商品期货）不在这一批。
 
 ### 6.2 因子与检验

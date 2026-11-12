@@ -160,7 +160,11 @@ def test_double_sided_volume_halved(tmp_path):
     )
     store.write("futures_daily", "20191231", {}, FetchResult(table, "now", 1))
     basic = pl.DataFrame(
-        dict(ts_code=["CU1912.SHF", "IF1912.CFX"], list_date=["20181216"] * 2)
+        dict(
+            ts_code=["CU1912.SHF", "IF1912.CFX"],
+            list_date=["20181216"] * 2,
+            delist_date=["20201231"] * 2,
+        )
     )
     store.write("futures_contracts", "SHFE", {}, FetchResult(basic, "now", 1))
     later = table.with_columns(trade_date=pl.lit("20200102"))
@@ -198,6 +202,25 @@ def test_unify_symbol_and_mapping_kind(tmp_path):
         )
     )
     store.write("futures_mapping", "20260105", {}, FetchResult(table, "now", 1))
+    # 映射要对到当天上市的合约（代码对齐需要合约表）。
+    listed = sorted(set(table["mapping_ts_code"]))
+    store.write(
+        "futures_contracts",
+        "ALL",
+        {},
+        FetchResult(
+            pl.DataFrame(
+                dict(
+                    ts_code=listed,
+                    fut_code=[c.split(".")[0].rstrip("0123456789") for c in listed],
+                    list_date=["20250101"] * len(listed),
+                    delist_date=["20261231"] * len(listed),
+                )
+            ),
+            "now",
+            1,
+        ),
+    )
     kinds = dict(
         zip(*TushareFutures(store).mapping().select("continuous", "kind"), strict=False)
     )
@@ -219,9 +242,14 @@ def test_conform_rejects_missing_and_extra():
     with pytest.raises(ValueError, match="多余列"):
         conform("calendar", frame.with_columns(x=pl.lit(1)))
     table = describe()
-    assert {"contracts", "daily", "params", "calendar", "mapping"} == set(
-        table["table"]
-    )
+    assert {
+        "contracts",
+        "daily",
+        "params",
+        "calendar",
+        "mapping",
+        "multipliers",
+    } == set(table["table"])
 
 
 # ---------- 面板 ----------
@@ -450,100 +478,284 @@ def test_panelbt_inputs_match_manual_construction(built):
     assert result.nav[-1] != 10_000_000.0  # 确实持有了期货
     # 默认取面板里的交易所保证金和手续费。
     default = panelbt_inputs(fut, products=["IF"])
-    assert np.allclose(default["futures"].margin_rate, 0.12)
+    listed = default["market"]["can_buy"] | (
+        np.arange(len(DAYS))[:, None] <= default["futures"].expiry[None, :]
+    )
+    # 上市期内是交易所保证金；不在上市期的格子（到期之后）为 0，不用别处的值填。
+    assert np.allclose(default["futures"].margin_rate[listed], 0.12)
+    assert (default["futures"].margin_rate[~listed] == 0).all()
 
 
 def test_panelbt_inputs_require_explicit_missing(built):
     _, fut = built
     inputs = panelbt_inputs(fut, products=["RB"])
     assert inputs["futures"].expiry.tolist() == [9, 19, 29]
-    assert np.allclose(inputs["futures"].fee_rate, 0.05e-3)
+    rows = np.arange(len(DAYS))[:, None] <= inputs["futures"].expiry[None, :]
+    assert np.allclose(inputs["futures"].fee_rate[rows], 0.05e-3)
 
 
 # ---------- 独立校验 ----------
 
 
 def corrupt(store, name, partition, change):
+    """模拟「源这一次就返回了坏数据」：先把分区退回未完成，绕开刷新保护（P1-6 那道闸只防
+    覆盖已完成的好修订），再写入改坏的表。"""
     entry = store.manifest()[f"{name}/{partition}"]
     path = store.root / entry["file"]
     frame = change(pl.read_parquet(path).drop("_fetched_at"))
+    store.mark(f"{name}/{partition}", {"status": "pending"})
     store.write(name, partition, entry["params"], FetchResult(frame, "later", 1))
 
 
 def test_verify_clean_fixture_passes(tmp_path):
     store, _ = synced(tmp_path)
-    report = verify_futures(store)
+    build_futures(store)
+    report = verify_futures(store, known={})
     verdicts = {k: v["verdict"] for k, v in report["checks"].items()}
-    for name in (
-        "manifest_files",
-        "unique_keys",
-        "partitions_futures_daily",
-        "pre_settle_continuity",
-        "contract_coverage",
-        "amount_multiplier",
-    ):
-        assert verdicts[name] == "pass", (name, report["checks"][name])
+    assert report["verdict"] == "pass"
+    assert set(verdicts.values()) <= {"pass", "info"}, verdicts
     assert (store.root / "reports/futures_verify.md").exists()
 
 
-@pytest.mark.parametrize(
-    "fault, check",
-    [
-        ("pre_settle", "pre_settle_continuity"),
-        ("missing_day", "contract_coverage"),
-        ("amount", "amount_multiplier"),
-        ("duplicate", "unique_keys"),
-        ("missing_partition", "partitions_futures_daily"),
-        ("page_multiple", "partitions_futures_settle"),
-        ("hash", "manifest_files"),
-        ("orphan", "manifest_files"),
-    ],
-)
-def test_verify_catches_each_fault(tmp_path, fault, check):
+def test_verify_without_panel_fails(tmp_path):
     store, _ = synced(tmp_path)
-    day = DAYS[5]
-    if fault == "pre_settle":
-        corrupt(
-            store,
+    report = verify_futures(store, write=False, known={})
+    assert (
+        report["verdict"] == "fail" and report["checks"]["panel"]["verdict"] == "fail"
+    )
+
+
+FAULT_DAY = DAYS[5]
+
+
+def _set_closed(frame):
+    return frame.with_columns(
+        is_open=pl.when(pl.col("cal_date") == FAULT_DAY)
+        .then(0)
+        .otherwise(pl.col("is_open"))
+    )
+
+
+FAULTS = {
+    # 原有的 8 种
+    "pre_settle": (
+        "pre_settle_continuity",
+        lambda s: corrupt(
+            s,
             "futures_daily",
-            day,
+            FAULT_DAY,
             lambda f: f.with_columns(
                 pre_settle=pl.when(pl.col("ts_code") == "RB2603.SHF")
                 .then(pl.col("pre_settle") + 1)
                 .otherwise(pl.col("pre_settle"))
             ),
-        )
-    elif fault == "missing_day":
-        corrupt(
-            store,
+        ),
+    ),
+    "missing_day": (
+        "contract_coverage",
+        lambda s: corrupt(
+            s,
             "futures_daily",
-            day,
+            FAULT_DAY,
             lambda f: f.filter(pl.col("ts_code") != "RB2603.SHF"),
-        )
-    elif fault == "amount":
-        corrupt(
-            store,
+        ),
+    ),
+    # 原来检查名叫 amount_multiplier；成交额核对改为按面板逐日乘数逐行核对（multiplier_rows）。
+    "amount": (
+        "multiplier_rows",
+        lambda s: corrupt(
+            s,
             "futures_daily",
-            day,
+            FAULT_DAY,
             lambda f: f.with_columns(amount=pl.col("amount") * 2),
-        )
-    elif fault == "duplicate":
-        corrupt(store, "futures_daily", day, lambda f: pl.concat([f, f.head(1)]))
-    elif fault == "missing_partition":
-        store.mark(f"futures_daily/{day}", {"status": "failed"})
-    elif fault == "page_multiple":
-        corrupt(
-            store, "futures_settle", day, lambda f: pl.concat([f] * 1000).head(1000)
-        )
-    elif fault == "hash":
-        path = store.root / store.manifest()[f"futures_mapping/{day}"]["file"]
+        ),
+    ),
+    "duplicate": (
+        "unique_keys",
+        lambda s: corrupt(
+            s, "futures_daily", FAULT_DAY, lambda f: pl.concat([f, f.head(1)])
+        ),
+    ),
+    "missing_partition": (
+        "partitions_futures_daily",
+        lambda s: s.mark(f"futures_daily/{FAULT_DAY}", {"status": "failed"}),
+    ),
+    "page_multiple": (
+        "partitions_futures_settle",
+        lambda s: corrupt(
+            s, "futures_settle", FAULT_DAY, lambda f: pl.concat([f] * 1000).head(1000)
+        ),
+    ),
+    "hash": ("manifest_files", None),
+    "orphan": ("manifest_files", None),
+    # 复核人构造的 9 种（复核 P1-5）
+    "A_margin_percent_shfe": (
+        "settle_ranges",
+        lambda s: corrupt(
+            s,
+            "futures_settle",
+            FAULT_DAY,
+            lambda f: f.with_columns(
+                long_margin_rate=pl.when(pl.col("exchange") == "SHFE")
+                .then(12.0)
+                .otherwise(pl.col("long_margin_rate"))
+            ),
+        ),
+    ),
+    "B_high_below_low_negative_close": (
+        "daily_ranges",
+        lambda s: corrupt(
+            s,
+            "futures_daily",
+            FAULT_DAY,
+            lambda f: f.with_columns(high=pl.col("low") - 50, close=pl.lit(-1.0)),
+        ),
+    ),
+    "C_settle_code_miskeyed": (
+        "code_resolution",
+        lambda s: corrupt(
+            s,
+            "futures_settle",
+            FAULT_DAY,
+            lambda f: f.with_columns(
+                ts_code=pl.col("ts_code").str.replace("RB26", "RB16")
+            ),
+        ),
+    ),
+    "D_day_closed_in_every_calendar": (
+        "daily_on_closed_day",
+        lambda s: [
+            corrupt(s, "futures_calendar", ex, _set_closed)
+            for ex in ("CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX")
+        ],
+    ),
+    "E_daily_half_rows_dropped": (
+        "contract_coverage",
+        lambda s: corrupt(
+            s, "futures_daily", FAULT_DAY, lambda f: f.head(f.height // 2)
+        ),
+    ),
+    "F_mapping_to_unknown_contract": (
+        "code_resolution",
+        lambda s: corrupt(
+            s,
+            "futures_mapping",
+            FAULT_DAY,
+            lambda f: f.with_columns(mapping_ts_code=pl.lit("RB9901.SHF")),
+        ),
+    ),
+    "G_contract_multiplier_x10": (
+        "contract_table_units",
+        lambda s: corrupt(
+            s,
+            "futures_contracts",
+            "SHFE",
+            lambda f: f.with_columns(
+                per_unit=pl.when(pl.col("ts_code") == "RB2603.SHF")
+                .then(100.0)
+                .otherwise(pl.col("per_unit"))
+            ),
+        ),
+    ),
+    "H_volume_doubled_after_2020": (
+        "sidedness_parity",
+        lambda s: corrupt(
+            s,
+            "futures_daily",
+            FAULT_DAY,
+            lambda f: f.with_columns(
+                vol=pl.col("vol") * 2, amount=pl.col("amount") * 2
+            ),
+        ),
+    ),
+    "I_settle_partition_empty": (
+        "partitions_futures_settle",
+        lambda s: corrupt(s, "futures_settle", FAULT_DAY, lambda f: f.head(0)),
+    ),
+}
+
+
+@pytest.mark.parametrize("fault", list(FAULTS))
+def test_verify_fails_on_each_fault(tmp_path, monkeypatch, fault):
+    """每种坏数据都要让对应检查判 fail（不是「已解释」），总结论 fail。"""
+    from ashare.data import futures_verify as fv
+
+    # 夹具每个交易日上期所只有 3 行成交；真实数据用 12 行的门槛。
+    monkeypatch.setattr(fv, "PARITY_MIN_ROWS", 3)
+    store, _ = synced(tmp_path)
+    check, apply = FAULTS[fault]
+    if fault == "hash":
+        path = store.root / store.manifest()[f"futures_mapping/{FAULT_DAY}"]["file"]
         path.write_bytes(path.read_bytes() + b"x")
     elif fault == "orphan":
-        folder = store.root / "raw/futures_daily" / day
+        folder = store.root / "raw/futures_daily" / FAULT_DAY
         (folder / (hashlib.sha256(b"x").hexdigest() + ".parquet")).write_bytes(b"x")
-    report = verify_futures(store, write=False)
+    else:
+        apply(store)
+    try:
+        build_futures(store)
+    except Exception:  # noqa: BLE001 - 坏数据可能让构建失败；校验照样要判 fail
+        pass
+    report = verify_futures(store, write=False, known={})
     item = report["checks"][check]
-    assert item["verdict"] in ("fail", "explained") and item["failed"] > 0, item
+    assert item["verdict"] == "fail" and item["failed"] > 0, item
+    assert report["verdict"] == "fail"
+
+
+def test_verify_register_explains_only_listed_items(tmp_path):
+    """清单里逐条登记的不符判已解释；同类但不在清单里的仍判失败。"""
+    store, _ = synced(tmp_path)
+    corrupt(
+        store,
+        "futures_daily",
+        FAULT_DAY,
+        lambda f: f.with_columns(
+            pre_settle=pl.when(pl.col("ts_code").is_in(["RB2603.SHF", "RB2604.SHF"]))
+            .then(pl.col("pre_settle") + 1)
+            .otherwise(pl.col("pre_settle"))
+        ),
+    )
+    build_futures(store)
+    entry = dict(check="pre_settle", symbol="RB2603.SHF", date=FAULT_DAY, reason="x")
+    known = dict(reasons={"x": "测试"}, entries=[entry])
+    item = verify_futures(store, write=False, known=known)["checks"][
+        "pre_settle_continuity"
+    ]
+    assert item["verdict"] == "fail" and item["failed"] == 1 and item["explained"] == 1
+    entry2 = dict(entry, symbol="RB2604.SHF")
+    known["entries"].append(entry2)
+    report = verify_futures(store, write=False, known=known)
+    assert report["checks"]["pre_settle_continuity"]["verdict"] == "explained"
+    # 清单里有、数据里没有的条目列为过期。
+    known["entries"].append(dict(entry, date=DAYS[6]))
+    assert verify_futures(store, write=False, known=known)["stale_exceptions"]
+
+
+def test_verify_cli_exit_code(tmp_path):
+    import subprocess
+    import sys
+
+    store, _ = synced(tmp_path)
+    build_futures(store)
+    command = [
+        sys.executable,
+        "-m",
+        "ashare.data",
+        "--root",
+        str(tmp_path),
+        "verify-futures",
+    ]
+    # 包内清单是真实数据的，夹具上全部过期但不影响结论。
+    ok = subprocess.run(command, capture_output=True, text=True, timeout=300)
+    assert ok.returncode == 0, ok.stdout[-2000:] + ok.stderr[-2000:]
+    corrupt(
+        store,
+        "futures_daily",
+        FAULT_DAY,
+        lambda f: f.with_columns(close=pl.lit(-1.0)),
+    )
+    bad = subprocess.run(command, capture_output=True, text=True, timeout=300)
+    assert bad.returncode != 0 and '"verdict": "fail"' in bad.stdout
 
 
 def test_historic_unit_and_reused_code(tmp_path):
@@ -575,7 +787,8 @@ def test_historic_unit_and_reused_code(tmp_path):
     for day in days:
         old = day < "20180716"
         rows.append(("FU1905.SHF", day, 50.0 if old else 10.0))
-        rows.append(("RU0801.SHF", day, 5.0))  # 旧橡胶 5 吨/手
+        # 旧橡胶 5 吨/手；行情放在它自己的存续期内（2007 年），反查只认上市期内的行。
+        rows.append(("RU0801.SHF", "2007" + day[4:], 5.0))
         rows.append(
             ("JD1905.DCE", day, 10.0)
         )  # 5 吨，报价元/500 千克 → 每手 10 个报价单位
@@ -601,7 +814,7 @@ def test_historic_unit_and_reused_code(tmp_path):
             for c, d, unit in rows
         ]
     )
-    for day in days:
+    for day in sorted(set(table["trade_date"])):
         store.write(
             "futures_daily",
             day,

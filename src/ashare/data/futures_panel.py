@@ -1,6 +1,6 @@
 """期货「交易日 × 合约」面板的构建与存储。
 
-只认统一字段（futures_schema）的五张表，来源由适配器决定（默认 Tushare）。
+只认统一字段（futures_schema）的几张表，来源由适配器决定（默认 Tushare）。
 
 存储：``<root>/cn/futures_panel/<版本>/``，``current.json`` 指向当前版本（与股票面板同一套
 代次写法）。期货合约一年左右就到期，全历史一万多个合约若存成一个稠密矩阵，每个字段约
@@ -23,8 +23,13 @@ from .futures_schema import PANEL_FIELDS, REQUIRED_TABLES
 from .futures_tushare import TushareFutures
 from .store import atomic_json, lock
 
-FORMAT_VERSION = 2
-CODE_FILES = ("futures_schema.py", "futures_tushare.py", "futures_panel.py")
+FORMAT_VERSION = 3
+CODE_FILES = (
+    "futures_schema.py",
+    "futures_tushare.py",
+    "futures_specs.py",
+    "futures_panel.py",
+)
 BOOLEAN = {"has_quote", "is_listed"}
 
 
@@ -52,12 +57,15 @@ def block_key(exchange, product):
     return f"{exchange}_{product}"
 
 
-def assemble(daily, params, contracts, dates):
+def assemble(daily, params, contracts, dates, multipliers=None):
     """统一长表 → 按品种分块的「分段列」数组；纯 numpy 散点写入，供构建和测试共用。
 
-    每个合约只存它的存续窗口（挂牌日或首条记录 到 最后交易日或末条记录，与主日历取交集）：
+    每个合约只存它的存续窗口（上市日到最后交易日，与主日历取交集；窗口外有行就报错）：
     合约 j 的窗口是主日历第 ``starts[j]`` 行起 ``lengths[j]`` 行，各字段在一维数组里占
     ``offsets[j]`` 起的同样长度。读取时再拼回请求的「交易日 × 合约」矩阵。
+
+    ``multiplier`` 字段按 multipliers 表逐日取值（没有该表时整段用 contracts.multiplier）：
+    每段从 start_date 起生效，首段覆盖窗口开头。
     """
     dates = np.asarray(dates)
     long = daily.join(params, on=["date", "symbol"], how="full", coalesce=True)
@@ -68,19 +76,33 @@ def assemble(daily, params, contracts, dates):
     )
     long = long.filter(pl.col("date").is_in(list(dates)))
     info = contracts.select(
-        "symbol", "exchange", "product", "listing_date", "last_trade_date"
+        "symbol", "exchange", "product", "listing_date", "last_trade_date", "multiplier"
     )
     long = long.join(
         info.select("symbol", "exchange", "product"), on="symbol", how="inner"
     )
-    span = long.group_by("symbol").agg(
-        first_row=pl.col("date").min(), last_row=pl.col("date").max()
+    # 统一字段约定：日线、参数都只在合约的上市期内（适配器负责丢弃窗口外的行）。
+    span = long.join(
+        info.select("symbol", "listing_date", "last_trade_date"), on="symbol"
     )
-    info = info.join(span, on="symbol", how="left").with_columns(
-        window_start=pl.min_horizontal("listing_date", "first_row"),
-        window_end=pl.max_horizontal("last_trade_date", "last_row"),
+    outside = span.filter(
+        (pl.col("date") < pl.col("listing_date"))
+        | (pl.col("date") > pl.col("last_trade_date"))
+    )
+    if len(outside):
+        raise ValueError(
+            f"{len(outside)} 行在合约上市期之外：{outside.select('symbol', 'date').head(5).rows()}"
+        )
+    info = info.with_columns(
+        window_start=pl.col("listing_date"), window_end=pl.col("last_trade_date")
     )
     groups = long.partition_by(["exchange", "product"], as_dict=True)
+    segments = {}
+    if multipliers is not None:
+        for row in multipliers.sort("symbol", "start_date").iter_rows(named=True):
+            segments.setdefault(row["symbol"], []).append(
+                (row["start_date"], row["multiplier"])
+            )
     blocks = {}
     for (exchange, product), members in info.sort("last_trade_date", "symbol").group_by(
         ["exchange", "product"], maintain_order=True
@@ -111,7 +133,7 @@ def assemble(daily, params, contracts, dates):
         position = offsets[c] + (r - lo[c]) if len(c) else np.zeros(0, dtype=np.int64)
         arrays = {}
         for name in PANEL_FIELDS:
-            if name == "is_listed":
+            if name in ("is_listed", "multiplier"):
                 continue
             if name in BOOLEAN:
                 out = np.zeros(total, dtype=bool)
@@ -126,6 +148,17 @@ def assemble(daily, params, contracts, dates):
         first = members["listing_date"].fill_null("99999999").to_numpy().astype("U8")
         last = members["last_trade_date"].fill_null("00000000").to_numpy().astype("U8")
         arrays["is_listed"] = (day >= first[owner]) & (day <= last[owner])
+        values = members["multiplier"].cast(pl.Float64).to_numpy()
+        multiplier = values[owner].astype(float)
+        for j, name in enumerate(symbols):
+            if name not in segments:
+                continue
+            # 首段覆盖整个窗口（窗口可能早于首段 start_date），后续段从各自 start_date 起覆盖。
+            own = owner == j
+            multiplier[own] = segments[name][0][1]
+            for start, value in segments[name][1:]:
+                multiplier[own & (day >= start)] = value
+        arrays["multiplier"] = multiplier
         blocks[block_key(exchange, product)] = dict(
             exchange=exchange,
             product=product,
@@ -147,6 +180,8 @@ def build_futures(store, adapter=None, *, keep=1):
     params = adapter.params()
     calendar = adapter.calendar()
     mapping = adapter.mapping() if hasattr(adapter, "mapping") else None
+    multipliers = adapter.multipliers() if hasattr(adapter, "multipliers") else None
+    diagnostics = adapter.diagnostics() if hasattr(adapter, "diagnostics") else {}
     for name, table in zip(
         REQUIRED_TABLES, (contracts, daily, params, calendar), strict=False
     ):
@@ -179,7 +214,7 @@ def build_futures(store, adapter=None, *, keep=1):
         building = base / f".building-{uuid.uuid4().hex}"
         building.mkdir(parents=True)
         try:
-            blocks = assemble(daily, params, contracts, dates)
+            blocks = assemble(daily, params, contracts, dates, multipliers)
             index = {}
             for key, block in blocks.items():
                 folder = building / "blocks" / key
@@ -203,6 +238,8 @@ def build_futures(store, adapter=None, *, keep=1):
             params.write_parquet(building / "params.parquet")
             if mapping is not None:
                 mapping.write_parquet(building / "mapping.parquet")
+            if multipliers is not None:
+                multipliers.write_parquet(building / "multipliers.parquet")
             if hasattr(adapter, "source_continuous"):
                 adapter.source_continuous().write_parquet(
                     building / "source_continuous.parquet"
@@ -222,6 +259,7 @@ def build_futures(store, adapter=None, *, keep=1):
                 },
                 shape=[len(dates), sum(len(b["symbols"]) for b in index.values())],
                 inputs=len(inputs),
+                diagnostics=diagnostics,
                 code_version=code_version(),
                 format=FORMAT_VERSION,
                 elapsed_seconds=time.perf_counter() - started,
