@@ -78,7 +78,9 @@ class Evaluator:
         memo = {}
         for node in order:
             self.last_counts[node.digest] = 1
-            memo[node.digest] = _compute(node, memo, source, shape, mask)
+            memo[node.digest] = _compute(
+                node, memo, source, shape, mask, node is expression
+            )
             self.last_peak_arrays = max(
                 self.last_peak_arrays,
                 sum(isinstance(v, np.ndarray) for v in memo.values()),
@@ -152,10 +154,13 @@ class Evaluator:
             # 每个根在批内每出现一次就多一个消费者，给出后才减掉。
             for root in roots:
                 uses[root.digest] += 1
+            root_digests = {root.digest for root in roots}
             memo, emitted = {}, 0
             for node in order:  # _schedule 已去重，每个节点只算一次
                 self.last_counts[node.digest] = 1
-                memo[node.digest] = _compute(node, memo, source, shape, mask)
+                memo[node.digest] = _compute(
+                    node, memo, source, shape, mask, node.digest in root_digests
+                )
                 self.last_peak_arrays = max(
                     self.last_peak_arrays,
                     sum(isinstance(v, np.ndarray) for v in memo.values()),
@@ -189,6 +194,8 @@ class Evaluator:
         return shape
 
     def _cache_path(self, expression, source, mask, universe_id):
+        if self.cache_dir is None:
+            return None  # 没有缓存目录时缓存键用不上，不必对日期和代码表做哈希
         axes = hashlib.sha256(
             json.dumps(
                 [list(map(str, source.dates)), list(map(str, source.symbols))],
@@ -207,7 +214,7 @@ class Evaluator:
         digest = hashlib.sha256(
             json.dumps(key, separators=(",", ":")).encode()
         ).hexdigest()
-        return None if self.cache_dir is None else self.cache_dir / (digest + ".npy")
+        return self.cache_dir / (digest + ".npy")
 
     @staticmethod
     def _load(path, shape):
@@ -349,8 +356,13 @@ def _finish(value, shape, mask):
     return result
 
 
-def _compute(node, memo, source, shape, mask):
-    """单个节点的求值；单个与批量入口共用，保证逐位相同。"""
+def _compute(node, memo, source, shape, mask, root):
+    """单个节点的求值；单个与批量入口共用，保证逐位相同。
+
+    浮点字段叶子只在作为结果直接给出时才把非有限值和掩码外的格子改写成 NaN。
+    作为算子输入时省掉这一遍 isfinite 和 where 复制：Rust 内核对每个输入格子都按
+    「非有限即缺失」处理，掩码也随每次调用传入，结果逐位相同（见 PERF_LOG P-010）。
+    配置了 NumPy 分派（``panelops.api.BACKENDS`` 非空）时仍照旧改写。"""
     params = dict(node.params)
     if node.op == "field":
         raw = source[params["value"]]
@@ -372,6 +384,8 @@ def _compute(node, memo, source, shape, mask):
             raw = np.ascontiguousarray(np.broadcast_to(raw.reshape(-1, 1), shape))
         else:
             panelops.api.panel(raw, params["value"], dtype=dtype, shape=shape)
+        if dtype == np.float64 and not root and not panelops.api.BACKENDS:
+            return raw
         valid = np.isfinite(raw) if dtype == np.float64 else np.ones(shape, dtype=bool)
         if mask is not None:
             valid &= mask

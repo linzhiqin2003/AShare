@@ -49,6 +49,11 @@ class Source:
         industry = rng.integers(0, 5, (t, n))
         industry[rng.random((t, n)) < 0.05] = -1
         self.fields["industry"] = industry
+        market = rng.normal(0, 1, t)
+        market[::7] = np.nan
+        market[3] = np.inf
+        self.fields["mkt"] = market
+        self.fields["flag"] = rng.random((t, n)) < 0.5
 
     def __getitem__(self, name):
         self.reads += 1
@@ -214,3 +219,40 @@ def test_masked_constant_root_and_dedup_reads():
     x = af.field("close")
     list(af.Evaluator().evaluate_many([x + 1, x * 2, x - 3], source))
     assert source.reads == 1
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test_unnormalized_leaves_match_normalized(masked, monkeypatch):
+    """P-010：作为算子输入的字段不再预先改写非有限值，结果与改写过的逐位相同。"""
+    source = Source(t=120, n=17, seed=11)
+    mask = np.random.default_rng(5).random((120, 17)) > 0.15 if masked else None
+    exprs = batch()
+    # 再加几个专门让 ±inf 进入各类算子的表达式
+    x, y = af.field("close"), af.field("open")
+    exprs |= {
+        "fill": af.fill_nan(x, y),
+        "isnan": af.is_nan(x),
+        "where": af.where(af.gt(x, 1.0), y, x),
+        "delay": af.call("ts_delay", x, periods=1),
+        "ffill": af.call("ts_ffill", x, limit=3),
+        "corr": af.call("ts_corr", x, y, window=5),
+        "sumif": af.call("ts_sumif", x, af.gt(y, 2.0), window=5),
+        "rank": af.call("cs_rank", x),
+        "neutral": af.neutralize(
+            x, y, groups=af.field("industry", dtype="int64"), weights=y
+        ),
+        "market": af.field("mkt", broadcast=True) * x,
+        "market_ts": af.call("ts_mean", af.field("mkt", broadcast=True), window=3),
+        "flag": af.call("ts_sum", af.field("flag"), window=4) - x,
+    }
+    plain = dict(af.Evaluator().evaluate_many(exprs, source, mask=mask))
+    single = {
+        k: af.Evaluator().evaluate(e, source, mask=mask) for k, e in exprs.items()
+    }
+    monkeypatch.setitem(panelops.api.BACKENDS, "_force_normalize", "rust")
+    normalized = dict(af.Evaluator().evaluate_many(exprs, source, mask=mask))
+    for name in exprs:
+        same(plain[name], normalized[name])
+        same(single[name], normalized[name])
+    # 字段直接作为结果时仍改写成 NaN
+    assert np.isnan(plain["leaf"][~np.isfinite(source.fields["close"])]).all()
