@@ -400,16 +400,18 @@ fn affordable(
 }
 
 pub fn run(m: &Market<'_>, targets: &Targets<'_>, s: &Settings<'_>) -> Output {
-    // Rules and limit targets compile in position tracking; they are rejected
-    // with futures columns at input, so only the spot builds need them.
+    // Rules and limit targets compile in position tracking. With futures
+    // columns only exit rules are accepted at input (they act on spot columns).
     let track = s.rules.is_some() || !targets.limits.is_empty();
     match (s.flags[6], m.futures.is_some(), track) {
         (true, false, false) => run_impl::<true, false, false>(m, targets, s),
         (false, false, false) => run_impl::<false, false, false>(m, targets, s),
-        (true, true, _) => run_impl::<true, true, false>(m, targets, s),
-        (false, true, _) => run_impl::<false, true, false>(m, targets, s),
+        (true, true, false) => run_impl::<true, true, false>(m, targets, s),
+        (false, true, false) => run_impl::<false, true, false>(m, targets, s),
         (true, false, true) => run_impl::<true, false, true>(m, targets, s),
         (false, false, true) => run_impl::<false, false, true>(m, targets, s),
+        (true, true, true) => run_impl::<true, true, true>(m, targets, s),
+        (false, true, true) => run_impl::<false, true, true>(m, targets, s),
     }
 }
 #[inline]
@@ -851,7 +853,9 @@ impl Core {
             && r.timing != 0
             && !forced
         {
-            rules::intraday::<CLASSIC>(day, shares, *bankrupt, m, s, r, st, trk, rb, out);
+            rules::intraday::<CLASSIC>(
+                day, shares, *bankrupt, *fm_before, m, s, r, st, trk, rb, out,
+            );
         }
         let mut account = if !commands.is_empty() || forced || rules.is_some() {
             st.account(day, m)
@@ -1358,7 +1362,7 @@ impl Core {
             && r.timing == 0
             && !forced
         {
-            rules::intraday::<CLASSIC>(day, shares, *bankrupt, m, s, r, st, trk, rb, out);
+            rules::intraday::<CLASSIC>(day, shares, *bankrupt, fm, m, s, r, st, trk, rb, out);
         }
         if !commands.is_empty() {
             st.held.sort_unstable();

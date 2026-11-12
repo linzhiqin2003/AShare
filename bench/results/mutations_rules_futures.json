@@ -1,0 +1,48 @@
+[
+ {
+  "mutation": "rule trim ignores the futures collateral",
+  "caught": true,
+  "failed": [
+   "test_open_rule_phase_uses_collateral_after_the_rebalance",
+   "test_rule_cover_is_trimmed_by_futures_collateral_by_hand"
+  ]
+ },
+ {
+  "mutation": "close/average rule phase sees no collateral",
+  "caught": true,
+  "failed": [
+   "test_rule_cover_is_trimmed_by_futures_collateral_by_hand"
+  ]
+ },
+ {
+  "mutation": "open rule phase uses the pre-trade collateral",
+  "caught": true,
+  "failed": [
+   "test_open_rule_phase_uses_collateral_after_the_rebalance"
+  ]
+ },
+ {
+  "mutation": "futures + rules dispatched to the untracked build",
+  "caught": true,
+  "failed": [
+   "test_random_mixed_rules_match_reference",
+   "test_stepping_mixed_rules_is_bitwise_run",
+   "test_untraded_futures_column_leaves_spot_rules_bitwise_unchanged"
+  ]
+ },
+ {
+  "mutation": "rule percentages on futures columns accepted",
+  "caught": true,
+  "failed": [
+   "test_input_errors",
+   "test_mixed_rule_input_errors"
+  ]
+ },
+ {
+  "mutation": "limit rows accepted by the simulator with futures",
+  "caught": true,
+  "failed": [
+   "test_mixed_rule_input_errors"
+  ]
+ }
+]

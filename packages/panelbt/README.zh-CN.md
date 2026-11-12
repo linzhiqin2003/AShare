@@ -99,6 +99,23 @@ A 股监管担保物/负债公式与模型不同，`markets.ashare_margin` 要�
 
 `hedge_contracts` 与引擎一样向零取整，敞口不足一手时给出 `HedgeRoundingWarning`。现金账户挂上期货后，股票部分仍按原来的现金账户规则成交：先从现金里预留期货保证金，持有过合约后才会追保。现金只约束保证金占用、不约束名义金额：保证金率 12% 时，现金账户可以持有约 8 倍权益的合约名义。期货亏损使现金为负后，股票卖出只要成交额够付自身费用就照常成交。费率接受标量、(1, N) 按合约、(T, 1) 按日和 T×N，一维数组因含义不明确而报错。到期行的 `settlement` 必须填交易所的交割结算价。引擎不区分平今仓手续费（中金所平今费率远高于普通平仓），同一天开平的换月会低估成本。
 
+## 纯期货组合
+
+`FuturesBook` 用逐合约、逐行的交易所参数（结算价、乘数、保证金率、手续费、最后交易行）建一个全是期货（也可以混现货）的市场，用同一个内核回测。它负责：期货公司条款 `FuturesAccount(margin_add, margin_scale, fee_scale)`；实物交割合约的最后交易行、或可选的最后持仓行之后，按当行结算价强平并计手续费和滑点；涨跌停掩码；三种目标写法：手数（`"lots"`）、名义市值 / 权益（`"notional"`）、保证金 / 权益（`"margin"`）。
+
+```python
+s = np.array([[100.0], [101.0], [99.0]])
+book = bt.FuturesBook(
+    settlement=s, close=s, exec_price=s, multiplier=[10.0], expiry=[3],
+    margin_rate=0.1, fee_rate=1e-4,
+    account=bt.FuturesAccount(margin_add=0.05, fee_scale=2.0),
+    initial_cash=1e5,
+)
+book_result = book.run(np.array([[0.5], [np.nan], [np.nan]]), kind="margin")
+```
+
+盈亏一律按具体合约的结算价算；连续价格只拿来算信号，不要用它算收益（换月价差会被算成盈亏）。语义与理由见 SPEC 的「Stand-alone futures portfolios」（英文）。
+
 ## 逐日步进
 
 `bt.Simulator` 用同一个内核一次推进一天，策略可以根据账户状态决定当天的目标。第 t 步给的目标是第 t 日成交后要持有的；第 t 步之前的 `sim.state` 只含第 t 日成交前已知的信息。同样的目标逐日喂进去，结果与 `bt.run` 逐位相同。
@@ -167,7 +184,7 @@ limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Co
                                 record_trades=True))
 ```
 
-规则平仓后，这一列要等到之后的目标行（`cooldown=None`，默认）或 `cooldown=k` 行之后才能重新开仓。`sell_lock=True`（对所有市场默认开启，对应 A 股 T+1；别的市场要设为 False）时当天买入的股份当天不会被规则卖出，平仓顺延到下一行。限价买单要当天最低价严格低于限价才成交（卖单对称）：最低价正好等于限价的日子，往往是挂在当天极值上没成交的单，算成交会明显高估低吸类策略。卖不出去（跌停、停牌）的平仓在之后各行按当天的 `exec_price` 重试。不用规则时结果与没有这项功能的版本逐位相同。期货列不能用规则。确切语义见 [SPEC.md](SPEC.md)（英文）。
+规则平仓后，这一列要等到之后的目标行（`cooldown=None`，默认）或 `cooldown=k` 行之后才能重新开仓。`sell_lock=True`（对所有市场默认开启，对应 A 股 T+1；别的市场要设为 False）时当天买入的股份当天不会被规则卖出，平仓顺延到下一行。限价买单要当天最低价严格低于限价才成交（卖单对称）：最低价正好等于限价的日子，往往是挂在当天极值上没成交的单，算成交会明显高估低吸类策略。卖不出去（跌停、停牌）的平仓在之后各行按当天的 `exec_price` 重试。不用规则时结果与没有这项功能的版本逐位相同。市场里有期货列时，退出规则只作用于现货列（标量百分比只施加给现货列；每只证券或 T×N 的取值在期货列上必须是 NaN），限价目标直接拒绝。确切语义见 [SPEC.md](SPEC.md)（英文）。
 
 ## 输入检查
 

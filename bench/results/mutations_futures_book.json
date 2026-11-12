@@ -1,0 +1,72 @@
+[
+  {
+    "mutant": "broker margin add-on ignored",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "fee multiple not applied to the per-contract fee",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "forced close without slippage",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "last holding row off by one",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "locked-day direction swapped",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "margin targets multiplied by the rate",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "cash-settled expiry treated as a forced close",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "limit-up refusal only beyond the limit",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "untradable cells keep their price",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "missing='previous' fills from later values",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "lots not rescaled across a unit change",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll rows not written without a new target",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal override disabled",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "SC personal rule off by one day",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  }
+]

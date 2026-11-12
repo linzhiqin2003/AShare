@@ -14,7 +14,6 @@ python -m ashare.data --root /path/to/root verify-futures  # 独立校验，报�
 ```python
 import ashare.data as ad
 import panelbt as bt
-from ashare.data.futures_panelbt import panelbt_inputs
 
 fut = ad.open("/path/to/root").futures()
 fut.contracts(products=["SC"]).collect()                        # 合约表
@@ -23,7 +22,7 @@ p.dates, p.symbols, p["settlement"]                             # T×N 只读数
 sc = fut.continuous("SC", rule="open_interest", adjust="ratio") # 主力连续（比例后复权）
 rolls = fut.roll_schedule("SC", rule="open_interest")           # 换月日程表
 
-inputs = panelbt_inputs(fut, products=["IF"], start="2024-01-02", end="2024-12-31")
+inputs = fut.panelbt_inputs(products=["IF"], start="2024-01-02", end="2024-12-31")
 market = bt.Market(**inputs["market"], futures=inputs["futures"])
 ```
 
