@@ -134,7 +134,7 @@ forward = np.vstack([ret[1:], np.full((1, 300), np.nan)])                # 下�
 ic = panelops.rank_ic(momentum, forward)                                 # 每天一个值
 ```
 
-目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次。
+目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次：`ashare.backtest.execution_targets`。
 
 ## 数据
 

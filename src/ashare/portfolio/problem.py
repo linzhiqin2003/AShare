@@ -64,6 +64,21 @@ class Relaxation:
             raise ValueError("放松值必须非负有限或 None（关闭）")
 
 
+def factor_positions(risk, factors, name):
+    """因子列号或因子名（可混用）→ 列号数组；名字必须在 risk.factors 里。"""
+    items = list(factors) if not isinstance(factors, (str, bytes)) else [factors]
+    lookup = {f: j for j, f in enumerate(risk.factors)}
+    out = []
+    for item in items:
+        if isinstance(item, str):
+            if item not in lookup:
+                raise ValueError(f"{name}: 风险模型里没有因子 {item!r}")
+            out.append(lookup[item])
+        else:
+            out.append(item)
+    return np.asarray(out) if out else np.asarray(out, dtype=np.int64)
+
+
 @dataclass
 class PortfolioProblem:
     alpha: np.ndarray
@@ -79,8 +94,9 @@ class PortfolioProblem:
     industries: np.ndarray | None = None
     styles: np.ndarray | None = None
     impact: float | np.ndarray = 0.0
-    industry_factors: tuple[int, ...] | None = None
-    style_factors: tuple[int, ...] | None = None
+    # 因子列号或因子名（如 "industry_银行"、"size"），可以混用。
+    industry_factors: tuple[int | str, ...] | None = None
+    style_factors: tuple[int | str, ...] | None = None
 
     def __post_init__(self):
         n = len(self.risk.D)
@@ -121,7 +137,7 @@ class PortfolioProblem:
                 self, "industry_factors" if name == "industries" else "style_factors"
             )
             if indices is not None:
-                indices = np.asarray(indices)
+                indices = factor_positions(self.risk, indices, name)
                 if (
                     indices.ndim != 1
                     or indices.dtype.kind not in "iu"
@@ -129,6 +145,12 @@ class PortfolioProblem:
                     or np.any(indices >= self.risk.B.shape[1])
                 ):
                     raise ValueError(f"{name}: 因子下标非法")
+                # 名字已换成列号，下游只看列号。
+                setattr(
+                    self,
+                    "industry_factors" if name == "industries" else "style_factors",
+                    tuple(int(i) for i in indices),
+                )
                 selected = self.risk.B[:, indices]
                 if value is not None and not np.array_equal(value, selected):
                     raise ValueError(f"{name}: 暴露与所给因子下标不一致")

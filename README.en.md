@@ -132,7 +132,7 @@ forward = np.vstack([ret[1:], np.full((1, 300), np.nan)])                # next-
 ic = panelops.rank_ic(momentum, forward)                                 # one value per day
 ```
 
-Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare`.
+Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare` (`ashare.backtest.execution_targets`).
 
 ## Data
 
