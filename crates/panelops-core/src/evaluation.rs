@@ -157,3 +157,123 @@ pub fn turnover(pan: Panel<'_>, q: usize, periods: usize) -> Vec<f64> {
         });
     out
 }
+
+/// Each day's valid returns sorted once, for ranking many score panels against them.
+/// `order[t * n..t * n + counts[t]]` lists columns with finite, unmasked returns in
+/// ascending order; `tied[k]` marks an entry equal to the one before it.
+pub struct ReturnOrder {
+    pub order: Vec<u32>,
+    pub tied: Vec<bool>,
+    pub counts: Vec<u32>,
+    pub t: usize,
+    pub n: usize,
+}
+
+pub fn return_order(returns: Panel<'_>) -> ReturnOrder {
+    let (t, n) = (returns.t, returns.n);
+    let mut order = vec![0u32; t * n];
+    let mut tied = vec![false; t * n];
+    if n == 0 {
+        return ReturnOrder {
+            order,
+            tied,
+            counts: vec![0; t],
+            t,
+            n,
+        };
+    }
+    let counts = order
+        .par_chunks_mut(n)
+        .zip(tied.par_chunks_mut(n))
+        .enumerate()
+        .map_init(
+            Vec::new,
+            |pairs: &mut Vec<(u64, u32)>, (day, (row, ties))| {
+                pairs.clear();
+                pairs.extend((0..n).filter_map(|j| {
+                    let y = returns.x(day * n + j);
+                    y.is_finite().then(|| (super::order_key(y), j as u32))
+                }));
+                pairs.sort_unstable_by_key(|p| p.0);
+                for (k, &(key, j)) in pairs.iter().enumerate() {
+                    row[k] = j;
+                    ties[k] = k > 0 && pairs[k - 1].0 == key;
+                }
+                pairs.len() as u32
+            },
+        )
+        .collect();
+    ReturnOrder {
+        order,
+        tied,
+        counts,
+        t,
+        n,
+    }
+}
+
+#[derive(Default)]
+struct OrderedScratch {
+    present: Vec<bool>,
+    ry: Vec<f64>,
+    x: Vec<f64>,
+    y: Vec<f64>,
+    ids: Vec<(u64, usize)>,
+}
+
+/// Daily rank IC against pre-sorted returns; equals `ic(.., rank=true)` bit for bit.
+/// Ties among returns are judged within the pairwise-complete subset, exactly as a
+/// fresh sort of that subset would judge them.
+pub fn rank_ic_ordered(scores: &[f64], returns: &ReturnOrder) -> Vec<f64> {
+    let n = returns.n;
+    (0..returns.t)
+        .into_par_iter()
+        .map_init(OrderedScratch::default, |s, day| {
+            let row = &scores[day * n..(day + 1) * n];
+            let count = returns.counts[day] as usize;
+            let order = &returns.order[day * n..day * n + count];
+            let tied = &returns.tied[day * n..day * n + count];
+            s.present.clear();
+            s.present.resize(n, false);
+            s.ry.resize(n, 0.);
+            // Common columns: finite score and a ranked return (mask already applied).
+            let mut common = 0usize;
+            for &j in order {
+                let j = j as usize;
+                let keep = row[j].is_finite();
+                s.present[j] = keep;
+                common += usize::from(keep);
+            }
+            // Average ranks over runs of equal returns, counting common columns only.
+            let (mut k, mut preceding) = (0, 0usize);
+            while k < count {
+                let mut end = k + 1;
+                while end < count && tied[end] {
+                    end += 1;
+                }
+                let members = order[k..end]
+                    .iter()
+                    .filter(|&&j| s.present[j as usize])
+                    .count();
+                let rank = (2 * preceding + members + 1) as f64 / 2.;
+                for &j in &order[k..end] {
+                    s.ry[j as usize] = rank;
+                }
+                preceding += members;
+                k = end;
+            }
+            s.x.clear();
+            s.y.clear();
+            if common > 0 {
+                for (j, &value) in row.iter().enumerate() {
+                    if s.present[j] {
+                        s.x.push(value);
+                        s.y.push(s.ry[j]);
+                    }
+                }
+                super::rank_in_place(&mut s.x, &mut s.ids, false);
+            }
+            super::correlation(&s.x, &s.y)
+        })
+        .collect()
+}

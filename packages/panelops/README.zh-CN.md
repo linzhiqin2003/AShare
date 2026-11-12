@@ -16,7 +16,7 @@ targets = po.targets(score, k=1)
 - 时序：delay、delta、sum、mean、std、var、zscore、median、mad、count、sumif、ffill、min、max、rank、quantile、skew、kurt、product、argmin/argmax、idxmin/idxmax、corr、cov、decay_linear、ema、时间回归 slope/residual/rsquare、双序列 regression_slope/regression_residual，统一加 `ts_` 前缀。
 - 截面：rank、zscore、winsor_quantile、winsor_mad、group_demean、neutralize、scale、demean，统一加 `cs_` 前缀。
 - 逐元素：`elementwise(op, ...)` 支持 gt/ge/lt/le/eq/ne、and_/or_/not_、where、maximum/minimum、sign、power/signed_power、sqrt、exp、clip、is_nan、fill_nan。
-- 评估：ic、rank_ic、factor_autocorr、group_returns、group_turnover、targets。
+- 评估：ic、rank_ic、rank_ic_many（多个因子共用一次收益排序）、factor_autocorr、group_returns、group_turnover、targets。
 
 输入严格要求 C 连续 float64 二维数组；股票池掩码为同形状 bool，行业编号为 int64。类型或布局不符报错，不隐式转换。不修改输入，每次返回新数组。NaN 和无穷视为缺失；掩码同时作用于历史观测和当日输出。窗口包含当天，默认 min_periods 等于窗口大小。不允许并发修改正在计算的输入。
 

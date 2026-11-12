@@ -47,7 +47,7 @@ po.set_num_threads(1)  # 0 restores the available CPU count
 | Rolling relationships | `ts_corr`, `ts_cov`, `ts_slope`, `ts_residual`, `ts_rsquare`, `ts_regression_slope`, `ts_regression_residual` |
 | Cross sections | `cs_rank`, `cs_zscore`, `cs_winsor_quantile`, `cs_winsor_mad`, `cs_group_demean`, `cs_neutralize`, `cs_scale`, `cs_demean` |
 | Elementwise | `elementwise(op, ...)`: gt/ge/lt/le/eq/ne, and_/or_/not_, where, maximum/minimum, sign, power/signed_power, sqrt, exp, clip, is_nan, fill_nan |
-| Evaluation | `ic`, `rank_ic`, `factor_autocorr`, `group_returns`, `group_turnover`, `targets` |
+| Evaluation | `ic`, `rank_ic`, `rank_ic_many`, `factor_autocorr`, `group_returns`, `group_turnover`, `targets` |
 
 All panels are C-contiguous float64 arrays, T rows by N securities. Masks are
 same-shaped C-contiguous bool arrays. NaN and infinity are missing; false mask

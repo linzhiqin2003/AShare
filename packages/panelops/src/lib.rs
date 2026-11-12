@@ -247,6 +247,58 @@ fn ic<'py>(
         .detach(|| pool.install(|| panelops_core::ic(pan, rank)))
         .into_pyarray(py))
 }
+/// Returns ranked once per day, reusable across many score panels.
+#[pyclass(frozen, name = "ReturnOrder", module = "panelops._core")]
+struct ReturnOrderHandle(panelops_core::evaluation::ReturnOrder);
+
+#[pyfunction]
+fn return_order<'py>(
+    py: Python<'py>,
+    y: PyReadonlyArray2<'py, f64>,
+    mask: PyReadonlyArray2<'py, bool>,
+    threads: usize,
+) -> PyResult<ReturnOrderHandle> {
+    check(y.shape(), mask.shape(), mask.is_empty())?;
+    if !y.is_c_contiguous() || !mask.is_c_contiguous() {
+        return Err(PyValueError::new_err("panels must be C-contiguous"));
+    }
+    if y.shape()[1] > u32::MAX as usize {
+        return Err(PyValueError::new_err("too many columns"));
+    }
+    let pan = Panel {
+        x: y.as_slice()?,
+        y: &[],
+        mask: mask.as_slice()?,
+        t: y.shape()[0],
+        n: y.shape()[1],
+    };
+    let pool = pool(threads)?;
+    Ok(ReturnOrderHandle(py.detach(|| {
+        pool.install(|| panelops_core::evaluation::return_order(pan))
+    })))
+}
+
+#[pyfunction]
+fn rank_ic_ordered<'py>(
+    py: Python<'py>,
+    x: PyReadonlyArray2<'py, f64>,
+    order: &ReturnOrderHandle,
+    threads: usize,
+) -> PyResult<Bound<'py, numpy::PyArray1<f64>>> {
+    let order = &order.0;
+    if x.shape() != [order.t, order.n] {
+        return Err(PyValueError::new_err("panel shape mismatch"));
+    }
+    if !x.is_c_contiguous() {
+        return Err(PyValueError::new_err("panels must be C-contiguous"));
+    }
+    let x = x.as_slice()?;
+    let pool = pool(threads)?;
+    Ok(py
+        .detach(|| pool.install(|| panelops_core::evaluation::rank_ic_ordered(x, order)))
+        .into_pyarray(py))
+}
+
 #[pyfunction]
 fn autocorr<'py>(
     py: Python<'py>,
@@ -425,6 +477,9 @@ fn panelops_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ts, m)?)?;
     m.add_function(wrap_pyfunction!(cs, m)?)?;
     m.add_function(wrap_pyfunction!(ic, m)?)?;
+    m.add_function(wrap_pyfunction!(return_order, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_ic_ordered, m)?)?;
+    m.add_class::<ReturnOrderHandle>()?;
     m.add_function(wrap_pyfunction!(actual_threads, m)?)?;
     m.add_function(wrap_pyfunction!(autocorr, m)?)?;
     m.add_function(wrap_pyfunction!(grouped, m)?)?;
