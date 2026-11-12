@@ -75,7 +75,7 @@ def model_series(
         }
     )
     if cache:
-        cache.prepare(params)
+        cache.prepare(params, source.symbols)
     returns = (
         adjusted_returns(source, end - 1) if end else np.empty((0, len(source.symbols)))
     )
@@ -89,7 +89,6 @@ def model_series(
         np.asarray(source["is_listed"][:end], bool), axis=0, dtype=np.int32
     )
     rolling = RollingDescriptors(source, returns, c, listing_ages)
-    prepared, regressed = {}, {}
 
     def exposure_for(day):
         return exposures_at(
@@ -118,6 +117,46 @@ def model_series(
             return statistical_for(day).B
         return exposure_for(day)[0]
 
+    try:
+        yield from _iterate(
+            source,
+            c,
+            cache,
+            start,
+            end,
+            external,
+            kind,
+            params,
+            returns,
+            rolling,
+            exposure_for,
+            statistical_for,
+            cached_exposure,
+            batch_size,
+        )
+    finally:
+        # 后台写入在生成器结束（含提前关闭）前落盘；写失败在这里抛出。
+        if cache:
+            cache.flush()
+
+
+def _iterate(
+    source,
+    c,
+    cache,
+    start,
+    end,
+    external,
+    kind,
+    params,
+    returns,
+    rolling,
+    exposure_for,
+    statistical_for,
+    cached_exposure,
+    batch_size,
+):
+    prepared, regressed = {}, {}
     history_f, history_r, history_bias = [], [], []
     previous = None
     previous_key = None
