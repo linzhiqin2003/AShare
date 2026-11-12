@@ -134,13 +134,16 @@ def _as_date(value):
     return dt.date(int(text[:4]), int(text[4:6]), int(text[6:8]))
 
 
-def trade_dates(ts, session, open_days=None):
-    """UTC 时刻 → 交易日（YYYYMMDD），按 ``session`` 的时区和切换点（polars 向量化）：
+def trade_dates(ts, session, open_days=None, known=None):
+    """UTC 时刻 → 交易日（YYYYMMDD），按 ``session`` 的时区和切换点（polars 向量化）。
 
-    本地时间 ≥ cutoff 的归本地日期的下一天，再顺延过周六周日；给了 ``open_days``（开市日集合）时继续顺延到
-    下一个开市日（超出集合末尾的保持原样）。CME 周日 17:00（芝加哥）开盘的成交归周一，与结算价的交易日
-    （Databento ``ts_ref``）一致。``ts`` 是 ``datetime`` 列表（无时区的按 UTC）或 polars 的时间列；返回同长度的
-    字符串列表（空值仍为空）。
+    1. 本地时间 ≥ cutoff 的归本地日期的下一天，再顺延过周六周日，得到「自然交易日」。CME 周日 17:00（芝加哥）
+       开盘的成交归周一，与结算价的交易日（Databento ``ts_ref``）一致。
+    2. 给了 ``open_days``（开市日集合）时，在已知日历范围 ``known = (首日, 末日)``（含两端，不给就取开市日集合的
+       最早、最晚一天）之内顺延到下一个开市日（休市日的成交归下一开市日）。**自然交易日落在已知范围之外、或顺延
+       越过末日的，返回空**：不知道那几天开不开市，就不猜，由调用方丢弃并计数（不会被顺延到范围的第一天）。
+
+    ``ts`` 是 ``datetime`` 列表（无时区的按 UTC）或 polars 的时间列；返回同长度的字符串列表（空值仍为空）。
     """
     series = (
         ts
@@ -169,26 +172,36 @@ def trade_dates(ts, session, open_days=None):
         )
     )
     text = frame.select(pl.col("day").dt.strftime("%Y%m%d"))["day"]
-    if open_days:
-        ordered = pl.DataFrame({"open": sorted(open_days)})
-        keyed = pl.DataFrame({"key": text, "row": range(len(text))})
-        found = (
-            keyed.filter(pl.col("key").is_not_null())
-            .sort("key")
-            .join_asof(
-                ordered.with_columns(on=pl.col("open")),
-                left_on="key",
-                right_on="on",
-                strategy="forward",
-            )
+    if open_days is None:
+        return text.to_list()
+    ordered = sorted(open_days)
+    if known is None:
+        if not ordered:
+            return [None] * len(text)
+        known = (ordered[0], ordered[-1])
+    first, last = known
+    keyed = pl.DataFrame({"key": text, "row": range(len(text))})
+    inside = keyed.filter(
+        pl.col("key").is_not_null()
+        & pl.col("key").is_between(pl.lit(first), pl.lit(last))
+    )
+    found = (
+        inside.sort("key")
+        .join_asof(
+            pl.DataFrame({"open": ordered}, schema={"open": pl.String}).with_columns(
+                on=pl.col("open")
+            ),
+            left_on="key",
+            right_on="on",
+            strategy="forward",
         )
-        text = (
-            keyed.join(found.select("row", "open"), on="row", how="left")
-            .sort("row")
-            .select(pl.coalesce("open", "key"))
-            .to_series()
-        )
-    return text.to_list()
+        .with_columns(open=pl.when(pl.col("open") <= last).then(pl.col("open")))
+    )
+    return (
+        keyed.join(found.select("row", "open"), on="row", how="left")
+        .sort("row")["open"]
+        .to_list()
+    )
 
 
 # ---------------------------------------------------------------- 分钟线（统一字段新增，境内表里还没有）
@@ -265,6 +278,44 @@ def previous_settlement(daily, contracts, calendar):
     return keyed.join(lookup, on=["prev", "symbol"], how="left").drop(
         "prev", "exchange"
     )
+
+
+def check_settlements(daily, contracts, *, require=True):
+    """结算价完整性：返回每个品种区间内结算价为空的行数（进诊断）。
+
+    空结算价不往下传（日历推不出开市日、``previous_settlement`` 全空、按持仓量换月失灵，都是静默的）：
+
+    - 某个品种区间内有行情行，但一个结算价都没有（比如来源的结算价字段或标志位口径与预期不同）：总是报错；
+    - 某个合约某天有成交（``volume > 0`` 或有开盘价），却没有最终结算价：``require=True``（默认）时报错。
+      确实要放行（比如结算价还没公布的当天），传 ``require=False``，空值计数仍在诊断里。
+    """
+    keyed = daily.join(contracts.select("symbol", "product"), on="symbol", how="left")
+    counts = keyed.group_by("product").agg(
+        rows=pl.len(), missing=pl.col("settlement").is_null().sum()
+    )
+    nulls = {r["product"]: int(r["missing"]) for r in counts.iter_rows(named=True)}
+    empty = sorted(
+        r["product"]
+        for r in counts.iter_rows(named=True)
+        if r["rows"] > 0 and r["missing"] == r["rows"]
+    )
+    if empty:  # 不受 require 控制：整个品种没有结算价时日历都推不出来
+        raise ValueError(
+            f"品种 {empty} 在区间内一个结算价都没有：来源的结算价口径可能与预期不同，"
+            "先按 docs/FOREIGN_FUTURES.md 的首次核对清单核对"
+        )
+    if require:
+        traded = keyed.filter(
+            pl.col("settlement").is_null()
+            & ((pl.col("volume") > 0) | pl.col("open").is_not_null())
+        )
+        if len(traded):
+            sample = traded.select("symbol", "date").sort("symbol", "date").head(10)
+            raise ValueError(
+                f"{len(traded)} 个有成交的合约日没有最终结算价（前几个：{sample.rows()}）；"
+                "确实要放行传 require_settlement=False"
+            )
+    return nulls
 
 
 def params_rows(daily, contracts, margin):
@@ -431,6 +482,7 @@ __all__ = [
     "ForeignAdapter",
     "build_panel",
     "calendar_from_open_days",
+    "check_settlements",
     "conform_minute",
     "resolve_year",
     "trade_dates",

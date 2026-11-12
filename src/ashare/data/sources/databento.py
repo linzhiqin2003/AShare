@@ -9,7 +9,8 @@
 3. 同样取 ``IFEU.IMPACT`` 的 Brent，核对结算价与 ICE 公布值相同、价格单位是美元/桶（不是美分）。
 
 这一层只做三件事：从环境变量 ``DATABENTO_API_KEY`` 取密钥建客户端（不写进任何文件、不打印）；
-**每次取数前先调官方的费用估算接口** ``metadata.get_cost``，累计估算超过预算就不取并报出估算值；
+**取数前先对整个请求计划调官方的费用估算接口** ``metadata.get_cost``，累计估算超过预算就一个都不取并报出
+差额；已取到的原始表在本次会话内缓存，重试不重复计费；
 把客户端返回的 ``DBNStore`` 转成 polars 表（字段保留 Databento 原名，价格已由客户端按 1e-9 缩放成小数）。
 默认预算为 0，即**默认只估不取**，调用方显式给预算才会产生计费请求。字段口径换算在
 ``ashare.data.futures_foreign`` 里做。
@@ -17,7 +18,9 @@
 不导入其他 ashare 模块。没装可选依赖时，建客户端会报错并提示 ``pip install "ashare[databento]"``。
 """
 
+import math
 import os
+import threading
 from dataclasses import dataclass, field
 
 import polars as pl
@@ -27,18 +30,28 @@ EXTRA_HINT = '没有安装 databento；请安装可选依赖：pip install "asha
 
 
 class BudgetExceeded(RuntimeError):
-    """估算费用超过预算，请求没有发出。``estimate`` 是本次请求的估算（美元），``spent`` 是此前已批准的累计估算。"""
+    """估算费用超过预算，**一个请求都没有发出**。
 
-    def __init__(self, request, estimate, spent, budget):
-        self.request, self.estimate, self.spent, self.budget = (
-            request,
-            estimate,
+    ``plan_total`` 是完成整个请求计划（不含本次会话里已经取到、缓存着的请求）的估算总价，``spent`` 是此前已
+    批准的累计估算，``budget`` 是预算，``shortfall`` = ``spent + plan_total − budget``，即预算至少还要加多少。
+    ``requests`` 是 [(请求, 估算美元)]。
+    """
+
+    def __init__(self, requests, plan_total, spent, budget):
+        self.requests, self.plan_total, self.spent, self.budget = (
+            list(requests),
+            plan_total,
             spent,
             budget,
         )
+        self.shortfall = spent + plan_total - budget
+        # 兼容只取一个请求的旧写法
+        self.estimate = plan_total
+        lines = "；".join(f"{label} {cost:.4f}" for label, cost in self.requests)
         super().__init__(
-            f"{request}: 估算费用 {estimate:.4f} 美元，已批准 {spent:.4f}，预算 {budget:.4f}；"
-            "未发出取数请求。确实要取，请把 budget_usd 调到不低于两者之和"
+            f"估算费用不够：完成这次取数还需 {plan_total:.4f} 美元（{len(self.requests)} 个请求：{lines}），"
+            f"已批准 {spent:.4f}，预算 {budget:.4f}，至少还差 {self.shortfall:.4f}；未发出任何取数请求。"
+            f"确实要取，把 budget_usd 调到不低于 {spent + plan_total:.4f} 后重试（已取到的不会重取）"
         )
 
 
@@ -62,19 +75,37 @@ def default_client():
     return databento.Historical(key=key)
 
 
-@dataclass
+def _check_budget(value):
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"budget_usd 必须是数（美元），收到 {type(value).__name__}")
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"budget_usd 必须是有限的非负数，收到 {value!r}")
+    return float(value)
+
+
+def _check_cost(value, label):
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"{label}: get_cost 返回的不是数：{value!r}；未取数")
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{label}: get_cost 返回 {value!r}，不是有限的非负数；未取数")
+    return float(value)
+
+
+@dataclass(frozen=True)
 class Request:
     """一次取数请求的参数，名字与 ``timeseries.get_range`` / ``metadata.get_cost`` 的参数一致。"""
 
     dataset: str
     schema: str
-    symbols: list
+    symbols: tuple
     start: str
     end: str
     stype_in: str = "raw_symbol"
 
     def label(self):
-        return f"{self.dataset} {self.schema} {self.symbols} {self.start}~{self.end}"
+        return (
+            f"{self.dataset} {self.schema} {list(self.symbols)} {self.start}~{self.end}"
+        )
 
     def kwargs(self):
         return dict(
@@ -87,14 +118,25 @@ class Request:
         )
 
 
+def _as_request(r):
+    if isinstance(r, Request):
+        return r
+    dataset, schema, symbols, start, end, *rest = r
+    return Request(dataset, schema, tuple(symbols), start, end, *rest)
+
+
 @dataclass
 class DatabentoSource:
     """带费用闸门的 Databento 历史取数。
 
-    ``budget_usd`` 是这个对象整个生命周期的累计预算（美元，按 ``get_cost`` 的估算计），默认 0：
-    ``fetch`` 只估价、不取数，抛 ``BudgetExceeded`` 并报出估算值。``client`` 可以传入任何实现了
-    ``metadata.get_cost``、``timeseries.get_range``、``symbology.resolve`` 的对象（测试用假的）；不传时
-    第一次用到才用环境变量里的密钥建官方客户端。
+    - ``budget_usd`` 是这个对象整个生命周期的累计预算（美元，按 ``get_cost`` 的估算计，必须是有限的非负数），
+      默认 0：只估价、不取数。
+    - ``fetch_plan(requests)`` 先对计划里**全部**未取过的请求逐个估价（免费），合计加上已批准的累计额不超过
+      预算才开始取第一个；否则抛 ``BudgetExceeded``，一个都不取，并给出差额。
+    - 取到的原始表缓存在对象里（按请求参数），同一会话里重试或重复请求不会再取、不会再计费。
+    - 检查、记账和缓存在一把锁里，多线程共用一个对象时预算不会被并发越过。``spent_usd`` 只应由本对象改。
+    - ``client`` 可以传入任何实现了 ``metadata.get_cost``、``timeseries.get_range``、``symbology.resolve``
+      的对象（测试用假的）；不传时第一次用到才用环境变量里的密钥建官方客户端。不要 pickle 本对象（客户端里有密钥）。
 
     例::
 
@@ -106,33 +148,62 @@ class DatabentoSource:
     client: object = None
     spent_usd: float = 0.0
     log: list = field(default_factory=list)
+    _cache: dict = field(default_factory=dict, repr=False)
+    _lock: object = field(default_factory=threading.RLock, repr=False)
+
+    def __post_init__(self):
+        self.budget_usd = _check_budget(self.budget_usd)
 
     def _client(self):
         if self.client is None:
             self.client = default_client()
         return self.client
 
+    def _cost(self, request):
+        return _check_cost(
+            self._client().metadata.get_cost(**request.kwargs()), request.label()
+        )
+
     def estimate(self, dataset, schema, symbols, start, end, *, stype_in="raw_symbol"):
         """只调费用估算接口（不计费），返回美元。"""
-        request = Request(dataset, schema, list(symbols), start, end, stype_in)
-        return float(self._client().metadata.get_cost(**request.kwargs()))
+        return self._cost(
+            Request(dataset, schema, tuple(symbols), start, end, stype_in)
+        )
 
-    def fetch(self, dataset, schema, symbols, start, end, *, stype_in="raw_symbol"):
-        """先估价，累计估算不超过预算才调 ``timeseries.get_range``；返回 polars 表（原字段名）。
+    def fetch_plan(self, requests):
+        """按计划取数：先对全部未缓存的请求估价，总价过闸门后才逐个取。返回与 ``requests`` 同序的 polars 表。
 
         预算为 0 时永远不取数（哪怕估算为 0）：默认不产生任何计费请求。
         """
-        request = Request(dataset, schema, list(symbols), start, end, stype_in)
-        cost = float(self._client().metadata.get_cost(**request.kwargs()))
-        self.log.append(dict(request=request.label(), estimate=cost))
-        if self.budget_usd <= 0 or self.spent_usd + cost > self.budget_usd:
-            raise BudgetExceeded(request.label(), cost, self.spent_usd, self.budget_usd)
-        self.spent_usd += cost
-        store = self._client().timeseries.get_range(**request.kwargs())
-        return frame_of(store)
+        requests = [_as_request(r) for r in requests]
+        with self._lock:
+            budget = _check_budget(self.budget_usd)
+            pending = [r for r in dict.fromkeys(requests) if r not in self._cache]
+            quotes = [(r, self._cost(r)) for r in pending]
+            total = sum(c for _, c in quotes)
+            for r, c in quotes:
+                self.log.append(dict(request=r.label(), estimate=c))
+            if pending and (budget <= 0 or self.spent_usd + total > budget):
+                raise BudgetExceeded(
+                    [(r.label(), c) for r, c in quotes], total, self.spent_usd, budget
+                )
+            for r, c in quotes:
+                # 先记账再取：请求发出后即使失败也可能已计费，宁可多记。
+                self.spent_usd += c
+                self._cache[r] = frame_of(
+                    self._client().timeseries.get_range(**r.kwargs())
+                )
+            return [self._cache[r] for r in requests]
+
+    def fetch(self, dataset, schema, symbols, start, end, *, stype_in="raw_symbol"):
+        """单个请求的 ``fetch_plan``。"""
+        return self.fetch_plan(
+            [Request(dataset, schema, tuple(symbols), start, end, stype_in)]
+        )[0]
 
     def resolve(self, dataset, symbols, stype_in, stype_out, start_date, end_date=None):
-        """符号映射（``symbology.resolve``），用于把连续合约记法对到具体合约；原样返回官方的字典。"""
+        """符号映射（``symbology.resolve``，官方说明 symbology 类调用免费），用于把连续合约记法对到具体合约；
+        原样返回官方的字典。"""
         return self._client().symbology.resolve(
             dataset=dataset,
             symbols=list(symbols),
@@ -181,6 +252,7 @@ __all__ = [
     "BudgetExceeded",
     "DatabentoSource",
     "KEY_ENV",
+    "Request",
     "frame_of",
     "mapping_frame",
     "require",

@@ -16,6 +16,7 @@ import numpy as np
 import polars as pl
 import pytest
 from futures_foreign_fixtures import (
+    BRENT,
     CL,
     CME_DAYS,
     END,
@@ -268,10 +269,9 @@ def test_databento_contract_table_units():
     assert cl["listing_date"] == "20240103"  # 2024-01-02 23:00 UTC = 17:00 CST → 次日
     brent = contracts.filter(pl.col("symbol") == "B2701.ICE").row(0, named=True)
     assert brent["exchange"] == "ICE" and brent["last_trade_date"] == "20261130"
-    assert set(contracts["symbol"]) == {c[0] for c in CL} | {
-        "B2612.ICE",
-        "B2701.ICE",
-        "B2702.ICE",
+    # 区间里有行情的合约：CLV6（09-22 到期）、B2611（09-30 到期）在 start 之前，不出现。
+    assert set(contracts["symbol"]) == {c[0] for c in CL if c[3] >= START} | {
+        c[0] for c in BRENT if c[3] >= START
     }
     diag = adapter.diagnostics()
     assert diag["unknown_instrument_bar_rows"] == 2  # 价差和对不上合约表的那条
@@ -359,7 +359,8 @@ def test_databento_calendar_from_settlements():
     assert "20261225" in nymex and "20261225" in ice
     assert set(
         cal.filter(pl.col("is_open") & (pl.col("exchange") == "NYMEX"))["date"]
-    ) == {d for d in CME_DAYS if d >= START}
+    ) == {d for d in CME_DAYS if START <= d <= END}
+    assert cal["date"].min() == START and cal["date"].max() == END
 
 
 def test_params_margin_given_or_empty():

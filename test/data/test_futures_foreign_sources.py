@@ -105,13 +105,23 @@ def test_budget_is_cumulative():
         stype_in="parent",
     )
     assert source.spent_usd == pytest.approx(one)
+    # 同一个请求再取一次：会话内缓存，不估价、不取、不计费。
+    again = source.fetch(
+        "GLBX.MDP3",
+        "definition",
+        ["CL.FUT"],
+        "2026-11-02",
+        "2026-11-12",
+        stype_in="parent",
+    )
+    assert again.height > 0 and source.spent_usd == pytest.approx(one)
     with pytest.raises(BudgetExceeded) as caught:
         source.fetch(
             "GLBX.MDP3",
             "definition",
             ["CL.FUT"],
-            "2026-11-02",
-            "2026-11-12",
+            "2026-11-03",
+            "2026-11-13",
             stype_in="parent",
         )
     assert caught.value.spent == pytest.approx(one)
@@ -160,9 +170,10 @@ def test_missing_databento_extra(monkeypatch):
 
 def test_missing_blpapi_extra(monkeypatch):
     monkeypatch.setitem(sys.modules, "blpapi", None)
-    with pytest.raises(ImportError, match=r"ashare\[bloomberg\]"):
+    # blpapi 不作可选依赖（锁文件不依赖 Bloomberg 的包索引），报错给出手动安装命令。
+    with pytest.raises(ImportError, match="--index-url https://blpapi.bloomberg.com"):
         bbg.require()
-    with pytest.raises(ImportError, match=r"ashare\[bloomberg\]"):
+    with pytest.raises(ImportError, match="uv pip install"):
         BloombergSource()
 
 
@@ -483,3 +494,55 @@ def test_bloomberg_adapter_requests():
     history = [v for op, v in api.requests if op == "HistoricalDataRequest"][0]
     assert "CLZ16 Comdty" not in history["securities"]  # 区间外的到期合约不取行情
     assert pl.Series(history["securities"]).str.ends_with(" Comdty").all()
+
+
+@pytest.mark.filterwarnings("ignore")
+def test_dbn_v1_undefined_quantity_read_by_official_library_is_missing():
+    """真实 DBN v1 记录经官方 ``to_df()``（不升级版本）读出 quantity = 2147483647（int32），适配器当空值。"""
+    pytest.importorskip("databento")
+    import databento as db
+    import databento_dbn as d
+
+    from ashare.data.futures_foreign import CME
+    from ashare.data.futures_foreign_databento import quantity_rows
+
+    ref = dt.datetime(2026, 11, 4, tzinfo=dt.UTC)
+    when = dt.datetime(2026, 11, 5, 10, tzinfo=dt.UTC)
+    records = [
+        d.StatMsgV1(
+            publisher_id=1,
+            instrument_id=1002,
+            ts_recv=int(when.timestamp()) * 10**9,
+            ts_event=int(when.timestamp()) * 10**9,
+            ts_ref=int(ref.timestamp()) * 10**9,
+            price=d.UNDEF_PRICE,
+            quantity=quantity,
+            sequence=0,
+            ts_in_delta=0,
+            stat_type=d.StatType.OPEN_INTEREST,
+            channel_id=0,
+            update_action=d.StatUpdateAction.NEW,
+            stat_flags=0,
+        )
+        for quantity in (2**31 - 1,)
+    ]
+    meta = d.Metadata(
+        dataset="GLBX.MDP3",
+        schema=d.Schema("statistics"),
+        start=0,
+        stype_in=d.SType.PARENT,
+        stype_out=d.SType.INSTRUMENT_ID,
+        end=None,
+        symbols=["CL.FUT"],
+        partial=[],
+        not_found=[],
+        mappings=[],
+        limit=None,
+        ts_out=False,
+        version=1,
+    )
+    store = db.DBNStore.from_bytes(meta.encode() + b"".join(bytes(r) for r in records))
+    frame = dbs.frame_of(store).drop("symbol", strict=False)
+    assert frame["quantity"].to_list() == [2**31 - 1]
+    rows = quantity_rows(frame, 9, CME, {"20261104", "20261105"}, "open_interest")
+    assert rows.rows() == [(1002, "20261104", None)]

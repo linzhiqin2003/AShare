@@ -33,6 +33,7 @@ from .futures_foreign import (
     ForeignAdapter,
     _as_date,
     calendar_from_open_days,
+    check_settlements,
     conform_minute,
     inside_listing,
     previous_settlement,
@@ -49,9 +50,13 @@ REFERENCE_FIELDS = (
     "FUT_FIRST_TRADE_DT",
     "LAST_TRADEABLE_DT",
     "FUT_DLV_DT_LAST",
-    "FUT_NOTICE_FIRST",
     "CRNCY",
 )
+# 合约表里缺了就报错的字段（不回退到品种表）；其余字段缺了留空。
+REQUIRED_REFERENCE = ("LAST_TRADEABLE_DT", "FUT_CONT_SIZE", "FUT_TICK_SIZE", "CRNCY")
+# 日线历史从 start 前 7 个自然日取：内部日历要知道 start 的上一开市日（分钟线从那天傍晚开始），
+# start 当天的 previous_settlement 也要有。
+HISTORY_LEAD_DAYS = 7
 HISTORY_FIELDS = (
     "PX_OPEN",
     "PX_HIGH",
@@ -114,19 +119,30 @@ def _text(value):
 
 
 def contracts_from_reference(rows, products):
-    """``ReferenceDataRequest`` 的行 → (统一合约表, ticker → symbol)。"""
+    """``ReferenceDataRequest`` 的行 → (统一合约表, ticker → symbol, 跳过的代码)。
+
+    代码属于所选品种、却缺 ``REQUIRED_REFERENCE`` 里的字段时报错（不回退到品种表的乘数、最小变动价位、
+    币种，也不悄悄跳过）；不属于所选品种的代码跳过并列进诊断。"""
     out, tickers, skipped = [], {}, []
     for r in rows:
-        last = r.get("LAST_TRADEABLE_DT")
-        parsed = parse_ticker(r["security"], last) if last is not None else None
-        if parsed is None or parsed[0] not in products:
+        if parse_generic(r["security"]) is not None:  # 通用代码（CL1 Comdty）不是合约
             skipped.append(r["security"])
             continue
+        selected = product_of_ticker(r["security"])
+        if selected is None or selected.code not in products:
+            skipped.append(r["security"])
+            continue
+        missing = [f for f in REQUIRED_REFERENCE if r.get(f) in (None, "")]
+        if missing:
+            raise ValueError(
+                f"{r['security']}: 合约表缺字段 {missing}；不回退到品种表，先核对字段名与终端返回"
+            )
+        last = r["LAST_TRADEABLE_DT"]
+        parsed = parse_ticker(r["security"], last)
         code, year, month = parsed
         p = PRODUCTS[code]
         symbol = unified_symbol(code, year, month)
         tickers[r["security"]] = symbol
-        size = r.get("FUT_CONT_SIZE")
         out.append(
             dict(
                 symbol=symbol,
@@ -137,11 +153,11 @@ def contracts_from_reference(rows, products):
                 last_trade_date=_text(last),
                 delivery_date=_text(r.get("FUT_DLV_DT_LAST")),
                 delivery_month=f"{year}{month:02d}",
-                multiplier=float(size) if size else p.multiplier,
+                multiplier=float(r["FUT_CONT_SIZE"]),
                 quote_unit=p.quote_unit,
-                tick_size=r.get("FUT_TICK_SIZE") or p.tick_size,
+                tick_size=float(r["FUT_TICK_SIZE"]),
                 settlement_type=p.settlement_type,
-                currency=r.get("CRNCY") or p.currency,
+                currency=str(r["CRNCY"]).strip(),
                 multiplier_source="contract_table_unverified",
             )
         )
@@ -155,8 +171,13 @@ def contracts_from_reference(rows, products):
     return table, tickers, skipped
 
 
-def daily_from_history(rows, tickers, contracts, calendar, start, end):
-    """``HistoricalDataRequest`` 的行 → 统一日线。返回 (日线, 诊断)。"""
+def daily_from_history(
+    rows, tickers, contracts, calendar, start, end, *, require_settlement=True
+):
+    """``HistoricalDataRequest`` 的行 → 统一日线。返回 (日线, 诊断)。
+
+    ``rows`` 可以比 [start, end] 多取几天（``calendar`` 是覆盖它们的内部日历）：``previous_settlement``
+    在裁到 [start, end] 之前算，所以 start 当天也有。"""
     frame = pl.DataFrame(
         [
             dict(
@@ -174,10 +195,7 @@ def daily_from_history(rows, tickers, contracts, calendar, start, end):
         ),
     )
     diag = dict(unknown_ticker_rows=frame["symbol"].null_count())
-    frame = frame.filter(
-        pl.col("symbol").is_not_null()
-        & pl.col("date").is_between(pl.lit(start), pl.lit(end))
-    )
+    frame = frame.filter(pl.col("symbol").is_not_null())
     frame = frame.select(
         "date",
         "symbol",
@@ -190,9 +208,13 @@ def daily_from_history(rows, tickers, contracts, calendar, start, end):
         amount=pl.lit(None, dtype=pl.Float64),
         open_interest="OPEN_INT",
     )
+    frame = previous_settlement(frame, contracts, calendar)
+    frame = frame.filter(pl.col("date").is_between(pl.lit(start), pl.lit(end)))
     frame, dropped = inside_listing(frame, contracts)
     diag["outside_listing_rows"] = dropped
-    frame = previous_settlement(frame, contracts, calendar)
+    diag["settlement_missing"] = check_settlements(
+        frame, contracts, require=require_settlement
+    )
     return conform("daily", frame).sort("symbol", "date"), diag
 
 
@@ -211,7 +233,15 @@ class BloombergFutures(ForeignAdapter):
     source_name = "Bloomberg"
 
     def __init__(
-        self, source, products, start, end, *, margin=None, generic_ranks=(1, 2)
+        self,
+        source,
+        products,
+        start,
+        end,
+        *,
+        margin=None,
+        generic_ranks=(1, 2),
+        require_settlement=True,
     ):
         super().__init__(margin=margin)
         unknown = [
@@ -224,6 +254,12 @@ class BloombergFutures(ForeignAdapter):
         self.source, self.products = source, list(products)
         self.start, self.end = start, end
         self.generic_ranks = tuple(generic_ranks)
+        self.require_settlement = require_settlement
+
+    def _lead(self):
+        return (_as_date(self.start) - dt.timedelta(days=HISTORY_LEAD_DAYS)).strftime(
+            "%Y%m%d"
+        )
 
     def _compute(self):
         generics = [f"{PRODUCTS[c].bloomberg_root}1 Comdty" for c in self.products]
@@ -245,36 +281,59 @@ class BloombergFutures(ForeignAdapter):
         )
         if contracts is None:
             raise ValueError("FUT_CHAIN 里没有所选品种的合约")
+        lead = self._lead()
         live = contracts.filter(
             (pl.col("listing_date").is_null() | (pl.col("listing_date") <= self.end))
-            & (pl.col("last_trade_date") >= self.start)
+            & (pl.col("last_trade_date") >= lead)
         )
         wanted = [t for t, s in symbol_of.items() if s in set(live["symbol"])]
         history = (
-            self.source.historical(wanted, list(HISTORY_FIELDS), self.start, self.end)
+            self.source.historical(wanted, list(HISTORY_FIELDS), lead, self.end)
             if wanted
             else []
         )
+        if history and all(r.get("PX_SETTLE") is None for r in history):
+            raise ValueError(
+                "历史请求的 PX_SETTLE 整列为空：结算价字段口径与预期不同，日历和 previous_settlement "
+                "都推不出来；先按 docs/FOREIGN_FUTURES.md 的首次核对清单核对"
+            )
         exchange_of = dict(zip(live["symbol"], live["exchange"], strict=True))
         open_days = {}
         for r in history:
             symbol = symbol_of.get(r["security"])
             if symbol in exchange_of and r.get("PX_SETTLE") is not None:
                 open_days.setdefault(exchange_of[symbol], set()).add(_text(r["date"]))
-        calendar = pl.concat(
+        empty = sorted(set(live["exchange"]) - set(open_days))
+        if empty:
+            raise ValueError(
+                f"{empty}: 历史请求里一个 PX_SETTLE 都没有，推不出开市日；先按首次核对清单核对"
+            )
+        full = pl.concat(
             [
                 calendar_from_open_days(
-                    e, open_days.get(e, set()), self.start, self.end
+                    e,
+                    open_days.get(e, set()),
+                    min([lead, *open_days.get(e, set())]),
+                    max([self.end, *open_days.get(e, set())]),
                 )
                 for e in sorted(set(live["exchange"]))
             ]
         )
         daily, diag = daily_from_history(
-            history, symbol_of, live, calendar, self.start, self.end
+            history,
+            symbol_of,
+            live,
+            full,
+            self.start,
+            self.end,
+            require_settlement=self.require_settlement,
         )
         diag["skipped_tickers"] = skipped
+        calendar = full.filter(
+            pl.col("date").is_between(pl.lit(self.start), pl.lit(self.end))
+        )
         contracts = live.filter(pl.col("symbol").is_in(list(set(daily["symbol"]))))
-        continuous = self._generic_history(calendar)
+        continuous = self._generic_history()
         return dict(
             contracts=contracts,
             daily=daily,
@@ -282,9 +341,10 @@ class BloombergFutures(ForeignAdapter):
             diagnostics=diag,
             source_continuous=continuous,
             _tickers=symbol_of,
+            _calendar=full,
         )
 
-    def _generic_history(self, calendar):
+    def _generic_history(self):
         """通用代码（``CL1 Comdty``、``CL2 Comdty``…）的结算价，只用于对账。Bloomberg 通用代码默认在到期时
         换到下一合约，换月口径可在终端里按代码设置（**未核实**）；历史请求不给当天对应哪个合约，只能按价格对账。"""
         securities = [
@@ -317,16 +377,20 @@ class BloombergFutures(ForeignAdapter):
         )
 
     def minute(self, start, end):
-        """分钟线（``IntradayBarRequest``，1 分钟，``TRADE``）。按合约逐个请求 [start 前一天 UTC 0 点, end 次日 UTC 0 点)，
-        再按交易时段归到交易日、只留 [start, end]。"""
+        """分钟线（``IntradayBarRequest``，1 分钟，``TRADE``）。``start``/``end`` 为 YYYYMMDD 交易日（含两端），
+        必须落在适配器的 [start, end] 里，否则不发请求直接报错。
+
+        按合约逐个请求 [start 的上一开市日 UTC 0 点, end 次日 UTC 0 点)（start 那个交易日从上一开市日傍晚开始），
+        再按交易时段归到交易日、只留 [start, end]。``time`` 当作 K 线开始时刻（**未核实**，见首次核对清单）。"""
+        if not (self.start <= start <= end <= self.end):
+            raise ValueError(
+                f"minute 的区间 [{start}, {end}] 要落在适配器的区间 [{self.start}, {self.end}] 里"
+            )
         tables = self._all()
         contracts, symbol_of, calendar = (
             tables["contracts"],
             tables["_tickers"],
-            tables["calendar"],
-        )
-        first = dt.datetime.combine(
-            _as_date(start) - dt.timedelta(days=1), dt.time(), dt.UTC
+            tables["_calendar"],
         )
         last = dt.datetime.combine(
             _as_date(end) + dt.timedelta(days=1), dt.time(), dt.UTC
@@ -335,15 +399,19 @@ class BloombergFutures(ForeignAdapter):
         for ticker, symbol in symbol_of.items():
             if symbol not in set(contracts["symbol"]):
                 continue
-            rows = self.source.intraday_bars(ticker, first, last, interval=1)
-            if not rows:
-                continue
             p = PRODUCTS[contracts.filter(pl.col("symbol") == symbol)["product"][0]]
             open_days = set(
                 calendar.filter(pl.col("is_open") & (pl.col("exchange") == p.exchange))[
                     "date"
                 ]
             )
+            before = [d for d in open_days if d < start]
+            if not before:
+                raise ValueError(f"{p.exchange}: {start} 之前没有已知的开市日")
+            first = dt.datetime.combine(_as_date(max(before)), dt.time(), dt.UTC)
+            rows = self.source.intraday_bars(ticker, first, last, interval=1)
+            if not rows:
+                continue
             times = [
                 t if t.tzinfo else t.replace(tzinfo=dt.UTC)
                 for t in (r["time"] for r in rows)

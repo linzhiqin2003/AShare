@@ -37,6 +37,7 @@ from .futures_foreign import (
     PRODUCTS,
     ForeignAdapter,
     calendar_from_open_days,
+    check_settlements,
     conform_minute,
     inside_listing,
     previous_settlement,
@@ -58,6 +59,14 @@ VOLUMES = ("cleared", "electronic")
 SETTLEMENTS = ("final", "any")
 STAT_SETTLEMENT, STAT_CLEARED_VOLUME, STAT_OPEN_INTEREST = 3, 6, 9
 INT64_MAX = 2**63 - 1
+# DBN v1 的统计数量是 int32，未定义值是 i32::MAX；v2 起是 int64，未定义值是 i64::MAX。≥ i32::MAX 的数量一律
+# 当未定义（任何期货的持仓量、成交量都到不了 21 亿手）。
+INT32_MAX = 2**31 - 1
+# 小时线从 start 前 5 个自然日取：start 的交易时段从上一开市日傍晚开始，周末加一两个休市日也够。
+BAR_LEAD_DAYS = 5
+# 统计从 start 前 7 天取到 end 后 7 天：开市日（由结算价推出）要覆盖整个 K 线窗口，start 当天的
+# previous_settlement 也要有；持仓量、结算量在下一个 UTC 日或周日发布。
+STAT_LEAD_DAYS, STAT_LAG_DAYS = 7, 7
 
 
 def parse_raw_symbol(raw, ref):
@@ -102,6 +111,16 @@ def contracts_from_definitions(defs, products):
         display_factor=[],
     )
     defs = defs.filter(pl.col("instrument_class") == "F").sort("ts_recv")
+    several = (
+        defs.group_by("instrument_id")
+        .agg(pl.col("raw_symbol").str.strip_chars().unique().sort())
+        .filter(pl.col("raw_symbol").list.len() > 1)
+    )
+    if len(several):
+        raise ValueError(
+            "同一个 instrument_id 在请求窗口里对应几个合约代码（来源复用了 id，按 id 合并会把两个合约"
+            f"混成一个）：{several.rows()[:5]}；缩短区间分段取"
+        )
     latest = defs.group_by("instrument_id", maintain_order=True).last()
     latest = latest.filter(pl.col("security_update_action") != "D")
     rows, ids = [], []
@@ -130,10 +149,15 @@ def contracts_from_definitions(defs, products):
             year, month = my, mm
         session = product.session
         listing, last = trade_dates([activation, expiration], session)
-        qty = r.get("unit_of_measure_qty")
-        multiplier = (
-            qty if qty is not None and qty == qty and qty > 0 else product.multiplier
-        )
+        multiplier = _positive(r.get("unit_of_measure_qty"))
+        tick = _positive(r.get("min_price_increment"))
+        currency = (r.get("currency") or "").strip()
+        if multiplier is None or tick is None or not currency:
+            raise ValueError(
+                f"{r['raw_symbol']}: 定义里缺 unit_of_measure_qty / min_price_increment / currency"
+                f"（{r.get('unit_of_measure_qty')!r} / {r.get('min_price_increment')!r} / "
+                f"{r.get('currency')!r}）；不回退到品种表，先核对来源"
+            )
         if multiplier != product.multiplier:
             diag["multiplier_mismatch"].append(
                 dict(
@@ -158,10 +182,9 @@ def contracts_from_definitions(defs, products):
                 delivery_month=f"{year}{month:02d}",
                 multiplier=float(multiplier),
                 quote_unit=product.quote_unit,
-                tick_size=r.get("min_price_increment") or product.tick_size,
+                tick_size=tick,
                 settlement_type=product.settlement_type,
-                currency=(r.get("currency") or product.currency).strip()
-                or product.currency,
+                currency=currency,
                 multiplier_source="contract_table_unverified",
             )
         )
@@ -176,6 +199,13 @@ def contracts_from_definitions(defs, products):
             conform("contracts", contracts).unique("symbol", keep="last").sort("symbol")
         )
     return contracts, id_map, diag
+
+
+def _positive(value):
+    """有限正数原样返回，空、NaN、非正数返回 None。"""
+    if value is None or value != value or value <= 0:
+        return None
+    return float(value)
 
 
 def _latest_stat(stats, stat_type, value):
@@ -225,7 +255,7 @@ def quantity_rows(stats, stat_type, session, open_days, name):
     keys = [r if r is not None else f for r, f in zip(refs, fallback, strict=True)]
     picked = picked.with_columns(
         key=pl.Series(keys, dtype=pl.String),
-        quantity=pl.when(pl.col("quantity") >= INT64_MAX)
+        quantity=pl.when(pl.col("quantity") >= INT32_MAX)
         .then(None)
         .otherwise(pl.col("quantity"))
         .cast(pl.Float64),
@@ -233,14 +263,25 @@ def quantity_rows(stats, stat_type, session, open_days, name):
     return _latest_stat(picked, stat_type, "quantity").rename({"value": name})
 
 
-def aggregate_bars(bars, session, open_days):
-    """K 线（小时或分钟）→ 按交易日的开高低收与电子盘成交量。``bars`` 需有 symbol 列。"""
+def dated_bars(bars, session, open_days):
+    """K 线加交易日列 ``date``；落在开市日集合覆盖范围之外的为空（见 ``trade_dates``）。"""
     bars = bars.sort("ts_event")
-    bars = bars.with_columns(
+    return bars.with_columns(
         date=pl.Series(
             trade_dates(bars["ts_event"], session, open_days), dtype=pl.String
         )
     )
+
+
+def aggregate_bars(bars, session, open_days):
+    """K 线（小时或分钟）→ 按交易日的开高低收与电子盘成交量。``bars`` 需有 symbol 列。
+
+    交易日归不进开市日集合覆盖范围的 K 线（取数窗口两端多取的那几天）丢掉，不并进任何一天。"""
+    return _aggregate(dated_bars(bars, session, open_days))
+
+
+def _aggregate(bars):
+    bars = bars.filter(pl.col("date").is_not_null())
     return bars.group_by("symbol", "date", maintain_order=True).agg(
         open=pl.col("open").first(),
         high=pl.col("high").max(),
@@ -261,8 +302,12 @@ def daily_from_raw(
     *,
     volume="cleared",
     settlement="final",
+    require_settlement=True,
 ):
-    """小时线 + 统计 → 统一日线（只留 [start, end] 且在上市期内的行）。返回 (日线, 诊断)。"""
+    """小时线 + 统计 → 统一日线（只留 [start, end] 且在上市期内的行）。返回 (日线, 诊断)。
+
+    ``calendar`` 是覆盖整个取数窗口的**内部**日历（不止 [start, end]）：K 线、持仓量按它归属交易日，
+    归不进去的丢掉并计数；``previous_settlement`` 在裁到 [start, end] 之前算，所以 start 当天也有。"""
     if volume not in VOLUMES:
         raise ValueError(f"volume 只能是 {VOLUMES}")
     diag = {}
@@ -276,7 +321,7 @@ def daily_from_raw(
         )
         diag[f"unknown_instrument_{name}_rows"] = joined["symbol"].null_count()
         keyed[name] = joined.filter(pl.col("symbol").is_not_null())
-    pieces = []
+    pieces, undated = [], 0
     for code in sorted(set(contracts["product"])):
         product = PRODUCTS[code]
         open_days = set(
@@ -290,8 +335,13 @@ def daily_from_raw(
         own_stats = (
             keyed["stat"].filter(pl.col("product") == code).drop("symbol", "product")
         )
-        own_bars = keyed["bar"].filter(pl.col("product") == code).drop("product")
-        merged = aggregate_bars(own_bars, product.session, open_days)
+        own_bars = dated_bars(
+            keyed["bar"].filter(pl.col("product") == code).drop("product"),
+            product.session,
+            open_days,
+        )
+        undated += own_bars["date"].null_count()
+        merged = _aggregate(own_bars)
         for part in (
             settlement_rows(own_stats, settlement=settlement),
             quantity_rows(
@@ -319,6 +369,7 @@ def daily_from_raw(
                 coalesce=True,
             )
         pieces.append(merged)
+    diag["bars_outside_calendar"] = undated
     long = pl.concat(pieces, how="diagonal_relaxed") if pieces else pl.DataFrame()
     for column in (
         "open",
@@ -332,6 +383,8 @@ def daily_from_raw(
     ):
         if column not in long.columns:
             long = long.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
+    long = long.with_columns(pl.col("date").cast(pl.String))
+    long = previous_settlement(long, contracts, calendar)
     long = long.filter(pl.col("date").is_between(pl.lit(start), pl.lit(end)))
     long, dropped = inside_listing(long, contracts)
     diag["outside_listing_rows"] = dropped
@@ -341,7 +394,9 @@ def daily_from_raw(
         else pl.col("bar_volume"),
         amount=pl.lit(None, dtype=pl.Float64),
     )
-    long = previous_settlement(long, contracts, calendar)
+    diag["settlement_missing"] = check_settlements(
+        long, contracts, require=require_settlement
+    )
     diag["nonpositive_price_rows"] = long.filter(
         pl.any_horizontal(
             [pl.col(c) <= 0 for c in ("open", "high", "low", "close", "settlement")]
@@ -409,6 +464,7 @@ class DatabentoFutures(ForeignAdapter):
         settlement="final",
         bar_schema="ohlcv-1h",
         reference_continuous=False,
+        require_settlement=True,
     ):
         super().__init__(margin=margin)
         unknown = [
@@ -432,6 +488,7 @@ class DatabentoFutures(ForeignAdapter):
         self.start, self.end = start, end
         self.volume, self.settlement, self.bar_schema = volume, settlement, bar_schema
         self.reference_continuous = reference_continuous
+        self.require_settlement = require_settlement
 
     # ------------------------------------------------------------ 请求计划与估价
     def _groups(self):
@@ -444,8 +501,12 @@ class DatabentoFutures(ForeignAdapter):
     def plan(self):
         """要发出的请求（dataset, schema, symbols, start, end, stype_in），end 不含。
 
-        日线小时线从 start 前 3 天取（覆盖周日晚和前一晚开盘的时段），统计取到 end 后 5 天（持仓量、结算量
-        在下一个 UTC 日或周日发布）。"""
+        - ``definition``：[start−7, end+1)，官方说明从 UTC 0 点起满 24 小时的请求含期间所有在场合约的定义；
+          与统计同一起点，统计、K 线里 start 之前几天的记录（含 start 前到期的合约）都对得上合约；
+        - ``statistics``：[start−7, end+7)，由结算价推出的开市日要覆盖整个 K 线窗口（start 之前几天的 K 线
+          才能归到它们自己的交易日，而不是被顺延进 start），start 当天的 ``previous_settlement`` 也要有；
+          持仓量、结算量在下一个 UTC 日或周日发布；
+        - 小时线：[start−5, end+1)，覆盖 start 那个交易日从上一开市日傍晚开始的时段（周末加休市日）。"""
         first, last = _day(self.start), _day(self.end)
         out = []
         for dataset, symbols in self._groups().items():
@@ -453,8 +514,8 @@ class DatabentoFutures(ForeignAdapter):
                 (
                     dataset,
                     "definition",
-                    symbols,
-                    _iso(first),
+                    tuple(symbols),
+                    _iso(first - dt.timedelta(days=STAT_LEAD_DAYS)),
                     _iso(last + dt.timedelta(days=1)),
                     "parent",
                 )
@@ -463,9 +524,9 @@ class DatabentoFutures(ForeignAdapter):
                 (
                     dataset,
                     "statistics",
-                    symbols,
-                    _iso(first),
-                    _iso(last + dt.timedelta(days=6)),
+                    tuple(symbols),
+                    _iso(first - dt.timedelta(days=STAT_LEAD_DAYS)),
+                    _iso(last + dt.timedelta(days=STAT_LAG_DAYS)),
                     "parent",
                 )
             )
@@ -473,8 +534,8 @@ class DatabentoFutures(ForeignAdapter):
                 (
                     dataset,
                     self.bar_schema,
-                    symbols,
-                    _iso(first - dt.timedelta(days=3)),
+                    tuple(symbols),
+                    _iso(first - dt.timedelta(days=BAR_LEAD_DAYS)),
                     _iso(last + dt.timedelta(days=1)),
                     "parent",
                 )
@@ -485,7 +546,7 @@ class DatabentoFutures(ForeignAdapter):
         """逐个请求调 ``metadata.get_cost``（不计费），返回 [(请求, 美元)] 与合计。"""
         rows = [
             (
-                f"{d} {s} {sym} {a}~{b}",
+                f"{d} {s} {list(sym)} {a}~{b}",
                 self.source.estimate(d, s, sym, a, b, stype_in=st),
             )
             for d, s, sym, a, b, st in self.plan()
@@ -494,9 +555,11 @@ class DatabentoFutures(ForeignAdapter):
 
     # ------------------------------------------------------------ 取数与换算
     def _compute(self):
+        plan = self.plan()
+        # 整份计划一次过闸门：先估全部请求的总价，够了才取第一个；取到的在 source 里缓存，重试不重取。
+        frames = self.source.fetch_plan(plan)
         raw = {}
-        for dataset, schema, symbols, a, b, stype in self.plan():
-            frame = self.source.fetch(dataset, schema, symbols, a, b, stype_in=stype)
+        for (_d, schema, *_rest), frame in zip(plan, frames, strict=True):
             key = "bars" if schema.startswith("ohlcv") else schema
             raw.setdefault(key, []).append(frame)
         # ``to_df()`` 自带的 symbol 列是客户端按请求符号映射的结果（母代码请求下不可靠），一律按 instrument_id 自己对。
@@ -507,19 +570,25 @@ class DatabentoFutures(ForeignAdapter):
         contracts, id_map, diag = contracts_from_definitions(defs, self.products)
         if contracts is None:
             raise ValueError("definition 里没有所选品种的单月期货合约")
-        calendar = self._calendar(stats, id_map, contracts)
+        full = self._calendar(stats, id_map, contracts)
+        self._check_window(full)
         daily, daily_diag = daily_from_raw(
             contracts,
             id_map,
             bars,
             stats,
-            calendar,
+            full,
             self.start,
             self.end,
             volume=self.volume,
             settlement=self.settlement,
+            require_settlement=self.require_settlement,
         )
         diag.update(daily_diag)
+        calendar = full.filter(
+            pl.col("date").is_between(pl.lit(self.start), pl.lit(self.end))
+        )
+        diag["calendar_unknown_days"] = self._unknown_days(full)
         listed = set(daily["symbol"])
         contracts = contracts.filter(pl.col("symbol").is_in(list(listed)))
         diag["cost_log"] = list(getattr(self.source, "log", []))
@@ -529,13 +598,16 @@ class DatabentoFutures(ForeignAdapter):
             calendar=calendar,
             diagnostics=diag,
             _id_map=id_map,
+            _calendar=full,
         )
         if self.reference_continuous:
             out.update(self._source_continuous(calendar, id_map, contracts))
         return out
 
     def _calendar(self, stats, id_map, contracts):
-        """开市日 = 该交易所有 final 结算价的交易日（来源没有日历接口；整交易所一天都没有结算价即视为休市）。"""
+        """内部日历：开市日 = 该交易所有 final 结算价的交易日（来源没有日历接口；整交易所一天都没有结算价
+        即视为休市）。范围是统计请求覆盖到的开市日（start 前约一周到 end 后几天）与 [start, end] 的并集；
+        输出给用户的日历再裁到 [start, end]。"""
         settle = settlement_rows(
             stats.with_columns(pl.col("instrument_id").cast(pl.Int64)),
             settlement="final",
@@ -548,8 +620,69 @@ class DatabentoFutures(ForeignAdapter):
         frames = []
         for exchange in sorted(set(contracts["exchange"])):
             days = settle.filter(pl.col("exchange") == exchange)["date"].to_list()
-            frames.append(calendar_from_open_days(exchange, days, self.start, self.end))
+            if not days:
+                raise ValueError(
+                    f"{exchange}: 取数窗口里一个最终结算价（stat_type 3、final 位）都没有，推不出开市日；"
+                    "该数据集的 stat_flags / ts_ref 口径可能与 GLBX 不同，先按 docs/FOREIGN_FUTURES.md "
+                    "的首次核对清单核对"
+                )
+            lo = min([self.start, *days])
+            hi = max([self.end, *days])
+            frames.append(calendar_from_open_days(exchange, days, lo, hi))
         return pl.concat(frames)
+
+    def _unknown_days(self, full):
+        """[start, end] 里落在已知开市日范围之外的自然日（比如 end 当天的结算价还没公布）：日历里记为休市，
+        但其实不知道。按交易所列出。"""
+        out = {}
+        for exchange in sorted(set(full["exchange"])):
+            opened = full.filter(pl.col("is_open") & (pl.col("exchange") == exchange))[
+                "date"
+            ]
+            if opened.is_empty():
+                out[exchange] = [self.start, self.end]
+                continue
+            lo, hi = opened.min(), opened.max()
+            days = full.filter(
+                (pl.col("exchange") == exchange)
+                & pl.col("date").is_between(pl.lit(self.start), pl.lit(self.end))
+                & ((pl.col("date") < lo) | (pl.col("date") > hi))
+            )["date"].to_list()
+            if days:
+                out[exchange] = days
+        return out
+
+    def _check_window(self, full):
+        """K 线窗口要从 start 的上一开市日起：更早的休市（连着周末超过 ``BAR_LEAD_DAYS`` 天）会让 start 那个
+        交易日开头几个小时取不到，开盘价、最低价悄悄变了，所以报错而不是放过。"""
+        lead = _day(self.start) - dt.timedelta(days=BAR_LEAD_DAYS)
+        for exchange in sorted(set(full["exchange"])):
+            before = full.filter(
+                pl.col("is_open")
+                & (pl.col("exchange") == exchange)
+                & (pl.col("date") < self.start)
+            )["date"]
+            if before.is_empty():
+                raise ValueError(
+                    f"{exchange}: start {self.start} 之前 {STAT_LEAD_DAYS} 天里没有开市日，"
+                    "无法确定 start 那个交易日从哪天开始；把 start 往后挪几天"
+                )
+            if _day(before.max()) < lead:
+                raise ValueError(
+                    f"{exchange}: start {self.start} 的上一开市日是 {before.max()}，早于 K 线窗口起点 "
+                    f"{lead}；把 start 往后挪几天"
+                )
+
+    def _previous_open(self, exchange, day):
+        full = self._all()["_calendar"]
+        before = full.filter(
+            pl.col("is_open")
+            & (pl.col("exchange") == exchange)
+            & (pl.col("date") < day)
+        )["date"]
+        if before.is_empty():
+            raise ValueError(f"{exchange}: {day} 之前没有已知的开市日")
+        return before.max()
 
     def _source_continuous(self, calendar, id_map, contracts):
         """来源自带的连续合约（``c``/``n``/``v`` 三种规则的 rank 0，经 ``symbology.resolve``）→ 逐交易日
@@ -615,25 +748,43 @@ class DatabentoFutures(ForeignAdapter):
         )
 
     def minute(self, start, end):
-        """分钟线（``ohlcv-1m``，另走一次费用闸门）。``start``/``end`` 为 YYYYMMDD 交易日（含两端）。"""
+        """分钟线（``ohlcv-1m``，另走一次费用闸门）。``start``/``end`` 为 YYYYMMDD 交易日（含两端），必须落在
+        适配器的 [start, end] 里（日历只覆盖那一段附近，区间外的分钟线归不了交易日）；不在就报错、不估价也不取数。
+
+        取数窗口从 start 的上一开市日 UTC 0 点到 end 次日 UTC 0 点：start 那个交易日从上一开市日傍晚开始。"""
+        if not (self.start <= start <= end <= self.end):
+            raise ValueError(
+                f"minute 的区间 [{start}, {end}] 要落在适配器的区间 [{self.start}, {self.end}] 里"
+            )
         tables = self._all()
         contracts, id_map, calendar = (
             tables["contracts"],
             tables["_id_map"],
-            tables["calendar"],
+            tables["_calendar"],
         )
-        frames = []
-        for dataset, symbols in self._groups().items():
-            frames.append(
-                self.source.fetch(
+        groups = self._groups()
+        exchanges = {
+            d: {
+                PRODUCTS[c].exchange
+                for c in self.products
+                if PRODUCTS[c].databento_dataset == d
+            }
+            for d in groups
+        }
+        plan = []
+        for dataset, symbols in groups.items():
+            first = min(self._previous_open(e, start) for e in exchanges[dataset])
+            plan.append(
+                (
                     dataset,
                     "ohlcv-1m",
-                    symbols,
-                    _iso(_day(start) - dt.timedelta(days=3)),
+                    tuple(symbols),
+                    _iso(_day(first)),
                     _iso(_day(end) + dt.timedelta(days=1)),
-                    stype_in="parent",
+                    "parent",
                 )
             )
+        frames = self.source.fetch_plan(plan)
         bars = _drop_mapped(pl.concat(frames, how="diagonal_relaxed")).with_columns(
             pl.col("instrument_id").cast(pl.Int64)
         )
@@ -642,19 +793,18 @@ class DatabentoFutures(ForeignAdapter):
         for code in sorted(set(contracts["product"])):
             product = PRODUCTS[code]
             members = contracts.filter(pl.col("product") == code)["symbol"].to_list()
-            own = bars.filter(pl.col("symbol").is_in(members)).sort("ts_event")
             open_days = set(
                 calendar.filter(
                     pl.col("is_open") & (pl.col("exchange") == product.exchange)
                 )["date"]
             )
-            own = own.with_columns(
-                date=pl.Series(
-                    trade_dates(own["ts_event"], product.session, open_days),
-                    dtype=pl.String,
+            out.append(
+                dated_bars(
+                    bars.filter(pl.col("symbol").is_in(members)),
+                    product.session,
+                    open_days,
                 )
             )
-            out.append(own)
         bars = pl.concat(out).filter(
             pl.col("date").is_between(pl.lit(start), pl.lit(end))
         )
@@ -678,6 +828,7 @@ __all__ = [
     "aggregate_bars",
     "contracts_from_definitions",
     "daily_from_raw",
+    "dated_bars",
     "parse_continuous",
     "parse_raw_symbol",
     "quantity_rows",

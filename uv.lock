@@ -233,9 +233,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-bloomberg = [
-    { name = "blpapi" },
-]
 databento = [
     { name = "databento" },
 ]
@@ -280,7 +277,6 @@ risk-reference = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blpapi", marker = "extra == 'bloomberg'", specifier = ">=3.24", index = "https://blpapi.bloomberg.com/repository/releases/python/simple/" },
     { name = "clarabel", specifier = ">=0.11" },
     { name = "cvxpy", specifier = ">=1.6" },
     { name = "databento", marker = "extra == 'databento'", specifier = ">=0.90" },
@@ -294,7 +290,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=21" },
     { name = "scipy", specifier = ">=1.14" },
 ]
-provides-extras = ["databento", "bloomberg"]
+provides-extras = ["databento"]
 
 [package.metadata.requires-dev]
 compare = [
@@ -366,18 +362,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/61/8ad575eb83d4b22852a922e669bc13c9723675343e885b0040ab11a6a321/baostock-0.9.4.tar.gz", hash = "sha256:54dd26ec53100da02dcd47a21fc487ed5b2e12a4124af7961143d8ca0bc682e9", size = 28131, upload-time = "2026-09-21T09:52:05.831Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/df/6984deaa036cc3467f85411d01a48018eb86ed7477e74f33aa5b012ace05/baostock-0.9.4-py3-none-any.whl", hash = "sha256:0bf71c6069ab5890ff3596632f9c3f8f1fbc6bfcac582c2f9d6a5c11ab2cfaf8", size = 52424, upload-time = "2026-09-21T09:52:04.263Z" },
-]
-
-[[package]]
-name = "blpapi"
-version = "3.26.10.1"
-source = { registry = "https://blpapi.bloomberg.com/repository/releases/python/simple/" }
-sdist = { url = "https://blpapi.bloomberg.com/repository/releases/python/blpapi-3.26.10.1.tar.gz", hash = "sha256:cb1a94ecb3de28a4775d223aa77a25aebc37406b6db9d1d4e21a7937c3a65994" }
-wheels = [
-    { url = "https://blpapi.bloomberg.com/repository/releases/python/blpapi-3.26.10.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:328e450734f12a8a21434781bfdea5badfcca4e918e6bda111618cc28a217aa2" },
-    { url = "https://blpapi.bloomberg.com/repository/releases/python/blpapi-3.26.10.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:c748cf8c3451b8205f570425f73ab335f6e438d68eeb4f939cbf49ddd5b12392" },
-    { url = "https://blpapi.bloomberg.com/repository/releases/python/blpapi-3.26.10.1-py3-none-win32.whl", hash = "sha256:49020db37f8baad1a2cc8dfce7b108a0001a67a411666117e03bf724c61c7917" },
-    { url = "https://blpapi.bloomberg.com/repository/releases/python/blpapi-3.26.10.1-py3-none-win_amd64.whl", hash = "sha256:0effd6ef06cfb76b2bf805983aa62b78a605b6d4abf0d9f9263c5c4e9a7481c7" },
 ]
 
 [[package]]

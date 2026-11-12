@@ -10,7 +10,11 @@
 
 桌面 API 走本机终端（默认 127.0.0.1:8194），不需要密钥。这一层把请求和响应原样转成 Python 字典
 （``Message.toPy()``），不做口径换算；换算在 ``ashare.data.futures_foreign`` 里做。不导入其他 ashare 模块。
-没装可选依赖时报错并提示 ``pip install "ashare[bloomberg]"``（``blpapi`` 在 Bloomberg 自己的包索引上）。
+``blpapi`` 只在 Bloomberg 自己的包索引上，不作为本仓库的可选依赖（锁文件不依赖那台主机）；没装时报错并给出
+手动安装命令 ``uv pip install --index-url https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi``。
+
+字段错了不会悄悄变成空值：响应里的 ``fieldExceptions``（字段名无效、对该代码不适用）与 ``securityError``、
+``responseError`` 一样直接报 ``BloombergError``，并列出出错的字段。
 
 用到的官方接口（blpapi Python 3.24.11 文档）：``SessionOptions.setServerHost/setServerPort``、``Session.start/
 openService/getService/sendRequest/nextEvent/stop``、``Service.createRequest``、``Request.set/append/getElement``、
@@ -20,15 +24,16 @@ openService/getService/sendRequest/nextEvent/stop``、``Service.createRequest``�
 
 import datetime as dt
 
-EXTRA_HINT = (
-    '没有安装 blpapi；请安装可选依赖：pip install "ashare[bloomberg]"'
-    "（blpapi 在 Bloomberg 的包索引上：--index-url https://blpapi.bloomberg.com/repository/releases/python/simple/）"
+INSTALL = (
+    "uv pip install --index-url "
+    "https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi"
 )
+EXTRA_HINT = f"没有安装 blpapi（只在 Bloomberg 自己的包索引上，需手动安装）：{INSTALL}"
 REFDATA = "//blp/refdata"
 
 
 class BloombergError(RuntimeError):
-    """请求级或证券级的错误（``responseError``、``securityError``）。"""
+    """请求级、证券级或字段级的错误（``responseError``、``securityError``、``fieldExceptions``）。"""
 
 
 def require():
@@ -117,8 +122,7 @@ class BloombergSource:
         rows = []
         for body in self._send(request):
             data = body["securityData"]
-            if data.get("securityError"):
-                raise BloombergError(f"{data['security']}: {data['securityError']}")
+            _check_security(data)
             for item in data.get("fieldData", []):
                 rows.append(dict(security=data["security"], **item))
         return rows
@@ -136,8 +140,7 @@ class BloombergSource:
         rows = []
         for body in self._send(request):
             for data in body["securityData"]:
-                if data.get("securityError"):
-                    raise BloombergError(f"{data['security']}: {data['securityError']}")
+                _check_security(data)
                 rows.append(
                     dict(security=data["security"], **data.get("fieldData", {}))
                 )
@@ -163,10 +166,27 @@ class BloombergSource:
         return rows
 
 
+def _check_security(data):
+    """证券级错误和字段级错误都报错。``fieldExceptions`` 形如
+    ``[{"fieldId": "PX_SETTLE", "errorInfo": {"category": "BAD_FLD", "message": "Field not valid", ...}}]``。"""
+    if data.get("securityError"):
+        raise BloombergError(f"{data['security']}: {data['securityError']}")
+    exceptions = data.get("fieldExceptions") or []
+    if exceptions:
+        detail = "；".join(
+            f"{e.get('fieldId')}（{(e.get('errorInfo') or {}).get('message', '')}）"
+            for e in exceptions
+        )
+        fields = sorted({str(e.get("fieldId")) for e in exceptions})
+        raise BloombergError(
+            f"{data['security']}: 字段出错 {fields}：{detail}；字段名或适用范围不对，不当成空值放过"
+        )
+
+
 def _naive_utc(value):
     if value.tzinfo is not None:
         value = value.astimezone(dt.UTC).replace(tzinfo=None)
     return value
 
 
-__all__ = ["BloombergError", "BloombergSource", "REFDATA", "require"]
+__all__ = ["BloombergError", "BloombergSource", "INSTALL", "REFDATA", "require"]

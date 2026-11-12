@@ -1,9 +1,15 @@
 """境外期货适配器的合成夹具（不是真实行情）。
 
-一条合成的月度合约链：NYMEX WTI（CLX6、CLZ6、CLF7、CLG7）和 ICE 布伦特（Z26、F27、G27），
-2026-10-01 至 2026-12-31。形状照官方文档（Databento 的 DBN 记录经 ``DBNStore.to_df()`` 后的列名和
-类型、Bloomberg ``Message.toPy()`` 的嵌套字典），数值是确定性公式，**期望的统一字段由这里按
-「交易时段 = 前一开市日的切换点到当天的切换点」直接循环算出**，与适配器按 UTC 时刻归属交易日的写法不共用代码。
+一条合成的月度合约链：NYMEX WTI（CLV6 至 CLG7）和 ICE 布伦特（X26 至 H27）。合成数据覆盖
+2026-09-01 至 2027-01-15（``DATA_FIRST``～``DATA_LAST``），比测试常用的区间 ``START``～``END``
+（2026-10-01 至 12-31）两头都宽：start 之前和 end 之后都有 K 线与统计，适配器多取的那几天不能混进区间
+（复核 P0-1）。测试可以取数据范围里的**任意** start/end，期望值由 ``expected_frame(data, volume, start, end)``
+给出（start 当天的 ``previous_settlement`` 是数据里上一开市日的结算价）。
+
+形状照官方文档（Databento 的 DBN 记录经 ``DBNStore.to_df()`` 后的列名和类型、Bloomberg ``Message.toPy()``
+的嵌套字典），数值是确定性公式，**期望的统一字段由这里按「交易时段 = 前一开市日的切换点到当天的切换点」
+直接循环算出**，与适配器按 UTC 时刻归属交易日的写法不共用代码。定义（definition）照官方说明每天 UTC 0 点
+重发一次（只发当时还没到期的合约）。
 
 假客户端只实现适配器用到的方法，方法名和参数名严格照官方签名（databento 0.90.0、blpapi 3.24.11 文档），
 传了文档里没有的参数会因签名不符直接报 TypeError；请求里的取值（数据集、schema、stype、请求元素名）
@@ -21,6 +27,7 @@ UTC = dt.UTC
 CHICAGO = ZoneInfo("America/Chicago")
 LONDON = ZoneInfo("Europe/London")
 START, END = "20261001", "20261231"
+DATA_FIRST, DATA_LAST = "20260901", "20270115"
 INT64_MAX = 2**63 - 1
 
 
@@ -37,21 +44,26 @@ def _weekdays(first, last, closed):
     return out
 
 
-# 开市日：CME 感恩节、圣诞休市；ICE 只有圣诞休市。另外往前多一天作「前一开市日」。
-CME_DAYS = _weekdays("20260930", END, {"20261126", "20261225"})
-ICE_DAYS = _weekdays("20260930", END, {"20261225"})
+# 开市日：CME 劳动节、感恩节、圣诞、元旦休市；ICE 圣诞、元旦休市。第一个开市日只作「前一开市日」，没有行情。
+CME_DAYS = _weekdays(
+    "20260831", DATA_LAST, {"20260907", "20261126", "20261225", "20270101"}
+)
+ICE_DAYS = _weekdays("20260831", DATA_LAST, {"20261225", "20270101"})
 
 # (统一代码, 原始代码, instrument_id, 最后交易日, 交割年月, Bloomberg 代码)
 CL = [
+    ("CL2610.NYMEX", "CLV6", 1000, "20260922", (2026, 10), "CLV6 Comdty"),
     ("CL2611.NYMEX", "CLX6", 1001, "20261020", (2026, 11), "CLX6 Comdty"),
     ("CL2612.NYMEX", "CLZ6", 1002, "20261119", (2026, 12), "CLZ6 Comdty"),
     ("CL2701.NYMEX", "CLF7", 1003, "20261217", (2027, 1), "CLF7 Comdty"),
     ("CL2702.NYMEX", "CLG7", 1004, "20270120", (2027, 2), "CLG7 Comdty"),
 ]
 BRENT = [
+    ("B2611.ICE", "BRN FMX0026!", 2000, "20260930", (2026, 11), "COX6 Comdty"),
     ("B2612.ICE", "BRN FMZ0026!", 2001, "20261030", (2026, 12), "COZ6 Comdty"),
     ("B2701.ICE", "BRN FMF0027!", 2002, "20261130", (2027, 1), "COF7 Comdty"),
     ("B2702.ICE", "BRN FMG0027!", 2003, "20261231", (2027, 2), "COG7 Comdty"),
+    ("B2703.ICE", "BRN FMH0027!", 2004, "20270129", (2027, 3), "COH7 Comdty"),
 ]
 SPREAD = ("CLZ6-CLF7", 5001)
 UNKNOWN_ID = 9999
@@ -59,36 +71,50 @@ ACTIVATION = dt.datetime(2024, 1, 2, 23, 0, tzinfo=UTC)
 # 一个合约日的持仓量记录没有 ts_ref（适配器要按发布时刻的上一开市日归属），另一个合约日的持仓量被删除。
 OI_WITHOUT_REF = ("CL2612.NYMEX", "20261104")
 OI_DELETED = ("CL2701.NYMEX", "20261105")
+# 分钟线覆盖的 CLZ6 交易日（含周一，它的时段从周日傍晚开始）。
+MINUTE_DAYS = ("20261102", "20261103", "20261104", "20261105")
 MINUTE_DAY = ("CL2612.NYMEX", "20261104")
+
+
+def utc(year, month, day, hour=0, minute=0):
+    return dt.datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 def _local(day, hour, zone):
     return dt.datetime.combine(_d(day), dt.time(hour), zone).astimezone(UTC)
 
 
+def _cme_closed(t):
+    """周五 16:00 收盘到周日 17:00 开盘之间（芝加哥时间）没有成交。"""
+    local = t.astimezone(CHICAGO)
+    return (
+        local.weekday() == 5
+        or (local.weekday() == 4 and local.hour >= 16)
+        or (local.weekday() == 6 and local.hour < 17)
+    )
+
+
 def _hours(prev, day, kind):
-    """交易日 day 的各根小时线开始时刻（UTC）。CME：prev 17:00 至 day 15:00（芝加哥）；ICE：day 01:00–22:00
-    （伦敦），周一另有周日 23:00 的一根。"""
+    """交易日 day 的各根小时线开始时刻（UTC）。CME：prev 17:00 至 day 15:00（芝加哥），中间跳过周末；
+    休市日（如感恩节）那段时间照样有成交，归下一开市日。ICE：prev 23:00 至 day 22:00（伦敦），跳过周末。"""
     if kind == "cme":
-        start = _local(prev, 17, CHICAGO)
-        end = _local(day, 16, CHICAGO)
+        start, end = _local(prev, 17, CHICAGO), _local(day, 16, CHICAGO)
         out, t = [], start
         while t < end:
-            local = t.astimezone(CHICAGO)
-            weekend = (
-                local.weekday() == 5
-                or (local.weekday() == 4 and local.hour >= 16)
-                or (local.weekday() == 6 and local.hour < 17)
-            )
-            if not weekend:  # 周五 16:00 收盘到周日 17:00 开盘之间没有成交
+            if not _cme_closed(t):
                 out.append(t)
             t += dt.timedelta(hours=1)
         return out
-    out = [_local(day, h, LONDON) for h in range(1, 23)]
-    if _d(day).weekday() == 0:
-        out.insert(
-            0, _local((_d(day) - dt.timedelta(days=1)).strftime("%Y%m%d"), 23, LONDON)
-        )
+    start, end = _local(prev, 23, LONDON), _local(day, 23, LONDON)
+    out, t = [], start
+    while t < end:
+        local = t.astimezone(LONDON)
+        # 周末（周五 23:00 之后到周日 23:00 之前）没有成交
+        weekend = local.weekday() == 5 or (local.weekday() == 6 and local.hour < 23)
+        weekend = weekend or (local.weekday() == 4 and local.hour >= 23)
+        if not weekend:
+            out.append(t)
+        t += dt.timedelta(hours=1)
     return out
 
 
@@ -101,37 +127,43 @@ def _price(j, t, h):
     return round(60.0 + 3.0 * j + 0.11 * t + 0.013 * h, 6)
 
 
+def _definition(kind, raw, iid, last, y, m, ts_recv):
+    return dict(
+        ts_recv=ts_recv,
+        instrument_id=iid,
+        raw_symbol=raw,
+        security_update_action="A",
+        instrument_class="F",
+        min_price_increment=0.01,
+        display_factor=1.0,
+        expiration=_local(last, 13, CHICAGO if kind == "cme" else LONDON),
+        activation=ACTIVATION,
+        unit_of_measure_qty=1000.0,
+        maturity_year=y,
+        maturity_month=m,
+        currency="USD",
+        unit_of_measure="BBL",
+        asset=raw[:3] if kind == "ice" else "CL",
+        exchange="XNYM" if kind == "cme" else "IFEU",
+        security_type="FUT",
+    )
+
+
 def build():
-    """返回合成数据：原始记录（三种 schema）与期望的统一字段。"""
+    """返回合成数据：原始记录（三种 schema）与期望的统一字段（数据范围内的全部合约日）。"""
     bars, stats, defs, expected = [], [], [], {}
     for kind, chain, days in (("cme", CL, CME_DAYS), ("ice", BRENT, ICE_DAYS)):
         for j, (symbol, raw, iid, last, (y, m), _bbg) in enumerate(chain):
-            expiration = _local(last, 13, CHICAGO if kind == "cme" else LONDON)
-            defs.append(
-                dict(
-                    ts_recv=dt.datetime(2026, 10, 1, 0, 5, tzinfo=UTC),
-                    instrument_id=iid,
-                    raw_symbol=raw,
-                    security_update_action="A",
-                    instrument_class="F",
-                    min_price_increment=0.01,
-                    display_factor=1.0,
-                    expiration=expiration,
-                    activation=ACTIVATION,
-                    unit_of_measure_qty=1000.0,
-                    maturity_year=y,
-                    maturity_month=m,
-                    currency="USD",
-                    unit_of_measure="BBL",
-                    asset=raw[:3] if kind == "ice" else "CL",
-                    exchange="XNYM" if kind == "cme" else "IFEU",
-                    security_type="FUT",
-                )
-            )
+            # 定义每天 UTC 0 点重发，直到最后交易日。
+            day = _d(DATA_FIRST)
+            while day <= min(_d(last), _d(DATA_LAST)):
+                stamp = dt.datetime.combine(day, dt.time(0, 5), UTC)
+                defs.append(_definition(kind, raw, iid, last, y, m, stamp))
+                day += dt.timedelta(days=1)
             prev_settle = None
             for t in range(1, len(days)):
                 day, prev = days[t], days[t - 1]
-                if day < START or day > last:
+                if day > last:
                     continue
                 hours = _hours(prev, day, kind)
                 prices = [_price(j, t, h) for h in range(len(hours))]
@@ -161,6 +193,7 @@ def build():
                     publish += dt.timedelta(days=2)  # 周五的持仓量周日发布
                 close_ts = hours[-1] + dt.timedelta(minutes=40)
                 stats += [
+                    # 初步结算
                     _stat(
                         close_ts - dt.timedelta(minutes=5),
                         close_ts,
@@ -170,8 +203,9 @@ def build():
                         fixed(settle + 1.0),
                         None,
                         2,
-                    ),  # 初步结算
+                    ),
                     _stat(close_ts, close_ts, iid, ref, 3, settle, None, 3),  # 最终结算
+                    # 日内结算，ts_recv 更晚
                     _stat(
                         close_ts + dt.timedelta(minutes=1),
                         close_ts,
@@ -181,7 +215,7 @@ def build():
                         fixed(settle + 9.0),
                         None,
                         11,
-                    ),  # 日内结算，ts_recv 更晚
+                    ),
                     _stat(publish, publish, iid, ref, 6, None, cleared, 0),
                 ]
                 oi_ref = None if (symbol, day) == OI_WITHOUT_REF else ref
@@ -212,38 +246,24 @@ def build():
                     open_interest=None if (symbol, day) == OI_DELETED else oi,
                 )
                 prev_settle = settle
-    # 定义每天重发（这里只重发 11-02 一次，tick 不变）；适配器取 ts_recv 最晚的一条。
-    defs += [
-        dict(x, ts_recv=dt.datetime(2026, 11, 2, 0, 5, tzinfo=UTC)) for x in list(defs)
-    ]
     # 价差合约和一条对不上合约的记录：适配器要丢掉并计数。
     defs.append(
         dict(
             defs[0], instrument_id=SPREAD[1], raw_symbol=SPREAD[0], instrument_class="S"
         )
     )
-    bars.append(
-        dict(
-            ts_event=_local("20261104", 9, CHICAGO),
-            instrument_id=SPREAD[1],
-            open=1.0,
-            high=1.0,
-            low=1.0,
-            close=1.0,
-            volume=1,
+    for iid in (SPREAD[1], UNKNOWN_ID):
+        bars.append(
+            dict(
+                ts_event=_local("20261104", 9, CHICAGO),
+                instrument_id=iid,
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1,
+            )
         )
-    )
-    bars.append(
-        dict(
-            ts_event=_local("20261104", 9, CHICAGO),
-            instrument_id=UNKNOWN_ID,
-            open=1.0,
-            high=1.0,
-            low=1.0,
-            close=1.0,
-            volume=1,
-        )
-    )
     return SimpleNamespace(bars=bars, stats=stats, defs=defs, expected=expected)
 
 
@@ -262,29 +282,38 @@ def _stat(ts_recv, ts_event, iid, ref, stat_type, price, quantity, flags, action
 
 
 def minute_bars():
-    """CLZ6 一个交易日（2026-11-04）的 1 分钟线：前一天 17:00 至当天 16:00（芝加哥）。"""
-    start = _local("20261103", 17, CHICAGO)
+    """CLZ6 在 ``MINUTE_DAYS`` 各交易日的 1 分钟线：上一开市日 17:00 至当天 16:00（芝加哥），跳过周末。
+    返回记录列表；每条另带夹具自己算的交易日 ``_date``（假客户端发出前去掉）。"""
     out = []
-    for k in range(23 * 60):
-        p = fixed(61.0 + 0.001 * k)
-        out.append(
-            dict(
-                ts_event=start + dt.timedelta(minutes=k),
-                instrument_id=1002,
-                open=p,
-                high=fixed(p + 0.01),
-                low=fixed(p - 0.01),
-                close=p,
-                volume=1 + k % 5,
-            )
-        )
+    for day in MINUTE_DAYS:
+        prev = CME_DAYS[CME_DAYS.index(day) - 1]
+        t, end, k = _local(prev, 17, CHICAGO), _local(day, 16, CHICAGO), 0
+        while t < end:
+            if not _cme_closed(t):
+                p = fixed(61.0 + 0.001 * k + 0.5 * MINUTE_DAYS.index(day))
+                out.append(
+                    dict(
+                        ts_event=t,
+                        instrument_id=1002,
+                        open=p,
+                        high=fixed(p + 0.01),
+                        low=fixed(p - 0.01),
+                        close=p,
+                        volume=1 + k % 5,
+                        _date=day,
+                    )
+                )
+                k += 1
+            t += dt.timedelta(minutes=1)
     return out
 
 
-def expected_frame(data, volume="cleared"):
-    """期望的统一日线（行按 symbol、date 排序），供与适配器输出逐位比较。"""
+def expected_frame(data, volume="cleared", start=START, end=END):
+    """期望的统一日线（[start, end] 内，行按 symbol、date 排序），供与适配器输出逐位比较。"""
     rows = []
     for (symbol, day), v in sorted(data.expected.items()):
+        if not start <= day <= end:
+            continue
         rows.append(
             dict(
                 date=day,
@@ -721,6 +750,10 @@ class FakeBlpapi:
         self.data = data or build()
         self.minute = minute_bars()
         self.requests = []
+        # 按证券注入的错误：{代码: {"securityError": {...}} 或 {"fieldExceptions": [...]}}，并进该证券的应答。
+        self.faults = {}
+        # 应答前对每个证券的字段做的改动：{代码: {字段: 值或 None（删掉）}}。
+        self.patches = {}
         api = self
 
         class Session:
@@ -812,14 +845,22 @@ class FakeBlpapi:
                         CRNCY="USD",
                     )
                     fields.update({f: full[f] for f in v["fields"] if f in full})
+                for f, x in self.patches.get(sec, {}).items():
+                    if x is None:
+                        fields.pop(f, None)
+                    else:
+                        fields[f] = x
                 out.append(
-                    dict(
-                        security=sec,
-                        eidData=[],
-                        fieldExceptions=[],
-                        sequenceNumber=len(out),
-                        fieldData=fields,
-                    )
+                    {
+                        **dict(
+                            security=sec,
+                            eidData=[],
+                            fieldExceptions=[],
+                            sequenceNumber=len(out),
+                            fieldData=fields,
+                        ),
+                        **self.faults.get(sec, {}),
+                    }
                 )
             return [dict(securityData=out[:1])] + (
                 [dict(securityData=out[1:])] if len(out) > 1 else []
@@ -848,6 +889,9 @@ class FakeBlpapi:
                         {k: x for k, x in r.items() if k == "date" or k in v["fields"]}
                         for r in rows
                     ]
+                    for f, x in self.patches.get(sec, {}).items():
+                        for r in rows:
+                            r[f] = x
                     rows = [
                         {k: x for k, x in r.items() if x is not None} for r in rows
                     ]  # 缺值的字段不出现
@@ -860,13 +904,16 @@ class FakeBlpapi:
                     ]
                 bodies.append(
                     dict(
-                        securityData=dict(
-                            security=sec,
-                            eidData=[],
-                            sequenceNumber=len(bodies),
-                            fieldExceptions=[],
-                            fieldData=rows,
-                        )
+                        securityData={
+                            **dict(
+                                security=sec,
+                                eidData=[],
+                                sequenceNumber=len(bodies),
+                                fieldExceptions=[],
+                                fieldData=rows,
+                            ),
+                            **self.faults.get(sec, {}),
+                        }
                     )
                 )
             return bodies
