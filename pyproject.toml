@@ -18,6 +18,9 @@ panelops = { workspace = true }
 [dependency-groups]
 dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0"]
 
+panelops-bench = ["pandas>=2.2", "polars>=2.1", "bottleneck>=1.4"]
+panelops-crosscheck = ["alphalens-reloaded>=0.4", "matplotlib>=3.9"]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 addopts = "-ra"

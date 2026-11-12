@@ -1,8 +1,29 @@
 [project]
 name = "panelops"
 version = "0.1.0"
+description = "Deterministic numerical operators for time-by-security panels"
 requires-python = ">=3.13"
 dependencies = ["numpy>=2.5.4,<3"]
+readme = "README.md"
+
 [build-system]
-requires = ["hatchling>=1.33.0"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.16.0,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "panelops._core"
+profile = "release"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "build.rs" },
+  { file = "src/**/*.rs" },
+  { file = "../../crates/panelops-core/Cargo.toml" },
+  { file = "../../crates/panelops-core/src/**/*.rs" },
+  { file = "../../Cargo.toml" },
+  { file = "../../Cargo.lock" },
+  { file = "python/**/*.py" },
+]

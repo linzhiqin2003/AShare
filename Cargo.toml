@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/panelbt-core", "packages/panelbt"]
+members = ["crates/panelbt-core", "packages/panelbt", "crates/panelops-core", "packages/panelops"]
 exclude = ["bench/spike"]
 resolver = "3"
 

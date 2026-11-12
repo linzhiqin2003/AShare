@@ -23,3 +23,16 @@ spike:
 
 mutate:
 	uv run --no-sync python bench/mutations.py
+
+.PHONY: panelops-bench panelops-crosscheck panelops-mutate
+
+panelops-bench:
+	uv sync --all-packages --group panelops-bench
+	uv run --no-sync python bench/panelops/run.py --compare bench/panelops/results/baseline.json
+
+panelops-crosscheck:
+	uv sync --all-packages --group panelops-bench --group panelops-crosscheck
+	MPLCONFIGDIR="$(CURDIR)/.cache/matplotlib" uv run --no-sync python bench/panelops/crosscheck.py
+
+panelops-mutate:
+	uv run --no-sync python bench/panelops/mutations.py

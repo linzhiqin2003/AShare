@@ -142,6 +142,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "panelops-core"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
+name = "panelops-python"
+version = "0.1.0"
+dependencies = [
+ "numpy",
+ "panelops-core",
+ "pyo3",
+ "rayon",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
