@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import extras as ex
 from . import metrics as m
 from .metrics import rnd
 
@@ -217,6 +218,8 @@ def build_tearsheet(
     rolling_window: int | None = None,
     top_drawdowns: int = 5,
     calendar: Sequence | None = None,
+    benchmarks: Sequence[Benchmark] | None = None,
+    extras: bool = True,
 ) -> dict:
     """把一次回测整理成报告数据。
 
@@ -231,6 +234,9 @@ def build_tearsheet(
     costs / config: 回测用的 `panelbt.Costs` / `Config`，只用来在页面上写明费用设定。
     calendar: 交易日历（全部开市日，可含区间末日之后的未来日期），用来判断最后一个月、最后一年
         是否完整；不给或覆盖不到时按「之后同月 / 同年是否还有工作日」判断。
+    benchmarks: 主基准之外的对比指数（`Benchmark` 列表），输出每条的指标和策略相对它的超额、胜率。
+    extras: 是否计算补充内容（对比指数、胜率、个股贡献、尾部、集中度，见 `extras.py`）；
+        False 时输出与加入这些内容之前完全相同。
     """
     P = int(periods_per_year)
     window = int(rolling_window or P)
@@ -667,7 +673,7 @@ def build_tearsheet(
         if cal and cal[-1] >= end[:4] + "-12-31"
         else ("calendar+weekday" if cal else "weekday"),
     }
-    return {
+    out = {
         "meta": meta,
         "summary": summary,
         "daily": daily,
@@ -680,3 +686,94 @@ def build_tearsheet(
         "industry_weights": industry_weights,
         "attribution": attribution,
     }
+    if not extras:
+        if benchmarks:
+            raise ReportError("对比指数 benchmarks 需要 extras=True")
+        return out
+
+    # ------------------------------------------------------------ 补充内容
+    extra_b = []
+    for k, eb in enumerate(benchmarks or ()):
+        if not isinstance(eb, Benchmark):
+            raise ReportError("benchmarks 需要是 ashare.report.Benchmark 的列表")
+        v, st, fd = _benchmark(eb, T)
+        if st >= T - 1:
+            raise ReportError(f"对比指数 {eb.name} 只有最后一天有数据")
+        r_ = np.full(T, np.nan)
+        r_[st] = 0.0
+        r_[st + 1 :] = v[st + 1 :] / v[st:-1] - 1
+        extra_b.append((k, eb, v, st, fd, r_))
+    year_partial = [row["partial"] for row in yearly]
+    pts = ex.month_points(
+        ddates, month_last, monthly["first_partial"], monthly["last_partial"]
+    )
+    out["benchmarks"] = [
+        {
+            "name": eb.name,
+            "symbol": eb.symbol,
+            "kind": eb.kind,
+            "kind_label": KIND_LABEL[eb.kind],
+            "filled_days": int(fd),
+            **ex.bench_stats(r, r_, v, st, ddates, P),
+            "yearly": [
+                {"year": y, "return": rnd(b)}
+                for y, _, b, _ in ex.year_rows(
+                    nav, v, st, ddates, year_list, year_partial
+                )
+            ],
+        }
+        for _, eb, v, st, fd, r_ in extra_b
+    ]
+    wins = []
+    if bnav is not None:
+        wins.append(
+            {
+                "name": benchmark.name,
+                "symbol": benchmark.symbol,
+                "main": True,
+                **ex.win_rate(nav, bnav, bstart, ddates, year_list, year_partial, pts),
+            }
+        )
+    for _, eb, v, st, _, _ in extra_b:
+        wins.append(
+            {
+                "name": eb.name,
+                "symbol": eb.symbol,
+                "main": False,
+                **ex.win_rate(nav, v, st, ddates, year_list, year_partial, pts),
+            }
+        )
+    out["win_rates"] = wins or None
+
+    windows = [("all", 0, T - 1, False)]
+    for y, part in zip(year_list, year_partial, strict=True):
+        idxs = np.flatnonzero(ykeys == y)
+        idxs = idxs[idxs >= 1]
+        windows.append((y, int(idxs[0]) - 1, int(idxs[-1]), part))
+    out["contributions"] = ex.contributions(
+        result,
+        market,
+        pos,
+        equity,
+        ddates,
+        symbols,
+        names,
+        windows,
+        arr0("cash_interest"),
+    )
+    bm_all = None
+    if bnav is not None:
+        bm_all = []
+        for mk in month_list:
+            last_, prev_ = month_last[mk], month_first[mk] - 1
+            if mk == month_list[0]:
+                prev_ = 0
+            bm_all.append(bnav[last_] / bnav[prev_] - 1 if prev_ >= bstart else None)
+    out["tails"] = ex.tails(r, br, ddates, month_list, month_r, bm_all)
+    ids, labs = (None, [])
+    if label is not None:
+        ids, labs = ex.industry_ids(industry, label)
+    out["concentration"] = ex.concentration(
+        pos, mark, long_value, equity, ddates, ids, len(labs)
+    )
+    return out
