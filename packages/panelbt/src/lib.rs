@@ -3,8 +3,12 @@
 use numpy::{
     IntoPyArray, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ndarray::Array2,
 };
-use panelbt_core::{Futures, Market, Settings, Targets};
+use panelbt_core::{
+    Futures, Market, Settings, Targets,
+    validate::{self, Context, Domain},
+};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
+use rayon::prelude::*;
 type Plan<'a> = (
     PyReadonlyArray1<'a, i64>,
     PyReadonlyArray1<'a, i64>,
@@ -17,7 +21,7 @@ type Plan<'a> = (
 fn run<'py>(
     py: Python<'py>,
     floats: Vec<PyReadonlyArray2<'py, f64>>,
-    masks: Vec<PyReadonlyArray2<'py, bool>>,
+    masks: Vec<PyReadonlyArray2<'py, u8>>,
     plans: Vec<Plan<'py>>,
     vectors: Vec<PyReadonlyArray1<'py, f64>>,
     scalars: Vec<f64>,
@@ -25,11 +29,13 @@ fn run<'py>(
     first_delist: PyReadonlyArray1<'py, i64>,
     actions: (PyReadonlyArray1<'py, i64>, PyReadonlyArray1<'py, i64>),
     future: (
-        PyReadonlyArray1<'py, bool>,
+        PyReadonlyArray1<'py, u8>,
         PyReadonlyArray1<'py, f64>,
         PyReadonlyArray1<'py, i64>,
         Vec<PyReadonlyArray2<'py, f64>>,
     ),
+    validated: Vec<bool>,
+    context: (bool, bool),
     threads: usize,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
     if floats.len() != 8
@@ -46,7 +52,7 @@ fn run<'py>(
         .iter()
         .map(|x| x.as_slice())
         .collect::<Result<_, _>>()?;
-    let ms: Vec<&[bool]> = masks
+    let ms: Vec<&[u8]> = masks
         .iter()
         .map(|x| x.as_slice())
         .collect::<Result<_, _>>()?;
@@ -163,6 +169,31 @@ fn run<'py>(
             })
         })
         .collect::<PyResult<_>>()?;
+    if validated.len() != targets.len() {
+        return Err(PyValueError::new_err("invalid internal argument lengths"));
+    }
+    // Context checks for every plan in parallel; the first failure in input
+    // order is reported. Index bounds are checked even for unvalidated plans.
+    let future_mask: Vec<bool> = kind.iter().map(|&x| x != 0).collect();
+    let ctx = Context {
+        t,
+        n,
+        future: &future_mask,
+        allow_short: context.0,
+        cash_weights: context.1,
+    };
+    let checked: Vec<Result<(), String>> = py.detach(|| {
+        targets
+            .par_iter()
+            .zip(&validated)
+            .map(|(p, &v)| {
+                validate::check_context(p.days, p.indptr, p.cols, p.weights, p.shares, v, &ctx)
+            })
+            .collect()
+    });
+    if let Some(Err(message)) = checked.into_iter().find(|r| r.is_err()) {
+        return Err(PyValueError::new_err(message));
+    }
     for plan in &targets {
         if plan.indptr.len() != plan.days.len() + 1
             || plan.indptr.first() != Some(&0)
@@ -209,9 +240,206 @@ fn run<'py>(
         })
         .collect()
 }
+/// Market content checks (when `validate`) and preparation: first delist row
+/// per column and the sparse corporate-action index.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn prepare_market<'py>(
+    py: Python<'py>,
+    price: PyReadonlyArray2<'py, f64>,
+    close: PyReadonlyArray2<'py, f64>,
+    buy: PyReadonlyArray2<'py, u8>,
+    sell: PyReadonlyArray2<'py, u8>,
+    volume: PyReadonlyArray2<'py, f64>,
+    split: PyReadonlyArray2<'py, f64>,
+    dividend: PyReadonlyArray2<'py, f64>,
+    delist: PyReadonlyArray2<'py, u8>,
+    can_short: PyReadonlyArray2<'py, u8>,
+    validate: bool,
+) -> PyResult<(
+    Bound<'py, numpy::PyArray1<i64>>,
+    Bound<'py, numpy::PyArray1<i64>>,
+    Bound<'py, numpy::PyArray1<i64>>,
+)> {
+    let shape = price.shape();
+    let (t, n) = (shape[0], shape[1]);
+    let floats = [
+        price.as_slice()?,
+        close.as_slice()?,
+        volume.as_slice()?,
+        split.as_slice()?,
+        dividend.as_slice()?,
+    ];
+    let bytes = [
+        buy.as_slice()?,
+        sell.as_slice()?,
+        delist.as_slice()?,
+        can_short.as_slice()?,
+    ];
+    for (i, a) in floats.iter().enumerate() {
+        if a.len() != t * n && (i < 2 || !a.is_empty()) {
+            return Err(PyValueError::new_err("invalid panel length"));
+        }
+    }
+    for (i, a) in bytes.iter().enumerate() {
+        if a.len() != t * n && (i < 2 || !a.is_empty()) {
+            return Err(PyValueError::new_err("invalid mask length"));
+        }
+    }
+    let [price, close, volume, split, dividend] = floats;
+    let [buy, sell, delist, can_short] = bytes;
+    let result = py.detach(|| -> Result<_, &'static str> {
+        if validate {
+            // The original per-field order: the first invalid field is reported.
+            if validate::any_bad(price, Domain::PositiveOrNan) {
+                return Err("exec_price: expected finite positive values or NaN");
+            }
+            if validate::any_bad(close, Domain::PositiveOrNan) {
+                return Err("close: expected finite positive values or NaN");
+            }
+            if validate::any_nonbool(buy) {
+                return Err("can_buy: expected boolean values 0 or 1");
+            }
+            if validate::any_nonbool(sell) {
+                return Err("can_sell: expected boolean values 0 or 1");
+            }
+            if validate::any_bad(volume, Domain::NonnegativeOrNan) {
+                return Err("volume: expected finite nonnegative values or NaN");
+            }
+            if validate::any_bad(split, Domain::Positive) {
+                return Err("split: expected finite positive values");
+            }
+            if validate::any_bad(dividend, Domain::Nonnegative) {
+                return Err("cash_div: expected finite nonnegative values");
+            }
+            if validate::any_nonbool(delist) {
+                return Err("delist: expected boolean values 0 or 1");
+            }
+            if validate::any_nonbool(can_short) {
+                return Err("can_short: expected boolean values 0 or 1");
+            }
+        }
+        let first = validate::first_delist(delist, t, n);
+        let (indptr, cols) = validate::action_index(split, dividend, &first, t, n);
+        Ok((first, indptr, cols))
+    });
+    let (first, indptr, cols) = result.map_err(PyValueError::new_err)?;
+    Ok((
+        first.into_pyarray(py),
+        indptr.into_pyarray(py),
+        cols.into_pyarray(py),
+    ))
+}
+
+/// Futures content checks in the original order; shapes are checked in Python.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn validate_futures(
+    py: Python<'_>,
+    kind: PyReadonlyArray1<'_, u8>,
+    multiplier: PyReadonlyArray1<'_, f64>,
+    expiry: PyReadonlyArray1<'_, i64>,
+    settlement: PyReadonlyArray2<'_, f64>,
+    split: PyReadonlyArray2<'_, f64>,
+    dividend: PyReadonlyArray2<'_, f64>,
+    delist: PyReadonlyArray2<'_, u8>,
+    rates: Vec<(String, PyReadonlyArray2<'_, f64>)>,
+) -> PyResult<()> {
+    let shape = settlement.shape();
+    let (t, n) = (shape[0], shape[1]);
+    let kind = kind.as_slice()?;
+    let multiplier = multiplier.as_slice()?;
+    let expiry = expiry.as_slice()?;
+    let settlement = settlement.as_slice()?;
+    let (split, dividend, delist) = (split.as_slice()?, dividend.as_slice()?, delist.as_slice()?);
+    let rates: Vec<(String, &[f64])> = rates
+        .iter()
+        .map(|(k, a)| Ok((k.clone(), a.as_slice()?)))
+        .collect::<PyResult<_>>()?;
+    if kind.len() != n || multiplier.len() != n || expiry.len() != n {
+        return Err(PyValueError::new_err("invalid futures argument lengths"));
+    }
+    for a in [split, dividend] {
+        if !a.is_empty() && a.len() != t * n {
+            return Err(PyValueError::new_err("invalid panel length"));
+        }
+    }
+    if !delist.is_empty() && delist.len() != t * n {
+        return Err(PyValueError::new_err("invalid mask length"));
+    }
+    let message = py.detach(|| -> Option<String> {
+        if validate::any_nonbool(kind) {
+            return Some("is_future: expected boolean values 0 or 1".into());
+        }
+        let columns: Vec<usize> = (0..n).filter(|&i| kind[i] != 0).collect();
+        if columns
+            .iter()
+            .any(|&i| !multiplier[i].is_finite() || multiplier[i] <= 0.0)
+        {
+            return Some("multiplier: futures columns require finite positive values".into());
+        }
+        if columns
+            .iter()
+            .any(|&i| expiry[i] < 0 || expiry[i] > t as i64)
+        {
+            return Some("expiry: futures columns require row indices in [0, T]".into());
+        }
+        if validate::any_in_columns(settlement, n, &columns, |x: f64| !x.is_finite() || x <= 0.0) {
+            return Some("settlement: futures columns require finite positive prices".into());
+        }
+        if !split.is_empty() && validate::any_in_columns(split, n, &columns, |x: f64| x != 1.0) {
+            return Some("split: futures columns cannot have corporate actions".into());
+        }
+        if !dividend.is_empty()
+            && validate::any_in_columns(dividend, n, &columns, |x: f64| x != 0.0)
+        {
+            return Some("cash_div: futures columns cannot have corporate actions".into());
+        }
+        if !delist.is_empty() && validate::any_in_columns(delist, n, &columns, |x: u8| x != 0) {
+            return Some("delist: futures columns use expiry, not delisting".into());
+        }
+        for (name, a) in &rates {
+            if validate::any_bad(a, Domain::Nonnegative) {
+                return Some(format!("{name}: expected finite nonnegative values"));
+            }
+        }
+        None
+    });
+    match message {
+        Some(m) => Err(PyValueError::new_err(m)),
+        None => Ok(()),
+    }
+}
+
+/// Sparse-plan checks; returns (sorted, has_negative, max_row_sum).
+#[pyfunction]
+fn check_plan(
+    py: Python<'_>,
+    days: PyReadonlyArray1<'_, i64>,
+    indptr: PyReadonlyArray1<'_, i64>,
+    cols: PyReadonlyArray1<'_, i64>,
+    weights: PyReadonlyArray1<'_, f64>,
+    validate: bool,
+) -> PyResult<(bool, bool, f64)> {
+    let (days, indptr, cols, weights) = (
+        days.as_slice()?,
+        indptr.as_slice()?,
+        cols.as_slice()?,
+        weights.as_slice()?,
+    );
+    let summary = py
+        .detach(|| validate::check_plan(days, indptr, cols, weights, validate))
+        .map_err(PyValueError::new_err)?;
+    Ok((summary.sorted, summary.has_negative, summary.max_row_sum))
+}
+
 #[pymodule(name = "_core")]
 fn panelbt_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_market, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_futures, m)?)?;
+    m.add_function(wrap_pyfunction!(check_plan, m)?)?;
+    m.add("VALIDATION_CHUNK", validate::CHUNK)?;
     m.add("BUILD_MARKER", panelbt_core::BUILD_MARKER)?;
     m.add("SOURCE_SHA256", env!("PANELBT_SOURCE_SHA256"))?;
     Ok(())

@@ -51,33 +51,8 @@ def _prepare(
     for target in targets:
         if not isinstance(target, Targets):
             raise ValueError("targets: expected Targets")
-        target.validate_shape(t, n)
-        future_mask = (
-            market.futures.is_future
-            if market.futures is not None
-            else np.zeros(n, dtype=bool)
-        )
-        if not margin.allow_short and np.any(
-            (target.weights < 0) & ~future_mask[target.cols]
-        ):
-            raise ValueError("weights: negative targets require allow_short")
-        if target.kind == "shares" and np.any(
-            future_mask[target.cols] & (target.weights != np.trunc(target.weights))
-        ):
-            raise ValueError("futures shares: target contracts must be integers")
-        if (
-            target.kind == "weights"
-            and not margin.allow_financing
-            and not margin.allow_short
-        ):
-            rows = np.repeat(np.arange(len(target.days)), np.diff(target.indptr))
-            stock_sum = np.bincount(
-                rows,
-                weights=np.where(future_mask[target.cols], 0.0, target.weights),
-                minlength=len(target.days),
-            )
-            if np.max(stock_sum, initial=0.0) > 1 + 1e-9:
-                raise ValueError("weights: cash account requires row sum <= 1 + 1e-9")
+    # Bounds, sign, integer-contract and row-sum checks for all plans run in
+    # the kernel, in parallel, before any simulation starts.
     names = (
         "commission_rate",
         "commission_min",
@@ -166,14 +141,16 @@ def _prepare(
     if costs.impact_k is not None and np.asarray(costs.impact_k).shape != (t, n):
         raise ValueError("impact_k: expected T×N")
     floats += [slip, impact, _panel(margin.borrow_rate, t, n, "borrow_rate")]
+    eb = eb.view(np.uint8)
     masks = [
-        getattr(market, k) if getattr(market, k) is not None else eb
+        getattr(market, k).view(np.uint8) if getattr(market, k) is not None else eb
         for k in ("can_buy", "can_sell", "delist", "can_short")
     ]
     plans = [(x.days, x.indptr, x.cols, x.weights, x.kind == "shares") for x in targets]
+    # The cash specialization is chosen by the account terms alone; futures
+    # columns do not change how the spot side of a cash account is executed.
     classic = (
-        market.futures is None
-        and not margin.allow_short
+        not margin.allow_short
         and not margin.allow_financing
         and np.all(vectors[11] == 1)
         and np.all(vectors[13] == 0)
@@ -190,7 +167,7 @@ def _prepare(
     ]
     if market.futures is None:
         futures = (
-            np.empty(0, dtype=bool),
+            np.empty(0, dtype=np.uint8),
             np.empty(0, dtype=np.float64),
             np.empty(0, dtype=np.int64),
             [],
@@ -198,7 +175,7 @@ def _prepare(
     else:
         f = market.futures
         futures = (
-            f.is_future,
+            f.is_future.view(np.uint8),
             f.multiplier,
             f.expiry,
             [
@@ -223,7 +200,20 @@ def _prepare(
     )
 
 
-def _result(raw: dict[str, Any]) -> Result:
+def _checks(targets: Sequence[Targets], config: Config) -> tuple:
+    """Per-plan content flags and the account context for kernel checks."""
+    margin = config.margin
+    return (
+        [x.validated for x in targets],
+        (margin.allow_short, not margin.allow_financing and not margin.allow_short),
+    )
+
+
+def _validated(market: Market, targets: Sequence[Targets]) -> bool:
+    return market.validated and all(x.validated for x in targets)
+
+
+def _result(raw: dict[str, Any], validated: bool = True) -> Result:
     values = {
         k: raw["daily"][i].astype(np.int64)
         if k.startswith("n_")
@@ -243,6 +233,7 @@ def _result(raw: dict[str, Any]) -> Result:
         liquidation_events=[LiquidationEvent(*x) for x in raw["liquidations"]],
         bankruptcy_events=raw["bankruptcies"],
         expiry_events=[ExpiryEvent(*x) for x in raw["expiries"]],
+        inputs_validated=validated,
     )
 
 
@@ -253,8 +244,10 @@ def run(
     config: Config | None = None,
 ) -> Result:
     """Execute targets on their given rows without shifting signals."""
-    prepared = _prepare(market, [targets], costs or Costs(), config or Config())
-    return _result(_core.run(*prepared, 1)[0])
+    config = config or Config()
+    prepared = _prepare(market, [targets], costs or Costs(), config)
+    raw = _core.run(*prepared, *_checks([targets], config), 1)[0]
+    return _result(raw, _validated(market, [targets]))
 
 
 def run_batch(
@@ -269,13 +262,18 @@ def run_batch(
         raise ValueError("threads: expected nonnegative integer")
     config = config or Config()
     return _batch_result(
-        _core.run(*_prepare(market, targets, costs or Costs(), config), threads),
+        _core.run(
+            *_prepare(market, targets, costs or Costs(), config),
+            *_checks(targets, config),
+            threads,
+        ),
         *market.shape,
         config.record_trades,
+        _validated(market, targets),
     )
 
 
-def _batch_result(raw, t, n, record):
+def _batch_result(raw, t, n, record, validated=True):
     if not record:
         # Assemble one contiguous daily tensor without K intermediate Results.
         tensor = (
@@ -312,8 +310,9 @@ def _batch_result(raw, t, n, record):
             contribution=np.stack([x["contribution"] for x in raw])
             if raw
             else np.empty((0, n)),
+            inputs_validated=validated,
         )
-    results = [_result(x) for x in raw]
+    results = [_result(x, validated) for x in raw]
     daily = {
         k: np.stack([getattr(x, k) for x in results])
         if results
@@ -350,4 +349,5 @@ def _batch_result(raw, t, n, record):
         liquidation_events=[x.liquidation_events for x in results],
         bankruptcy_events=[x.bankruptcy_events for x in results],
         expiry_events=[x.expiry_events for x in results],
+        inputs_validated=validated,
     )

@@ -11,6 +11,7 @@ doctest = false
 panelbt-core = { path = "../../crates/panelbt-core" }
 pyo3 = { workspace = true, features = ["extension-module", "abi3-py313"] }
 numpy.workspace = true
+rayon.workspace = true
 
 [build-dependencies]
 sha2 = "0.10"

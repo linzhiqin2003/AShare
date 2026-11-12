@@ -1,0 +1,96 @@
+{
+ "method": "two warm processes, AB/BA alternating, 8 rounds x 5 repeats per scenario",
+ "load_1_5_15": [
+  [
+   7.62,
+   8.16,
+   7.2
+  ],
+  [
+   7.31,
+   8.04,
+   7.18
+  ]
+ ],
+ "max_load_1": 7.72,
+ "ms": {
+  "market_4000x5500": {
+   "before": [
+    101.657,
+    110.537
+   ],
+   "after": [
+    19.393,
+    21.317
+   ]
+  },
+  "batch_1000_check_and_run": {
+   "before": [
+    329.04,
+    372.814
+   ],
+   "after": [
+    63.391,
+    71.08
+   ]
+  },
+  "single_total_validated": {
+   "before": [
+    105.832,
+    116.198
+   ],
+   "after": [
+    23.084,
+    26.07
+   ]
+  },
+  "single_total_unchecked": {
+   "after": [
+    9.816,
+    10.847
+   ]
+  }
+ },
+ "spot_pair_to_round_start": {
+  "base_ref": "208efaa",
+  "T": 4000,
+  "N": 5500,
+  "method": "LTO in both builds; 6 alternating AB/BA rounds, 40 calls per scenario each round; imports/data construction excluded",
+  "load_start": [
+   18.94,
+   10.76,
+   8.25
+  ],
+  "load_end": [
+   19.83,
+   11.08,
+   8.38
+  ],
+  "scenarios": {
+   "full_rules": {
+    "base_min_ms": 1.92,
+    "base_median_ms": 2.792,
+    "current_min_ms": 1.732,
+    "current_median_ms": 2.528,
+    "minimum_ratio": 0.902,
+    "same_nav_and_trades": true
+   },
+   "no_delist_panel": {
+    "base_min_ms": 1.927,
+    "base_median_ms": 2.785,
+    "current_min_ms": 1.759,
+    "current_median_ms": 2.671,
+    "minimum_ratio": 0.913,
+    "same_nav_and_trades": true
+   },
+   "prices_only": {
+    "base_min_ms": 1.807,
+    "base_median_ms": 2.58,
+    "current_min_ms": 1.689,
+    "current_median_ms": 2.234,
+    "minimum_ratio": 0.934,
+    "same_nav_and_trades": true
+   }
+  }
+ }
+}

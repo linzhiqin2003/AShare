@@ -36,7 +36,7 @@
       "first_call_s": 0.00061358400125755,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0005721249981434084,
         0.0005613749963231385,
@@ -75,7 +75,7 @@
       "first_call_s": 0.13387691599928075,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.13233983299869578,
         0.13910608299920568,
@@ -114,7 +114,7 @@
       "first_call_s": 0.001063833995431196,
       "jit_first_call_s": null,
       "max_nav_error": 2.6645352591003757e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0007866250016377307,
         0.0009061669989023358,
@@ -153,7 +153,7 @@
       "first_call_s": 0.023883041001681704,
       "jit_first_call_s": null,
       "max_nav_error": 2.6645352591003757e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0017638749995967373,
         0.0017357920005451888,
@@ -193,7 +193,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 4.66978449464861e-07,
       "zero_fee_error": 4.440892098500626e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.00031437500001629815,
         0.00031558299815515056,
@@ -233,7 +233,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 4.6697844768850416e-07,
       "zero_fee_error": 8.304468224196171e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.0008939159961300902,
         0.0009136670050793327,
@@ -272,7 +272,7 @@
       "first_call_s": 1.4232802919941605,
       "jit_first_call_s": null,
       "max_nav_error": 2.886579864025407e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         1.401323374993808,
         1.6549052499976824,
@@ -311,7 +311,7 @@
       "first_call_s": 3.7108607499976642,
       "jit_first_call_s": 3.7108607499976642,
       "max_nav_error": 1.5543122344752192e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.02025924999907147,
         0.01569766699685715,
@@ -350,7 +350,7 @@
       "first_call_s": 0.2374615000007907,
       "jit_first_call_s": null,
       "max_nav_error": 1.5543122344752192e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.015264333000232,
         0.01268779100064421,
@@ -390,7 +390,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 5.015387376516856e-07,
       "zero_fee_error": 5.10702591327572e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.33479937499942025,
         0.3427496250005788,
@@ -429,7 +429,7 @@
       "first_call_s": 0.0008460410026600584,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0006838749977760017,
         0.0008393329990212806,
@@ -468,7 +468,7 @@
       "first_call_s": 0.4678515830019023,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.4620506249993923,
         0.46595924999564886,
@@ -507,7 +507,7 @@
       "first_call_s": 0.0011392500018700957,
       "jit_first_call_s": null,
       "max_nav_error": 3.552713678800501e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0013638750024256296,
         0.001156332997197751,
@@ -546,7 +546,7 @@
       "first_call_s": 0.023888332994829398,
       "jit_first_call_s": null,
       "max_nav_error": 3.1086244689504383e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0020642500021494925,
         0.0019501249989843927,
@@ -586,7 +586,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 2.5913122907450514e-06,
       "zero_fee_error": 5.995204332975845e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.001382249996822793,
         0.0013973329987493344,
@@ -626,7 +626,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 2.591312282085312e-06,
       "zero_fee_error": 8.260059303211165e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.0033724579989211634,
         0.003160125001159031,
@@ -665,7 +665,7 @@
       "first_call_s": 6.9917846669995924,
       "jit_first_call_s": null,
       "max_nav_error": 5.773159728050814e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         6.602623250000761,
         7.544688540998322,
@@ -704,7 +704,7 @@
       "first_call_s": 2.2989236669964157,
       "jit_first_call_s": 2.2989236669964157,
       "max_nav_error": 5.551115123125783e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.026685500000894535,
         0.027243584001553245,
@@ -743,7 +743,7 @@
       "first_call_s": 0.2660543329984648,
       "jit_first_call_s": null,
       "max_nav_error": 3.1086244689504383e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.04572733300301479,
         0.03906104100315133,
@@ -783,7 +783,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 2.8216203216135938e-06,
       "zero_fee_error": 5.551115123125783e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.5189158749999478,
         0.46912500000325963,
@@ -822,7 +822,7 @@
       "first_call_s": 0.0008526669989805669,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0006136250012787059,
         0.0005851659952895716,
@@ -861,7 +861,7 @@
       "first_call_s": 0.9092474999997648,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.928949624998495,
         0.8499004999976023,
@@ -900,7 +900,7 @@
       "first_call_s": 0.001654833002248779,
       "jit_first_call_s": null,
       "max_nav_error": 5.329070518200751e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.001946457996382378,
         0.0019583329994929954,
@@ -939,7 +939,7 @@
       "first_call_s": 0.02630087500438094,
       "jit_first_call_s": null,
       "max_nav_error": 4.884981308350689e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.002890290998038836,
         0.0028692919950117357,
@@ -979,7 +979,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 1.0037962470121897e-05,
       "zero_fee_error": 1.0880185641326534e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.003196166995621752,
         0.003699166998558212,
@@ -1019,7 +1019,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 1.0037962380415877e-05,
       "zero_fee_error": 7.926992395823618e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.012126542002079077,
         0.009104875003686175,
@@ -1058,7 +1058,7 @@
       "first_call_s": 15.273171916996944,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         13.91436404200067,
         13.390471375001653,
@@ -1097,7 +1097,7 @@
       "first_call_s": 2.4255792920012027,
       "jit_first_call_s": 2.4255792920012027,
       "max_nav_error": 6.217248937900877e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.057522916002199054,
         0.04594712499965681,
@@ -1136,7 +1136,7 @@
       "first_call_s": 0.28455741699872306,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.05714845799957402,
         0.05699266699957661,
@@ -1176,7 +1176,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 4.081244212805757e-06,
       "zero_fee_error": 6.8833827526759706e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.5925346660005744,
         0.584050584002398,
@@ -1215,7 +1215,7 @@
       "first_call_s": 0.0030442079951171763,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0027281669972580858,
         0.002684750004846137,
@@ -1254,7 +1254,7 @@
       "first_call_s": 16.400277582994022,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         17.266652874997817,
         18.541564541003027,
@@ -1293,7 +1293,7 @@
       "first_call_s": 0.014598834000935312,
       "jit_first_call_s": null,
       "max_nav_error": 1.2656542480726785e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.014001625000673812,
         0.014887291996274143,
@@ -1332,7 +1332,7 @@
       "first_call_s": 0.029895082996517885,
       "jit_first_call_s": null,
       "max_nav_error": 1.1546319456101628e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.008458290998532902,
         0.01282520799577469,
@@ -1372,7 +1372,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 1.0641301674274573e-05,
       "zero_fee_error": 2.4868995751603507e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.059903583001869265,
         0.05978575000335695,
@@ -1412,7 +1412,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 1.0641301368741196e-05,
       "zero_fee_error": 3.270717030545711e-13,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.24550045800424414,
         0.2584376659942791,
@@ -1451,7 +1451,7 @@
       "first_call_s": 329.1111415830019,
       "jit_first_call_s": null,
       "max_nav_error": 1.9317880628477724e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "inclusive_uses_validated_first_call": true,
       "single_sample_reason": "single run > 60 seconds",
       "samples_s": [
@@ -1486,7 +1486,7 @@
       "first_call_s": 3.477061916004459,
       "jit_first_call_s": 3.477061916004459,
       "max_nav_error": 1.176836406102666e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         1.1957749169960152,
         1.187962541996967,
@@ -1525,7 +1525,7 @@
       "first_call_s": 1.7085610409994842,
       "jit_first_call_s": null,
       "max_nav_error": 1.176836406102666e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         1.3150308330004918,
         1.2804791250018752,
@@ -1565,7 +1565,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 5.116137059779646e-06,
       "zero_fee_error": 9.103828801926284e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         7.358447250000609,
         7.435172666999279,
@@ -1604,7 +1604,7 @@
       "first_call_s": 0.026633833993400913,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.02770304199657403,
         0.02759679200244136,
@@ -1643,7 +1643,7 @@
       "first_call_s": 20.022380875001545,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         21.122815582995827,
         21.02277491700079,
@@ -1682,7 +1682,7 @@
       "first_call_s": 0.1908682079956634,
       "jit_first_call_s": null,
       "max_nav_error": 3.4083846855992306e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.1911438340030145,
         0.19453279199660756,
@@ -1721,7 +1721,7 @@
       "first_call_s": 0.10586270799831254,
       "jit_first_call_s": null,
       "max_nav_error": 3.2529534621517087e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.08074708299682243,
         0.07986645899654832,
@@ -1761,7 +1761,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 2.3352735442183636e-05,
       "zero_fee_error": 3.013145288832675e-13,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.07103916699998081,
         0.07014995800273027,
@@ -1801,7 +1801,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 2.33527390953725e-05,
       "zero_fee_error": 7.079670183429698e-12,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         0.2453717090029386,
         0.23880183300207136,
@@ -1840,7 +1840,7 @@
       "first_call_s": 334.45929674999934,
       "jit_first_call_s": null,
       "max_nav_error": 6.45039577307216e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "inclusive_uses_validated_first_call": true,
       "single_sample_reason": "single run > 60 seconds",
       "samples_s": [
@@ -1875,7 +1875,7 @@
       "first_call_s": 4.119884333005757,
       "jit_first_call_s": 4.119884333005757,
       "max_nav_error": 3.26405569239796e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         2.5868175420037005,
         2.8215845419981633,
@@ -1914,7 +1914,7 @@
       "first_call_s": 1.8553262920031557,
       "jit_first_call_s": null,
       "max_nav_error": 2.90878432451791e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         1.781819167001231,
         1.7007856249983888,
@@ -1954,7 +1954,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 4.1045436246833766e-05,
       "zero_fee_error": 3.086420008457935e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "samples_s": [
         48.60468737500196,
         43.08839991599962,
@@ -1993,7 +1993,7 @@
       "first_call_s": 0.0005535420059459284,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.00047208300384227186,
         0.000469082995550707,
@@ -2032,7 +2032,7 @@
       "first_call_s": 0.12815641699853586,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.1205848750032601,
         0.12165099999401718,
@@ -2071,7 +2071,7 @@
       "first_call_s": 0.0008090000046649948,
       "jit_first_call_s": null,
       "max_nav_error": 1.5543122344752192e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0007447909956681542,
         0.0007438750035362318,
@@ -2110,7 +2110,7 @@
       "first_call_s": 0.020309207997343037,
       "jit_first_call_s": null,
       "max_nav_error": 1.5543122344752192e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0015802079942659475,
         0.0015650420027668588,
@@ -2171,7 +2171,7 @@
       "first_call_s": 1.1661085829982767,
       "jit_first_call_s": null,
       "max_nav_error": 1.9984014443252818e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         1.145284124999307,
         1.133992249997391,
@@ -2210,7 +2210,7 @@
       "first_call_s": 1.9568899160003639,
       "jit_first_call_s": 1.9568899160003639,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.010779707998153754,
         0.010519833005673718,
@@ -2260,7 +2260,7 @@
       "first_call_s": 0.210254999998142,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.17330466699786484,
         0.16891745899920352,
@@ -2299,7 +2299,7 @@
       "first_call_s": 0.0007332910026889294,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0005881249962840229,
         0.0005702499984181486,
@@ -2338,7 +2338,7 @@
       "first_call_s": 0.4276024159989902,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.4271056249999674,
         0.4241609589953441,
@@ -2377,7 +2377,7 @@
       "first_call_s": 0.0011632080058916472,
       "jit_first_call_s": null,
       "max_nav_error": 3.885780586188048e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0010836669971467927,
         0.0010744590035756119,
@@ -2416,7 +2416,7 @@
       "first_call_s": 0.02143445800174959,
       "jit_first_call_s": null,
       "max_nav_error": 4.551914400963142e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0019520420028129593,
         0.0019343750027474016,
@@ -2477,7 +2477,7 @@
       "first_call_s": 5.412172457996348,
       "jit_first_call_s": null,
       "max_nav_error": 2.6645352591003757e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         5.532772249993286,
         5.5406391249998705,
@@ -2516,7 +2516,7 @@
       "first_call_s": 1.8328356249985518,
       "jit_first_call_s": 1.8328356249985518,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.019231165999372024,
         0.019351374998223037,
@@ -2566,7 +2566,7 @@
       "first_call_s": 0.25201849999575643,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.3028341250028461,
         0.2439203749963781,
@@ -2605,7 +2605,7 @@
       "first_call_s": 0.0006830420024925843,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0005760829953942448,
         0.0005330000058165751,
@@ -2644,7 +2644,7 @@
       "first_call_s": 0.6779501659984817,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.6786993329951656,
         0.6732974999977159,
@@ -2683,7 +2683,7 @@
       "first_call_s": 0.0016892499988898635,
       "jit_first_call_s": null,
       "max_nav_error": 1.7763568394002505e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0015870830029598437,
         0.0016542499943170696,
@@ -2722,7 +2722,7 @@
       "first_call_s": 0.019718208997801412,
       "jit_first_call_s": null,
       "max_nav_error": 2.220446049250313e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0018106659990735352,
         0.0017837089981185272,
@@ -2783,7 +2783,7 @@
       "first_call_s": 9.784335417003604,
       "jit_first_call_s": null,
       "max_nav_error": 2.886579864025407e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         11.591075875003298,
         10.862484541998128,
@@ -2822,7 +2822,7 @@
       "first_call_s": 1.9837487080003484,
       "jit_first_call_s": 1.9837487080003484,
       "max_nav_error": 8.881784197001252e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.03326345800451236,
         0.03380391700193286,
@@ -2872,7 +2872,7 @@
       "first_call_s": 0.34215599999879487,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.346996708001825,
         0.45075216699478915,
@@ -2911,7 +2911,7 @@
       "first_call_s": 0.0026559170000837184,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0026829170019482262,
         0.002525875002902467,
@@ -2950,7 +2950,7 @@
       "first_call_s": 15.403848249996372,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         14.99883029099874,
         14.891669374999765,
@@ -2989,7 +2989,7 @@
       "first_call_s": 0.014438209000218194,
       "jit_first_call_s": null,
       "max_nav_error": 6.8833827526759706e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.014322957998956554,
         0.014240999997127801,
@@ -3028,7 +3028,7 @@
       "first_call_s": 0.0334309169993503,
       "jit_first_call_s": null,
       "max_nav_error": 5.10702591327572e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.00800945900118677,
         0.007916208996903151,
@@ -3089,7 +3089,7 @@
       "first_call_s": 293.3757080830037,
       "jit_first_call_s": null,
       "max_nav_error": 5.995204332975845e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "inclusive_uses_validated_first_call": true,
       "single_sample_reason": "single run > 60 seconds",
       "samples_s": [
@@ -3124,7 +3124,7 @@
       "first_call_s": 3.1134650419990066,
       "jit_first_call_s": 3.1134650419990066,
       "max_nav_error": 8.881784197001252e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.9516669170043315,
         1.0268752920019324,
@@ -3174,7 +3174,7 @@
       "first_call_s": 3.868336667001131,
       "jit_first_call_s": null,
       "max_nav_error": 4.440892098500626e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         3.6183208330039633,
         3.6716562090005027,
@@ -3213,7 +3213,7 @@
       "first_call_s": 0.024521125000319444,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.02404620800371049,
         0.02417891700315522,
@@ -3252,7 +3252,7 @@
       "first_call_s": 17.03535466700123,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         19.030267082998762,
         17.30250308399991,
@@ -3291,7 +3291,7 @@
       "first_call_s": 0.19604954100213945,
       "jit_first_call_s": null,
       "max_nav_error": 6.139533326177116e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.1972855419953703,
         0.19693566600471968,
@@ -3330,7 +3330,7 @@
       "first_call_s": 0.08911987499595853,
       "jit_first_call_s": null,
       "max_nav_error": 6.017408793468348e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.06898845799878472,
         0.06933366600424051,
@@ -3391,7 +3391,7 @@
       "first_call_s": 260.7154387920018,
       "jit_first_call_s": null,
       "max_nav_error": 7.105427357601002e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "inclusive_uses_validated_first_call": true,
       "single_sample_reason": "single run > 60 seconds",
       "samples_s": [
@@ -3426,7 +3426,7 @@
       "first_call_s": 3.798568375001196,
       "jit_first_call_s": 3.798568375001196,
       "max_nav_error": 1.887379141862766e-15,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         2.1041787920039496,
         2.2322879999992438,
@@ -3476,7 +3476,7 @@
       "first_call_s": 14.21602170800179,
       "jit_first_call_s": null,
       "max_nav_error": 3.3306690738754696e-16,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         13.61928566700226,
         12.60425254200527,
@@ -3515,7 +3515,7 @@
       "first_call_s": 0.0005812079980387352,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0004984999977750704,
         0.0004980410012649372,
@@ -3554,7 +3554,7 @@
       "first_call_s": 0.14845199999399483,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.14422254199598683,
         0.144804124996881,
@@ -3681,7 +3681,7 @@
       "first_call_s": 0.0007187499941210262,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0006302920010057278,
         0.000651333000860177,
@@ -3720,7 +3720,7 @@
       "first_call_s": 0.45705754200025694,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.44941087500046706,
         0.4479682080054772,
@@ -3847,7 +3847,7 @@
       "first_call_s": 0.0007157500003813766,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.0006122910053818487,
         0.000574500001675915,
@@ -3886,7 +3886,7 @@
       "first_call_s": 0.8577779999977793,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.8469384159980109,
         0.8267094580005505,
@@ -4013,7 +4013,7 @@
       "first_call_s": 0.0036474579974310473,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.003256791998865083,
         0.003215708005882334,
@@ -4052,7 +4052,7 @@
       "first_call_s": 17.542089082999155,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         17.918591749999905,
         17.542726500003482,
@@ -4179,7 +4179,7 @@
       "first_call_s": 0.021921374995145015,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         0.019941124999604654,
         0.019899625003745314,
@@ -4218,7 +4218,7 @@
       "first_call_s": 19.936138791999838,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "samples_s": [
         25.24224920800043,
         24.2183385419994,
@@ -4345,7 +4345,7 @@
       "first_call_s": 0.0005584579994319938,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_method": "rayon run_batch",
       "max_batch_nav_error": 0.0,
@@ -4387,7 +4387,7 @@
       "first_call_s": 0.12225041600322584,
       "jit_first_call_s": null,
       "max_nav_error": 0.0,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4435,7 +4435,7 @@
       "first_call_s": 0.000741167001251597,
       "jit_first_call_s": null,
       "max_nav_error": 8.837375276016246e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4483,7 +4483,7 @@
       "first_call_s": 0.019750542000110727,
       "jit_first_call_s": null,
       "max_nav_error": 8.837375276016246e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4532,7 +4532,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 5.833190999116056e-07,
       "zero_fee_error": 4.440892098500626e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4583,7 +4583,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 5.833190981352487e-07,
       "zero_fee_error": 8.304468224196171e-14,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4633,7 +4633,7 @@
       "first_call_s": 1.1046199160045944,
       "jit_first_call_s": null,
       "max_nav_error": 8.79296635503124e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4676,7 +4676,7 @@
       "first_call_s": 1.7774839589983458,
       "jit_first_call_s": 1.7774839589983458,
       "max_nav_error": 8.859579736508749e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_first_call_s": 0.15333391599415336,
       "batch_pilot": {
@@ -4726,7 +4726,7 @@
       "first_call_s": 0.16661249999742722,
       "jit_first_call_s": null,
       "max_nav_error": 8.926193117986259e-14,
-      "semantics": "same daily NAV within 1e-9",
+      "semantics": 0,
       "unique_targets": 1000,
       "batch_first_call_s": 0.07987658299680334,
       "batch_pilot": {
@@ -4777,7 +4777,7 @@
       "jit_first_call_s": null,
       "max_nav_error": 5.605432954469691e-07,
       "zero_fee_error": 5.10702591327572e-15,
-      "semantics": "post-cost allocation / frictionless drift fee approximation; zero-fee control matches",
+      "semantics": 1,
       "unique_targets": 1000,
       "batch_pilot": {
         "K": 16,
@@ -4837,6 +4837,10 @@
     "rss_scope": [
       "process high-water mark including input setup and warmup; child field is largest child, not sum",
       "process high-water mark including input setup, warmup and batch method pilot; child field is largest child, not sum"
+    ],
+    "semantics": [
+      "same daily NAV within 1e-9",
+      "post-cost allocation / frictionless drift fee approximation; zero-fee control matches"
     ]
   },
   "case_diagnostics": {

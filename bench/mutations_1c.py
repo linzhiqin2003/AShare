@@ -55,7 +55,7 @@ CASES = [
                 CORE,
                 "out.daily[25 * m.t + day] += 1.0;",
                 "out.daily[25 * m.t + day] += 0.0;",
-                2,
+                3,  # futures reduction, spot reduction, then the spot opening
             ),
         ],
         [
@@ -94,10 +94,8 @@ CASES = [
     (
         "N20 margin call tolerance",
         "test/test_cleanup.py::test_maintenance_comparison_has_relative_tolerance",
-        [
-            e(CORE, "short > equity + tolerance", "short > equity"),
-        ],
-        [e(REF, "short > equity + tolerance", "short > equity")],
+        [e(CORE, "maintenance > equity + tolerance", "maintenance > equity")],
+        [e(REF, "+ fc > equity + tolerance", "+ fc > equity")],
     ),
     (
         "N23 forced long reduction",
@@ -111,9 +109,19 @@ CASES = [
         "N24 forced weighted row",
         "test/test_cleanup.py::test_forced_day_reduces_long_from_new_row",
         [
-            e(CORE, "w * value.max(0.0) * (1.0 - s.scalars[8]) / mark", "current"),
+            e(
+                CORE,
+                "                        } else {\n                            raw / mark\n",
+                "                        } else {\n                            current\n",
+            ),
         ],
-        [e(REF, "w * max(value, 0) * (1 - config.cash_buffer) / mark", "current")],
+        [
+            e(
+                REF,
+                "else w * max(value, 0) * (1 - self.config.cash_buffer) / mark",
+                "else current",
+            )
+        ],
     ),
     (
         "F1 settlement basis",
@@ -121,11 +129,11 @@ CASES = [
         [
             e(
                 FUT,
-                "portfolio.basis[i],\n                settlement,",
-                "settlement,\n                settlement,",
+                "futures_variation(shares[i], f.multiplier[i], self.basis[i], settlement)",
+                "futures_variation(shares[i], f.multiplier[i], settlement, settlement)",
             ),
         ],
-        [e(FREF, "(settle - basis[i])", "(settle - settle)")],
+        [e(FREF, "(price - self.book.basis[i])", "(price - price)")],
     ),
     (
         "F2 contract multiplier",
@@ -133,15 +141,15 @@ CASES = [
         [
             e(
                 FUT,
-                "portfolio.spot.shares[i],\n                f.multiplier[i],\n                portfolio.basis[i],",
-                "portfolio.spot.shares[i],\n                1.0,\n                portfolio.basis[i],",
+                "futures_variation(shares[i], f.multiplier[i], self.basis[i], settlement)",
+                "futures_variation(shares[i], 1.0, self.basis[i], settlement)",
             ),
         ],
         [
             e(
                 FREF,
-                "q * spec.multiplier[i] * (settle - basis[i])",
-                "q * 1.0 * (settle - basis[i])",
+                "variation = q * self.book.multiplier[i] *",
+                "variation = q * 1.0 *",
             )
         ],
     ),
@@ -151,106 +159,87 @@ CASES = [
         [
             e(
                 FUT,
-                "before.signum() != after.signum() {\n            x.price",
-                "before.signum() != after.signum() {\n            m.price[day * m.n + i]",
+                "} else if before == 0.0 {\n            x.price",
+                "} else if before == 0.0 {\n            m.price[day * m.n + i]",
             ),
         ],
         [
             e(
                 FREF,
-                "else price\n                if before == 0",
-                "else float(market.exec_price[day, i])\n                if before == 0",
+                "            book.basis[i] = price\n        self.quantities[i] = after",
+                "            book.basis[i] = float(self.market.exec_price[day, i])\n"
+                "        self.quantities[i] = after",
             )
         ],
     ),
     (
         "F4 expiry closure",
         "test/test_futures.py::test_contract_settlement_through_expiry",
-        [
-            e(FUT, "if day as i64 == f.expiry[i] {", "if false {"),
-        ],
-        [e(FREF, "if day == spec.expiry[i]:", "if False:")],
+        [e(FUT, "if day as i64 == f.expiry[i] {", "if false {")],
+        [e(FREF, "if self.book.expiry[i] != day or q == 0:", "if True:")],
     ),
     (
         "F5 delivery charge",
         "test/test_futures.py::test_contract_settlement_through_expiry",
-        [
-            e(
-                FUT,
-                "let fee = futures_charge(\n                    qty,",
-                "let fee = 0.0 * futures_charge(\n                    qty,",
-            ),
-        ],
-        [
-            e(
-                FREF,
-                "fee = abs(q) * (\n                    spec.multiplier",
-                "fee = 0.0 * abs(q) * (\n                    spec.multiplier",
-            )
-        ],
+        [e(FUT, "let fee = futures_charge(", "let fee = 0.0 * futures_charge(")],
+        [e(FREF, "fee = abs(q) * (", "fee = 0.0 * abs(q) * (")],
     ),
     (
         "F6 dated collateral",
         "test/test_futures.py::test_dated_margin_is_checked_at_close_and_before_next_trade",
+        [e(FUT, "rate(f.margin_rate, day, i, m)", "rate(f.margin_rate, 0, i, m)")],
         [
-            e(FUT, "rate(f.margin_rate, day, i, m)", "rate(f.margin_rate, 0, i, m)"),
+            e(
+                FREF,
+                "return per_contract(self.f.margin_rate, day, i)",
+                "return per_contract(self.f.margin_rate, 0, i)",
+            )
         ],
-        [e(FREF, "fee_at(spec.margin_rate, day, i)", "fee_at(spec.margin_rate, 0, i)")],
     ),
     (
         "F7 collateral in affordability",
         "test/test_futures.py::test_margin_scales_integer_contracts",
         [
             e(
-                FUT,
-                "a.margin(s.v(11, day), s.v(12, day), fm)",
-                "a.margin(s.v(11, day), s.v(12, day), 0.0)",
+                CORE,
+                "a.margin(s.v(11, day), s.v(12, day), fm) <= a.equity()",
+                "a.margin(s.v(11, day), s.v(12, day), 0.0) <= a.equity()",
             ),
             e(
-                FUT,
-                "a.own_cash(s.flags[4]) - fm >= 0.0",
-                "a.own_cash(s.flags[4]) >= 0.0",
+                CORE,
+                "(s.flags[3] || a.own_cash(s.flags[4]) - fm >= 0.0)",
+                "(s.flags[3] || a.own_cash(s.flags[4]) >= 0.0)",
             ),
         ],
-        [
-            e(FREF, "short + fm\n", "short\n"),
-            e(FREF, "else short) - fm", "else short)"),
-        ],
+        [],
     ),
     (
         "F8 future-first liquidation",
         "test/test_futures.py::test_mixed_liquidation_releases_futures_collateral_first",
         [
             e(
-                FUT,
-                "(!f.kind[i], portfolio.spot.shares[i] < 0.0, i)",
-                "(f.kind[i], portfolio.spot.shares[i] < 0.0, i)",
+                CORE,
+                "(!is_future::<FUT>(m, i), st.shares[i] < 0.0, i)",
+                "(is_future::<FUT>(m, i), st.shares[i] < 0.0, i)",
             ),
         ],
-        [
-            e(
-                FREF,
-                "key=lambda i: (not spec.is_future[i], pos[i] < 0, i)",
-                "key=lambda i: (spec.is_future[i], pos[i] < 0, i)",
-                2,
-            )
-        ],
+        [e(FREF, "return futures + spot", "return spot + futures")],
     ),
     (
         "F9 expired target",
         "test/test_futures.py::test_expiry_disables_later_targets",
         [
             e(
-                FUT,
-                "if f.kind[i] && day as i64 > f.expiry[i] {",
-                "if false && f.kind[i] && day as i64 > f.expiry[i] {",
+                CORE,
+                "if future && day as i64 > m.futures.as_ref().unwrap().expiry[i] {",
+                "if false && future && day as i64 > m.futures.as_ref().unwrap().expiry[i] {",
             ),
         ],
         [
             e(
                 FREF,
-                "if spec.is_future[i] and day > spec.expiry[i]:",
-                "if False and spec.is_future[i] and day > spec.expiry[i]:",
+                "        if book.expired(day, i):\n            if w != 0",
+                "        if False:\n            if w != 0",
             )
         ],
     ),

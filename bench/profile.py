@@ -118,14 +118,15 @@ sys.path.insert(0,sys.argv[1])
 from pair import inputs
 import numpy as np
 import panelbt as bt
-from panelbt.api import _prepare
+from panelbt.api import _checks, _prepare
 from panelbt import _core
 from time import perf_counter_ns
 T,N=4000,5500
 m=bt.Market(**inputs(T,N))
 days=np.arange(0,T,21,dtype=np.int64)
 t=bt.Targets(days,np.arange(len(days)+1,dtype=np.int64)*100,((np.arange(100)[None,:]+np.arange(len(days))[:,None]*37)%N).ravel(),np.full(len(days)*100,.0096))
-args=_prepare(m,[t],bt.Costs(tax_sell=.0005),bt.Config(initial_cash=1e7,max_participation=.1))
+g=bt.Config(initial_cash=1e7,max_participation=.1)
+args=(*_prepare(m,[t],bt.Costs(tax_sell=.0005),g),*_checks([t],g))
 rows=[]
 for _ in range(20):
  start=perf_counter_ns();raw=_core.run(*args,1)[0];elapsed=perf_counter_ns()-start

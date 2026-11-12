@@ -70,21 +70,32 @@ def vector(value: ArrayLike, size: int, name: str) -> FloatArray:
 
 
 def future_rate(value: ArrayLike, shape: tuple[int, int], name: str) -> FloatArray:
-    """Keep scalar, per-contract, or daily per-contract rates compact."""
+    """Scalar, (1, N) per contract, (T, 1) per day, or T×N.
+
+    One-dimensional input is rejected: a length-N and a length-T vector are
+    indistinguishable when T equals N, so the axis must be explicit.
+    """
     t, n = shape
     try:
         a = np.asarray(value, dtype=np.float64)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name}: expected a numeric scalar, N, or T×N") from exc
+        raise ValueError(
+            f"{name}: expected a numeric scalar, (1, N), (T, 1) or T×N"
+        ) from exc
     if a.ndim == 0:
         a = a.reshape(1, 1)
     elif a.ndim == 1:
-        a = a.reshape(1, -1)
+        raise ValueError(
+            f"{name}: a 1-D rate is ambiguous; pass shape (1, N) per contract "
+            "or (T, 1) per day"
+        )
+    if a.ndim == 2 and a.shape == (t, 1) and n != 1:
+        # Per-day rates are expanded once; the kernel reads 1, N or T×N.
+        a = np.repeat(a, n, axis=1)
     if a.shape not in ((1, 1), (1, n), (t, n)):
-        raise ValueError(f"{name}: expected scalar, length N, or T×N")
-    a = array(a, name, np.float64, 2)
-    nonnegative(a, name)
-    return a
+        raise ValueError(f"{name}: expected scalar, (1, N), (T, 1) or T×N")
+    # Values are checked in the kernel (`_core.validate_futures`).
+    return array(a, name, np.float64, 2)
 
 
 @dataclass(frozen=True)
@@ -105,7 +116,12 @@ class Futures:
     delivery_fee_rate: ArrayLike = 0.0
     delivery_fee_per_contract: ArrayLike = 0.0
 
-    def validated(self, shape: tuple[int, int], market: Market) -> Futures:
+    def validated(
+        self, shape: tuple[int, int], market: Market, validate: bool = True
+    ) -> Futures:
+        """Convert and shape-check; with `validate`, check values in the kernel."""
+        from . import _core
+
         t, n = shape
         kind = array(self.is_future, "is_future", np.bool_, 1)
         multiplier = array(self.multiplier, "multiplier", np.float64, 1)
@@ -119,35 +135,26 @@ class Futures:
             raise ValueError("settlement: expected T×N matching market prices")
         if not kind.any():
             raise ValueError("is_future: expected at least one futures column")
-        if not np.isfinite(multiplier[kind]).all() or (multiplier[kind] <= 0).any():
-            raise ValueError(
-                "multiplier: futures columns require finite positive values"
+        names = (
+            "margin_rate",
+            "fee_rate",
+            "fee_per_contract",
+            "delivery_fee_rate",
+            "delivery_fee_per_contract",
+        )
+        rates = {name: future_rate(getattr(self, name), shape, name) for name in names}
+        if validate:
+            empty, none = np.empty((0, 0)), np.empty((0, 0), np.uint8)
+            _core.validate_futures(
+                kind.view(np.uint8),
+                multiplier,
+                expiry,
+                settlement,
+                empty if market.split is None else market.split,
+                empty if market.cash_div is None else market.cash_div,
+                none if market.delist is None else market.delist.view(np.uint8),
+                list(rates.items()),
             )
-        if (expiry[kind] < 0).any() or (expiry[kind] > t).any():
-            raise ValueError("expiry: futures columns require row indices in [0, T]")
-        if (
-            not np.isfinite(settlement[:, kind]).all()
-            or (settlement[:, kind] <= 0).any()
-        ):
-            raise ValueError(
-                "settlement: futures columns require finite positive prices"
-            )
-        if market.split is not None and np.any(market.split[:, kind] != 1):
-            raise ValueError("split: futures columns cannot have corporate actions")
-        if market.cash_div is not None and np.any(market.cash_div[:, kind] != 0):
-            raise ValueError("cash_div: futures columns cannot have corporate actions")
-        if market.delist is not None and np.any(market.delist[:, kind]):
-            raise ValueError("delist: futures columns use expiry, not delisting")
-        rates = {
-            name: future_rate(getattr(self, name), shape, name)
-            for name in (
-                "margin_rate",
-                "fee_rate",
-                "fee_per_contract",
-                "delivery_fee_rate",
-                "delivery_fee_per_contract",
-            )
-        }
         return Futures(
             kind, multiplier, rates.pop("margin_rate"), settlement, expiry, **rates
         )
@@ -167,11 +174,16 @@ class Market:
     delist: ArrayLike | None = None
     can_short: ArrayLike | None = None
     futures: Futures | None = None
+    validate: bool = field(default=True, kw_only=True)
     first_delist: IntArray = field(init=False, repr=False)
     action_indptr: IntArray = field(init=False, repr=False)
     action_cols: IntArray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        from . import _core
+
+        # Thin layer: dtype, dimensions, memory layout and matching shapes are
+        # always checked here; per-cell values are checked in the kernel.
         shape = None
         for name in (
             "exec_price",
@@ -201,13 +213,6 @@ class Market:
                 raise ValueError(
                     f"{name}: expected shape {shape} matching exec_price, got {a.shape}"
                 )
-            if dtype == np.float64:
-                nonnegative(
-                    a,
-                    name,
-                    nan=name in ("exec_price", "close", "volume"),
-                    positive=name in ("exec_price", "close", "split"),
-                )
             object.__setattr__(self, name, a)
         if any(
             getattr(self, key) is None
@@ -216,40 +221,50 @@ class Market:
             raise ValueError(
                 "Market: exec_price, close, can_buy and can_sell are required"
             )
+        if not isinstance(self.validate, bool):
+            raise ValueError("validate: expected bool")
+        empty, none = np.empty((0, 0)), np.empty((0, 0), np.uint8)
 
-        t, n = self.exec_price.shape
-        first = np.full(n, t, dtype=np.int64)
-        if self.delist is not None:
-            present = self.delist.any(axis=0)
-            first[present] = self.delist.argmax(axis=0)[present]
-        first.flags.writeable = False
+        def floats(name):
+            value = getattr(self, name)
+            return empty if value is None else value
+
+        def masks(name):
+            value = getattr(self, name)
+            return none if value is None else value.view(np.uint8)
+
+        # Content checks (if requested), the first delist row and the sparse
+        # daily corporate-action index are computed in parallel in Rust.
+        first, pointers, columns = _core.prepare_market(
+            self.exec_price,
+            self.close,
+            masks("can_buy"),
+            masks("can_sell"),
+            floats("volume"),
+            floats("split"),
+            floats("cash_div"),
+            masks("delist"),
+            masks("can_short"),
+            self.validate,
+        )
+        for a in (first, pointers, columns):
+            a.flags.writeable = False
         object.__setattr__(self, "first_delist", first)
-        # Sparse daily corporate-action index; execution still reads the original
-        # values and visits affected columns in the same ascending order.
-        pointers = np.zeros(t + 1, dtype=np.int64)
-        columns = np.empty(0, dtype=np.int64)
-        if (
-            self.split is not None
-            or self.cash_div is not None
-            or self.delist is not None
-        ):
-            active = np.zeros((t, n), dtype=bool)
-            if self.split is not None:
-                active |= self.split != 1
-            if self.cash_div is not None:
-                active |= self.cash_div != 0
-            present = np.flatnonzero(first < t)
-            active[first[present], present] = True
-            rows, columns = np.nonzero(active)
-            pointers[1:] = np.cumsum(np.bincount(rows, minlength=t))
-            columns = np.ascontiguousarray(columns, dtype=np.int64)
-        pointers.flags.writeable = columns.flags.writeable = False
         object.__setattr__(self, "action_indptr", pointers)
         object.__setattr__(self, "action_cols", columns)
         if self.futures is not None:
             if not isinstance(self.futures, Futures):
                 raise ValueError("futures: expected a Futures specification")
-            object.__setattr__(self, "futures", self.futures.validated((t, n), self))
+            object.__setattr__(
+                self,
+                "futures",
+                self.futures.validated(self.shape, self, self.validate),
+            )
+
+    @property
+    def validated(self) -> bool:
+        """Whether every cell passed the content checks at construction."""
+        return self.validate
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -265,10 +280,13 @@ class Targets:
     cols: ArrayLike
     weights: ArrayLike
     kind: str = "weights"
+    validate: bool = field(default=True, kw_only=True)
     has_negative: bool = field(init=False, repr=False)
     max_row_sum: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        from . import _core
+
         for name in ("days", "indptr", "cols", "weights"):
             dtype = np.float64 if name == "weights" else np.int64
             value = getattr(self, name)
@@ -276,43 +294,36 @@ class Targets:
             if dtype == np.int64 and np.asarray(value).size == 0:
                 value = np.asarray(value, dtype=np.int64)
             object.__setattr__(self, name, array(value, name, dtype, 1))
-        d, p, c, w = self.days, self.indptr, self.cols, self.weights
-        if np.any(d < 0) or np.any(np.diff(d) <= 0):
-            raise ValueError(
-                "days: expected nonnegative strictly increasing rebalance indices"
-            )
-        if (
-            len(p) != len(d) + 1
-            or p[0] != 0
-            or p[-1] != len(c)
-            or np.any(np.diff(p) < 0)
-        ):
-            raise ValueError("indptr: expected length R+1, nondecreasing from 0 to nnz")
-        if len(c) != len(w) or np.any(c < 0):
-            raise ValueError(
-                "cols/weights: expected equal lengths and nonnegative cols"
-            )
         if self.kind not in ("weights", "shares"):
             raise ValueError("kind: expected weights or shares")
-        if not np.isfinite(w).all():
-            raise ValueError("weights: expected finite targets")
-        rows = np.repeat(np.arange(len(d)), np.diff(p))
-        order = np.lexsort((c, rows))
-        ordered = c[order]
-        if len(c) > 1 and np.any((np.diff(rows[order]) == 0) & (np.diff(ordered) == 0)):
-            raise ValueError(
-                "cols: duplicate columns in a rebalance row are not allowed"
-            )
-        if not np.array_equal(order, np.arange(len(c))):
-            object.__setattr__(self, "cols", array(ordered, "cols", np.int64, 1))
+        if not isinstance(self.validate, bool):
+            raise ValueError("validate: expected bool")
+        d, p, c, w = self.days, self.indptr, self.cols, self.weights
+        # Pointer and index structure is always checked; day order, finite
+        # weights and duplicate columns only with `validate`.
+        ordered, negative, row_max = _core.check_plan(d, p, c, w, self.validate)
+        if not ordered:
+            rows = np.repeat(np.arange(len(d)), np.diff(p))
+            order = np.lexsort((c, rows))
+            object.__setattr__(self, "cols", array(c[order], "cols", np.int64, 1))
             object.__setattr__(
                 self, "weights", array(w[order], "weights", np.float64, 1)
             )
-
+            ordered, negative, row_max = _core.check_plan(
+                d, p, self.cols, self.weights, False
+            )
+            if not ordered and self.validate:
+                raise ValueError(
+                    "cols: duplicate columns in a rebalance row are not allowed"
+                )
         # Immutable plans can cache context-independent validation summaries.
-        object.__setattr__(self, "has_negative", bool(np.any(self.weights < 0)))
-        sums = np.bincount(rows, weights=self.weights, minlength=len(d))
-        object.__setattr__(self, "max_row_sum", float(np.max(sums, initial=0.0)))
+        object.__setattr__(self, "has_negative", negative)
+        object.__setattr__(self, "max_row_sum", row_max)
+
+    @property
+    def validated(self) -> bool:
+        """Whether the plan passed the content checks at construction."""
+        return self.validate
 
     def validate_shape(self, t: int, n: int) -> None:
         if len(self.days) and self.days[-1] >= t:
@@ -321,13 +332,15 @@ class Targets:
             raise ValueError(f"cols: expected index < N={n}")
 
     @classmethod
-    def from_dense(cls, weights: ArrayLike, *, kind: str = "weights") -> Targets:
+    def from_dense(
+        cls, weights: ArrayLike, *, kind: str = "weights", validate: bool = True
+    ) -> Targets:
         w = array(weights, "weights", np.float64, 2)
         days = np.flatnonzero(~np.all(np.isnan(w), axis=1))
         rows, cols = np.nonzero((w != 0) & ~np.isnan(w))
         counts = np.bincount(rows, minlength=w.shape[0])[days]
         indptr = np.concatenate(([0], np.cumsum(counts)))
-        return cls(days, indptr, cols, w[rows, cols], kind)
+        return cls(days, indptr, cols, w[rows, cols], kind, validate=validate)
 
     def to_dense(self, t: int, n: int) -> FloatArray:
         if not isinstance(t, int) or not isinstance(n, int) or t < 0 or n < 0:
@@ -505,6 +518,7 @@ EXTRA_COUNTERS = (
     "futures_liquidation",
     "futures_expiry",
     "expired_target",
+    "futures_rounded_to_zero",
 )
 
 
@@ -551,6 +565,8 @@ class Result:
         default_factory=list
     )
     coverage: dict = field(default_factory=dict)
+    # True when the market and every plan of this run passed content checks.
+    inputs_validated: bool = True
 
     def to_npz(self, path) -> None:
         """Save arrays and JSON metadata without pickle or executable payloads."""

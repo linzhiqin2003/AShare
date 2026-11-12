@@ -23,10 +23,23 @@ Delisting uses the previous valid close, never that day's future closing mark.
 The first delist row permanently disables a column. Short delisting buys back
 at prior close × recovery; negative event proceeds debit cash.
 
-Construction validates and converts arrays to C-contiguous float64/bool once.
-Arrays are borrowed through read-only views; writable aliases must not be
-mutated during the lifetime of the market. `first_delist[N]` is computed once,
-avoiding repeated historical scans for newly targeted securities.
+Construction converts arrays to C-contiguous float64/bool once and checks
+dimensions and matching shapes in Python. Per-cell content checks (the value
+domains above, boolean bytes 0/1, futures columns, finite target weights,
+strictly increasing days, unique sorted columns) run in the Rust core, scanning
+fixed chunks in parallel and stopping at the first failing field in the
+original field order; messages are unchanged. When several inputs are bad at
+once, which one is reported may differ from earlier versions; each message is
+still the one for its field. `Market(..., validate=False)` and
+`Targets(..., validate=False)` skip only those content checks (and the
+account-context plan checks: short permission, integer contracts, cash weight
+sums). Shapes, dtypes, layout, plan pointers and row/column bounds are always
+checked, so unchecked input cannot index out of bounds; masks are read as bytes
+(nonzero is true). Objects expose `validated`; `Result.inputs_validated` is true
+only if the market and every plan of the run were checked. Arrays are borrowed
+through read-only views; writable aliases must not be mutated during the
+lifetime of the market. `first_delist[N]` and the sparse corporate-action index
+are computed once in Rust, avoiding repeated historical scans.
 
 ## Targets, lots and limits
 
@@ -235,21 +248,39 @@ sale's quoted price must not be below the latest transaction price.
 
 ## Futures: instrument columns, settlement and expiry
 
-`Market(..., futures=Futures(...))` is opt-in. Without it, the original cash or
-spot-margin runner is dispatched with no futures work in its daily loop. A
-`Futures` object gives `is_future[N]`, `multiplier[N]`, `settlement[T,N]`,
-inclusive `expiry[N]` row indices, and scalar/N/T×N margin and fee arrays.
-An expiry equal to T denotes an expiry beyond the backtest. Future columns
-require a positive finite settlement on every row, a positive multiplier, and
-no split, dividend or delisting. Spot columns ignore futures parameters. Input
-validation finishes before Rust is called. An absent futures object is the
-exact spot-only compatibility path.
+`Market(..., futures=Futures(...))` is opt-in. There is one daily account
+loop. It is compiled once without futures and once with futures columns; the
+spot rules are the same source in both builds, and the account terms alone
+choose between the margin path and the exact cash specialization. A futures
+column that is never held or targeted performs no futures arithmetic, so
+**adding such a column leaves every spot output bit-for-bit unchanged**, for
+cash and margin accounts, including liquidation rows. This is a standing
+property test (`test/test_futures_invariance.py`).
+
+A `Futures` object gives `is_future[N]`, `multiplier[N]`, `settlement[T,N]`,
+inclusive `expiry[N]` row indices, and margin and fee rates. A rate is a
+scalar, a `(1, N)` per-contract row, a `(T, 1)` per-day column or a `T×N`
+panel; one-dimensional rates are rejected because a length-N and a length-T
+vector are indistinguishable when T equals N. An expiry equal to T denotes an
+expiry beyond the backtest. Future columns require a positive finite settlement
+on every row, a positive multiplier, and no split, dividend or delisting. Spot
+columns ignore futures parameters. On a contract's expiry row, `settlement`
+must hold the exchange **delivery settlement price** (for CFFEX index futures,
+the average index level of the final two hours), not an ordinary daily
+settlement; it is both the last variation mark and the cash-delivery price.
 
 `kind="shares"` means an integer contract count for future columns; fractional
 future targets are rejected. `kind="weights"` means signed *notional* divided
 by pretrade equity: floor of `abs(weight × max(E,0) × (1-cash_buffer) /
-(execution_mark × multiplier))`, with the original sign. Future shorts are
+(execution_mark × multiplier))`, with the original sign, i.e. rounded toward
+zero. A nonzero weight that rounds to zero contracts is counted in
+`coverage["futures_rounded_to_zero"]`; no order is sent. Future shorts are
 permitted even when spot `allow_short=False`, since no securities are borrowed.
+An unheld contract without a valid execution quote is sized at the previous
+row's settlement (zero on row 0); no trade uses that quote, so this mark only
+decides whether the target is counted as blocked or as rounded to zero and
+what is carried. Rows before a contract lists still need a positive
+settlement; such placeholder values are read only for this count.
 Future fills use an integer minimum and step of one contract, independent of
 spot lot rules. The same buy/sell masks, participation cap, slippage and impact
 apply to contracts. No future trade uses a missing or nonpositive execution
@@ -278,12 +309,18 @@ settled at that row's supplied delivery settlement price, pays
 delivery_fee_per_contract)`, and becomes zero. The delivery fee appears in
 both `delivery_fee` and the aggregate `other_fee`; it is debited only once.
 The event records signed contracts, settlement price and fee. A same-day target
-may trade before expiry and then settle. Starting the following row, nonzero
-targets are ignored and counted in `n_expired_target`/`expired_target` diagnostics;
-they never reopen a contract. The caller expresses a roll by making the old
+may trade (including opening) before expiry and then settle at that row's
+close. Starting the following row, nonzero targets are ignored and counted in
+`n_expired_target`/`expired_target` diagnostics; they never reopen a contract.
+This also holds on forced-liquidation rows, where the requested row is replaced
+by the liquidation plan: its nonzero expired targets are still counted. The caller expresses a roll by making the old
 contract zero and the next contract nonzero on a rebalance row. The pure
-`roll_targets` helper schedules this at `expiry - roll_days` trading rows;
-`hedge_contracts` converts spot value and beta to signed whole contracts.
+`roll_targets` helper schedules this at `expiry - roll_days` trading rows and
+never moves back to an earlier contract: when no contract expires more than
+`roll_days` rows ahead, the latest unexpired contract is held to its expiry.
+`hedge_contracts` converts spot value and beta to signed whole contracts,
+rounded toward zero like the kernel, and warns (`HedgeRoundingWarning`) when
+a positive exposure rounds to zero contracts.
 
 Future collateral is `abs(contracts) × multiplier × mark × margin_rate[day,col]`.
 The pretrade mark is the last settlement (or an execution price on a new
@@ -291,8 +328,8 @@ contract); today's settlement is not read during trade sizing or affordability.
 An executed contract uses its effective execution price for the projected
 collateral of that column. At close the mark changes to today's settlement.
 The sum of future collateral is added to spot initial and maintenance margin.
-Without financing, available own cash is `C - restricted_spot_short_value -
-future_collateral`, and must stay nonnegative after openings; withdrawals and
+Available own cash is `C - restricted_spot_short_value - future_collateral`
+for every account. Without financing it must stay nonnegative after openings; withdrawals and
 idle-cash interest use the same available balance. Financing interest applies
 to its negative part. All opening orders are scaled by a common factor and
 rounded down to legal quantities, with a prefix feasibility check.
@@ -300,10 +337,39 @@ rounded down to legal quantities, with a prefix feasibility check.
 The mixed account performs all reductions before openings. Future reductions
 go first because they release collateral without consuming spot principal;
 spot long sales precede spot short covers, preserving the spot risk order.
+**Future reductions and closes are never trimmed by the own-cash rule and are
+not subject to the cash account's legacy sale check.** A reduction only
+releases collateral, and the variation loss is settled at the close whether or
+not the contracts are closed, so trimming would only keep requested risk. Only
+openings and additions are constrained by cash and margin. If the commission
+of a reduction exceeds available own cash, the deficit is retained like any
+other account debt: it reduces own cash, pays `financing_rate` on its negative
+part at the close and can trigger a maintenance call; it is never clipped.
+Spot sales in the cash specialization keep the legacy check
+`cash + proceeds >= fees` while cash before the sale is nonnegative. When a
+futures loss has left cash negative, a sale need only pay its own fees
+(`proceeds >= fees`): it never deepens the debt, so it executes even though it
+does not repay the debt in one fill. This applies to requested reductions and
+forced liquidation alike, consistent with DESIGN 4.8 (risk-reducing orders
+fill first); a cash account that never holds a contract cannot reach negative
+cash on validated input, so its results are unchanged.
+
 Future openings reserve hedge collateral before short-sale and cash-funded
-spot openings. On a next-day maintenance call, the same proportional
-liquidation solver includes both instruments, then applies these reduction
-orders under quote, mask and volume constraints. Unfilled reductions retain the
+spot openings. In a margin account all openings form one basket scaled by a
+common factor, futures first in the prefix check. In the cash specialization
+(long-only, no financing, long_initial=1, zero maintenance) the spot side keeps
+its exact legacy algorithm: futures openings are first scaled so that total
+collateral does not exceed cash, then the legacy proportional-then-affordable
+spot basket uses cash minus collateral. A cash account records maintenance
+calls (collateral > equity), forced liquidation and insolvency only after it
+has held a contract; a cash account that never holds one behaves exactly as
+without futures.
+
+On a next-day maintenance call, the same proportional liquidation solver
+includes both instruments, then applies these reduction orders under quote,
+mask and volume constraints. A risk-reducing target on that row sizes futures
+with the unrounded `weight × E × (1-cash_buffer) / (mark × multiplier)`, exactly
+as spot uses the unrounded share quantity. Unfilled reductions retain the
 call; a feasible completed plan does not trigger a new call solely because
 initial margin remains above equity. A scheduled risk-reducing target may
 increase that day's liquidation, while increases are discarded. Insolvency
@@ -370,3 +436,16 @@ contract specifications.
 - `Costs` uses keyword-only construction. NumPy >=2.1 is sufficient: no API newer
   than NumPy 2.1 is used, and 2.1 is the first series supporting Python 3.13
   ([release notes](https://numpy.org/doc/2.1/release/2.1.0-notes.html)).
+- Futures diagnostics. `futures_rounded_to_zero` counts a nonzero weight
+  target whose contract count `0 < |x| < 1` floors to zero, evaluated after the
+  trade band; a held position closed this way also counts; with E ≤ 0 the
+  quantity is zero by definition and is not counted. `expired_target` counts
+  every nonzero target that reaches an expired contract, including carried
+  targets and the requested row of a liquidation day. Future fills never count
+  `min_commission`, `per_share_fee`, `commission_cap`, `open_short` or
+  `cover_short`; a forced contract fill counts both `liquidation` and
+  `futures_liquidation`; `futures_margin_call` is a maintenance call while
+  contracts remain held at the close. A cash account's futures-opening scaling
+  counts only `futures_margin_scaled`. Among several contract reductions on
+  one row, a margin account processes longs before shorts (by column), and the
+  cash specialization processes them by column.

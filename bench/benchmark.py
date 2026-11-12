@@ -13,7 +13,7 @@ from time import perf_counter
 import numpy as np
 import panelbt as bt
 from panelbt import _core
-from panelbt.api import _batch_result, _prepare, _result
+from panelbt.api import _batch_result, _checks, _prepare, _result
 from panelbt.reference import run as reference_run
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,7 +115,10 @@ def main():
             lambda config=config: bt.run(market, targets[0], costs, config), args.repeat
         )
         prepare, prep_samples, prepared = timed(
-            lambda config=config: _prepare(market, [targets[0]], costs, config),
+            lambda config=config: (
+                *_prepare(market, [targets[0]], costs, config),
+                *_checks([targets[0]], config),
+            ),
             args.repeat,
         )
         kernel, kernel_samples, raw_result = timed(
@@ -142,7 +145,11 @@ def main():
         )
         assert result.nav.shape == (1000, 4000)
         prepare, prep_samples, prepared = timed(
-            lambda: _prepare(market, targets, costs, config), args.repeat
+            lambda: (
+                *_prepare(market, targets, costs, config),
+                *_checks(targets, config),
+            ),
+            args.repeat,
         )
         kernel, kernel_samples, raw_batch = timed(
             lambda: _core.run(*prepared, 0), args.repeat

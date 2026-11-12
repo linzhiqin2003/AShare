@@ -1,6 +1,7 @@
 """Panel portfolio backtesting with NumPy as the only runtime dependency."""
 
 from .api import run, run_batch
+from .futures import HedgeRoundingWarning
 from .models import (
     Config,
     Costs,
@@ -20,6 +21,7 @@ __all__ = [
     "DelistEvent",
     "ExpiryEvent",
     "Futures",
+    "HedgeRoundingWarning",
     "Market",
     "MarginModel",
     "Result",

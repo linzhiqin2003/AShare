@@ -5,7 +5,7 @@ def compact(report):
     descriptions = report.setdefault("descriptions", {})
     diagnostics = report.setdefault("case_diagnostics", {})
     for row in report["records"]:
-        for name in ("timing_boundary", "rss_scope"):
+        for name in ("timing_boundary", "rss_scope", "semantics"):
             if name not in row:
                 continue
             values = descriptions.setdefault(name, [])

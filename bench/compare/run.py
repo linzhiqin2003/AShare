@@ -33,6 +33,14 @@ ENGINES = [
 ]
 
 
+def semantics(report, row):
+    """Resolve a compacted semantics index back to its shared description."""
+    value = row.get("semantics", "")
+    return (
+        report["descriptions"]["semantics"][value] if isinstance(value, int) else value
+    )
+
+
 def render(report):
     lines = [
         "# 引擎对比基线",
@@ -73,7 +81,7 @@ def render(report):
         error = f"{x['max_nav_error']:.3g}" if "max_nav_error" in x else "—"
         mem = f"{x.get('peak_rss_bytes', 0) / 2**20:.1f}" if status == "ok" else "—"
         lines.append(
-            f"|{x['task']}|{x['T']}×{x['N']} / {x['interval']}|{x['engine']}|{x['K']}|{ms}|{inclusive}|{cold}|{error}|{mem}|{child}|{x.get('threads', '—')}|{status}: {x.get('reason', x.get('semantics', ''))}|"
+            f"|{x['task']}|{x['T']}×{x['N']} / {x['interval']}|{x['engine']}|{x['K']}|{ms}|{inclusive}|{cold}|{error}|{mem}|{child}|{x.get('threads', '—')}|{status}: {x.get('reason', semantics(report, x))}|"
         )
     lines += [
         "",
@@ -136,7 +144,7 @@ def render(report):
             f"| 完整现货+20 列期货 | {mixed['min']:.3f} | {mixed['median']:.3f} | 不适用 | — |",
             f"| 同义简化对冲任务 | {simple['panelbt']['min']:.3f} | {simple['panelbt']['median']:.3f} | {simple['numpy']['median']:.3f} | {future['simple_max_nav_error']:.3g} |",
             "",
-            f"简化任务使用活跃证券稀疏 NumPy 运算；该任务 NumPy 比自研快，不能用它外推完整规则。新增混合语料 {ledger['cases']} 组、{ledger['trades']} 笔成交：参考实现 {ledger['divergences']} 分叉，独立账本 {ledger['ledger_failures']} 不符。复现：`uv run --no-sync python bench/validate.py --corpus futures --start 40000 --count 20000`。",
+            f"简化任务使用活跃证券稀疏 NumPy 运算；该任务 NumPy 比自研快，不能用它外推完整规则。首轮混合语料 {ledger['cases']} 组、{ledger['trades']} 笔成交：独立账本 {ledger['ledger_failures']} 不符（当时的参考实现是内核的逐段转写，已在返工中删除，对拍以下方返工小节为准）。复现：`uv run --no-sync python bench/validate.py --corpus futures --start 40000 --count 20000`。",
             "",
             f"机器：{future['machine']['platform']}，Python {future['machine']['python']}，NumPy {future['machine']['numpy']}；开始时 1/5/15 分钟负载 {', '.join(f'{x:.2f}' for x in future['machine']['load_start'])}，峰值 RSS {future['machine']['rss_peak_bytes'] / 2**30:.2f} GiB。",
         ]
@@ -147,6 +155,48 @@ def render(report):
                 f"同输入现货路径与 1b `{pair['base_ref']}` 各自 LTO 构建、AB/BA 交替配对（{pair['T']}×{pair['N']}，不含准备）；三场景最小值比均小于 1.05：",
                 "",
                 "| 场景 | 1b 最小 / 中位 ms | 当前最小 / 中位 ms | 最小值比 |",
+                "|---|---:|---:|---:|",
+            ]
+            for key, label in (
+                ("full_rules", "完整规则含退市"),
+                ("no_delist_panel", "不传退市面板"),
+                ("prices_only", "仅价格"),
+            ):
+                row = pair["scenarios"][key]
+                lines.append(
+                    f"| {label} | {row['base_min_ms']:.3f} / {row['base_median_ms']:.3f} | {row['current_min_ms']:.3f} / {row['current_median_ms']:.3f} | {row['minimum_ratio']:.3f} |"
+                )
+    rework = RESULTS / "step1c-validation.json"
+    if rework.exists():
+        timing = json.loads(rework.read_text())
+        lines += [
+            "",
+            "## 步骤 1c 返工：输入检查挪进内核",
+            "",
+            f"逐格内容检查、`first_delist` 与公司行为索引改在 Rust 里按 16384 个元素一块多线程扫描。计时：{timing['method']}；左边是改动前的包快照（NumPy 检查），右边是当前构建。开始/结束时 1/5/15 分钟负载 {timing['load_1_5_15'][0]} / {timing['load_1_5_15'][1]}，机器上有其他任务，只比较同轮配对。原始样本在被忽略的 `.cache/fix/`。复现：`uv run --no-sync python bench/validation_timing.py --before <旧包目录>`。",
+            "",
+            "| 场景 | 改动前 最小 / 中位 ms | 改动后 最小 / 中位 ms |",
+            "|---|---:|---:|",
+        ]
+        labels = {
+            "market_4000x5500": "4000×5500 行情构建（含检查）",
+            "batch_1000_check_and_run": "1000×100 行情 + 1000 份目标 + 多线程回测",
+            "single_total_validated": "4000×5500 行情 + 目标 + 单次回测，检查",
+            "single_total_unchecked": "同上，`validate=False`",
+        }
+        for key, label in labels.items():
+            row = timing["ms"].get(key, {})
+            before = row.get("before")
+            after = row["after"]
+            left = f"{before[0]:.3f} / {before[1]:.3f}" if before else "不适用"
+            lines.append(f"| {label} | {left} | {after[0]:.3f} / {after[1]:.3f} |")
+        pair = timing.get("spot_pair_to_round_start")
+        if pair:
+            lines += [
+                "",
+                f"不含期货的回测本身（不含准备）与本轮起点 `{pair['base_ref']}` 各自构建、AB/BA 交替配对（{pair['T']}×{pair['N']}；负载 {pair['load_start']} → {pair['load_end']}，忙机，只看比值）；三个场景末日净值和成交笔数相同：",
+                "",
+                "| 场景 | 起点 最小 / 中位 ms | 当前 最小 / 中位 ms | 最小值比 |",
                 "|---|---:|---:|---:|",
             ]
             for key, label in (
