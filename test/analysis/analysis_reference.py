@@ -6,18 +6,17 @@ import math
 
 
 def ref_total_returns(close, adj):
+    """后复权价 close×adj 作为一个整体沿用最近有效值（停牌中除权不产生收益）。"""
     t, n = len(close), len(close[0])
     out = [[math.nan] * n for _ in range(t)]
     for i in range(n):
-        last_c = last_a = math.nan
+        last = math.nan
         prev = math.nan
         for day in range(t):
             c, a = close[day][i], adj[day][i]
-            if not math.isnan(c):
-                last_c = c
-            if not math.isnan(a):
-                last_a = a
-            price = last_c * last_a
+            if not (math.isnan(c) or math.isnan(a)):
+                last = c * a
+            price = last
             if day and not math.isnan(prev) and prev > 0:
                 out[day][i] = price / prev - 1
             prev = price

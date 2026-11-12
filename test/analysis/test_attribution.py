@@ -19,9 +19,13 @@ import ashare.analysis as an
 EPS = np.finfo(float).eps
 
 
-def test_imports_point_at_worktree():
-    assert "/.worktrees/analysis/" in ashare.__file__
-    assert "/.worktrees/analysis/" in panelbt.__file__
+def test_imports_point_at_this_checkout():
+    """测试导入的是本仓库副本里的代码（防 editable 安装指向别处）。"""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    assert Path(ashare.__file__).resolve().is_relative_to(root / "src")
+    assert Path(panelbt.__file__).resolve().is_relative_to(root / "packages")
 
 
 def test_total_returns_matches_reference():
@@ -295,3 +299,211 @@ def test_attribute_from_model_iterable_matches_history():
         w, panel, model_series(source, config=cfg, threads=1), benchmark="weight_bench"
     )
     np.testing.assert_array_equal(a.daily.values, b.daily.values)
+
+
+def _suspended_actions_panel(seed=11, split=2.0, div=0.3, adj_gap=False):
+    """第 2 只 40–42 日停牌，停牌中 41 日 10 送 10、42 日每股派现 div（送转后股数）。
+
+    复权因子按除权参考价写：送转日 ×split，派现日 × 参考价 / (参考价 − div)。
+    adj_gap=True 时停牌日的复权因子也缺失（只在复牌日出现跳升后的值）。"""
+    panel = make_panel(seed=seed)
+    f = panel.fields
+    f["split"][30, 1] = 1.25  # 夹具第 1 只第 30 日的除权（复权因子 ×1.25）
+    last = f["close"][39, 2]
+    f["split"][41, 2] = split
+    f["cash_dividend"][42, 2] = div
+    ref = last / split
+    f["close"][43:, 2] = f["close"][43:, 2] / split - div
+    f["open"][43:, 2] = f["open"][43:, 2] / split - div
+    f["adj_factor"][41:, 2] *= split
+    f["adj_factor"][42:, 2] *= ref / (ref - div)
+    if adj_gap:
+        f["adj_factor"][40:43, 2] = np.nan
+    return panel
+
+
+@pytest.mark.parametrize("adj_gap", [False, True])
+def test_total_returns_split_and_dividend_during_suspension(adj_gap):
+    """停牌中除权：停牌期间收益为 0，复牌日 = 复牌收盘 ÷ 除权参考价 − 1，没有假收益。"""
+    panel = _suspended_actions_panel(adj_gap=adj_gap)
+    r = an.total_returns(panel)
+    f = panel.fields
+    assert np.all(r[40:43, 2] == 0)
+    ref = f["close"][39, 2] / 2.0 - 0.3
+    assert math.isclose(r[43, 2], f["close"][43, 2] / ref - 1, rel_tol=1e-12)
+    expected = np.array(
+        ref_total_returns(f["close"].tolist(), f["adj_factor"].tolist())
+    )
+    np.testing.assert_allclose(r, expected, rtol=0, atol=1e-15, equal_nan=True)
+    # 参考价：停牌中逐次除权。
+    rc = an.reference_close(panel)
+    assert rc[40, 2] == f["close"][39, 2]
+    assert math.isclose(rc[41, 2], f["close"][39, 2] / 2.0, rel_tol=1e-15)
+    assert math.isclose(rc[42, 2], ref, rel_tol=1e-15)
+
+
+def test_valuation_and_quiet_days_match_panelbt_with_suspended_actions():
+    """停牌中送转、派现：result_weights 的估值与 panelbt 逐日一致，不交易的日子交易项为 0。"""
+    panel = _suspended_actions_panel()
+    t, n = len(panel.dates), len(panel.symbols)
+    dense = np.full((t, n), np.nan)
+    for day in (1, 16, 31, 46, 61, 76, 91, 106):
+        dense[day] = 0.95 / n  # 第 2 只每次都持有，停牌期间也在
+    config = panelbt.Config(initial_cash=1e7, min_qty=0, qty_step=0, record_trades=True)
+    costs = panelbt.Costs(impact_k=np.full((t, n), 0.2), tax_sell=0.001)
+    plan = panelbt.Targets.from_dense(dense)
+    result = panelbt.run(_market(panel), plan, costs, config)
+    assert result.positions[39, 2] > 0
+    weights, info = an.result_weights(result, panel)
+    # 持仓市值 + 现金 = 权益（逐日，含停牌除权的 41、42 日）。
+    value = weights.sum(axis=1) * result.equity + result.cash
+    np.testing.assert_allclose(value, result.equity, rtol=1e-12)
+    assert math.isclose(
+        weights[41, 2] * result.equity[41],
+        result.positions[41, 2] * panel["close"][39, 2] / 2.0,
+        rel_tol=1e-12,
+    )
+    rep = an.attribute(result, panel, random_history(panel), benchmark="weight_bench")
+    trade = set(np.flatnonzero(~np.all(np.isnan(dense), axis=1)))
+    position = {d: j for j, d in enumerate(panel.dates)}
+    quiet = [i for i, d in enumerate(rep.daily.index) if position[d] not in trade]
+    assert np.abs(rep.daily["trading"][quiet]).max() < 1e-12
+
+
+def test_attribute_warns_when_benchmark_columns_missing_from_history():
+    """只给组合列建历史：基准成分的收益全部落进特质项，应当告警并在诊断里给出。"""
+    panel = make_panel(seed=13)
+    w = random_weights(panel)
+    w[:, : len(panel.symbols) // 2] = 0.0  # 组合只持有后一半；基准只含前一半
+    full = random_history(panel)
+    keep = an.held_columns(w, symbols=panel.symbols)
+    rows = [full.symbols.index(s) for s in keep]
+    partial = an.FactorHistory(
+        full.dates, keep, full.factors, full.exposures[:, rows], full.factor_returns
+    )
+    with pytest.warns(UserWarning, match="held_columns"):
+        rep = an.attribute(w, panel, partial, benchmark="weight_bench")
+    diag = rep.diagnostics
+    assert diag["uncovered_weight"].mean() > 0.5
+    assert np.abs(diag["uncovered_specific"]).sum() > 0
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        good = an.attribute(w, panel, full, benchmark="weight_bench")
+    assert good.diagnostics["uncovered_weight"].max() == 0
+    assert rep.summary["identity"]["daily_max_abs"] < 1e-15
+
+
+def test_suspended_specific_diagnostic():
+    """停牌持仓收益为 0 而因子项照算，差额 Σ a·(0 − B·f) 单列在诊断里。"""
+    panel = make_panel(seed=3)
+    hist = random_history(panel)
+    w = random_weights(panel)
+    w[:, 2] = np.maximum(w[:, 2], 0.05)
+    rep = an.attribute(w, panel, hist, benchmark="weight_bench")
+    rows = {d: i for i, d in enumerate(rep.daily.index)}
+    s = rep.diagnostics["suspended_specific"]
+    for day in (40, 41, 42):
+        i = rows[panel.dates[day]]
+        held = an.held_from_weights(w)[day]
+        hb = an.benchmark_held(panel, "weight_bench", an.total_returns(panel))[day]
+        bf = hist.exposures[day - 1, 2] @ hist.factor_returns[day]
+        expected = -(held[2] - hb[2]) * bf
+        assert math.isclose(s[i], expected, rel_tol=1e-12, abs_tol=1e-18)
+    other = [rows[d] for d in rep.daily.index if d not in panel.dates[40:43]]
+    assert np.all(s[other] == 0)
+
+
+def test_readable_errors_for_wrong_inputs():
+    panel = make_panel(seed=3)
+    w = random_weights(panel)
+    with pytest.raises(TypeError, match="None"):
+        an.attribute(w, panel, None)
+    with pytest.raises(TypeError, match="FactorHistory"):
+        an.attribute(w, panel, "history")
+    with pytest.raises(ValueError, match="同形状"):
+        an.attribute(w, panel, random_history(panel), benchmark=np.ones(5))
+    with pytest.raises(TypeError, match="FactorHistory"):
+        an.risk_series(w, panel, None)
+    with pytest.raises(TypeError, match="RiskModel"):
+        an.decompose_risk(np.ones(3), None)
+    with pytest.raises(TypeError, match="RiskModel"):
+        an.decompose_risk(np.ones(3), [1, 2])
+    with pytest.raises(ValueError, match="同形状"):
+        model = (np.eye(3), np.eye(3), np.ones(3), "abc")
+        an.decompose_risk(np.ones(3), model, np.ones(2))
+    with pytest.raises(TypeError, match="panelbt.Result"):
+        an.cost_breakdown(w, panel.dates)
+
+
+def test_dividend_tax_goes_to_cost_not_trading():
+    """红利税记成本项：停牌中派现扣税的那天交易项仍为 0。"""
+    panel = _suspended_actions_panel()
+    t, n = len(panel.dates), len(panel.symbols)
+    dense = np.full((t, n), np.nan)
+    dense[1] = 0.95 / n
+    config = panelbt.Config(
+        initial_cash=1e7,
+        min_qty=0,
+        qty_step=0,
+        record_trades=True,
+        dividend_tax_rate=0.2,
+    )
+    plan = panelbt.Targets.from_dense(dense)
+    result = panelbt.run(_market(panel), plan, panelbt.Costs(), config)
+    assert result.dividend_tax[42] > 0
+    rep = an.attribute(result, panel, random_history(panel), benchmark="weight_bench")
+    rows = {d: i for i, d in enumerate(rep.daily.index)}
+    i = rows[panel.dates[42]]
+    assert abs(rep.daily["trading"][i]) < 1e-15
+    expected = -result.dividend_tax[42] / result.equity[41]
+    assert math.isclose(rep.daily["cost"][i], expected, rel_tol=1e-12)
+    costs = an.cost_breakdown(result, panel.dates)
+    assert costs["dividend_tax"][-1] > 0
+
+
+def test_bias_interval_widens_with_fat_tails():
+    rng = np.random.default_rng(5)
+    normal = an.bias_statistics(rng.normal(0, 1, 2500))
+    fat = an.bias_statistics(rng.standard_t(4, 2500) / np.sqrt(2.0))  # 方差 1，峰度很高
+    width = lambda b, key: b[key][1] - b[key][0]  # noqa: E731
+    # 正态：三种区间几乎一样宽，且都含 1。
+    assert abs(width(normal, "interval") / width(normal, "interval_normal") - 1) < 0.2
+    assert normal["interval"][0] < 1 < normal["interval"][1]
+    # 厚尾：正态区间太窄，自助与峰度修正区间明显更宽。
+    assert fat["kurtosis"] > 5
+    assert width(fat, "interval") > 1.5 * width(fat, "interval_normal")
+    assert width(fat, "interval_kurtosis") > 1.5 * width(fat, "interval_normal")
+    # 固定种子，结果可复现。
+    z = rng.normal(0, 1, 300)
+    assert an.bias_statistics(z)["interval"] == an.bias_statistics(z)["interval"]
+
+
+def test_reference_prices_dividend_before_split_on_same_day():
+    """同一天派现与送转：先按送转前股数派现，再送转（与 panelbt 内核的顺序相同）。"""
+    close = np.array([[10.0], [np.nan], [np.nan], [6.0]])
+    div = np.array([[0.0], [0.5], [0.0], [0.0]])
+    split = np.array([[1.0], [2.0], [np.nan], [1.0]])
+    ref = an.reference_prices(close, div, split)
+    np.testing.assert_array_equal(ref[:, 0], [10.0, 4.75, 4.75, 6.0])
+
+
+def test_to_dict_diagnostics_optional():
+    import json
+
+    panel = make_panel(seed=3)
+    rep = an.attribute(
+        random_weights(panel), panel, random_history(panel), "weight_bench"
+    )
+    assert "diagnostics" not in rep.to_dict()
+    full = rep.to_dict(diagnostics=True)
+    assert len(full["diagnostics"]["suspended_specific"]) == len(rep.daily.index)
+    assert json.dumps(full, allow_nan=False)
+
+
+def test_index_fields_match_data_catalog():
+    from ashare.analysis.adapters import INDEX_FIELDS
+    from ashare.data.catalog import INDEXES
+
+    assert INDEX_FIELDS == {code: f"weight_{name}" for name, code in INDEXES.items()}

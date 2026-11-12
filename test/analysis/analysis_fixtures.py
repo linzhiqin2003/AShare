@@ -42,7 +42,10 @@ def make_panel(t=120, n=12, sectors=4, seed=0, suspend=True, monthly=20):
     amount = volume * np.nan_to_num(close, nan=10)
     industry = np.tile(801010 + 10 * (np.arange(n) % sectors), (t, 1)).astype(float)
     industry[60:, 3] = 801010 + 10 * ((3 + 1) % sectors)  # 行业变更
-    cap = rng.uniform(1e9, 1e10, n) * np.ones((t, 1))
+    # 市值逐日变化（随价格走），回归权重用前一日还是当日市值才分得出来。
+    cap = rng.uniform(1e9, 1e10, n) * np.exp(
+        np.cumsum(rng.normal(0, 0.03, (t, n)), axis=0)
+    )
     weight = np.zeros((t, n))
     for start in range(0, t, monthly):
         snap = rng.uniform(0.5, 1.5, n)

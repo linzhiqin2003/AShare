@@ -1,5 +1,6 @@
 """容量与成本：单笔成本公式、与 panelbt 实跑对账、容量求解、变现天数、成本拆解。"""
 
+import dataclasses
 import json
 import math
 
@@ -10,6 +11,7 @@ from analysis_fixtures import make_panel
 from analysis_reference import ref_trade_cost
 
 import ashare.analysis as an
+from ashare.analysis.adapters import ashare_costs, market_from_panel
 from ashare.analysis.capacity import MarketArrays, _dense_targets, _fills
 
 
@@ -20,9 +22,28 @@ def _event_panel(seed=3, t=200, n=20):
     f["cash_dividend"][50, 4] = 0.3
     f["close"][50:, 4] -= 0.3
     f["open"][50:, 4] -= 0.3
+    # 同一天先派现（按送转前股数）再 10 送 10。
+    f["cash_dividend"][70, 6] = 0.2
+    f["split"][70, 6] = 2.0
+    f["adj_factor"][70:, 6] *= f["close"][69, 6] / ((f["close"][69, 6] - 0.2) / 2.0)
+    f["close"][70:, 6] = (f["close"][70:, 6] - 0.2) / 2.0
+    f["open"][70:, 6] = (f["open"][70:, 6] - 0.2) / 2.0
+    # 停牌中（第 2 只 40–42 日）送转、派现：估值价按最近收盘逐次除权。
+    ref = f["close"][39, 2] / 2.0
+    f["split"][41, 2] = 2.0
+    f["cash_dividend"][42, 2] = 0.1
+    f["close"][43:, 2] = f["close"][43:, 2] / 2.0 - 0.1
+    f["open"][43:, 2] = f["open"][43:, 2] / 2.0 - 0.1
+    f["adj_factor"][41:, 2] *= 2.0
+    f["adj_factor"][42:, 2] *= ref / (ref - 0.1)
     f["delist"][150, 5] = True
     f["close"][150:, 5] = np.nan
     f["open"][150:, 5] = np.nan
+    # 价格改过之后重算高低价和涨跌停（否则除权后的价格会落在旧的跌停价以下）。
+    f["high"] = np.fmax(f["open"], f["close"])
+    f["low"] = np.fmin(f["open"], f["close"])
+    f["upper_limit"] = np.nan_to_num(f["close"], nan=10) * 1.5
+    f["lower_limit"] = np.nan_to_num(f["close"], nan=10) * 0.5
     return panel
 
 
@@ -80,11 +101,17 @@ def test_simulation_reconciles_with_panelbt_relaxed_rules(aum):
     dense = _plan(t, n)
     m = MarketArrays.from_panel(panel)
     k = an.impact_coefficients(panel)
-    costs = an.default_costs(panel.dates)
+    # 主干的 A 股费用表，另加按股收取的佣金和过户费（走到 per-share 分支）。
+    costs = dataclasses.replace(
+        ashare_costs(panel.dates),
+        commission_per_share=2e-4,
+        fee_per_share_buy=1e-3,
+        fee_per_share_sell=5e-4,
+    )
     days, rows = _dense_targets(dense, (t, n))
     sim = an.simulate(days, rows, m, costs, k, 0.5, aum)
-    market = an.market_from_panel(panel)
-    run_costs = panelbt.Costs(tax_sell=costs.tax_sell, impact_k=k)
+    market = market_from_panel(panel)
+    run_costs = dataclasses.replace(costs, impact_k=k)
     cfg = panelbt.Config(initial_cash=aum, min_qty=0, qty_step=0)
     res = panelbt.run(market, panelbt.Targets.from_dense(dense), run_costs, cfg)
     assert sim.blocked > 0  # 走到了挂单重试分支（停牌、无成交量）
@@ -156,16 +183,72 @@ def test_capacity_scaling_and_solutions():
     at = an.capacity(
         dense, panel, aum=[c["by_participation"] * 1.001, c["by_participation"] * 0.999]
     )
-    assert at.table["over_cap_share"][0] < 0.05 <= at.table["over_cap_share"][1]
+    assert at.table["over_cap_share"][0] <= 0.05 < at.table["over_cap_share"][1]
 
 
-def test_capacity_with_impossible_gross_excess():
-    panel = _event_panel()
-    t, n = len(panel.dates), len(panel.symbols)
-    cap = an.capacity(_plan(t, n), panel, aum=[1e7], gross_excess=-0.01)
-    assert cap.capacity["by_cost"] == 0.0
-    cap = an.capacity(_plan(t, n), panel, aum=[1e7], gross_excess=1e-5)
-    assert cap.capacity["by_cost"] == 1e4  # 固定成本已超过毛超额的一半：任何规模都不行
+def _u_curve_case():
+    """成本曲线先降后升：小规模被最低佣金 5 元拖累，大规模被冲击拖累。"""
+    panel = make_panel(t=500, n=12, suspend=False)
+    panel.fields["volume"] = panel.fields["volume"] * 100
+    dense = np.full((500, 12), np.nan)
+    for d in range(1, 500, 20):
+        dense[d] = 0.0
+        dense[d, :10] = 0.099
+    return panel, dense
+
+
+def test_capacity_takes_rising_branch_crossing_with_minimum_commission():
+    panel, dense = _u_curve_case()
+    cap = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03)
+    c = cap.capacity
+    assert c["by_cost_status"] == "found" and c["min_viable_status"] == "found"
+    assert c["min_viable_aum"] < c["min_cost_aum"] < c["by_cost"]
+    # 两个交点上的成本都等于门槛（毛超额的一半），中间的规模低于门槛。
+    probe = an.capacity(
+        dense,
+        panel,
+        aum=[c["min_viable_aum"], c["min_cost_aum"], c["by_cost"]],
+        gross_excess=0.03,
+    ).table["cost_total"]
+    assert math.isclose(probe[0], 0.015, rel_tol=1e-6)
+    assert probe[1] < 0.015
+    assert math.isclose(probe[2], 0.015, rel_tol=1e-6)
+    # 小规模一侧确实是最低佣金造成的：去掉它，下降段的交点消失，上升段的交点不变。
+    free = dataclasses.replace(ashare_costs(panel.dates), commission_min=0.0)
+    nomin = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03, costs=free)
+    assert nomin.capacity["min_viable_status"] == "below_search_floor"
+    assert math.isnan(nomin.capacity["min_viable_aum"])
+    assert math.isclose(nomin.capacity["by_cost"], c["by_cost"], rel_tol=1e-3)
+    assert c["by_cost"] != c["search_range"][0]
+
+
+def test_capacity_boundary_statuses_never_return_search_floor():
+    panel, dense = _u_curve_case()
+    neg = an.capacity(dense, panel, aum=[1e7], gross_excess=-0.01).capacity
+    assert neg["by_cost_status"] == "no_gross_excess" and math.isnan(neg["by_cost"])
+    tiny = an.capacity(dense, panel, aum=[1e7], gross_excess=1e-5).capacity
+    assert tiny["by_cost_status"] == "never_viable" and math.isnan(tiny["by_cost"])
+    assert tiny["min_cost"] > 0.5e-5
+    huge = an.capacity(dense, panel, aum=[1e7], gross_excess=50.0).capacity
+    assert huge["by_cost_status"] == "beyond_search_range"
+    assert huge["by_cost"] == float("inf")
+    # breach_share = 0：「出现任何超限成交」的最小规模，不是搜索下限。
+    zero = an.capacity(dense, panel, aum=[1e7], breach_share=0.0).capacity
+    assert zero["by_participation_status"] == "found"
+    assert zero["by_participation"] > zero["search_range"][0]
+    at = an.capacity(
+        dense,
+        panel,
+        aum=[zero["by_participation"] * 0.999, zero["by_participation"] * 1.001],
+    ).table["over_cap_share"]
+    assert at[0] == 0.0 < at[1]
+    # 搜索下限处已经越过：NaN 加状态，而不是返回下限。
+    low = an.capacity(
+        dense, panel, aum=[1e7], breach_share=0.0, search=(1e9, 1e12)
+    ).capacity
+    assert low["by_participation_status"] == "below_search_floor"
+    assert math.isnan(low["by_participation"])
+    assert json.dumps(an.capacity(dense, panel, aum=[1e7]).to_dict()) is not None
 
 
 def test_liquidation_days_by_hand():
@@ -186,7 +269,7 @@ def test_liquidation_days_by_hand():
 def test_cost_breakdown_by_year():
     panel = _event_panel(t=400)
     t, n = len(panel.dates), len(panel.symbols)
-    market = an.market_from_panel(panel)
+    market = market_from_panel(panel)
     costs = panelbt.Costs(tax_sell=0.001, impact_k=np.full((t, n), 0.2))
     res = panelbt.run(
         market,
@@ -227,3 +310,13 @@ def test_volatility_uses_only_past_days():
     )
     panel.fields["close"][day:, 3] *= 1.5  # 改当日及以后的价格，不影响当日的 k
     assert vol[day, 3] == an.volatility(panel, window=10)[day, 3]
+
+
+def test_capacity_treats_wiped_out_small_accounts_as_not_viable():
+    """几千元的账户被最低佣金打穿（权益 ≤ 0）时，不能把负的成本率当成「成本最低」。"""
+    panel, dense = _u_curve_case()
+    c = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03, search=(1e2, 1e12))
+    c = c.capacity
+    assert c["min_cost"] > 0
+    assert c["min_cost_aum"] > 1e5
+    assert c["min_viable_status"] == "found" and c["min_viable_aum"] > 1e3

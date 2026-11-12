@@ -20,10 +20,13 @@
 三者并排。
 
 容量的两种定义：
-1. 成本吃掉毛超额收益的 `cost_fraction`（默认一半）时的规模；
-2. 成交量占比超过 `participation_cap`（默认 10%）的成交额占全部成交额的比例达到
+1. 成本吃掉毛超额收益的 `cost_fraction`（默认一半）时的规模。成本曲线先降后升（小规模被
+   最低佣金等固定费用拖累，大规模被冲击拖累），容量取上升段的交点；下降段的交点单列为
+   「最小可行规模」`min_viable_aum`；
+2. 成交量占比超过 `participation_cap`（默认 10%）的成交额占全部成交额的比例超过
    `breach_share`（默认 5%）时的规模。按成交额加权而不是按笔数，因为笔数会被大量小额
    调整主导。
+两种容量都带状态字段；求不到时给 NaN 或 inf 并写明原因，不拿搜索边界充数。
 """
 
 from __future__ import annotations
@@ -32,8 +35,8 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from .adapters import ashare_config, market_from_panel
-from .inputs import benchmark_held, carry_forward, total_returns
+from .adapters import ashare_costs, market_from_panel, panel_config
+from .inputs import benchmark_held, reference_prices, total_returns
 from .inputs import field as panel_field
 from .table import Table, plain
 
@@ -49,23 +52,6 @@ def _cell(value, t, n):
     if a.ndim == 1:
         return np.full(n, a[t])
     return a[t]
-
-
-def default_costs(dates):
-    """A 股默认成本：佣金万 2.5（最低 5 元）、过户费双边十万分之一、滑点万 5、
-    印花税按日期（2008-04-24 前 0.3%，之后 0.1%，2008-09-19 起取 panelbt 的单边税率表）。"""
-    import panelbt
-    from panelbt.markets.ashare import stamp_tax_sell
-
-    days = np.asarray(
-        [f"{d[:4]}-{d[4:6]}-{d[6:]}" for d in np.asarray(dates).astype(str)],
-        dtype="datetime64[D]",
-    )
-    tax = np.where(days < np.datetime64("2008-04-24"), 0.003, 0.001)
-    late = days >= np.datetime64("2008-09-19")
-    if late.any():
-        tax[late] = stamp_tax_sell(days[late])
-    return panelbt.Costs(tax_sell=tax)
 
 
 def volatility(panel, window=20, returns=None):
@@ -138,7 +124,8 @@ class MarketArrays:
 
     def __post_init__(self):
         t, n = self.exec_price.shape
-        self.close_cf = carry_forward(self.close)
+        # 估值价与 panelbt 相同：缺价时用最近收盘价逐次除权（停牌中送转、派现）。
+        self.close_cf = reference_prices(self.close, self.cash_div, self.split)
         split = np.where(np.isfinite(self.split), self.split, 1.0)
         # S_t = Π_{u≤t} split_u；第 s 日派现按送转前股数：q_last·S_{s-1}/S_last·div_s。
         self.split_cum = np.cumprod(split, axis=0)
@@ -147,6 +134,15 @@ class MarketArrays:
         d = np.asarray(self.delist, bool)
         first = np.where(d.any(axis=0), d.argmax(axis=0), t)
         self.first_delist = first
+
+    def carried(self, day, cols=slice(None)):
+        """第 day 日开盘时的估值价：前一日估值价按当日派现、送转除权（panelbt `past_close`）。"""
+        if day == 0:
+            return np.full(self.close.shape[1], np.nan)[cols]
+        div = np.nan_to_num(self.cash_div[day, cols])
+        split = self.split[day, cols]
+        split = np.where(np.isfinite(split) & (split > 0), split, 1.0)
+        return np.maximum(self.close_cf[day - 1, cols] - div, 0.0) / split
 
     @classmethod
     def from_panel(cls, panel, exec_price="open"):
@@ -229,7 +225,10 @@ def _fills(q, side, day, i, m, costs, k, e):
     imp = _cell(k, day, n)[i] * part**e
     price = slipped * (1.0 + side * imp)
     amount = q * price
-    commission = np.maximum(costs.commission_rate * amount, costs.commission_min or 0.0)
+    commission = np.maximum(
+        costs.commission_rate * amount + costs.commission_per_share * q,
+        costs.commission_min or 0.0,
+    )
     if costs.commission_max_rate is not None:
         commission = np.minimum(commission, costs.commission_max_rate * amount)
     commission = np.where(q > 0, commission, 0.0)
@@ -240,11 +239,16 @@ def _fills(q, side, day, i, m, costs, k, e):
     fee = np.where(
         buy, _cell(costs.fee_rate_buy, day, n)[i], _cell(costs.fee_rate_sell, day, n)[i]
     )
+    per_share = np.where(
+        buy,
+        _cell(costs.fee_per_share_buy, day, n)[i],
+        _cell(costs.fee_per_share_sell, day, n)[i],
+    )
     return {
         "amount": amount,
         "commission": commission,
         "tax": tax * amount,
-        "fee": fee * amount,
+        "fee": fee * amount + per_share * q,
         "slippage": q * p * slip,
         "impact": q * np.abs(price - slipped),
         "participation": part,
@@ -298,8 +302,11 @@ def simulate(
                 g = held[gone]
                 d = m.first_delist[g]
                 shares = base[gone] * m.split_cum[d, g]
-                # panelbt：按退市日之前最近的有效收盘价全额变现。
-                cash += float((shares * m.close_cf[np.maximum(d - 1, 0), g]).sum())
+                # panelbt：按退市日的估值价（最近有效收盘价逐次除权）全额变现。
+                price = np.array(
+                    [m.carried(int(x), int(c)) for x, c in zip(d, g, strict=True)]
+                )
+                cash += float((shares * price).sum())
                 q[g] = 0.0
             keep = held[~gone]
             q[keep] = base[~gone] * m.split_cum[day, keep]
@@ -327,8 +334,7 @@ def simulate(
         if plan is None or not len(names):
             continue
         p = m.exec_price[day]
-        prev_close = m.close_cf[day - 1] if day > 0 else np.full(n, np.nan)
-        mark = np.where(np.isfinite(p), p, prev_close)
+        mark = np.where(np.isfinite(p), p, m.carried(day))
         value = cash + float(np.nansum(q * mark))
         alive = m.first_delist[names] > day
         names = names[alive]
@@ -469,20 +475,34 @@ def capacity(
     market=None,
     config=None,
     threads=0,
+    search=(1e4, 1e13),
 ):
     """一行估计容量与成本。
 
     ```python
     cap = an.capacity(targets, panel, aum=[1e7, 1e8, 1e9, 1e10], benchmark="000300.SH")
     cap.table.to_dict()          # 每个规模的占比分布、年化成本、扣成本后的超额
-    cap.capacity                 # 两种定义下的容量（元）
+    cap.capacity                 # 两种定义下的容量（元）及其状态
     ```
+    容量字段（`cap.capacity`）：
+    - `by_cost`：年化成本在**上升段**第一次达到 `cost_fraction × 毛超额` 的规模。成本曲线
+      先降后升：小规模时最低佣金 5 元这类固定费用占比高，规模变大后冲击成本占主导。先在
+      `search` 区间的对数网格上找成本最低点（`min_cost_aum`、`min_cost`），再从它往大规模
+      方向找交点。`min_viable_aum` 是最低点往小规模方向的交点：比它更小的资金被固定费用
+      吃掉超过门槛。
+    - 每个值都带 `*_status`：`"found"`（求到交点）、`"no_gross_excess"`（毛超额 ≤ 0，值为
+      NaN）、`"never_viable"`（最低成本也超过门槛，NaN）、`"beyond_search_range"`（到
+      搜索上限也没达到，inf）、`"below_search_floor"`（搜索下限处已经越过，NaN；对
+      `min_viable_aum` 表示固定费用在下限处也不构成约束）。不会用搜索边界冒充结果。
+    - 资金小到最低佣金把账户打穿（权益 ≤ 0）的规模，成本记为无穷大（不可行），不参与找最低点。
+    - `by_participation`：成交量占比超过 `participation_cap` 的成交额占比**超过**
+      `breach_share` 的最小规模，状态同上。
     targets：`panelbt.Targets`（行号是成交日）、`ashare.portfolio.SparseTargets` 或 T×N 稠密权重。
     panel：与回测同日期同证券的面板，需要 open（或 exec_price 指定的字段）、close、
     adj_factor、volume、amount。
     gross_excess：年化毛超额收益；默认用目标权重的不扣成本收益减基准收益（无基准时为绝对收益）。
-    costs：`panelbt.Costs`；默认 `default_costs(panel.dates)`。其中的 impact 字段会被
-    impact_k / impact_coefficient 覆盖。
+    costs：`panelbt.Costs`；默认主干的 A 股费用表（`ASHARE.costs`：佣金万 2.5 最低 5 元、
+    滑点万 5、历史印花税与过户费）。其中的 impact 字段会被 impact_k / impact_coefficient 覆盖。
     rerun：对每个规模真的跑 `panelbt.run_batch`（需要 market，或由面板按 A 股规则构建）。
     """
     dates = np.asarray(panel.dates).astype(str)
@@ -493,7 +513,7 @@ def capacity(
         else MarketArrays.from_panel(panel, exec_price)
     )
     returns = total_returns(panel)
-    costs = default_costs(dates) if costs is None else costs
+    costs = ashare_costs(dates) if costs is None else costs
     k = (
         impact_coefficients(panel, impact_coefficient, vol_window, returns)
         if impact_k is None
@@ -516,6 +536,9 @@ def capacity(
         tax_sell=0.0,
         fee_rate_buy=0.0,
         fee_rate_sell=0.0,
+        fee_per_share_buy=0.0,
+        fee_per_share_sell=0.0,
+        commission_per_share=0.0,
         slippage=0.0,
     )
     base = run(1e8, free, np.zeros(shape))
@@ -531,12 +554,25 @@ def capacity(
         gross_annual - bench_annual if gross_excess is None else float(gross_excess)
     )
 
+    memo = {}
+
+    def simulated(size):
+        if size not in memo:
+            memo[size] = run(size)
+        return memo[size]
+
+    def summary(size):
+        return _summary(simulated(size), participation_cap)
+
     def cost_total(size):
-        annual, *_ = _summary(run(size), participation_cap)
-        return float(annual.sum())
+        # 资金太小时最低佣金能把账户打穿（权益 ≤ 0），成本率失去意义：记为不可行。
+        sim = simulated(size)
+        if sim.final_equity <= 0 or (len(sim.equity) and sim.equity.min() <= 0):
+            return float("inf")
+        return float(summary(size)[0].sum())
 
     def breach(size):
-        return _summary(run(size), participation_cap)[3]
+        return summary(size)[3]
 
     aum = np.asarray(sorted(float(a) for a in np.atleast_1d(aum)))
     rows_out, sims = [], []
@@ -567,8 +603,10 @@ def capacity(
         + ("net_excess_path",)
     )
     table = Table(aum, columns, np.array(rows_out), "capacity", "aum")
-    capacity_cost = _solve(lambda s: cost_total(s) - cost_fraction * excess, excess > 0)
-    capacity_volume = _solve(lambda s: breach(s) - breach_share, True)
+    by_cost = _cost_capacity(
+        cost_total, cost_fraction * excess if excess > 0 else np.nan, search
+    )
+    by_part = _first_above(breach, breach_share, search)
     liquidation = _liquidation(days, rows, panel, aum, participation_cap, adv_window)
     rerun_table = None
     if rerun:
@@ -594,10 +632,12 @@ def capacity(
         table,
         {
             "cost_fraction": cost_fraction,
-            "by_cost": capacity_cost,
+            **by_cost,
             "participation_cap": participation_cap,
             "breach_share": breach_share,
-            "by_participation": capacity_volume,
+            "by_participation": by_part["value"],
+            "by_participation_status": by_part["status"],
+            "search_range": tuple(float(x) for x in search),
             "gross_annual": gross_annual,
             "benchmark_annual": bench_annual,
             "gross_excess": excess,
@@ -619,25 +659,79 @@ def capacity(
     )
 
 
-def _solve(excess_at, feasible, lo=1e4, hi=1e13, steps=40):
-    """在对数刻度上找 excess_at(规模) 第一次 ≥ 0 的规模；从未达到返回 inf，起点就达到返回 lo。"""
-    if not feasible:
-        return 0.0
-    grid = np.logspace(np.log10(lo), np.log10(hi), 19)
-    values = [excess_at(g) for g in grid]
-    if values[0] >= 0:
-        return float(lo)
-    idx = next((i for i, v in enumerate(values) if v >= 0), None)
-    if idx is None:
-        return float("inf")
-    a, b = np.log(grid[idx - 1]), np.log(grid[idx])
+def _grid(search, per_decade=5):
+    lo, hi = (float(x) for x in search)
+    if not (0 < lo < hi):
+        raise ValueError("search: 需要 0 < 下限 < 上限")
+    count = max(2, int(round(np.log10(hi / lo) * per_decade)) + 1)
+    return np.logspace(np.log10(lo), np.log10(hi), count)
+
+
+def _bisect(fn, a, b, steps=30):
+    """fn(a) < 0 ≤ fn(b)（对数刻度）时找交点；a > b 也可以（往小规模方向找）。"""
+    la, lb = np.log(a), np.log(b)
     for _ in range(steps):
-        m = 0.5 * (a + b)
-        if excess_at(np.exp(m)) >= 0:
-            b = m
+        m = 0.5 * (la + lb)
+        if fn(np.exp(m)) >= 0:
+            lb = m
         else:
-            a = m
-    return float(np.exp(b))
+            la = m
+    return float(np.exp(lb))
+
+
+def _cost_capacity(cost_at, threshold, search):
+    """成本容量：上升段交点 `by_cost` 与下降段交点 `min_viable_aum`，各带状态。"""
+    out = {
+        "by_cost": np.nan,
+        "by_cost_status": "no_gross_excess",
+        "min_viable_aum": np.nan,
+        "min_viable_status": "no_gross_excess",
+        "min_cost_aum": np.nan,
+        "min_cost": np.nan,
+    }
+    if not np.isfinite(threshold) or threshold <= 0:
+        return out
+    grid = _grid(search)
+    costs = np.array([cost_at(g) for g in grid])
+    m = int(np.argmin(costs))
+    out["min_cost_aum"], out["min_cost"] = float(grid[m]), float(costs[m])
+    gap = costs - threshold
+
+    def fn(size):
+        return cost_at(size) - threshold
+
+    if gap[m] >= 0:
+        out["by_cost_status"] = out["min_viable_status"] = "never_viable"
+        return out
+    up = next((i for i in range(m + 1, len(grid)) if gap[i] >= 0), None)
+    if up is None:
+        out["by_cost"], out["by_cost_status"] = float("inf"), "beyond_search_range"
+    else:
+        out["by_cost"] = _bisect(fn, grid[up - 1], grid[up])
+        out["by_cost_status"] = "found"
+    down = next((i for i in range(m - 1, -1, -1) if gap[i] >= 0), None)
+    if down is None:
+        out["min_viable_status"] = "below_search_floor"
+    else:
+        out["min_viable_aum"] = _bisect(fn, grid[down + 1], grid[down])
+        out["min_viable_status"] = "found"
+    return out
+
+
+def _first_above(value_at, threshold, search):
+    """单调上升的 value_at 第一次超过 threshold 的规模，带状态。"""
+    grid = _grid(search)
+
+    def fn(size):
+        # 严格大于记为越过（breach_share=0 表示「出现任何超限成交」）。
+        return 1.0 if value_at(size) > threshold else -1.0
+
+    if fn(grid[0]) >= 0:
+        return {"value": np.nan, "status": "below_search_floor"}
+    idx = next((i for i in range(1, len(grid)) if fn(grid[i]) >= 0), None)
+    if idx is None:
+        return {"value": float("inf"), "status": "beyond_search_range"}
+    return {"value": _bisect(fn, grid[idx - 1], grid[idx]), "status": "found"}
 
 
 def _liquidation(days, rows, panel, aum, cap, window):
@@ -696,7 +790,8 @@ def _liquidation(days, rows, panel, aum, cap, window):
 
 
 def _rates(res, size, years):
-    """panelbt 单策略（批量 K=1）结果 → (年化冲击率, 年化总成本率, 冲击元, 总成本元, 日收益)。"""
+    """panelbt 单策略（批量 K=1）结果 → (年化冲击率, 年化总成本率, 冲击元, 总成本元, 日收益,
+    被拦下的买卖单数, 换手合计)。"""
 
     def one(name):
         v = np.asarray(getattr(res, name))
@@ -716,6 +811,7 @@ def _rates(res, size, years):
         float(total.sum()),
         one("returns"),
         float(one("n_blocked_buy").sum() + one("n_blocked_sell").sum()),
+        float(one("turnover").sum()),
     )
 
 
@@ -737,16 +833,18 @@ def _rerun(
     exec_price,
     cap,
 ):
-    """每个规模跑两次 panelbt：与解析模拟同规则（不取整、无成交量上限），以及真实 A 股规则。"""
+    """每个规模跑两次 panelbt：与解析模拟同规则（不取整、无成交量上限），以及真实 A 股规则。
+
+    `real_fill_ratio`：真实规则下的换手合计 ÷ 宽松规则下的换手合计，即目标交易里真正成交了
+    多少（两次运行的权益路径不同，是近似；被成交量上限、整手拦下的部分会在之后的日子重试，
+    所以它衡量的是「全期最终成交了多少」）。`real_blocked_orders`：真实规则下被拦下的买单
+    与卖单数（`n_blocked_buy + n_blocked_sell`，每只证券每天算一次，挂单重试会重复计数），
+    不是天数。"""
     import panelbt
 
     if market is None:
         market = market_from_panel(panel, exec_price)
-    real = (
-        config
-        if config is not None
-        else ashare_config(panel.symbols, max_participation=cap)
-    )
+    real = config if config is not None else panel_config(panel, max_participation=cap)
     relaxed = panelbt.Config(min_qty=0.0, qty_step=0.0, max_participation=0.0)
     if isinstance(targets, panelbt.Targets):
         plan = targets
@@ -766,7 +864,7 @@ def _rerun(
         a_rate_imp = float((sim.costs[:, 4] / sim.equity).sum() / years)
         a_rate_tot = float((sim.costs.sum(axis=1) / sim.equity).sum() / years)
         row = [a_rate_imp, a_rate_tot]
-        nets = []
+        nets, turnovers = [], []
         for cfg in (relaxed, real):
             res = panelbt.run_batch(
                 market,
@@ -775,7 +873,8 @@ def _rerun(
                 replace(cfg, initial_cash=float(size)),
                 threads=threads,
             )
-            r_imp, r_tot, y_imp, y_tot, ret, blocked = _rates(res, size, years)
+            r_imp, r_tot, y_imp, y_tot, ret, blocked, turn = _rates(res, size, years)
+            turnovers.append(turn)
             net = float(np.prod(1 + ret[span]) ** (1 / years) - 1)
             row += [
                 r_imp,
@@ -786,7 +885,8 @@ def _rerun(
             nets.append(net - bench_annual)
             last_blocked = blocked
         net_analytic = (sim.final_equity / size) ** (1 / years) - 1 - bench_annual
-        out.append(row + [net_analytic, *nets, last_blocked])
+        fill = turnovers[1] / turnovers[0] if turnovers[0] > 0 else np.nan
+        out.append(row + [net_analytic, *nets, fill, last_blocked])
     return Table(
         aum,
         (
@@ -803,7 +903,8 @@ def _rerun(
             "analytic_net_excess",
             "relaxed_net_excess",
             "real_net_excess",
-            "real_blocked_days",
+            "real_fill_ratio",
+            "real_blocked_orders",
         ),
         np.array(out),
         "capacity_rerun",

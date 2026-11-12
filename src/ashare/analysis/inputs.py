@@ -25,7 +25,7 @@ class LazyPanel:
     """
 
     def __init__(self, data, start=None, end=None, symbols=None):
-        self._data, self._args = data, (start, end, symbols)
+        self.data, self._args = data, (start, end, symbols)
         probe = data.panel(["close"], start=start, end=end, symbols=symbols)
         self.dates = np.asarray(probe.dates)
         self.symbols = tuple(map(str, probe.symbols))
@@ -35,7 +35,7 @@ class LazyPanel:
     def __getitem__(self, name):
         if name not in self._cache:
             start, end, symbols = self._args
-            self._cache[name] = self._data.panel(
+            self._cache[name] = self.data.panel(
                 [name], start=start, end=end, symbols=symbols
             )[name]
         return self._cache[name]
@@ -71,17 +71,56 @@ def carry_forward(values):
 def total_returns(panel):
     """t-1 收盘到 t 收盘的总收益（含分红送转，按复权因子），T×N。
 
-    停牌或缺价沿用最近收盘价（收益为 0，与 panelbt 用最近有效收盘价估值一致）；
-    上市前为 NaN；第 0 行为 NaN。
+    后复权价 close × adj_factor 整体沿用最近有效值：停牌日收益为 0，停牌期间的除权日
+    也是 0（不能把收盘价和复权因子分开沿用，否则停牌中除权会在除权日记一笔假收益、
+    复牌日再反向）。这与 panelbt 的估值一致：停牌持仓按「最近收盘价逐次除权」的参考价
+    估值，派现当天现金增加、参考价同额下降，合计不变；复牌日的收益 = 复牌收盘 ÷ 参考价，
+    恰好等于后复权价之比。上市前为 NaN；第 0 行为 NaN。
+
+    主干 `ashare.risk.data.adjusted_returns` 用同一个后复权价，但停牌缺价记 NaN（风险模型
+    不能把停牌日当作收益 0 去估计因子收益）；这里要的是持仓的估值收益，所以沿用。
     """
-    price = carry_forward(field(panel, "close")) * carry_forward(
-        field(panel, "adj_factor")
-    )
+    price = carry_forward(field(panel, "close") * field(panel, "adj_factor"))
     r = np.full_like(price, np.nan)
     with np.errstate(invalid="ignore", divide="ignore"):
         r[1:] = price[1:] / price[:-1] - 1
     r[1:][~(price[:-1] > 0)] = np.nan
     return r
+
+
+def reference_prices(close, cash_dividend=None, split=None):
+    """panelbt 的估值价（数组版）：最近有效收盘价，之后每遇派现减去每股派现、每遇送转
+    除以送转比例（`panelbt` 内核的 `past_close`）。有收盘价的日子就是收盘价。"""
+    close = np.asarray(close, dtype=float)
+    t, n = close.shape
+    div = np.zeros((t, n)) if cash_dividend is None else np.nan_to_num(cash_dividend)
+    if split is None:
+        split = np.ones((t, n))
+    else:
+        split = np.asarray(split, dtype=float)
+        split = np.where(np.isfinite(split) & (split > 0), split, 1.0)
+    out = np.full((t, n), np.nan)
+    last = np.full(n, np.nan)
+    for day in range(t):
+        # 先除权再取当日收盘：与引擎每日先处理公司行为、再按收盘估值的顺序相同。
+        last = np.maximum(last - div[day], 0.0) / split[day]
+        last = np.where(np.isfinite(close[day]), close[day], last)
+        out[day] = last
+    return out
+
+
+def reference_close(panel):
+    """面板的 panelbt 估值价（见 `reference_prices`）；缺 cash_dividend、split 时按无事件。"""
+
+    def optional(name):
+        try:
+            return field(panel, name)
+        except KeyError:
+            return None
+
+    return reference_prices(
+        field(panel, "close"), optional("cash_dividend"), optional("split")
+    )
 
 
 def held_from_weights(weights):
@@ -97,8 +136,9 @@ def held_from_weights(weights):
 def result_weights(result, panel):
     """`panelbt.Result`（须 record_trades=True）→ 收盘后权重 T×N 与各项日序列。
 
-    权重 = 持仓股数 × 收盘价（缺价沿用最近有效值）÷ 当日权益。返回 (weights, info)，
-    info 里是组合日收益、成本率和权益（成本率以收益分母 E[t-1]+资金流 为分母）。
+    权重 = 持仓股数 × 估值价 ÷ 当日权益；估值价与 panelbt 相同（`reference_close`：缺价时
+    用最近收盘价逐次除权）。返回 (weights, info)，info 里是组合日收益、成本率和权益
+    （成本率以收益分母 E[t-1]+资金流 为分母）。
     """
     if getattr(result, "positions", None) is None:
         raise ValueError("Result 没有持仓：回测时请设 Config(record_trades=True)")
@@ -108,7 +148,7 @@ def result_weights(result, panel):
     t, n = q.shape
     if (t, n) != (len(panel.dates), len(panel.symbols)):
         raise ValueError(f"Result 形状 {q.shape} 与面板 {(t, n)} 不一致")
-    close = carry_forward(field(panel, "close"))
+    close = reference_close(panel)
     equity = np.asarray(result.equity, dtype=float)
     with np.errstate(invalid="ignore", divide="ignore"):
         weights = np.where(q != 0, q * close, 0.0) / equity[:, None]
@@ -126,6 +166,8 @@ def result_weights(result, panel):
         + np.asarray(result.slippage_cost)
         + np.asarray(result.impact_cost)
         + np.asarray(result.borrow_cost)
+        + np.asarray(result.dividend_tax)
+        + np.asarray(result.financing_interest)
     )
     with np.errstate(invalid="ignore", divide="ignore"):
         cost_rate = np.where(denom != 0, cost / denom, 0.0)
@@ -166,7 +208,13 @@ def benchmark_held(panel, benchmark, returns):
                 s = grown.sum()
                 held[day] = grown / s if s > 0 else 0.0
         return held
-    return held_from_weights(benchmark)
+    w = np.asarray(benchmark, dtype=float)
+    if w.shape != returns.shape:
+        raise ValueError(
+            f"benchmark 权重数组须与面板同形状 {returns.shape}（行=日期、列=证券，"
+            f"收盘后权重），收到 {w.shape}；也可以传指数代码如 '000300.SH'"
+        )
+    return held_from_weights(w)
 
 
 def industry_codes(panel, rows=None):

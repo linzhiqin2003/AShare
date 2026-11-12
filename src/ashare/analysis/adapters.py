@@ -1,35 +1,26 @@
-"""与主干的接口对应：本分支自带的三个适配函数，集中在这里，合入后整体替换。
+"""接主干的入口：风险模型输入、回测行情、账户规则、费用表都直接调用主干，本模块只做转发。
 
-本分支从主干切出时还没有下面这些入口，所以先自带等价版本；口径照主干写，合入后由
-负责人把本模块换成对主干的调用：
+| 本模块 | 主干 |
+|---|---|
+| `INDEX_FIELDS` | 与 `ashare.data.catalog.INDEXES` 同一份对应（指数代码 → 面板权重字段） |
+| `risk_source(panel, config)` | `ashare.risk.risk_inputs`；面板带数据句柄（`LazyPanel`）时行业因子用申万名称 |
+| `market_from_panel(panel, exec_price)` | `panelbt.Market(**ashare.backtest.market_inputs(panel, exec))` |
+| `ashare_config(symbols, securities=None)` | `ashare.backtest.boards` + `ASHARE.config(board=...)` |
+| `ashare_costs(dates)` | `ASHARE.costs(ashare.backtest.iso_dates(dates))`：按日期展开的历史印花税、过户费 |
 
-| 本模块 | 主干 | 说明 |
-|---|---|---|
-| `RISK_FIELDS` | `ashare.risk.panel.PANEL_FIELDS` | 字段映射完全相同 |
-| `risk_source(panel, config)` | `ashare.risk.risk_inputs(panel, config=config)`（或 `ashare.risk.from_panel(data, panel=panel)`） | 行业代码按升序编 0..K-1、缺失 -1，与主干 `industry_codes` 相同；主干另给行业因子起中文名（仍以 `industry_` 开头） |
-| `market_from_panel(panel, exec_price)` | `ashare.backtest.market_from_panel(panel, exec=exec_price)` | 缺失送转记 1、派现记 0；开盘成交用面板的可买可卖掩码 |
-| `ashare_config(symbols, **kw)` | `ashare.backtest` 的账户规则 | 本模块按代码前缀判断板块（认不出的按主板）；主干用证券表的板块列 |
-| `INDEX_FIELDS` | `ashare.data.catalog.INDEXES` 的反向映射 | 指数代码 → 面板权重字段 |
+留在这里而不让调用方直接用主干的原因只有一个：分析函数的输入是「一个面板」，没有数据句柄。
+`ashare.backtest.market_from_panel(data, panel=...)` 要用 `data.securities()` 取板块，
+`ashare.risk.from_panel(data, ...)` 要用 data 取行业名；面板是 `LazyPanel` 时这里把它的
+数据句柄传过去，否则板块按代码前缀推断（推断不出时与主干一样报错，不默认主板），行业因子
+以申万代码命名（仍以 `industry_` 开头，`factor_groups` 的分组不受影响）。
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-# 数据层字段名 → ashare.risk 的字段名（ashare.risk.data.FIELDS）。
-RISK_FIELDS = {
-    "close": "close",
-    "adj_factor": "adj_factor",
-    "total_mv": "total_market_cap",
-    "circ_mv": "float_market_cap",
-    "turnover_rate": "turnover",
-    "pb": "pb",
-    "pe_ttm": "pe_ttm",
-    "is_suspended": "is_suspended",
-    "is_listed": "is_listed",
-}
-
-# 指数代码 → 面板的权重字段（与 ashare.data.catalog.INDEXES 同一份对应关系）。
+# 指数代码 → 面板的权重字段。数据层的 `catalog` 是内部模块（层边界检查不许包外导入），
+# 所以抄一份；`test_index_fields_match_data_catalog` 守着两者一致。
 INDEX_FIELDS = {
     "000300.SH": "weight_csi300",
     "000905.SH": "weight_csi500",
@@ -39,103 +30,63 @@ INDEX_FIELDS = {
 }
 
 
+def _data(panel):
+    return getattr(panel, "data", None)
+
+
 def risk_source(panel, config=None):
-    """把数据层面板接到 `ashare.risk` 的读取协议，返回 (source, config)。
+    """面板 → `ashare.risk` 的 (source, config)，即 `ashare.risk.risk_inputs`。
 
     ```python
     source, config = an.risk_source(panel)
     models = ashare.risk.model_series(source, config=config, cache=".cache/risk")
     ```
-    申万一级行业代码按升序映射到 0..K-1（0 或 NaN 为缺失，记 -1）；无风险收益取 0。
-    编码规则与主干 `ashare.risk.panel.industry_codes` 相同（主干另给行业因子起中文名，
-    因子名仍以 `industry_` 开头，`factor_groups` 的分类不受影响）。合入后改用
-    `ashare.risk.risk_inputs(panel, config=config)`。
     """
-    from ashare.risk import FundamentalConfig, MemoryPanel
+    from ashare.risk.panel import industry_names, risk_inputs
 
-    fields = {}
-    for target, name in RISK_FIELDS.items():
-        value = np.asarray(panel[name])
-        fields[target] = (
-            value.astype(bool)
-            if target.startswith("is_")
-            else np.asarray(value, dtype=np.float64)
-        )
-    raw = np.nan_to_num(np.asarray(panel["industry"], dtype=float)).astype(np.int64)
-    codes = np.unique(raw[raw > 0])
-    lookup = np.full(int(codes.max()) + 1 if len(codes) else 1, -1, dtype=np.int64)
-    lookup[codes] = np.arange(len(codes))
-    fields["industry"] = np.where(raw > 0, lookup[np.maximum(raw, 0)], -1)
-    source = MemoryPanel(
-        np.asarray(panel.dates),
-        tuple(map(str, panel.symbols)),
-        str(getattr(panel, "version", "")),
-        fields,
-    )
-    if config is None:
-        config = FundamentalConfig(industry_codes=tuple(range(len(codes))))
-    return source, config
+    data = _data(panel)
+    names = None if data is None else (lambda codes: industry_names(data, codes))
+    return risk_inputs(panel, names=names, config=config)
 
 
 def market_from_panel(panel, exec_price="open", validate=True):
-    """按 A 股规则由面板构建 `panelbt.Market`（缺失的送转记 1、派现记 0，开盘成交用面板的
-    can_buy_open/can_sell_open，没有时按 tradability 现算）。
-
-    主干已有同口径的 `ashare.backtest.market_from_panel`；本分支切出时还没有它，合入后
-    这里改为直接调用它。"""
+    """面板 → `panelbt.Market`，口径即主干 `ashare.backtest.market_inputs`。"""
     import panelbt
-    from panelbt.markets.ashare import tradability
 
-    p = {}
-    for name in ("close", "volume", "split", "cash_dividend", "delist"):
-        p[name] = np.asarray(panel[name])
-    exec_values = np.asarray(panel[exec_price], dtype=float)
-    try:
-        can_buy = np.asarray(panel["can_buy_open"]) if exec_price == "open" else None
-        can_sell = np.asarray(panel["can_sell_open"]) if exec_price == "open" else None
-    except KeyError:
-        can_buy = can_sell = None
-    if can_buy is None:
-        can_buy, can_sell = tradability(
-            exec_values,
-            np.asarray(panel["high"]),
-            np.asarray(panel["low"]),
-            np.asarray(panel["upper_limit"]),
-            np.asarray(panel["lower_limit"]),
-            np.asarray(panel["is_suspended"]).astype(bool)
-            | ~np.asarray(panel["has_quote"]).astype(bool),
+    from ashare.backtest import market_inputs
+
+    return panelbt.Market(**market_inputs(panel, exec_price), validate=validate)
+
+
+def ashare_config(symbols, securities=None, **overrides):
+    """A 股整手规则的 `panelbt.Config`；板块用主干 `ashare.backtest.boards`。
+
+    securities：证券表（`data.securities()`）；不给时按代码前缀推断，推断不出报错。"""
+    import polars as pl
+    from panelbt.markets import ASHARE
+
+    from ashare.backtest import boards
+
+    symbols = [str(s) for s in symbols]
+    if securities is None:
+        securities = pl.DataFrame(
+            {"symbol": symbols, "board": [None] * len(symbols)},
+            schema={"symbol": pl.String, "board": pl.String},
         )
-    return panelbt.Market(
-        exec_price=exec_values,
-        close=np.asarray(p["close"], dtype=float),
-        can_buy=np.asarray(can_buy, bool),
-        can_sell=np.asarray(can_sell, bool),
-        volume=np.asarray(p["volume"], dtype=float),
-        split=np.where(np.isnan(p["split"]), 1.0, p["split"]),
-        cash_div=np.nan_to_num(p["cash_dividend"]),
-        delist=np.asarray(p["delist"], bool),
-        validate=validate,
-    )
+    return ASHARE.config(board=boards(securities, symbols), **overrides)
 
 
-def ashare_config(symbols, **overrides):
-    """按板块给出整手规则的 `panelbt.Config`（代码前缀判断板块，与 bench/e2e 同一口径；
-    认不出的按主板。主干的 `ashare.backtest` 改用证券表的板块列，合入后改为调用它）。"""
-    import re
+def panel_config(panel, **overrides):
+    """面板对应的账户规则：带数据句柄时用证券表，否则按代码前缀。"""
+    data = _data(panel)
+    securities = None if data is None else data.securities()
+    return ashare_config(panel.symbols, securities, **overrides)
 
-    import panelbt
-    from panelbt.markets.ashare import Board, lot_rules
 
-    boards = []
-    for symbol in symbols:
-        code = re.sub(r"\D", "", str(symbol))[:6]
-        if code.startswith(("300", "301")):
-            boards.append(Board.CHINEXT)
-        elif code.startswith(("688", "689")):
-            boards.append(Board.STAR)
-        elif code.startswith(("43", "83", "87", "88", "92")):
-            boards.append(Board.BSE)
-        else:
-            boards.append(Board.MAIN)
-    min_qty, step = lot_rules(np.array(boards))
-    return panelbt.Config(min_qty=min_qty, qty_step=step, **overrides)
+def ashare_costs(dates, **overrides):
+    """面板日期（YYYYMMDD）→ 主干的 A 股费用表 `ASHARE.costs`（佣金、滑点用其默认值）。"""
+    from panelbt.markets import ASHARE
+
+    from ashare.backtest import iso_dates
+
+    return ASHARE.costs(iso_dates(np.asarray(dates)), **overrides)

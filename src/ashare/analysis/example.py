@@ -1,9 +1,15 @@
-"""真实数据上的完整例子：沪深 300 内低波动 30 只、月度调仓，跑全部五项分析。
+"""真实数据上的完整例子：月度调仓的两个策略，跑全部五项分析。
 
     python -m ashare.analysis.example --start 20130104 --analysis-start 20150105
+    python -m ashare.analysis.example --strategy momentum      # 中证 500 动量，对照偏差统计
 
-策略：每月第一个交易日开盘成交；信号用前一交易日收盘及以前的数据——当天在沪深 300
-成分里、此前 60 个交易日日收益标准差最小的 30 只，等权 99%（留 1% 现金付费用）。
+策略（`--strategy`）：
+- `lowvol`（默认）：沪深 300 成分里此前 60 个交易日日收益标准差最小的 30 只，等权 99%，
+  基准沪深 300；
+- `momentum`：中证 500 成分里 12-1 月动量（t-252 到 t-21 的后复权涨幅）最高的 50 只，
+  等权 92%，基准中证 500。
+信号在每月最后一个交易日收盘后算出，用 `ashare.backtest.execution_targets` 移到下一交易日
+（每月第一个交易日）开盘成交；行情、账户规则、费用表都用 `ashare.backtest.market_from_panel`。
 风险模型从 `--start` 起建（暴露的描述子要一年以上历史），归因从 `--analysis-start` 起算。
 结果以 Markdown 表格打印，`--json` 另存为一份只含基本类型的 JSON。
 """
@@ -17,43 +23,55 @@ import time
 import numpy as np
 
 import ashare.data
+from ashare.backtest import execution_targets, market_from_panel
 
 from . import (
     FactorHistory,
     LazyPanel,
-    ashare_config,
     attribute,
     brinson,
     capacity,
     cost_breakdown,
-    default_costs,
     format_table,
     held_columns,
-    market_from_panel,
     risk_series,
     total_returns,
 )
 from .table import Table
 
+STRATEGIES = {
+    "lowvol": {"benchmark": "000300.SH", "weights": "weight_csi300", "cash": 1e7},
+    "momentum": {"benchmark": "000905.SH", "weights": "weight_csi500", "cash": 3e7},
+}
 
-def low_vol_targets(panel, first_day, count=30, window=60, invest=0.99):
-    """月度调仓的稠密目标（整行 NaN 不调仓），行号是成交日。
+
+def _month_ends(dates, first_day):
+    """每月最后一个交易日的行号（信号日），其下一交易日不早于 first_day。"""
+    months = np.array([d[:6] for d in dates])
+    ends = np.flatnonzero(np.r_[months[1:] != months[:-1], False])
+    return ends[ends + 1 >= first_day]
+
+
+def _quoted(panel):
+    return np.asarray(panel["has_quote"], bool) & ~np.asarray(
+        panel["is_suspended"], bool
+    )
+
+
+def low_vol_signal(panel, first_day, count=30, window=60, invest=0.99):
+    """信号日（月末）上的稠密目标，整行 NaN 表示当日不出信号。
 
     波动率只用有行情、未停牌的交易日的收益（停牌日价格不动，算进去会把长期停牌的股票
     当成「低波动」选进来）；信号日当天停牌或无行情的股票不选。"""
     dates = np.asarray(panel.dates).astype(str)
-    r = total_returns(panel)
-    quoted = np.asarray(panel["has_quote"], bool) & ~np.asarray(
-        panel["is_suspended"], bool
-    )
-    r = np.where(quoted, r, np.nan)
+    quoted = _quoted(panel)
+    r = np.where(quoted, total_returns(panel), np.nan)
     member = np.asarray(panel["member_csi300"], bool)
     t, n = r.shape
     dense = np.full((t, n), np.nan)
-    months = np.array([d[:6] for d in dates])
-    starts = np.flatnonzero(np.r_[True, months[1:] != months[:-1]])
-    for day in starts[starts >= max(first_day, window + 1)]:
-        signal = day - 1  # 前一交易日收盘
+    for signal in _month_ends(dates, first_day):
+        if signal < window:
+            continue
         hist = r[signal - window + 1 : signal + 1]
         ok = (
             member[signal]
@@ -64,8 +82,31 @@ def low_vol_targets(panel, first_day, count=30, window=60, invest=0.99):
         vol[ok] = np.nanstd(hist[:, ok], axis=0)
         pick = np.argsort(vol, kind="stable")[:count]
         pick = pick[np.isfinite(vol[pick])]
-        dense[day] = 0.0
-        dense[day, pick] = invest / len(pick)
+        dense[signal] = 0.0
+        dense[signal, pick] = invest / len(pick)
+    return dense
+
+
+def momentum_signal(panel, first_day, count=50, invest=0.92):
+    """中证 500 成分里 12-1 月动量最高的 count 只（信号日为月末）。"""
+    dates = np.asarray(panel.dates).astype(str)
+    quoted = _quoted(panel)
+    r = np.nan_to_num(total_returns(panel))
+    px = np.cumprod(1 + r, axis=0)
+    member = np.asarray(panel["member_csi500"], bool)
+    t, n = r.shape
+    dense = np.full((t, n), np.nan)
+    for signal in _month_ends(dates, first_day):
+        if signal < 252:
+            continue
+        with np.errstate(all="ignore"):
+            mom = px[signal - 21] / px[signal - 252] - 1
+        ok = member[signal] & quoted[signal] & np.isfinite(mom)
+        score = np.where(ok, mom, -np.inf)
+        pick = np.argsort(-score, kind="stable")[:count]
+        pick = pick[np.isfinite(score[pick])]
+        dense[signal] = 0.0
+        dense[signal, pick] = invest / len(pick)
     return dense
 
 
@@ -76,10 +117,13 @@ def main(argv=None):
     )
     parser.add_argument("--start", default="20130104")
     parser.add_argument("--analysis-start", default="20150105")
+    parser.add_argument("--strategy", default="lowvol", choices=tuple(STRATEGIES))
     parser.add_argument("--cache", default=".cache/analysis-risk")
     parser.add_argument("--json", default=None)
     parser.add_argument("--aum", default="1e7,1e8,5e8,1e9,3e9,1e10,3e10")
     args = parser.parse_args(argv)
+    spec = STRATEGIES[args.strategy]
+    bench_code = spec["benchmark"]
     clock = {}
     t0 = time.perf_counter()
     import panelbt
@@ -88,37 +132,46 @@ def main(argv=None):
     panel = LazyPanel(data, start=args.start)
     dates = np.asarray(panel.dates).astype(str)
     first = int(np.searchsorted(dates, args.analysis_start))
-    dense = low_vol_targets(panel, first)
-    targets = panelbt.Targets.from_dense(dense)
-    market = market_from_panel(panel)
-    config = ashare_config(panel.symbols, record_trades=True, initial_cash=1e7)
-    result = panelbt.run(market, targets, default_costs(dates), config)
+    make = low_vol_signal if args.strategy == "lowvol" else momentum_signal
+    targets = execution_targets(make(panel, first))
+    bm = market_from_panel(data, start=args.start)
+    if tuple(map(str, bm.symbols)) != panel.symbols:
+        raise RuntimeError("行情与分析面板的证券不一致")
+    config = bm.config(record_trades=True, initial_cash=spec["cash"])
+    result = panelbt.run(bm.market, targets, bm.costs(), config)
     clock["backtest"] = time.perf_counter() - t0
 
     t1 = time.perf_counter()
     weights = np.nan_to_num(np.asarray(result.positions)) != 0
-    bench = np.asarray(panel["weight_csi300"])
+    bench = np.asarray(panel[spec["weights"]])
     columns = held_columns(weights, bench, symbols=panel.symbols)
     history = FactorHistory.build(panel, columns=columns, cache=args.cache)
     clock["risk_history"] = time.perf_counter() - t1
 
     t2 = time.perf_counter()
     report = attribute(
-        result, panel, history, benchmark="000300.SH", start=args.analysis_start
+        result, panel, history, benchmark=bench_code, start=args.analysis_start
     )
     clock["attribution"] = time.perf_counter() - t2
     t3 = time.perf_counter()
     risk = risk_series(
-        result, panel, history, benchmark="000300.SH", start=args.analysis_start
+        result, panel, history, benchmark=bench_code, start=args.analysis_start
     )
     clock["risk_series"] = time.perf_counter() - t3
     t4 = time.perf_counter()
-    sectors = brinson(result, panel, "000300.SH", start=args.analysis_start)
+    sectors = brinson(result, panel, bench_code, start=args.analysis_start)
     clock["brinson"] = time.perf_counter() - t4
     t5 = time.perf_counter()
     aum = [float(x) for x in args.aum.split(",")]
     cap = capacity(
-        targets, panel, aum=aum, benchmark="000300.SH", rerun=True, market=market
+        targets,
+        panel,
+        aum=aum,
+        benchmark=bench_code,
+        rerun=True,
+        market=bm.market,
+        config=bm.config(max_participation=0.1),
+        costs=bm.costs(),
     )
     clock["capacity"] = time.perf_counter() - t5
     costs = cost_breakdown(result, dates, start=args.analysis_start)
@@ -143,7 +196,12 @@ def main(argv=None):
     out["attribution"]["specific_split"] = {
         "portfolio": float(diag["specific_portfolio"].sum()),
         "benchmark": float(diag["specific_benchmark"].sum()),
+        # 逐日单利相加：停牌持仓、未覆盖证券在特质项里的部分。
+        "suspended": float(diag["suspended_specific"].sum()),
+        "uncovered": float(diag["uncovered_specific"].sum()),
+        "uncovered_weight_mean": float(diag["uncovered_weight"].mean()),
     }
+    print("特质项诊断", out["attribution"]["specific_split"])
     yearly = _yearly(report)
     print(format_table(yearly, 4))
     print("\n## 平均主动暴露")

@@ -1,4 +1,5 @@
-"""成本拆解：把 `panelbt.Result` 的佣金、印花税、其他费用（过户费）、滑点、冲击按年列出。
+"""成本拆解：把 `panelbt.Result` 的佣金、印花税、其他费用（过户费）、滑点、冲击、融券费、
+红利税、融资利息按年列出。
 
 每一项按「当日成本 ÷ 当日收益的分母（E[t-1] + 资金流）」折成收益率再按年求和，
 这是该项对当年收益的拖累（单利口径，便于相加；复利差异在成本很小时可以忽略）。
@@ -26,6 +27,8 @@ ITEMS = (
     ("slippage", "slippage_cost"),
     ("impact", "impact_cost"),
     ("borrow", "borrow_cost"),
+    ("dividend_tax", "dividend_tax"),
+    ("financing_interest", "financing_interest"),
 )
 
 
@@ -37,6 +40,16 @@ def cost_breakdown(result, dates, periods_per_year=252, start=None):
     table.to_dict()      # 各年的净收益、各项成本、总成本、gross、cost_share、turnover
     ```
     """
+    missing = [
+        a
+        for a in ("equity", "returns", "cash_flow", "turnover")
+        if not hasattr(result, a)
+    ]
+    if missing:
+        raise TypeError(
+            f"cost_breakdown 需要 panelbt.Result（缺 {missing}），收到 {type(result).__name__}；"
+            "只有权重时没有成交和费用，无法拆解成本"
+        )
     dates = np.asarray(dates).astype(str)
     equity = np.asarray(result.equity, dtype=float)
     returns = np.asarray(result.returns, dtype=float)

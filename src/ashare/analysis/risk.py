@@ -11,7 +11,7 @@
 因子之间的协方差平均分到两边（x_k F_kl x_l 记一半在 k、一半在 l），不单列交叉项。
 
 逐日序列的预测 σ_t 预测的是 t+1 日的主动收益；偏差统计量 = std(实现 / 预测)，接近 1
-说明预测准确，> 1 低估风险，< 1 高估风险；样本量 n 下的近似 95% 区间是 1 ± sqrt(2/n)。
+说明预测准确，> 1 低估风险，< 1 高估风险；区间见 `bias_statistics`（默认块自助法，照顾厚尾与波动聚集）。
 """
 
 from __future__ import annotations
@@ -59,14 +59,28 @@ def decompose_risk(weights, model, benchmark=None, factor_groups=None, date=""):
     ```
     weights、benchmark：长度 N 的权重（与模型同一证券顺序）。返回日频波动率；年化请乘 sqrt(252)。
     """
+    if model is None:
+        raise TypeError(
+            "model 为 None：需要 ashare.risk.RiskModel 或 (B, F, D, factors)"
+        )
     if hasattr(model, "B"):
         b, f, d, factors = model.B, model.F, model.D, model.factors
-    else:
+    elif isinstance(model, tuple) and len(model) == 4:
         b, f, d, factors = model
+    else:
+        raise TypeError(
+            f"model 需要 ashare.risk.RiskModel 或 (B, F, D, factors) 元组，"
+            f"收到 {type(model).__name__}"
+        )
     b, f, d = (np.asarray(v, dtype=float) for v in (b, f, d))
     a = np.asarray(weights, dtype=float)
     if benchmark is not None:
-        a = a - np.asarray(benchmark, dtype=float)
+        wb = np.asarray(benchmark, dtype=float)
+        if wb.shape != a.shape:
+            raise ValueError(
+                f"benchmark 须与 weights 同形状 {a.shape}，收到 {wb.shape}"
+            )
+        a = a - wb
     if a.shape != d.shape or not np.isfinite(a).all():
         raise ValueError("weights: 需要与模型同长度的有限向量")
     x = b.T @ a
@@ -146,9 +160,14 @@ def risk_series(
     第 t 行用第 t 日收盘后的权重与第 t 日的风险模型，预测第 t+1 日的主动收益；
     实现值是 t+1 日的持仓主动收益（不含交易与成本）。
     """
-    if not isinstance(history, FactorHistory) or history.covariance is None:
+    if not isinstance(history, FactorHistory):
+        raise TypeError(
+            f"history 需要 FactorHistory（FactorHistory.build(panel, ...)），"
+            f"收到 {type(history).__name__}"
+        )
+    if history.covariance is None:
         raise ValueError(
-            "history: 需要带 covariance 和 specific_variance 的 FactorHistory"
+            "history 没有保存协方差：请用 FactorHistory.build(..., keep_risk=True)（默认）"
         )
     dates = np.asarray(panel.dates).astype(str)
     symbols = tuple(map(str, panel.symbols))
@@ -159,6 +178,9 @@ def risk_series(
         weights = np.asarray(result, dtype=float)
     held_b = benchmark_held(panel, benchmark, returns)
     # 第 t 日收盘后的基准权重 = 第 t+1 日持有的权重（快照与漂移已在 benchmark_held 里处理）。
+    # 这里读第 t+1 行，依赖数据层的约定「指数权重快照从下一交易日起可用」（快照描述的是
+    # 此前月末收盘的权重，第 t+1 行出现的新快照在第 t 日收盘时就已经成立）：读它不是前视。
+    # 若数据层改成「快照当日可用」，这一行要改为直接用当日快照。
     bench_end = None
     if held_b is not None:
         bench_end = np.zeros_like(held_b)
@@ -245,8 +267,19 @@ def risk_series(
     )
 
 
-def bias_statistics(z, window=252):
-    """偏差统计量：全样本与滚动窗口的 std(z)（ddof=1），附 1 ± sqrt(2/n) 的近似 95% 区间。"""
+def bias_statistics(z, window=252, block=20, draws=2000, seed=0):
+    """偏差统计量 std(z)（ddof=1）与三种 95% 区间。
+
+    区间都是「模型准确（z 的真实标准差为 1）时统计量的 95% 范围」：统计量高于上界说明
+    预测风险偏低，低于下界说明偏高。
+
+    - `interval`：块自助法（`block` 日一块的移动块，`draws` 次，固定 `seed`）的 2.5%–97.5%
+      分位。z 的峰度明显大于 3、且有波动聚集时，只有它同时照顾到厚尾和序列相关，作为默认；
+    - `interval_kurtosis`：按样本峰度 κ 修正的正态近似 1 ± 1.96·sqrt((κ − 1) / (4n))；
+    - `interval_normal`：z 服从正态时的 1 ± sqrt(2/n)（κ = 3 时与上一条几乎相同）。
+    滚动窗口：`rolling_outside` 是落在峰度修正区间（按窗口长度）之外的窗口比例，
+    `rolling_outside_normal` 是按正态区间的比例。
+    """
     z = np.asarray(z, dtype=float)
     good = z[np.isfinite(z)]
     n = len(good)
@@ -254,15 +287,41 @@ def bias_statistics(z, window=252):
     out = {
         "statistic": stat,
         "count": n,
-        "interval": (1 - np.sqrt(2 / n), 1 + np.sqrt(2 / n)) if n else (np.nan, np.nan),
+        "kurtosis": np.nan,
+        "interval": (np.nan, np.nan),
+        "interval_kurtosis": (np.nan, np.nan),
+        "interval_normal": (np.nan, np.nan),
+        "block": block,
         "window": window,
     }
+    if n < 3:
+        return out
+    centered = good - good.mean()
+    kurt = float(np.mean(centered**4) / np.mean(centered**2) ** 2)
+    out["kurtosis"] = kurt
+    out["interval_normal"] = (1 - np.sqrt(2 / n), 1 + np.sqrt(2 / n))
+    half_k = 1.96 * np.sqrt(max(kurt - 1, 0) / (4 * n))
+    out["interval_kurtosis"] = (1 - half_k, 1 + half_k)
+    size = max(1, min(int(block), n))
+    starts = n - size + 1
+    count = -(-n // size)
+    rng = np.random.default_rng(seed)
+    pick = rng.integers(0, starts, size=(draws, count))
+    idx = (pick[:, :, None] + np.arange(size)[None, None, :]).reshape(draws, -1)[:, :n]
+    boot = np.std(good[idx], axis=1, ddof=1)
+    # 模型准确（真实 std = 1）时统计量的抽样分布：自助样本 ÷ s 把尺度移到 1（std 的抽样
+    # 误差与尺度成比例），厚尾和波动聚集的形状保留下来。
+    lo, hi = np.percentile(boot / stat, [2.5, 97.5])
+    out["interval"] = (float(lo), float(hi))
     if n >= window > 1:
         roll = np.array(
             [np.std(good[i : i + window], ddof=1) for i in range(0, n - window + 1)]
         )
-        half = np.sqrt(2 / window)
+        half_w = 1.96 * np.sqrt(max(kurt - 1, 0) / (4 * window))
         out["rolling_mean"] = float(roll.mean())
-        out["rolling_outside"] = float(np.mean(np.abs(roll - 1) > half))
+        out["rolling_outside"] = float(np.mean(np.abs(roll - 1) > half_w))
+        out["rolling_outside_normal"] = float(
+            np.mean(np.abs(roll - 1) > np.sqrt(2 / window))
+        )
         out["rolling"] = roll
     return out
