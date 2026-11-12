@@ -2,11 +2,17 @@
 
 只读 `build_tearsheet` 的输出（也就是存下来的报告数据），不重新回测。规则都是保守的阈值判断，
 不做主观评价；阈值写在下面的常量里，口径见 `docs/REPORT_NOTES.md`。
+
+`warnings(data, a, b)` 按所选区间（`daily.date` 的行号，a 是基准日、b 是末日）检查：与区间有关的
+规则（历史长短、首末月年不完整、未成交、持仓不足、现金占比、回撤未修复、成本、基准晚起步、
+基准是否收到分红）都只看区间内的数据；只能按全区间给的（基准缺失天数的填充）在自选区间时
+标明「全区间」。不给 a、b 时是全区间。
 """
 
 from __future__ import annotations
 
 import statistics
+from dataclasses import dataclass
 
 from .fmt import pct
 
@@ -16,49 +22,130 @@ CASH_HIGH = 0.10  # 统计「现金占比超过 10% 的天数」用
 HOLDINGS_RATIO = 0.8  # 成交后持仓只数不到目标的 80% 记一次「偏少」
 HOLDINGS_SHARE = 0.10  # 「偏少」的调仓占有目标调仓的 10% 及以上才提醒
 OPEN_DRAWDOWN = -0.05  # 区间末日的回撤不浅于 −5% 不提醒
+COST_HIGH = 0.03  # 年化成本（费用 + 滑点）÷ 平均权益超过 3% 才提醒
 
 
 def _w(code: str, message: str, **values) -> dict:
     return {"code": code, "message": message, "values": values}
 
 
-def benchmark_price_index(d: dict) -> dict | None:
+@dataclass(frozen=True)
+class View:
+    """报告数据加上所选区间 (a, b]。"""
+
+    data: dict
+    a: int
+    b: int
+
+    @property
+    def dates(self) -> list:
+        return self.data["daily"]["date"]
+
+    @property
+    def full(self) -> bool:
+        return self.a == 0 and self.b == len(self.dates) - 1
+
+    @property
+    def lo(self) -> str:  # 区间第一个交易日
+        return self.dates[self.a + 1]
+
+    @property
+    def hi(self) -> str:
+        return self.dates[self.b]
+
+    def rebalances(self) -> list:
+        """区间内的调仓（a < 调仓行 ≤ b，与区间费用的口径相同）。"""
+        rb = self.data["rebalances"]
+        if self.full:
+            return rb
+        idx = {d: i for i, d in enumerate(self.dates)}
+        return [r for r in rb if self.a < idx[r["date"]] <= self.b]
+
+    def days_in_year(self, year: str) -> int:
+        return sum(
+            1 for i in range(self.a + 1, self.b + 1) if self.dates[i][:4] == year
+        )
+
+    def benchmark_first(self) -> int | None:
+        """基准第一个有效值的行号；没有基准时为 None。"""
+        bnav = self.data["daily"].get("benchmark_nav")
+        if not self.data["meta"].get("benchmark") or not bnav:
+            return None
+        return next((i for i, v in enumerate(bnav) if v is not None), None)
+
+
+def benchmark_price_index(v: View) -> dict | None:
+    d = v.data
     b, s = d["meta"].get("benchmark"), d["summary"]
     if not b or b.get("kind") != "price" or s.get("excess_annual_return") is None:
         return None
+    y0, y1 = int(v.lo[:4]), int(v.hi[:4])
     att = d.get("attribution") or []
-    whole = [a for a, y in zip(att, d["yearly"], strict=False) if not y["partial"]]
-    use = whole or att
-    if not use or s.get("total_dividend_gross", 0) <= 0:
-        mean = None
+    pairs = [
+        (a, y) for a, y in zip(att, d["yearly"], strict=False) if y0 <= y["year"] <= y1
+    ]
+    # 区间是否收到过分红：全区间看税前分红合计；自选区间看区间所在年份的分红归因
+    if v.full:
+        received = s.get("total_dividend_gross", 0) > 0
+        approx = False
     else:
-        mean = sum(a["dividend_net"] for a in use) / len(use)
-    msg = f"基准 {b['name']} 是价格指数（不含分红），策略收益含分红再投资，超额因此偏高"
-    if mean is not None:
-        msg += f"；策略的税后分红平均每年贡献 {pct(mean, 1, True)}（分年归因，"
-        msg += f"{len(use)} 个{'完整' if whole else ''}年份的均值）"
+        got = [y for a, y in pairs if a["dividend_net"] > 0]
+        received = bool(got)
+        approx = received and all(
+            v.days_in_year(str(y["year"])) < y["days"] for y in got
+        )
+    msg = f"基准 {b['name']} 是价格指数（不含分红）"
+    mean = None
+    use = []
+    if received:
+        msg += "，策略收益含分红再投资，超额因此偏高"
+        if approx:
+            msg += "（区间按所在年份的分红判断）"
+        # 均值只取整个落在区间里的年份；全区间时与以前相同（完整年份，没有就全部年份）
+        inside = [
+            (a, y) for a, y in pairs if v.days_in_year(str(y["year"])) == y["days"]
+        ]
+        whole = [a for a, y in inside if not y["partial"]]
+        use = whole or [a for a, _ in inside]
+        if use:
+            mean = sum(a["dividend_net"] for a in use) / len(use)
+            msg += f"；策略的税后分红平均每年贡献 {pct(mean, 1, True)}（分年归因，"
+            msg += f"{len(use)} 个{'完整' if whole else ''}年份的均值）"
+    else:
+        msg += (
+            "；区间内策略没有收到现金分红" if not v.full else "；策略没有收到现金分红"
+        )
     return _w(
         "benchmark_price_index",
         msg,
+        dividends_received=received,
         mean_dividend_contribution=mean,
         years=len(use),
     )
 
 
-def partial_end(d: dict) -> dict | None:
+def partial_end(v: View) -> dict | None:
+    d = v.data
     s = d["summary"]
-    end = s["end"]
-    month = bool(d["monthly"]["last_partial"])
-    y = d["yearly"][-1] if d["yearly"] else None
-    # 只有一年时 partial 也可能来自首年；那种情况下只看末月
-    year = bool(y and y["partial"]) and (
-        len(d["yearly"]) > 1 or s["start"][:4] != s["first_trade_day"][:4]
-    )
+    end = v.hi
+    year_key = end[:4]
+    if v.b == len(v.dates) - 1:
+        month = bool(d["monthly"]["last_partial"])
+        y = d["yearly"][-1] if d["yearly"] else None
+        # 只有一年时 partial 也可能来自首年；那种情况下只看末月
+        year = bool(y and y["partial"]) and (
+            len(d["yearly"]) > 1 or s["start"][:4] != s["first_trade_day"][:4]
+        )
+    else:  # 区间在报告末日之前结束：下一个交易日还在同一个月 / 年，就是被截断
+        nxt = v.dates[v.b + 1]
+        month = nxt[:7] == end[:7]
+        year = nxt[:4] == year_key
     if not (month or year):
         return None
+    days = v.days_in_year(year_key)
     parts = []
     if year:
-        parts.append(f"末年 {y['year']} 只有 {y['days']} 个交易日")
+        parts.append(f"末年 {year_key} 只有 {days} 个交易日")
     if month:
         parts.append(f"末月 {end[:7]} 不完整")
     return _w(
@@ -67,34 +154,40 @@ def partial_end(d: dict) -> dict | None:
         end=end,
         last_month_partial=month,
         last_year_partial=year,
-        last_year_days=y["days"] if year else None,
+        last_year_days=days if year else None,
     )
 
 
-def partial_start(d: dict) -> dict | None:
+def partial_start(v: View) -> dict | None:
+    d = v.data
     s = d["summary"]
-    month = d["monthly"]["first_partial"]
-    y = d["yearly"][0] if d["yearly"] else None
-    # 与 build_tearsheet 判首年不完整的条件相同：基准日和首个交易日同年
-    first_year = bool(y) and s["start"][:4] == s["first_trade_day"][:4]
+    first = v.lo
+    if v.a == 0:
+        month = bool(d["monthly"]["first_partial"])
+        # 与 build_tearsheet 判首年不完整的条件相同：基准日和首个交易日同年
+        first_year = bool(d["yearly"]) and s["start"][:4] == s["first_trade_day"][:4]
+    else:  # 区间从报告中间开始：基准日与第一个交易日同月 / 同年，就是被截断
+        base = v.dates[v.a]
+        month = base[:7] == first[:7]
+        first_year = base[:4] == first[:4]
     if not (month or first_year):
         return None
     parts = []
     if first_year:
-        parts.append(f"首年 {y['year']} 只有 {y['days']} 个交易日")
+        parts.append(f"首年 {first[:4]} 只有 {v.days_in_year(first[:4])} 个交易日")
     if month:
-        parts.append(f"首月 {s['first_trade_day'][:7]} 不完整")
+        parts.append(f"首月 {first[:7]} 不完整")
     return _w(
         "partial_start",
-        f"自 {s['first_trade_day']} 起，" + "，".join(parts),
-        first_trade_day=s["first_trade_day"],
-        first_month_partial=bool(month),
+        f"自 {first} 起，" + "，".join(parts),
+        first_trade_day=first,
+        first_month_partial=month,
         first_year_partial=first_year,
     )
 
 
-def unfilled(d: dict) -> dict | None:
-    rb = d["rebalances"]
+def unfilled(v: View) -> dict | None:
+    rb = v.rebalances()
     changes = sum(r["new_names"] + r["dropped_names"] for r in rb)
     total = sum(r["unfilled"] for r in rb)
     if not changes or total / changes < UNFILLED_RATIO:
@@ -120,13 +213,17 @@ def unfilled(d: dict) -> dict | None:
     )
 
 
-def cash_high(d: dict) -> dict | None:
-    rb = d["rebalances"]
+def cash_high(v: View) -> dict | None:
+    rb = v.data["rebalances"]
     if not rb:
         return None
-    dates = d["daily"]["date"]
-    i0 = dates.index(rb[0]["date"])
-    cw = [x for x in d["daily"]["cash_weight"][i0:] if x is not None]
+    dates = v.dates
+    first = dates.index(rb[0]["date"])
+    # 首次调仓之前的空仓不算；自选区间从区间第一个交易日（或更晚的首次调仓）算起
+    i0 = first if v.full else max(first, v.a + 1)
+    if i0 > v.b:
+        return None
+    cw = [x for x in v.data["daily"]["cash_weight"][i0 : v.b + 1] if x is not None]
     if not cw:
         return None
     med = statistics.median(cw)
@@ -134,9 +231,12 @@ def cash_high(d: dict) -> dict | None:
         return None
     high = sum(1 for x in cw if x > CASH_HIGH) / len(cw)
     k = max(range(len(cw)), key=lambda j: cw[j])
+    since = (
+        f"首次调仓（{rb[0]['date']}）后" if i0 == first else f"区间内（{dates[i0]} 起）"
+    )
     return _w(
         "cash_high",
-        f"现金占比长期偏高：首次调仓（{rb[0]['date']}）后中位数 {pct(med, 1)}，"
+        f"现金占比长期偏高：{since}中位数 {pct(med, 1)}，"
         f"超过 {pct(CASH_HIGH, 0)} 的天数占 {pct(high, 1)}，最高 {pct(cw[k], 1)}（{dates[i0 + k]}）",
         median=med,
         share_above_10pct=high,
@@ -145,8 +245,8 @@ def cash_high(d: dict) -> dict | None:
     )
 
 
-def holdings_short(d: dict) -> dict | None:
-    rb = [r for r in d["rebalances"] if r["targets"] > 0]
+def holdings_short(v: View) -> dict | None:
+    rb = [r for r in v.rebalances() if r["targets"] > 0]
     short = [r for r in rb if r["holdings_after"] < HOLDINGS_RATIO * r["targets"]]
     if not short or len(short) < HOLDINGS_SHARE * len(rb):
         return None
@@ -164,8 +264,21 @@ def holdings_short(d: dict) -> dict | None:
     )
 
 
-def drawdown_open(d: dict) -> dict | None:
-    dd, dates = d["daily"]["drawdown"], d["daily"]["date"]
+def _window_drawdown(v: View) -> list:
+    """区间内的回撤：以区间基准日为起点重新取峰值（全区间时就是报告的 daily.drawdown）。"""
+    if v.full:
+        return v.data["daily"]["drawdown"]
+    nav = v.data["daily"]["nav"][v.a : v.b + 1]
+    out, peak = [], nav[0]
+    for x in nav:
+        peak = max(peak, x)
+        out.append(x / peak - 1)
+    return out
+
+
+def drawdown_open(v: View) -> dict | None:
+    dd = _window_drawdown(v)
+    dates = v.dates[v.a : v.b + 1]
     cur = dd[-1]
     if cur is None or cur > OPEN_DRAWDOWN:
         return None
@@ -183,42 +296,89 @@ def drawdown_open(d: dict) -> dict | None:
     )
 
 
-def short_history(d: dict) -> dict | None:
-    n, P = d["summary"]["trading_days"], d["meta"].get("periods_per_year") or 252
-    if n >= P:
+def costs_high(v: View) -> dict | None:
+    """年化成本 = 区间内调仓的费用 + 滑点合计 ÷ 区间平均权益 ÷ 年数。"""
+    cap = v.data["meta"].get("initial_capital")
+    P = v.data["meta"].get("periods_per_year") or 252
+    if not cap:
+        return None
+    rb = v.rebalances()
+    fees = sum(r["fees"] for r in rb)
+    slip = sum(r["slippage"] for r in rb)
+    nav = v.data["daily"]["nav"][v.a + 1 : v.b + 1]
+    avg = sum(nav) / len(nav) * cap
+    years = (v.b - v.a) / P
+    if not avg > 0:
+        return None
+    ratio = (fees + slip) / avg / years
+    if ratio <= COST_HIGH:
         return None
     return _w(
+        "costs_high",
+        f"换手或成本很高：年化成本（费用 + 滑点）占平均权益的 {pct(ratio, 2)}，"
+        f"超过 {pct(COST_HIGH, 0)}；其中费用 {pct(fees / avg / years, 2)}、滑点 {pct(slip / avg / years, 2)}",
+        ratio=ratio,
+        fees=fees,
+        slippage=slip,
+        average_equity=avg,
+        years=years,
+    )
+
+
+def short_history(v: View) -> dict | None:
+    n = v.data["summary"]["trading_days"] if v.full else v.b - v.a
+    P = v.data["meta"].get("periods_per_year") or 252
+    if n >= P:
+        return None
+    what = "历史" if v.full else "所选区间"
+    return _w(
         "short_history",
-        f"历史只有 {n} 个交易日（不足 {P} 个，即一年）：年化收益、年化波动、夏普只是外推，不可靠",
+        f"{what}只有 {n} 个交易日（不足 {P} 个，即一年）：年化收益、年化波动、夏普只是外推，不可靠",
         trading_days=n,
     )
 
 
-def benchmark_late(d: dict) -> dict | None:
-    s = d["summary"]
-    if s.get("benchmark_start") in (None, s["start"]):
-        return None
+def benchmark_late(v: View) -> dict | None:
+    s = v.data["summary"]
+    if v.full:
+        if s.get("benchmark_start") in (None, s["start"]):
+            return None
+        start = s["benchmark_start"]
+    else:
+        i = v.benchmark_first()
+        if i is None or i <= v.a:
+            return None
+        start = v.dates[i] if i <= v.b else None
+    if start is None:
+        return _w(
+            "benchmark_late",
+            f"基准在所选区间内没有数据（自 {v.dates[v.benchmark_first()]} 起才有）",
+            benchmark_start=v.dates[v.benchmark_first()],
+        )
+    base = s["start"] if v.full else v.dates[v.a]
     return _w(
         "benchmark_late",
-        f"基准自 {s['benchmark_start']} 起才有数据，晚于策略基准日 {s['start']}；"
+        f"基准自 {start} 起才有数据，晚于{'策略' if v.full else '区间'}基准日 {base}；"
         "基准和相对指标只在重叠区间计算",
-        benchmark_start=s["benchmark_start"],
+        benchmark_start=start,
     )
 
 
-def benchmark_filled(d: dict) -> dict | None:
-    b = d["meta"].get("benchmark")
+def benchmark_filled(v: View) -> dict | None:
+    b = v.data["meta"].get("benchmark")
     if not b or not b.get("filled_days"):
         return None
+    tag = "" if v.full else "（全区间）"
     return _w(
         "benchmark_filled",
-        f"基准序列中间缺 {b['filled_days']} 天，已用前一天的值填充",
+        f"基准序列中间缺 {b['filled_days']} 天，已用前一天的值填充{tag}",
         filled_days=b["filled_days"],
+        full_range_only=not v.full,
     )
 
 
-def weekday_basis(d: dict) -> dict | None:
-    if d["meta"].get("completeness_basis") != "weekday":
+def weekday_basis(v: View) -> dict | None:
+    if v.data["meta"].get("completeness_basis") != "weekday":
         return None
     return _w(
         "weekday_basis",
@@ -237,10 +397,16 @@ RULES = (
     unfilled,
     holdings_short,
     cash_high,
+    costs_high,
     drawdown_open,
 )
 
 
-def warnings(data: dict) -> list[dict]:
-    """按 `RULES` 的顺序逐条检查，返回 `{code, message, values}` 的列表（没有问题时为空）。"""
-    return [w for rule in RULES if (w := rule(data)) is not None]
+def warnings(data: dict, a: int | None = None, b: int | None = None) -> list[dict]:
+    """按 `RULES` 的顺序逐条检查，返回 `{code, message, values}` 的列表（没有问题时为空）。
+
+    a、b：区间的基准日和末日（`daily.date` 的行号）；不给时为全区间。
+    """
+    T = len(data["daily"]["date"])
+    v = View(data, 0 if a is None else a, T - 1 if b is None else b)
+    return [w for rule in RULES if (w := rule(v)) is not None]

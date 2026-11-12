@@ -104,9 +104,14 @@ def benchmarks_blocks(ctx: Context) -> list:
     if extra:
         cols = [(ctx.L("年份", "year"), "l"), (ctx.L("策略", "return"), "r")]
         main = ctx.bench
+
+        # 英文时列名用指数代码（没有代码时用名称），与 JSON 键名一样只含 ASCII
+        def head(x):
+            return ctx.L(x["name"], x.get("symbol") or x["name"])
+
         if main:
-            cols.append((main["name"], "r"))
-        cols += [(x["name"], "r") for x in extra]
+            cols.append((head(main), "r"))
+        cols += [(head(x), "r") for x in extra]
         yt = Table(cols)
         for k, y in enumerate(ctx.data["yearly"]):
             if not (int(ctx.lo[:4]) <= y["year"] <= int(ctx.hi[:4])):

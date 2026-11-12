@@ -9,10 +9,25 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import checks
-from .fmt import MISSING, num, pct, width
+from .fmt import MISSING, num, pct, width, wrap
 from .window import resolve, window_summary
 
 SUMMARY_MAX_LINES = 40
+TITLE_LINES = 2  # 默认摘要里标题最多占两行，更长的截断加「…」（其余小节不截）
+
+
+def _clip(text: str, lines: int) -> str:
+    """截短到折行后不超过 lines 行，末尾加「…」。"""
+    if len(wrap(text)) <= lines:
+        return text
+    lo, hi = 0, len(text)  # 二分：保留前 k 个字符
+    while lo < hi:
+        k = (lo + hi + 1) // 2
+        if len(wrap(text[:k].rstrip() + "…")) <= lines:
+            lo = k
+        else:
+            hi = k - 1
+    return text[:lo].rstrip() + "…"
 
 
 @dataclass
@@ -292,9 +307,32 @@ def _metrics_table(ctx: Context) -> Table:
     return t
 
 
+def excess_sign_note(ctx: Context, ex, ir, w) -> str | None:
+    """超额与信息比率符号相反时说明两者的口径（波动大时几何差与日均超额可以反号）。"""
+    if ex is None or ir is None or not ex * ir < 0:
+        return None
+    exar = w.get("excess_daily_mean_annualized")
+    if ctx.lang == "en":
+        return (
+            "note: excess return and information_ratio have opposite signs; excess is the "
+            "difference of compounded returns, information_ratio uses the mean daily excess "
+            f"(excess_daily_mean_annualized={pct(exar, 1, True)})"
+        )
+    what = (
+        "年化超额是策略与基准几何年化收益之差"
+        if w["annualized"]
+        else "区间超额是两者区间收益之差"
+    )
+    return (
+        f"注：超额与信息比率符号相反——{what}，信息比率的分子是日超额的均值"
+        f"（日超额算术年化 {pct(exar, 1, True)}）；两边波动差得多时两者可以反号"
+    )
+
+
 def summary_blocks(ctx: Context) -> list:
     s, w = ctx.data["summary"], ctx.ws
     head = _header_lines(ctx)
+    head[0] = _clip(head[0], TITLE_LINES)
     blocks: list = [*head, "", _metrics_table(ctx)]
     if ctx.full and s.get("max_drawdown_peak"):
         rec = s["max_drawdown_recovery"]
@@ -327,6 +365,9 @@ def summary_blocks(ctx: Context) -> list:
                 ],
             )
         )
+        note = excess_sign_note(ctx, ex, w["information_ratio"], w)
+        if note:
+            blocks.append(note)
     blocks.append(
         kv(
             ctx,
@@ -348,7 +389,7 @@ def summary_blocks(ctx: Context) -> list:
     # 分年、回撤、提醒；分年行数按剩余行数截取最近若干年
     years = ctx.years()
     eps = _drawdowns_in(ctx)[:3]
-    warns = checks.warnings(ctx.data)
+    warns = checks.warnings(ctx.data, ctx.a, ctx.b)
     tail: list = []
     if eps:
         tail += [
@@ -371,19 +412,14 @@ def summary_blocks(ctx: Context) -> list:
     ]
 
     def count(bl):
-        n = 0
-        for x in bl:
-            n += (
-                len(x.rows) + 1
-                if isinstance(x, Table)
-                else (1 + (width(x) - 1) // 100 if x else 1)
-            )
-        return n
+        """按文本版的实际排版数行：表格按 `_table_text` 的输出，文本行按折行后的行数。"""
+        from .text import _table_text
 
-    used = count(blocks) + count(tail) + 3  # 空行 + 标题 + 表头
-    room = SUMMARY_MAX_LINES - used
-    if years and room >= 1:
-        shown = years if len(years) <= room else years[-room:]
+        return sum(
+            len(_table_text(x)) if isinstance(x, Table) else len(wrap(x)) for x in bl
+        )
+
+    def yearly_part(shown):
         notes = []
         if len(shown) < len(years):
             notes.append(
@@ -398,9 +434,15 @@ def summary_blocks(ctx: Context) -> list:
         title = ctx.L("分年收益", "yearly")
         if notes:
             title += ctx.L(f"（{'；'.join(notes)}）", f" ({'; '.join(notes)})")
-        if width(title) > 100:  # 标题折行会多占一行
-            shown = shown[1:]
-        blocks += ["", title, _yearly_short(ctx, shown)]
+        return ["", title, _yearly_short(ctx, shown)]
+
+    room = SUMMARY_MAX_LINES - count(blocks) - count(tail)
+    # 能放下几年就放几年（从最近的一年往前）；标题里的说明随所放年数变化，所以逐个试
+    for k in range(min(len(years), room), 0, -1):
+        part = yearly_part(years[-k:])
+        if count(part) <= room:
+            blocks += part
+            break
     return blocks + tail
 
 
@@ -424,10 +466,14 @@ def summary_json(ctx: Context):
             for y in ctx.years()
         ],
         "drawdowns": _drawdowns_in(ctx)[:3],
-        "warnings": [w["code"] for w in checks.warnings(ctx.data)],
+        "warnings": [w["code"] for w in checks.warnings(ctx.data, ctx.a, ctx.b)],
     }
     if ctx.full:
         out["summary"]["annualized"] = ctx.ws["annualized"]
+        # 报告数据里没有这一项（页面也不显示）：按区间公式在嵌入的日度序列上算
+        out["summary"]["excess_daily_mean_annualized"] = ctx.ws[
+            "excess_daily_mean_annualized"
+        ]
     return out
 
 
@@ -1139,14 +1185,14 @@ def costs_json(ctx: Context):
 
 # ====================================================================== warnings
 def warnings_blocks(ctx: Context) -> list:
-    ws = checks.warnings(ctx.data)
+    ws = checks.warnings(ctx.data, ctx.a, ctx.b)
     if not ws:
         return [ctx.L("没有需要提醒的问题", "none")]
     return [f"- [{w['code']}] {w['message']}" for w in ws]
 
 
 def warnings_json(ctx: Context):
-    return checks.warnings(ctx.data)
+    return checks.warnings(ctx.data, ctx.a, ctx.b)
 
 
 SECTIONS: dict[str, Section] = {

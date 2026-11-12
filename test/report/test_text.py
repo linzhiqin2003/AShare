@@ -196,7 +196,8 @@ def test_window_metrics_match_page_js(which, request):
             if v is None or py[k] is None:
                 assert v is None and py[k] is None, (a, b, k, v, py[k])
             else:
-                # 同样的输入、同样的求和顺序：只可能差在 pow 的最后一位
+                # 同样的输入、同样的求和顺序；pow 等库函数可能差最后一位，数值接近 0 的
+                # 项（如很短区间的超额）相对误差会被放大到 1e-11 量级，所以带绝对容差
                 assert py[k] == pytest.approx(v, rel=1e-13, abs=1e-15), (a, b, k)
 
 

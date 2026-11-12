@@ -17,28 +17,10 @@ import json
 
 from . import sections as sec
 from . import sections_extra  # noqa: F401  注册补充内容的小节
-from .fmt import pad, width
+from .fmt import MAX_WIDTH, pad, width, wrap
 from .sections import Table
 
-MAX_WIDTH = 100
 FORMATS = ("text", "markdown", "json")
-
-
-def _wrap(line: str, limit: int = MAX_WIDTH, indent: str = "  ") -> list[str]:
-    """按显示宽度折行；优先在空格、逗号、分号后断开。"""
-    out, cur = [], ""
-    for ch in line:
-        if width(cur + ch) > limit:
-            cut = max(cur.rfind(c) for c in " ，；、,;")
-            if cut > len(cur) // 2:
-                out.append(cur[: cut + 1].rstrip())
-                cur = indent + cur[cut + 1 :].lstrip()
-            else:
-                out.append(cur)
-                cur = indent
-        cur += ch
-    out.append(cur)
-    return out
 
 
 def _table_text(t: Table, gap: int = 2) -> list[str]:
@@ -99,7 +81,7 @@ def _render_blocks(title: str | None, blocks: list, fmt: str) -> list[str]:
         elif fmt == "markdown":
             out.append(b + "  " if b else "")
         else:
-            out += _wrap(b)
+            out += wrap(b)
     while out and out[-1] == "":
         out.pop()
     return out

@@ -217,11 +217,9 @@ def render_compare(c: dict, fmt: str = "text", lang: str = "zh") -> str:
         cells = []
         for n in names:
             v = y.get(n)
-            cells.append(
-                MISSING
-                if v is None
-                else pct(v["return"], 1, True) + ("*" if v["partial"] else "")
-            )
+            # 每格末尾统一留一个字符：有星号写星号，没有写空格，数字的个位就对齐
+            mark = "*" if v is not None and v["partial"] else " "
+            cells.append((MISSING if v is None else pct(v["return"], 1, True)) + mark)
         yt.rows.append([str(y["year"])] + cells)
     blocks += [
         "",

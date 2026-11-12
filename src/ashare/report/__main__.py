@@ -24,6 +24,11 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="python -m ashare.report", description="查看回测报告数据"
     )
+    p.add_argument(
+        "--traceback",
+        action="store_true",
+        help="数据不完整或格式不对时打印完整的 Python 栈（排查渲染代码本身的问题时用）",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     sh = sub.add_parser("show", help="在终端里打印报告")
     sh.add_argument("path", help="Tearsheet.save_json 写出的 JSON")
@@ -54,6 +59,18 @@ def main(argv=None) -> int:
         return 0
     except (ReportError, ValueError, OSError) as e:
         print(f"错误：{e}", file=sys.stderr)
+        return 2
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # 形状检查之外的字段缺失或类型不对（例如分年行里少一个键）：默认不打 Python 栈；
+        # 这也会盖住渲染代码自己的错误，所以留一个开关看原始异常
+        if a.traceback:
+            raise
+        what = f"缺字段 {e.args[0]!r}" if isinstance(e, KeyError) else type(e).__name__
+        print(
+            f"错误：{a.path} 里的报告数据不完整或格式不对（{what}）；"
+            "请用 Tearsheet.save_json 重新导出；在 show / html 之前加 --traceback 看完整的栈",
+            file=sys.stderr,
+        )
         return 2
 
 

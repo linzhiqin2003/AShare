@@ -9,6 +9,7 @@ a 是区间的基准日（区间收益从 a+1 行算起），b 是区间末日�
 
 from __future__ import annotations
 
+import datetime
 import math
 
 from .render import compact
@@ -49,17 +50,25 @@ def resolve(data: dict, start=None, end=None) -> tuple[int, int]:
     """
     from .build import ReportError, _iso
 
+    def day(x, what):
+        s = _iso(x)
+        try:
+            datetime.date.fromisoformat(s)
+        except ValueError:
+            raise ReportError(f"{what} {x} 不是有效的日期") from None
+        return s
+
     dates = data["daily"]["date"]
     T = len(dates)
     a, b = 0, T - 1
     if start is not None:
-        s = _iso(start)
+        s = day(start, "起始日")
         first = next((i for i, d in enumerate(dates) if d >= s), None)
         if first is None:
             raise ReportError(f"起始日 {s} 晚于报告最后一天 {dates[-1]}")
         a = max(0, first - 1)
     if end is not None:
-        e = _iso(end)
+        e = day(end, "截止日")
         last = next((i for i in range(T - 1, -1, -1) if dates[i] <= e), None)
         if last is None:
             raise ReportError(f"截止日 {e} 早于报告第一天 {dates[0]}")
@@ -128,6 +137,7 @@ def metrics(
         "te": None,
         "ir": None,
         "beta": None,
+        "exar": None,
         "bn": 0,
     }
     bnav = dl.get("benchmark_nav")
@@ -159,6 +169,7 @@ def metrics(
             bmdd=_mdd(bnav[o : b + 1]),
             te=te,
             ir=em * PY / te if te > 0 else None,
+            exar=em * PY,  # 页面没有这一项：日超额均值 × 年交易日数（信息比率的分子）
             beta=cv / (qsd * qsd) if qsd > 0 else None,
         )
         m["excess"] = (math.pow(1 + scum, PY / bn) - 1) - m["bann"]
@@ -209,6 +220,7 @@ SUMMARY_KEYS = {
     "te": "tracking_error",
     "ir": "information_ratio",
     "beta": "beta",
+    "exar": "excess_daily_mean_annualized",
     "n": "trading_days",
 }
 

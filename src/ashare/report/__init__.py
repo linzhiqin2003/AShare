@@ -29,6 +29,7 @@ from .compare import Comparison, compare
 from .context import context_from_data, index_benchmark, industry_switch_date
 from .render import render_html, to_html
 from .sections import SECTIONS
+from .shape import check_shape
 from .text import render
 
 __all__ = [
@@ -109,14 +110,17 @@ class Tearsheet:
 
     @classmethod
     def load(cls, path) -> Tearsheet:
-        """读回 `save_json` 写的报告数据。"""
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        if (
-            not isinstance(data, dict)
-            or not {"meta", "summary", "daily"} <= data.keys()
-        ):
-            raise ReportError(f"{path} 不是报告数据（缺 meta / summary / daily）")
+        """读回 `save_json` 写的报告数据；不是 JSON 或形状不对时抛 `ReportError`（说明缺什么）。"""
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except UnicodeDecodeError:
+            raise ReportError(f"{path} 不是文本文件，读不出报告数据") from None
+        except json.JSONDecodeError as e:
+            raise ReportError(
+                f"{path} 不是有效的 JSON（第 {e.lineno} 行第 {e.colno} 列）"
+            ) from None
+        check_shape(data, path)
         return cls(data)
 
 

@@ -440,7 +440,7 @@ REFERENCES = {"my_range": my_range}
 - 每次求解后都核对约束是否满足；结果与第二个求解器对拍。
 - 输出目标权重，按 `panelbt.Targets` 的稀疏布局交给回测。
 
-### 6.5 回测报告（`ashare.report`）
+### 6.7 回测报告（`ashare.report`）
 
 一次回测出一份报告数据（`build_tearsheet`，口径见 `docs/REPORT_NOTES.md`），同一份数据有两种看法：自包含的 HTML 页面（给人看），以及给终端和 AI 代理看的文本版。
 

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+import re
 import unicodedata
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -70,3 +71,41 @@ def width(s: str) -> int:
 def pad(s: str, w: int, align: str = "l") -> str:
     gap = max(0, w - width(s))
     return s + " " * gap if align == "l" else " " * gap + s
+
+
+MAX_WIDTH = 100
+BREAK_AFTER = " ，；、,;"
+# 命令片段（`--section warnings`、`--lang en`）整体不拆：选项名和紧跟的一个参数算一个整体
+_COMMAND = re.compile(r"--[A-Za-z][\w-]*(?: [A-Za-z0-9][\w,.-]*)?")
+
+
+def _atoms(line: str) -> list[str]:
+    out, i = [], 0
+    for m in _COMMAND.finditer(line):
+        out += list(line[i : m.start()])
+        out.append(m.group())
+        i = m.end()
+    return out + list(line[i:])
+
+
+def wrap(line: str, limit: int = MAX_WIDTH, indent: str = "  ") -> list[str]:
+    """按显示宽度折行；优先在空格、逗号、分号、顿号之后断开，命令片段不拆开。
+
+    续行带 `indent`。没有合适的断点时在宽度上限处硬断（命令片段整体移到下一行）。
+    """
+    out: list[str] = []
+    cur: list[str] = []
+    for atom in _atoms(line):
+        if "".join(cur).strip() and width("".join(cur) + atom) > limit:
+            cuts = [k for k, x in enumerate(cur) if x in BREAK_AFTER]
+            cut = cuts[-1] if cuts else -1
+            if cut > len(cur) // 2:
+                out.append("".join(cur[: cut + 1]).rstrip())
+                rest = "".join(cur[cut + 1 :]).lstrip()
+                cur = [indent, *_atoms(rest)] if rest else [indent]
+            else:
+                out.append("".join(cur).rstrip())
+                cur = [indent]
+        cur.append(atom)
+    out.append("".join(cur))
+    return out
