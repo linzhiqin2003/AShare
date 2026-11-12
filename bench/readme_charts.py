@@ -75,27 +75,12 @@ TEXT = {
             "bt",
             "backtrader",
         ],
-        "approx": "fees approximated",
-        "e_title": "One backtest: 4,000 trading days × 5,500 stocks, monthly rebalance",
-        "e_sub": "Wall time of the backtest itself, log scale. "
-        "Same inputs, daily NAV equal within 1e-9 unless noted.",
-        "e_foot": "Apple M5 Pro, single thread, medians of 3 runs. Source: docs/BENCHMARKS.md",
+        "e_title": "One backtest, 4,000 days × 5,500 stocks",
         "e_label": "Backtest wall time by engine, log scale",
-        "bars": ["Before", "After, same calls", "After, batch + parallel calls"],
-        "stages": [
-            "Risk model, full rebuild",
-            "95 factors",
-            "Rank IC",
-            "61-period optimisation",
-            "Everything else",
-        ],
-        "r_title": "One full research run on real data: 4,824 days × 5,923 stocks",
-        "r_sub": "95 factors + rank IC → full-history risk model → "
-        "61 monthly optimisations → A-share backtest. Seconds.",
-        "r_foot": "Apple M5 Pro, one run each, machine not idle (load 7.7 before, 3.7 after). "
-        "Source: docs/PERF_LOG.md",
+        "bars": ["Before", "After", "After, batch + parallel"],
+        "stages": ["Risk model", "Factors", "Rank IC", "Optimisation", "Other"],
+        "r_title": "One full research run, 4,824 days × 5,923 stocks",
         "r_label": "End-to-end research run before and after",
-        "faster": "{:.1f}× faster",
     },
     "zh": {
         "engines": [
@@ -107,19 +92,12 @@ TEXT = {
             "bt",
             "backtrader",
         ],
-        "approx": "费用为近似",
-        "e_title": "一次回测：4000 个交易日 × 5500 只股票，每月调仓",
-        "e_sub": "回测本身的耗时，对数刻度。输入相同；除标注外，逐日净值相差不超过 1e-9。",
-        "e_foot": "Apple M5 Pro，单线程，3 次取中位数。出处：docs/BENCHMARKS.md",
+        "e_title": "一次回测，4000 日 × 5500 只",
         "e_label": "各引擎一次回测的耗时，对数刻度",
-        "bars": ["优化前", "优化后，调用方式不变", "优化后，批量和并行入口"],
-        "stages": ["风险模型全量重建", "95 个因子", "秩 IC", "61 期组合优化", "其余"],
-        "r_title": "真实数据上的一次完整研究：4824 个交易日 × 5923 只股票",
-        "r_sub": "95 个因子和秩 IC → 全历史风险模型 → 61 个月末组合优化 → A 股规则回测。单位秒。",
-        "r_foot": "Apple M5 Pro，各跑一次，机器并不空闲（优化前负载 7.7，优化后 3.7）。"
-        "出处：docs/PERF_LOG.md",
+        "bars": ["优化前", "优化后", "优化后，批量加并行"],
+        "stages": ["风险模型", "算因子", "秩 IC", "组合优化", "其余"],
+        "r_title": "一次完整研究，4824 日 × 5923 只",
         "r_label": "一次完整研究在优化前后的耗时",
-        "faster": "速度 {:.1f} 倍",
     },
 }
 
@@ -128,13 +106,10 @@ def engines(lang):
     # docs/BENCHMARKS.md, task 1, 4000 x 5500, rebalance every 21 days, the backtest itself.
     t = TEXT[lang]
     values = [2.698, 8.990, 14.496, 1195.775, 1286.401, 7435.173, 330844.682]
-    rows = [
-        (name, ms, t["approx"] if name == "bt" else "")
-        for name, ms in zip(t["engines"], values, strict=True)
-    ]
-    width, left, right, top, step = 860, 290, 150, 64, 34
+    rows = list(zip(t["engines"], values, strict=True))
+    width, left, right, top, step = 860, 290, 150, 52, 34
     plot = width - left - right
-    height = top + step * len(rows) + 46
+    height = top + step * len(rows) + 30
     lo, hi = 0.0, 6.0  # 1 ms .. 1e6 ms
 
     def x(ms):
@@ -142,7 +117,6 @@ def engines(lang):
 
     out = [
         f'<text class="t ink" x="24" y="30">{escape(t["e_title"])}</text>',
-        f'<text class="s ink2" x="24" y="48">{escape(t["e_sub"])}</text>',
     ]
     for k, tick in enumerate(["1 ms", "10 ms", "100 ms", "1 s", "10 s", "100 s"]):
         gx = left + k / (hi - lo) * plot
@@ -153,7 +127,7 @@ def engines(lang):
             f'text-anchor="middle">{tick}</text>'
         )
     base = rows[0][1]
-    for i, (name, ms, note) in enumerate(rows):
+    for i, (name, ms) in enumerate(rows):
         y = top + i * step + 6
         hero = i == 0
         out.append(
@@ -162,21 +136,12 @@ def engines(lang):
         )
         out.append(bar(left, y, x(ms) - left, 22, "hero" if hero else "other"))
         ratio = "" if hero else f" · {ms / base:,.0f}×"
-        extra = f" ({note})" if note else ""
         out.append(
             f'<text class="l {"ink b" if hero else "ink"}" x="{x(ms) + 8:.1f}" y="{y + 15}">'
             f"{duration(ms)}{ratio}</text>"
         )
-        if extra:
-            out.append(
-                f'<text class="s muted" x="{left - 12}" y="{y + 29}" text-anchor="end">'
-                f"{escape(note)}</text>"
-            )
     out.append(
         f'<line class="axis" x1="{left}" y1="{top - 4}" x2="{left}" y2="{top + step * len(rows)}"/>'
-    )
-    out.append(
-        f'<text class="s muted" x="24" y="{height - 12}">{escape(t["e_foot"])}</text>'
     )
     return svg(width, height, "".join(out), t["e_label"])
 
@@ -203,19 +168,18 @@ def research(lang):
         (t["bars"][2], *steps(new, "research_once_fast")),
     ]
     names = t["stages"]
-    width, left, right, top, step = 860, 216, 96, 96, 46
+    width, left, right, top, step = 860, 190, 96, 82, 40
     plot = width - left - right
-    height = top + step * len(bars) + 50
+    height = top + step * len(bars) + 30
     scale = plot / 200.0
     out = [
         f'<text class="t ink" x="24" y="30">{escape(t["r_title"])}</text>',
-        f'<text class="s ink2" x="24" y="48">{escape(t["r_sub"])}</text>',
     ]
     lx = 24
     for i, name in enumerate(names):
         out.append(
-            f'<rect class="s{i + 1}" x="{lx}" y="62" width="11" height="11" rx="2"/>'
-            f'<text class="s ink2" x="{lx + 16}" y="72">{escape(name)}</text>'
+            f'<rect class="s{i + 1}" x="{lx}" y="46" width="11" height="11" rx="2"/>'
+            f'<text class="s ink2" x="{lx + 16}" y="56">{escape(name)}</text>'
         )
         lx += 16 + sum(12.5 if ord(c) > 255 else 6.8 for c in name) + 20
     for tick in range(0, 201, 50):
@@ -244,25 +208,13 @@ def research(lang):
                     f'<rect class="s{k + 1}" x="{cursor:.1f}" y="{y}" width="{shown:.1f}" '
                     'height="28"/>'
                 )
-            if k == 0 and w > 60:
-                out.append(
-                    f'<text class="s b" fill="#ffffff" x="{cursor + 8:.1f}" y="{y + 18}">'
-                    f"{value:.0f} s</text>"
-                )
             cursor += w
+        gain = f" · {bars[0][2] / total:.1f}×" if i else ""
         out.append(
-            f'<text class="l ink b" x="{cursor + 8:.1f}" y="{y + 19}">{total:.1f} s</text>'
+            f'<text class="l ink b" x="{cursor + 8:.1f}" y="{y + 19}">{total:.1f} s{gain}</text>'
         )
-        if i:
-            out.append(
-                f'<text class="s ink2" x="{cursor + 8:.1f}" y="{y + 34}">'
-                f"{t['faster'].format(bars[0][2] / total)}</text>"
-            )
     out.append(
         f'<line class="axis" x1="{left}" y1="{top - 6}" x2="{left}" y2="{top + step * len(bars)}"/>'
-    )
-    out.append(
-        f'<text class="s muted" x="24" y="{height - 12}">{escape(t["r_foot"])}</text>'
     )
     return svg(width, height, "".join(out), t["r_label"])
 
