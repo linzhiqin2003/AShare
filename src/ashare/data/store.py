@@ -174,7 +174,13 @@ class Store:
                     retries=result.retries,
                 ),
             )
-        path = self.root / "raw" / spec.api / partition / f"{digest}.parquet"
+        path = (
+            self.root
+            / "raw"
+            / (spec.raw_dir or spec.api)
+            / partition
+            / f"{digest}.parquet"
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         table = table.with_columns(pl.lit(result.fetched_at).alias("_fetched_at"))
         if not path.exists():
@@ -268,7 +274,7 @@ class Store:
         def in_range(entry):
             kind = DATASETS[name].partition
             part = entry["partition"]
-            if kind == "day":
+            if kind in ("day", "fut_day"):
                 return (start is None or part >= start) and (end is None or part <= end)
             if kind in ("index_month", "index_month_daily") and "_" in part:
                 month = part.rsplit("_", 1)[-1]

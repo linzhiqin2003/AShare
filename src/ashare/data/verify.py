@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import polars as pl
 
 from .aliases import CanonicalStore
-from .catalog import DATASETS, INDUSTRY_CAVEAT
+from .catalog import DATASETS, FUTURES_DATASETS, INDUSTRY_CAVEAT
 from .crosscheck import fingerprint
 from .panel_events import dividend_rows
 from .panel_quality import securities_table
@@ -25,6 +25,8 @@ __all__ = ["Audit", "audit_limits", "audit_tables", "verify"]
 def coverage_report(store, dates):
     coverage = {}
     for name, spec in DATASETS.items():
+        if name in FUTURES_DATASETS:
+            continue  # 期货由 ashare.data.futures_verify 独立校验。
         entries = store.entries(name)
         complete = [e for e in entries.values() if e["status"] == "complete"]
         counts = Counter()
@@ -214,7 +216,7 @@ def verify(store, *, output=None):
     # 核心表以外的主键单独投影，避免读入数百个财务列。
     duplicates, duplicate_count, total = [], 0, 0
     for name, spec in DATASETS.items():
-        if name in core or not store.entries(name):
+        if name in core or name in FUTURES_DATASETS or not store.entries(name):
             continue
         frame = store.scan(name)
         keys = [c for c in spec.keys if c in frame.collect_schema()]

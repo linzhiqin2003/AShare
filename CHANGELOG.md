@@ -17,6 +17,7 @@
 - 端到端剖析工具 `bench/e2e`（`make perf-profile`、`make perf-compare`）和第一份基线。
 
 ## 2026-11-13
+- 境内期货数据（第 1 批）：六个交易所（中金所、上期所、大商所、郑商所、上期能源、广期所）的合约表、日线、主力映射、逐日结算参数，1995-04-17 起全部历史（`sync-futures`，按交易日分区、断点续跑）；与来源无关的统一字段（`futures_schema`，以后境外来源只需写适配器）；「交易日 × 合约」面板（按品种分块、每个合约只存存续窗口，`build-futures`）；读取入口 `ashare.data.open(root).futures()`，主力 / 次主力连续合约（来源映射、持仓量、成交量三种换月规则，不前视；不调整、差值、比例三种后复权）与换月日程表；`futures_panelbt.panelbt_inputs` 直接给出 `panelbt` 输入，中金所股指期货新旧两条路径回测逐位一致；独立校验 `verify-futures`。口径与已知问题见 `docs/FUTURES_DATA.md`。
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。

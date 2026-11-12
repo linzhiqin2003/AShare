@@ -582,3 +582,7 @@ Fresh copy: make dev && make check passed; default test data root untouched.
 ## 开盘可买、可卖掩码（性能优化 P-016，2026-11-12）
 
 面板新增两个 1 字节布尔字段 `can_buy_open`、`can_sell_open`（共 48 个字段）：以当日开盘价成交能否买入、卖出，口径与 `panelbt.markets.ashare.tradability(open, high, low, upper_limit, lower_limit, is_suspended | ~has_quote)` 逐格相同，规则写在字段说明（`metadata.fields.*.known_at`）里。构建在 `panel_trade.py`（进入代码哈希），只算新增行，增量与全量逐位相同；`verify` 用 panelbt 的函数按年重算逐格比对（检查名 `open_masks_match_panelbt`）。回测适配直接读这两个字段，不再每次从 6 个字段现算。全历史验证、计时和留给负责人定的口径疑问见 `docs/perf_log.d/P-016-open-masks.md`。
+
+## 境内期货（第 1 批，2026-11-13）
+
+全部六个期货交易所的合约表、日线、主力映射、逐日结算参数接进同一套原始库（五个 `futures_*` 数据集，各自成目录，不进默认的股票同步、校验和面板版本），另有与来源无关的统一字段、按品种分块的「交易日 × 合约」面板、主力 / 次主力连续合约与换月日程表、到 `panelbt` 输入的转换和独立校验。口径、校验结果、已知问题全部写在 `docs/FUTURES_DATA.md`。对股票数据层的改动只有四处，都不改变已有行为：`Dataset` 多一个默认为空的 `raw_dir`（原始文件目录，空时仍用接口名）；`Store.scan` 把新的 `fut_day` 分区方式按日分区过滤；`sync` 遇到期货数据集直接报错并指向 `sync-futures`；股票 `verify` 跳过期货数据集。`ashare.data.open(root).futures()` 是新的读取入口。
