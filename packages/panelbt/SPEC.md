@@ -258,15 +258,25 @@ defaults are in `docs/markets/PROFILES.md` of the AShare repository.
   charges only. Default broker commissions are assumptions; every keyword
   replaces the final value. `HK_SOUTHBOUND.costs(fx_cost=...)` adds the
   CNY/HKD settlement spread to both directions.
-- `config(lot_sizes=..., n=..., dates=..., delisting="zero"|"last", ...)`:
+- `config(lot_sizes=..., n=..., dates=..., cash_div=..., delisting="zero"|"last", ...)`:
   Hong Kong lots are per security (length N, or T×N reduced to the largest lot
   with a warning); US uses whole shares (`fractional=True` for zero steps).
-  Dividend withholding is computed per security (`h_share`, `fie_h_share`;
-  `withholding`, `adr`, `adr_withholding`); where securities differ on a day the
-  highest rate is used with a warning. `delisting="zero"` sets
-  `delist_recovery=0`, `"last"` sets 1. A `Rules` with `sell_lock=True` is
-  rejected (both markets allow same-day round trips). Southbound rejects
-  margin models that allow shorting or financing.
+  Dividend withholding is computed per security (`h_share`, `fie_h_share`,
+  `resident_enterprise`; `withholding`, `adr`, `adr_withholding`). The kernel
+  takes one rate per day: with `cash_div` the day's maximum is taken over
+  securities paying that day, otherwise over all securities, with a warning
+  when paying securities differ. Without `h_share` the local HK profile
+  withholds 10% from every security and warns. `delisting="zero"` sets
+  `delist_recovery=0` (pessimistic for longs, optimistic for shorts), `"last"`
+  sets 1 (optimistic for longs, neutral for shorts); long-only accounts
+  default to `"zero"`, and a margin model that allows shorting requires an
+  explicit choice. A `Rules` with `sell_lock=True` is rejected (both markets
+  allow same-day round trips). Southbound rejects margin models that allow
+  shorting or financing.
+- `HK_SOUTHBOUND.costs` adds `fx_cost` after keyword overrides, so overriding
+  `fee_rate_buy/sell` keeps the exchange spread (`fx_cost=0` drops it).
+- `net_dividends(cash_div, rates, account)` refuses an account that may short
+  (shorts would pay net instead of gross dividends) unless `allow_short=True`.
 - `market(..., connect_eligible=...)` masks Southbound buys only.
 - Helpers: `net_dividends`, `home_currency_nav`, `connect_home_equity`,
   `settlement_days`, `hk_margin`, `reg_t_margin`, `US_WITHHOLDING`.

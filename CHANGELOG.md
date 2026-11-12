@@ -2,6 +2,7 @@
 
 ## 2026-11-13（港股、美股市场档案）
 - `panelbt.markets` 新增三份档案：香港本地账户 `HK_DIRECT`、港股通 `HK_SOUTHBOUND`、美股 `US`（`docs/DESIGN.md` 4.16、`docs/markets/PROFILES.md`），按名字取 `markets.get("hk_southbound")`（A 股取到的是原 `ASHARE` 对象）。2010 年起按日期分段的法定费用逐项表（港股印花税、证监会与会财局征费、交易费、股份交收费及上下限、交易系统使用费；美股 SEC 规费、FINRA TAF），每段注明生效日与调研出处；每笔固定费用、单项下限和取整按参考成交额折成比例费，上限忽略（偏悲观）；按证券的分红扣税（H 股、外商投资企业 H 股、港股通 20%、美股 10%/30%/0%、ADR）；退市默认除牌日按 0；港股通合资格掩码与汇兑损耗；Reg T 与港股本地保证金账户构造函数；人民币折算工具。不改内核，需要内核支持的能力列成清单。A 股档案输出不变。
+- 港美股档案复核返工：允许做空时退市处理必须显式选择（"zero" 对空头偏乐观）；港股本地新增可选的中国居民企业红筹 10% 预扣标记（默认不启用、未核实），不给 H 股标记时告警；`config(cash_div=)` 让分红税只看当天派息的证券；`net_dividends` 拒绝允许做空的账户；覆盖 `fee_rate_*` 时港股通 `fx_cost` 仍叠加；交收费通告编号更正为 PT/SCS/CCASS/022/2025；`fill_value` 偏差方向按费用项分开写；README 三个例子各自可单独运行。
 
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。

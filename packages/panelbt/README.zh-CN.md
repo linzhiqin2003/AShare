@@ -85,13 +85,19 @@ from panelbt import markets
 prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
 dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
 targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
-
 hk = markets.get("hk_direct")             # 香港本地账户，港币
 config = hk.config(lot_sizes=[500, 2000], h_share=[True, True], initial_cash=1e6)
 result = bt.run(hk.market(prices, prices), targets, hk.costs(dates), config)
 ```
 
 ```python
+import numpy as np
+import panelbt as bt
+from panelbt import markets
+
+prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
+dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
+targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
 sb = markets.get("hk_southbound")         # 港股通，以港币回测
 eligible = np.array([[True, True], [True, False], [True, False]])  # 第二只被调出
 config = sb.config(lot_sizes=[500, 2000], initial_cash=1e6)
@@ -101,17 +107,24 @@ cny = markets.connect_home_equity(result.equity, result.cash, [0.92, 0.921, 0.91
 ```
 
 ```python
+import numpy as np
+import panelbt as bt
+from panelbt import markets
+
+prices = np.array([[50.0, 8.0], [52.0, 8.2], [55.0, 7.9]])
+dates = ["2026-03-02", "2026-03-03", "2026-03-04"]
+targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]])
 us = markets.get("us")                    # 整股，分红预扣 10%（中美协定）
 config = us.config(n=2, initial_cash=1e5)
 result = bt.run(us.market(prices, prices), targets, us.costs(dates), config)
-reg_t = markets.reg_t_margin(financing_rate=0.06)   # Reg T 保证金账户
 ```
 
 - 费用表从 2010 年起按日期分段（港股通从 2014-11-17 起）：港股印花税、证监会征费、会财局征费、交易费、股份交收费、交易系统使用费；美股 SEC 规费和 FINRA TAF（只收卖方）。`profile.charges(dates)` 按名字列出每一项。
-- 内核没有每笔固定金额、单项每笔下限和取整，这些按 `amount / fill_value` 折成比例费（默认 HK$20,000、US$10,000；成交额等于它时精确，更大时偏悲观；改成策略的典型单笔或 `None`）。单项每笔上限忽略（多收）。
+- 内核没有每笔固定金额、单项每笔下限和取整，这些按 `amount / fill_value` 折成比例费（默认 HK$20,000、US$10,000）。成交额等于它时等于逐笔规则的上限；固定费和下限在更大的单笔上多收、更小的单笔上少收；印花税取整余量在单笔超过 `fill_value` 一半时高于其平均值（约 HK$0.5）。改成策略的典型单笔，或 `None`。单项每笔上限忽略（多收）。
 - 默认佣金是假设：港股本地每笔 HK$15，港股通万分之 3，美股 IBKR Fixed 每股 $0.005、下限 $1、上限 1%，都可覆盖。
-- 分红扣税：港股本地非 H 股 0%、H 股 10%（可选外商投资企业 H 股 2026-09-01 起 20%）；港股通 20%；美股 10%（`US_WITHHOLDING` 里有 30% 和 0%）。同一天税率不同时取最高并告警；`net_dividends` 是只做多时的精确替代。
-- 退市默认价格冻结到除牌日、除牌日按 0（`delisting="last"` 按最后收盘价了结）。无涨跌停、无卖出锁定：用规则时写 `Rules(sell_lock=False)`。港股通不能做空、不能融资。
+- 分红扣税：港股本地非 H 股 0%、H 股 10%；可选标记外商投资企业 H 股（2026-09-01 起 20%）和中国居民企业红筹（`resident_enterprise`，10%，默认不启用，若实际被预扣则偏乐观）。不给 `h_share` 时全部按 10% 并告警。港股通 20%；美股 10%（`US_WITHHOLDING` 里有 30% 和 0%）。内核每天只有一个税率：把行情的 `cash_div` 传给 `config`，只在当天派息的证券里取税率；不传则取当天最高税率并告警。`net_dividends` 是不能做空的账户的精确替代。
+- 退市：价格冻结到除牌日，除牌日了结。`delisting="zero"`（只做多时的默认）按 0：多头悲观、空头乐观；`"last"` 按最后收盘价：多头乐观、空头中性。保证金模型允许做空时必须显式选择。无涨跌停、无卖出锁定：用规则时写 `Rules(sell_lock=False)`。港股通不能做空、不能融资；覆盖 `fee_rate_buy/sell` 时 `fx_cost` 仍然叠加（`fx_cost=0` 去掉）。
+- 保证金账户：`markets.reg_t_margin(financing_rate=...)`（Reg T）、`markets.hk_margin(...)`（比例由券商给）。
 - 哪些是近似、哪些不模拟、哪些需要内核支持，以及待确认的默认值，见 AShare 仓库的 `docs/markets/PROFILES.md`。
 
 ## 账户、费用与结果

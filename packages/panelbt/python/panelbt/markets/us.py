@@ -198,6 +198,7 @@ def reg_t_margin(
     optimistic for shorts under about $16.7. Annual rates are converted per
     period; `financing_rate` (the broker's margin loan rate) is required, and
     the 0.3% a year borrow fee is an assumption (easy-to-borrow level, 5.4).
+    Its `config()` requires an explicit `delisting=` (see `config`).
     """
     margin = MarginModel(
         allow_short=True,

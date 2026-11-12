@@ -52,7 +52,7 @@ def test_hk_direct_hand_example():
     dates = ["2022-12-30", "2023-01-02", "2023-01-03"]
     costs = HK_DIRECT.costs(dates, slippage=0)
     config = HK_DIRECT.config(
-        lot_sizes=[500], initial_cash=1_000_000, record_trades=True
+        lot_sizes=[500], h_share=[True], initial_cash=1_000_000, record_trades=True
     )
     r = run_one(
         HK_DIRECT, dates, [50, 52, 55], [0, 2, 0], [1000, np.nan, 0], costs, config
@@ -349,15 +349,17 @@ def test_fill_value_converts_fixed_charges():
 
 
 def test_lot_sizes():
-    cfg = HK_DIRECT.config(lot_sizes=[100, 2000])
+    cfg = HK_DIRECT.config(lot_sizes=[100, 2000], h_share=[False, False])
     np.testing.assert_array_equal(cfg.min_qty, [100, 2000])
     np.testing.assert_array_equal(cfg.qty_step, [100, 2000])
     with pytest.warns(UserWarning, match="largest lot"):
-        cfg = HK_DIRECT.config(lot_sizes=[[100, 500], [100, 1000], [100, 200]])
+        cfg = HK_DIRECT.config(
+            lot_sizes=[[100, 500], [100, 1000], [100, 200]], h_share=[False, False]
+        )
     np.testing.assert_array_equal(cfg.min_qty, [100, 1000])
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        HK_DIRECT.config(lot_sizes=[[100, 500], [100, 500]])
+        HK_DIRECT.config(lot_sizes=[[100, 500], [100, 500]], h_share=[False, False])
     with pytest.raises(ValueError, match="lot_sizes"):
         HK_DIRECT.config(n=3)
     with pytest.raises(ValueError, match="board"):
@@ -416,9 +418,11 @@ def test_dividend_withholding():
 
 def test_net_dividends_exact_long_only():
     div = np.array([[0.0, 0.0], [1.0, 2.0]])
-    np.testing.assert_array_equal(net_dividends(div, [0.1, 0.0]), [[0, 0], [0.9, 2.0]])
+    np.testing.assert_array_equal(
+        net_dividends(div, [0.1, 0.0], bt.MarginModel()), [[0, 0], [0.9, 2.0]]
+    )
     with pytest.raises(ValueError):
-        net_dividends(div, [1.5, 0])
+        net_dividends(div, [1.5, 0], bt.MarginModel())
 
 
 def test_delisting_modes():
@@ -430,7 +434,9 @@ def test_delisting_modes():
     )
     navs = {}
     for mode in ("zero", "last"):
-        cfg = HK_DIRECT.config(lot_sizes=[100], delisting=mode, initial_cash=20_000)
+        cfg = HK_DIRECT.config(
+            lot_sizes=[100], h_share=[False], delisting=mode, initial_cash=20_000
+        )
         assert cfg.delist_recovery == (0.0 if mode == "zero" else 1.0)
         r = bt.run(HK_DIRECT.market(p, p, delist=delist), t, costs, cfg)
         navs[mode] = r.nav
@@ -449,7 +455,7 @@ def test_sell_lock_and_margin_rules():
     with pytest.raises(ValueError, match="neither short"):
         HK_SOUTHBOUND.config(lot_sizes=[100], margin=bt.MarginModel(allow_short=True))
     us = reg_t_margin(financing_rate=0.06)
-    m = us.config(n=1).margin
+    m = us.config(n=1, delisting="last").margin
     assert m.allow_short and m.long_initial == 0.5 and m.short_initial == 0.5
     assert m.long_maintenance == 0.25 and m.short_maintenance == 0.30
     assert m.borrow_rate == pytest.approx(
@@ -462,7 +468,10 @@ def test_sell_lock_and_margin_rules():
         short_maintenance=0.3,
         financing_rate=0.07,
     )
-    assert hk.config(lot_sizes=[100]).margin.allow_short and hk.items == HK_DIRECT.items
+    assert hk.config(lot_sizes=[100], delisting="last").margin.allow_short
+    assert hk.items == HK_DIRECT.items
+    # 默认借券费年 0.3%（假设），按 252 期折算。
+    assert hk.margin.borrow_rate == pytest.approx(0.003 / 252, rel=1e-12)
 
 
 def test_connect_eligible_blocks_buys_only():
@@ -524,7 +533,7 @@ def test_run_end_to_end_all_profiles():
     w[0], w[10], w[20] = 0.25, [0.4, 0.1, 0.4, 0.1], 0
     t = bt.Targets.from_dense(w)
     for prof, cfg in (
-        (HK_DIRECT, dict(lot_sizes=[100] * 4)),
+        (HK_DIRECT, dict(lot_sizes=[100] * 4, h_share=[False] * 4)),
         (HK_SOUTHBOUND, dict(lot_sizes=[100] * 4)),
         (US, dict(n=4)),
     ):
@@ -542,7 +551,7 @@ def test_run_end_to_end_all_profiles():
 
 
 def test_readme_examples_run():
-    """README 新小节里的三个例子照原样能跑，且不触发告警。"""
+    """README 新小节里的三个例子各自能单独照抄运行，去掉导入后十行以内，不触发告警。"""
     import pathlib
     import re
 
@@ -557,14 +566,151 @@ def test_readme_examples_run():
         section = text[start : text.index("\n## ", start + 5)]
         blocks = re.findall(r"```python\n(.*?)```", section, re.S)
         assert len(blocks) == 3
-        scope: dict = {}
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            for code in blocks:
-                assert (
-                    len(code.strip().splitlines()) <= 13
-                )  # 公共导入 + 每个例子十行以内
+        for code in blocks:
+            body = [
+                line
+                for line in code.splitlines()
+                if line.strip() and not line.startswith(("import ", "from "))
+            ]
+            assert len(body) <= 10, (name, body)
+            scope: dict = {}  # 每段在全新的作用域里跑：不能依赖前一段的数据
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
                 exec(code, scope)
-        assert (
-            np.isfinite(scope["result"].nav).all() and scope["reg_t"].margin.allow_short
+            assert np.isfinite(scope["result"].nav).all()
+
+
+# ---------------------------------------------------------------------------
+# 复核返工（P1、P2）新增的行为。
+# ---------------------------------------------------------------------------
+
+
+def _short_delisted(delisting):
+    """做空 1000 股 @10，之后停牌，第 3 行除牌。"""
+    p = np.array([[10.0], [np.nan], [np.nan]])
+    delist = np.array([[False], [False], [True]])
+    t = bt.Targets.from_dense([[-1000.0], [np.nan], [np.nan]], kind="shares")
+    costs = bt.Costs(
+        commission_rate=0, commission_min=0, fee_rate_buy=0, fee_rate_sell=0, slippage=0
+    )
+    us = reg_t_margin(financing_rate=0.0, borrow_rate=0.0)
+    cfg = us.config(n=1, delisting=delisting, initial_cash=20_000)
+    return bt.run(us.market(p, p, delist=delist), t, costs, cfg).nav
+
+
+def test_short_delisting_requires_explicit_choice():
+    us = reg_t_margin(financing_rate=0.06)
+    with pytest.raises(ValueError, match="optimistic for shorts"):
+        us.config(n=1)
+    with pytest.raises(ValueError, match="explicitly"):
+        HK_DIRECT.config(lot_sizes=[100], h_share=[False], margin=us.margin)
+    # 显式给出即可；直接给 delist_recovery 也算显式。
+    assert us.config(n=1, delist_recovery=0.5).delist_recovery == 0.5
+    # 只做多仍默认 "zero"。
+    assert HK_DIRECT.config(lot_sizes=[100], h_share=[False]).delist_recovery == 0.0
+    # 记录：显式 "zero" 时空头按 0 回补，净值 1 → 1.5（乐观）；"last" 按前收回补，净值不变。
+    np.testing.assert_allclose(_short_delisted("zero"), [1.0, 1.0, 1.5])
+    np.testing.assert_allclose(_short_delisted("last"), [1.0, 1.0, 1.0])
+
+
+def test_resident_enterprise_withholding():
+    rates = HK_DIRECT.withholding(
+        3, h_share=[True, False, False], resident_enterprise=[False, True, False]
+    )
+    np.testing.assert_array_equal(rates, [0.10, 0.10, 0.0])
+    with pytest.warns(UserWarning, match="highest rate"):
+        cfg = HK_DIRECT.config(
+            lot_sizes=[100, 100],
+            h_share=[False, False],
+            resident_enterprise=[True, False],
         )
+    assert cfg.dividend_tax_rate == 0.10
+    # 默认不启用：非 H 股仍按 0%。
+    assert HK_DIRECT.config(lot_sizes=[100], h_share=[False]).dividend_tax_rate == 0.0
+    # 港股通不受影响，一律 20%。
+    assert (
+        HK_SOUTHBOUND.config(
+            lot_sizes=[100], resident_enterprise=[True]
+        ).dividend_tax_rate
+        == 0.2
+    )
+    with pytest.raises(ValueError, match="resident_enterprise"):
+        HK_DIRECT.withholding(2, h_share=[False, False], resident_enterprise=[True])
+
+
+def test_missing_h_share_warns_pessimistic_fallback():
+    with pytest.warns(UserWarning, match="h_share not given"):
+        cfg = HK_DIRECT.config(lot_sizes=[100, 100])
+    assert cfg.dividend_tax_rate == 0.10
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        HK_DIRECT.config(
+            lot_sizes=[100, 100], h_share=[True, False], cash_div=np.zeros((2, 2))
+        )
+        HK_SOUTHBOUND.config(lot_sizes=[100])  # 港股通不需要 H 股标记
+
+
+def test_dividend_rate_only_over_paying_securities():
+    div = np.array([[0.0, 0.5], [0.3, 0.0], [0.0, 0.0], [0.2, 0.4]])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cfg = HK_DIRECT.config(
+            lot_sizes=[100, 100], h_share=[True, False], cash_div=div[:3]
+        )
+    # 第 0 行只有非 H 股派息 → 0%；第 1 行只有 H 股 → 10%；无派息的行取最低值。
+    np.testing.assert_array_equal(cfg.dividend_tax_rate, [0.0, 0.10, 0.0])
+    with pytest.warns(UserWarning, match="highest rate"):
+        cfg = HK_DIRECT.config(
+            lot_sizes=[100, 100], h_share=[True, False], cash_div=div
+        )
+    np.testing.assert_array_equal(cfg.dividend_tax_rate, [0.0, 0.10, 0.0, 0.10])
+    with pytest.raises(ValueError, match="cash_div"):
+        HK_DIRECT.config(
+            lot_sizes=[100, 100], h_share=[True, False], cash_div=np.zeros((3, 3))
+        )
+
+
+def test_net_dividends_refuses_short_accounts():
+    div = np.array([[0.0], [1.0]])
+    us = reg_t_margin(financing_rate=0.06)
+    with pytest.raises(ValueError, match="gross"):
+        net_dividends(div, [0.1], us.margin)
+    with pytest.raises(ValueError, match="gross"):
+        net_dividends(div, [0.1], us.config(n=1, delisting="last"))
+    np.testing.assert_array_equal(
+        net_dividends(div, [0.1], us.margin, allow_short=True), [[0.0], [0.9]]
+    )
+    np.testing.assert_array_equal(
+        net_dividends(div, [0.1], bt.MarginModel()), [[0.0], [0.9]]
+    )
+    with pytest.raises(ValueError, match="account"):
+        net_dividends(div, [0.1], None)
+
+
+def test_fx_cost_survives_fee_rate_override():
+    d = ["2026-01-05"]
+    c = HK_SOUTHBOUND.costs(d, fee_rate_buy=1e-4, fee_rate_sell=2e-4)
+    assert float(c.fee_rate_buy) == pytest.approx(1e-4 + 0.0005, rel=1e-12)
+    assert float(c.fee_rate_sell) == pytest.approx(2e-4 + 0.0005, rel=1e-12)
+    c = HK_SOUTHBOUND.costs(d, fee_rate_buy=1e-4, fx_cost=0)
+    assert float(c.fee_rate_buy) == 1e-4
+    assert HK_SOUTHBOUND.costs(d, commission_rate=0.001).commission_rate == 0.001
+
+
+def test_us_adr_default_withholding():
+    # 不给 adr_withholding 时 ADR 按 10%（假设）；与普通股默认相同，所以不告警。
+    np.testing.assert_array_equal(
+        US.withholding(2, adr=[True, False], withholding=0.0), [0.10, 0.0]
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert US.config(n=2, adr=[True, False]).dividend_tax_rate == 0.10
+
+
+def test_converters_reject_missing_rates():
+    with pytest.raises(ValueError):
+        home_currency_nav([1.0, 1.0], [0.9, np.nan])
+    with pytest.raises(ValueError):
+        connect_home_equity([1.0, 1.0], [0.0, 0.0], [0.9, np.nan], 1.0)
+    with pytest.raises(ValueError):
+        home_currency_nav([1.0, 1.0, 1.0], [0.9, 0.9])  # 行数不对齐
