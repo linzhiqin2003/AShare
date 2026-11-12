@@ -20,3 +20,4 @@
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。
+- 回测报告 `ashare.report`：`build_tearsheet` 从一次 `panelbt` 回测算出报告的全部序列和指标（口径见 `docs/REPORT_NOTES.md`），`render_html` 生成自包含、离线可打开的 HTML（共用时间轴的轨道图、十字线联动、区间切换与回撤定位、净值图上直接标注最深几次回撤、月度热力图、分年度表；打印为 A4 纵向单栏）。`tearsheet()` 一行出报告，从数据层补齐名称、行业、行业换版日和基准。在真实面板上重跑设计稿的低波策略，`summary` 与旧导出逐项一致。
