@@ -225,7 +225,8 @@ def resolve(frame, table, *, code="ts_code", date="trade_date"):
     return out.drop("_row", "_literal", "_product", "_month", "_exchange")
 
 
-def contracts(store):
+def contracts(store, history=None):
+    """统一字段 contracts 表；``history`` 为已算好的 multipliers 表（不给就现算）。"""
     raw = store.read("futures_contracts")
     raw = raw.filter(
         ~pl.col("fut_code").str.to_uppercase().is_in(list(EXCLUDED_PRODUCTS))
@@ -252,7 +253,7 @@ def contracts(store):
         delivery_date=pl.col("last_ddate"),
         delivery_month=pl.col("d_month"),
     ).filter(pl.col("symbol").is_not_null())
-    history = multipliers(store, raw)
+    history = history if history is not None else multipliers(store, raw)
     last = (
         history.sort("symbol", "start_date")
         .group_by("symbol")
@@ -320,14 +321,15 @@ def _declared(raw):
     ).filter(pl.col("symbol").is_not_null())
 
 
-def implied_rows(store, raw_contracts=None):
-    """逐行反查值：只取成交量、成交额、结算价都为正的行（统一代码、单边口径之前的原始量纲）。"""
+def implied_rows(store, raw_contracts=None, raw_daily=None):
+    """逐行反查值：只取成交量、成交额、结算价都为正的行（统一代码、单边口径之前的原始量纲）。
+    ``raw_daily`` 为已读入的全量原始日线（不给就从原始库扫描）。"""
     raw = (
         raw_contracts if raw_contracts is not None else store.read("futures_contracts")
     )
     listing_dates = raw.select("ts_code", "list_date", "delist_date")
     return (
-        store.scan("futures_daily")
+        (raw_daily.lazy() if raw_daily is not None else store.scan("futures_daily"))
         .select("ts_code", "trade_date", "vol", "amount", "settle")
         .join(listing_dates.lazy(), on="ts_code", how="inner")
         .filter(
@@ -346,7 +348,7 @@ def implied_rows(store, raw_contracts=None):
     )
 
 
-def multipliers(store, raw_contracts=None):
+def multipliers(store, raw_contracts=None, raw_daily=None):
     """统一字段 multipliers 表：每个合约一段或多段 (start_date, multiplier, source, basis)。"""
     raw = (
         raw_contracts if raw_contracts is not None else store.read("futures_contracts")
@@ -363,7 +365,7 @@ def multipliers(store, raw_contracts=None):
         "exchange",
         "fut_code",
     )
-    rows = implied_rows(store, raw).join(
+    rows = implied_rows(store, raw, raw_daily).join(
         declared.select("ts_code", "declared"), on="ts_code"
     )
     months = (
@@ -521,8 +523,9 @@ def _sided(frame):
     return frame.with_columns(_halve=pl.when(double).then(0.5).otherwise(1.0))
 
 
-def daily(store, start=None, end=None):
-    raw = store.read("futures_daily", start, end)
+def daily(store, start=None, end=None, raw=None):
+    """统一字段 daily 表；``raw`` 为已读入的原始日线（不给就按 start/end 读）。"""
+    raw = raw if raw is not None else store.read("futures_daily", start, end)
     listing_dates = store.read("futures_contracts").select(
         "ts_code", "list_date", "delist_date"
     )
@@ -810,11 +813,36 @@ class TushareFutures:
 
     def __init__(self, store):
         self.store = store
+        self._cache = {}
+
+    def _memo(self, name, compute):
+        """同一份期货原始库（按 futures_version 判断）上只算一次：构建时全量原始日线要给合约表、
+        乘数、日线三处用，原来各读一遍。原始库一变（版本不同）就重算，不会给出旧结果。"""
+        version = self.store.futures_version
+        hit = self._cache.get(name)
+        if hit is None or hit[0] != version:
+            hit = (version, compute())
+            self._cache[name] = hit
+        return hit[1]
+
+    def _raw_daily(self):
+        return self._memo("raw_daily", lambda: self.store.read("futures_daily"))
+
+    def _used_raw(self, name):
+        """全量原始日线只给乘数和全量日线两处用：两处都算过以后就放掉，不让它占着内存到构建结束。"""
+        self._cache.setdefault("raw_users", set()).add(name)
+        if {"multipliers", "daily"} <= self._cache["raw_users"]:
+            self._cache.pop("raw_daily", None)
+            self._cache.pop("raw_users", None)
 
     def contracts(self):
-        return contracts(self.store)
+        return contracts(self.store, history=self.multipliers())
 
     def daily(self, start=None, end=None):
+        if start is None and end is None:
+            out = daily(self.store, raw=self._raw_daily())
+            self._used_raw("daily")
+            return out
         return daily(self.store, start, end)
 
     def params(self, start=None, end=None):
@@ -827,7 +855,12 @@ class TushareFutures:
         return mapping(self.store, start, end)
 
     def multipliers(self):
-        return multipliers(self.store)
+        out = self._memo(
+            "multipliers",
+            lambda: multipliers(self.store, raw_daily=self._raw_daily()),
+        )
+        self._used_raw("multipliers")
+        return out
 
     def diagnostics(self):
         """代码对齐的统计：每张表每种 resolution 的行数，以及没能对上的行（逐条，供校验）。"""

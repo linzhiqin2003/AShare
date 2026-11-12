@@ -145,6 +145,7 @@ def main():
             for k, v in report["checks"].items()
         }
         result["verdict"] = report["verdict"]
+        result["cause_unknown"] = report["known_exceptions"]["cause_unknown"]
         result["report"] = str(store.root / "reports/futures_verify.md")
         if report["verdict"] == "fail":
             print(json.dumps(result, ensure_ascii=False, indent=2))

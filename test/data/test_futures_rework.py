@@ -386,6 +386,16 @@ def test_panel_multiplier_by_date_and_panelbt(tmp_path):
         multiplier_change="split",
     )
     assert list(split["symbols"]) == ["PB1309.SHFE", "PB1309.SHFE@20130902"]
+    assert split["splits"] == [
+        dict(
+            symbol="PB1309.SHFE",
+            before="PB1309.SHFE",
+            after="PB1309.SHFE@20130902",
+            date="20130902",
+            before_column=0,
+            after_column=1,
+        )
+    ]
     assert list(split["futures"].multiplier) == [25.0, 5.0]
     # 前一列在分界日前一行了结，后一列分界日起才能买卖。
     dates = list(split["dates"])
@@ -400,6 +410,7 @@ def test_panel_multiplier_by_date_and_panelbt(tmp_path):
         fut, symbols=["PB1309.SHFE"], start="20130902", end="20130903", missing=missing
     )
     assert list(plain["futures"].multiplier) == [5.0]
+    assert plain["splits"] == []
 
 
 # ---------------------------------------------------------------- 参数不前视
@@ -553,3 +564,68 @@ def test_roll_happens_on_last_trade_date_not_after(tmp_path):
     assert series.filter(pl.col("date") == DAYS[13])["symbol"].to_list() == [
         "IF2602.CFFEX"
     ]
+
+
+# ---------------------------------------------------------------- 增量复核补的测试
+
+
+def test_interleaved_implied_values_not_segmented(tmp_path):
+    """反查值在两个取值之间来回交错（25、5、25、5）：不是稳定跳变，不分段，记合约表值并标未核实。"""
+    store = Store(tmp_path)
+    basic = pl.DataFrame(
+        [contract("PB1406.SHF", "PB", 5.0, "20130102", "20140616")],
+        infer_schema_length=None,
+    )
+    store.write("futures_contracts", "ALL", {}, FetchResult(basic, "now", 1))
+    rows = [
+        daily_row("PB1406.SHF", day, 15000.0, 40.0, unit)
+        for day, unit in (
+            ("20130110", 25.0),
+            ("20130215", 5.0),
+            ("20130315", 25.0),
+            ("20130415", 5.0),
+        )
+    ]
+    write_days(store, "futures_daily", rows)
+    table = TushareFutures(store).multipliers()
+    assert table.select("symbol", "start_date", "multiplier", "source").rows() == [
+        ("PB1406.SHFE", "20130102", 5.0, "contract_table_unverified")
+    ]
+    assert "交错" in table["basis"][0]
+
+
+def test_decade_recovery_only_for_czce(tmp_path):
+    """只有郑商所的代码会被补错年代；其他交易所同品种、年份末位相同的合约不能被认作同一个。"""
+    store = Store(tmp_path)
+    basic = pl.DataFrame(
+        [contract("M2009.DCE", "M", 10.0, "20190901", "20200915")],
+        infer_schema_length=None,
+    )
+    store.write("futures_contracts", "ALL", {}, FetchResult(basic, "now", 1))
+    write_days(store, "futures_settle", [settle_row("M1009.DCE", "20191008")])
+    adapter = TushareFutures(store)
+    assert adapter.params().is_empty()
+    assert adapter.diagnostics()["params"]["unresolved"] == [
+        dict(code="M1009.DCE", date="20191008", resolution="unmatched")
+    ]
+
+
+def test_panel_window_ends_on_last_trade_date(tmp_path):
+    """面板按合约只存上市日到最后交易日；样本在到期后继续时，窗口不往后延。"""
+    store = Store(tmp_path)
+    asyncio.run(sync_futures(FakeTushare(), store, DAYS[0], DAYS[-1]))
+    adapter = TushareFutures(store)
+    contracts = adapter.contracts()
+    blocks = assemble(adapter.daily(), adapter.params(), contracts, DAYS)
+    span = {
+        r["symbol"]: (r["listing_date"], r["last_trade_date"])
+        for r in contracts.iter_rows(named=True)
+    }
+    expired = 0
+    for block in blocks.values():
+        for symbol, length in zip(block["symbols"], block["lengths"], strict=True):
+            first, last = span[symbol]
+            assert length == sum(first <= d <= last for d in DAYS), symbol
+            expired += last < DAYS[-1]
+        assert block["arrays"]["is_listed"].all()
+    assert expired  # 夹具里确有样本内到期的合约

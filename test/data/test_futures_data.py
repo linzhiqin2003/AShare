@@ -731,6 +731,58 @@ def test_verify_register_explains_only_listed_items(tmp_path):
     assert verify_futures(store, write=False, known=known)["stale_exceptions"]
 
 
+def test_verify_gap_register_matches_missing_count(tmp_path):
+    """缺日按「合约 + 缺日数」登记：同一合约以后多缺几天要判失败，不能被旧条目盖住。"""
+    store, _ = synced(tmp_path)
+
+    def drop(day):
+        corrupt(
+            store,
+            "futures_daily",
+            day,
+            lambda f: f.filter(pl.col("ts_code") != "RB2603.SHF"),
+        )
+
+    drop(FAULT_DAY)
+    build_futures(store)
+    first = verify_futures(store, write=False, known={})["checks"]["contract_coverage"]
+    gaps = first["details"]["gaps"]["unexplained"]
+    assert [(g["symbol"], g["missing"]) for g in gaps] == [("RB2603.SHF", 1)]
+    entry = dict(check="coverage_gap", symbol="RB2603.SHF", missing=1, reason="gap")
+    known = dict(reasons={"gap": "测试"}, entries=[entry], cause_unknown=["gap"])
+    report = verify_futures(store, write=False, known=known)
+    assert report["checks"]["contract_coverage"]["verdict"] == "explained"
+    # 原因属于「未查明」的条目单独计数。
+    assert report["known_exceptions"]["cause_unknown"] == dict(
+        count=1, by_reason={"gap": 1}, by_check={"coverage_gap": 1}
+    )
+    drop(DAYS[6])
+    build_futures(store)
+    again = verify_futures(store, write=False, known=known)
+    assert again["checks"]["contract_coverage"]["verdict"] == "fail"
+    assert again["verdict"] == "fail"
+
+
+def test_known_exceptions_keys_whitelisted():
+    """公开仓库里的清单只放匹配键和原因：每条的键集合必须正好是该检查的匹配键，
+    不允许由价格、成交量、成交额算出的数值（如反查比值）混进来。"""
+    from ashare.data.futures_verify import Register, load_known
+
+    known = load_known()
+    assert set(known) == {"source", "note", "cause_unknown", "reasons", "entries"}
+    assert set(known["cause_unknown"]) <= set(known["reasons"])
+    rule = {"check", "dataset", "field", "exchange", "start", "end", "values", "rows"}
+    for entry in known["entries"]:
+        check = entry["check"]
+        allowed = (
+            rule if check == "raw_range" else {"check", *Register.KEYS[check]}
+        ) | {"reason"}
+        assert set(entry) == allowed, entry
+        assert entry["reason"] in known["reasons"], entry
+        if check == "raw_range":
+            assert set(entry["values"]) <= {-1, -2}, entry
+
+
 def test_verify_cli_exit_code(tmp_path):
     import subprocess
     import sys

@@ -594,7 +594,7 @@ Fresh copy: make dev && make check passed; default test data root untouched.
 | 文件 | 改动 | 对股票行为的影响 |
 |---|---|---|
 | `catalog.py` | `Dataset` 多一个默认为空的 `raw_dir`（原始文件目录，空时仍用接口名）；新增 `FUTURES_EXCHANGES`、`FUTURES_DATASETS`、`ALL_DATASETS` | 无：`DATASETS` 内容不变 |
-| `store.py` | 原始文件路径用 `raw_dir or api`；按名字找声明改查 `ALL_DATASETS`；`scan` 对 `fut_day` 分区按日期过滤；`fut_day` 分区写入前的刷新保护；`version` 只算 `DATASETS` 里的数据集，新增 `futures_version` | 无：没有期货条目时 `version` 与原来同值 |
+| `store.py` | 原始文件路径用 `raw_dir or api`；按名字找声明改查 `ALL_DATASETS`；`scan` 对 `fut_day` 分区按日期过滤；`fut_day` 分区写入前的刷新保护；`version` 排除 `FUTURES_DATASETS` 里的数据集（正式库里没有其他数据集的条目，等同于只算股票），新增 `futures_version` | 无：没有期货条目时 `version` 与原来同值 |
 | `sync.py` | 传入期货数据集名直接报错并指向 `sync-futures` | 无 |
 | `sync_policy.py` | 新分区方式 `fut_exchange` 每次重抓 | 无：股票没有这种分区 |
 | `verify.py` | 覆盖率、主键检查跳过期货；`manifest_files` 只检查 `DATASETS` 的条目 | 无：正式库里没有 `DATASETS` 以外的条目（已核对 46458 条） |

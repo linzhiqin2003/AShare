@@ -21,7 +21,9 @@
 - 合约乘数取面板 ``multiplier`` 字段（按日期）。panelbt 每个合约只收一个乘数；区间内改过交易单位的
   合约（PB1309–1406、FB2001–2006 等）默认报错，``multiplier_change="split"`` 时在分界日拆成两列：
   前一列以分界日前一交易日为到期行（按结算价了结），后一列从分界日起可交易，代码写成
-  ``PB1309.SHFE@20130902``。交易所实际是按比例折算持仓，拆列后需要策略自己重新开仓。
+  ``PB1309.SHFE@20130902``。交易所实际是按比例折算持仓，拆列后需要策略自己重新开仓：分界日前一天
+  结算价到分界日开盘价之间的跳空不归任何一列。返回的 ``splits`` 列出每个分界（同一合约的前后两列
+  和分界日），调用方据此把持仓从前一列挪到后一列；不拆列时为空列表。
 - 保证金率默认取交易所投机保证金率 max(买, 卖)；手续费默认取交易所的开仓手续费（比例与每手
   两部分，panelbt 不区分开平和平今），``fee_scale`` 用来乘期货公司加收倍数。
 - 参数缺值不用以后的值回填（那是前视）。``param_fill="previous"``（默认）在合约内用此前最近的
@@ -141,7 +143,11 @@ def panelbt_inputs(
     missing=None,
     multiplier_change="error",
 ):
-    """返回 dict(market=Market 关键字参数, futures=panelbt.Futures, dates, symbols, contracts)。
+    """返回 dict(market=Market 关键字参数, futures=panelbt.Futures, dates, symbols, contracts, splits)。
+
+    ``splits``：``[dict(symbol, before, after, date, before_column, after_column), ...]``，
+    ``before`` / ``after`` 是同一合约前后两段的列标签，``*_column`` 是列下标，``date`` 是分界日
+    （后一列的首个可交易日，前一列在它前一个交易日到期）。
 
     参数约定见模块说明。例::
 
@@ -220,6 +226,18 @@ def panelbt_inputs(
         multiplier.append(value)
         if hi < t:
             ends[k] = hi - 1  # 分界日前一行按结算价了结
+    splits = [
+        dict(
+            symbol=str(names[j]),
+            before=str(labels[k - 1]),
+            after=str(labels[k]),
+            date=str(dates[lo]),
+            before_column=k - 1,
+            after_column=k,
+        )
+        for k, (j, lo, _, _) in enumerate(segments)
+        if lo > 0
+    ]
     labels = np.array(labels)
 
     def take(matrix):
@@ -259,7 +277,12 @@ def panelbt_inputs(
         split = pl.DataFrame({"label": labels, "symbol": names[columns]})
         info = split.join(info, on="symbol").drop("symbol").rename({"label": "symbol"})
     return dict(
-        market=market, futures=futures, dates=dates, symbols=labels, contracts=info
+        market=market,
+        futures=futures,
+        dates=dates,
+        symbols=labels,
+        contracts=info,
+        splits=splits,
     )
 
 

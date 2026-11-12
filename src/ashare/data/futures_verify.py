@@ -13,6 +13,8 @@
 
 总结论 ``verdict`` 为 fail 当且仅当有一项 fail；命令行 ``verify-futures`` 此时以非零状态退出。
 清单里有、本次没出现的条目列在 ``stale_exceptions``（数据被修正了，清单该删条目）。
+清单的 ``cause_unknown`` 列出「不符已确认、原因未查明」的原因编号；用到这些原因的条目在
+``known_exceptions.cause_unknown`` 里单独计数（仍算已解释，但不和有确切原因的混在一起）。
 
 用法::
 
@@ -77,7 +79,7 @@ KNOWN_PATH = Path(__file__).with_name("futures_known_exceptions.json")
 def load_known(path=KNOWN_PATH):
     """读已知例外清单；返回 dict(reasons=..., entries=[...])。"""
     if path is None or not Path(path).exists():
-        return dict(reasons={}, entries=[])
+        return dict(reasons={}, entries=[], cause_unknown=[])
     return json.loads(Path(path).read_text())
 
 
@@ -134,6 +136,19 @@ class Register:
                 self.used.add(k)
                 return k
         return None
+
+    def cause_unknown(self, known):
+        """用到的条目里，原因属于「未查明」的：按原因、按检查计数。"""
+        unknown = set(known.get("cause_unknown", []))
+        entries = known.get("entries", [])
+        hits = [
+            entries[k] for k in sorted(self.used) if entries[k]["reason"] in unknown
+        ]
+        return dict(
+            count=len(hits),
+            by_reason=dict(Counter(e["reason"] for e in hits)),
+            by_check=dict(Counter(e["check"] for e in hits)),
+        )
 
     def stale(self, known):
         entries = known.get("entries", [])
@@ -1295,6 +1310,7 @@ def verify_futures(store, *, write=True, known=None):
             entries=len(known.get("entries", [])),
             used=len(register.used),
             by_check=dict(Counter(e["check"] for e in known.get("entries", []))),
+            cause_unknown=register.cause_unknown(known),
         ),
         stale_exceptions=register.stale(known)[:100],
         checks=checks,
@@ -1308,7 +1324,8 @@ def verify_futures(store, *, write=True, known=None):
             "# 期货原始库与面板校验",
             "",
             f"总结论：**{report['verdict']}**；生成 {report['generated_at']}，最后交易日 {last_day}，"
-            f"已知例外 {report['known_exceptions']['used']} / {report['known_exceptions']['entries']} 条用到",
+            f"已知例外 {report['known_exceptions']['used']} / {report['known_exceptions']['entries']} 条用到，"
+            f"其中原因未查明 {report['known_exceptions']['cause_unknown']['count']} 条",
             "",
             "| 检查 | 结论 | 检查数 | 未解释 | 已解释 |",
             "|---|---|---|---|---|",
