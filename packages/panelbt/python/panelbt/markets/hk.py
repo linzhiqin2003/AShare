@@ -333,8 +333,10 @@ def net_dividends(
         raise ValueError("account: expected the run's Config or MarginModel")
     if margin.allow_short and not allow_short:
         raise ValueError(
-            "net_dividends: shorts would pay net instead of gross dividends "
-            "(optimistic); use dividend_tax_rate, or pass allow_short=True"
+            "net_dividends: this account can sell short, and shorts would pay "
+            "net instead of gross dividends (optimistic). If the book is "
+            "long-only in practice, pass allow_short=True; otherwise use "
+            "dividend_tax_rate"
         )
     div = np.asarray(cash_div, dtype=float)
     r = np.asarray(rates, dtype=float)
@@ -416,8 +418,9 @@ def connect_home_equity(
 # 2023-11-17  stamp duty 0.1% (1.1, Ord. No. 29 of 2023).
 # 2025-06-30  settlement fee 0.0042%, floor and cap removed (1.1, HKSCC
 #             circular PT/SCS/CCASS/022/2025 of 2025-05-29; by trade
-#             date). ETP market-making trades pay 0.0020%: not modelled
-#             (the full rate is charged, an overcharge).
+#             date). ETP market-making trades (0.0020%) and crossed trades
+#             (0.0021%) pay reduced rates: not modelled (the full rate is
+#             charged, an overcharge).
 # The investor compensation levy has been suspended since 2005-12-19 (1.1).
 # ---------------------------------------------------------------------------
 

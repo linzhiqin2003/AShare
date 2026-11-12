@@ -369,7 +369,8 @@ def test_lot_sizes():
 
 
 def test_dividend_withholding():
-    assert HK_DIRECT.config(lot_sizes=[100, 100]).dividend_tax_rate == 0.10
+    with pytest.warns(UserWarning, match="h_share not given"):
+        assert HK_DIRECT.config(lot_sizes=[100, 100]).dividend_tax_rate == 0.10
     assert (
         HK_DIRECT.config(lot_sizes=[100, 100], h_share=[False, False]).dividend_tax_rate
         == 0.0
@@ -468,7 +469,9 @@ def test_sell_lock_and_margin_rules():
         short_maintenance=0.3,
         financing_rate=0.07,
     )
-    assert hk.config(lot_sizes=[100], delisting="last").margin.allow_short
+    assert hk.config(
+        lot_sizes=[100], h_share=[False], delisting="last"
+    ).margin.allow_short
     assert hk.items == HK_DIRECT.items
     # 默认借券费年 0.3%（假设），按 252 期折算。
     assert hk.margin.borrow_rate == pytest.approx(0.003 / 252, rel=1e-12)
@@ -714,3 +717,10 @@ def test_converters_reject_missing_rates():
         connect_home_equity([1.0, 1.0], [0.0, 0.0], [0.9, np.nan], 1.0)
     with pytest.raises(ValueError):
         home_currency_nav([1.0, 1.0, 1.0], [0.9, 0.9])  # 行数不对齐
+
+
+def test_markets_reachable_from_package_root():
+    import panelbt as bt
+
+    assert bt.markets.get("us") is US
+    assert bt.markets.get("ashare") is bt.markets.ASHARE
