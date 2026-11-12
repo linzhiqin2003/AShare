@@ -15,6 +15,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from metadata import compact
+
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "bench/results"
 ENGINES = [
@@ -29,6 +31,14 @@ ENGINES = [
     "vectorbt_rust_strategy",
     "bt_strategy",
 ]
+
+
+def semantics(report, row):
+    """Resolve a compacted semantics index back to its shared description."""
+    value = row.get("semantics", "")
+    return (
+        report["descriptions"]["semantics"][value] if isinstance(value, int) else value
+    )
 
 
 def render(report):
@@ -71,7 +81,7 @@ def render(report):
         error = f"{x['max_nav_error']:.3g}" if "max_nav_error" in x else "—"
         mem = f"{x.get('peak_rss_bytes', 0) / 2**20:.1f}" if status == "ok" else "—"
         lines.append(
-            f"|{x['task']}|{x['T']}×{x['N']} / {x['interval']}|{x['engine']}|{x['K']}|{ms}|{inclusive}|{cold}|{error}|{mem}|{child}|{x.get('threads', '—')}|{status}: {x.get('reason', x.get('semantics', ''))}|"
+            f"|{x['task']}|{x['T']}×{x['N']} / {x['interval']}|{x['engine']}|{x['K']}|{ms}|{inclusive}|{cold}|{error}|{mem}|{child}|{x.get('threads', '—')}|{status}: {x.get('reason', semantics(report, x))}|"
         )
     lines += [
         "",
@@ -98,7 +108,9 @@ def render(report):
         json.dumps(report["environment"], ensure_ascii=False, indent=2),
         "```",
     ]
-    own = RESULTS / "panelbt-current.json"
+    own = ROOT / ".cache/panelbt/panelbt-current.json"
+    if not own.exists():
+        own = RESULTS / "panelbt-current.json"
     if own.exists():
         current = json.loads(own.read_text())
         lines += [
@@ -113,6 +125,89 @@ def render(report):
             lines.append(
                 f"|{name}|{current[name]['total_s'] * 1000:.3f}|{delta:+.1%}{' REGRESSION' if delta > 0.1 else ''}|"
             )
+    future_baseline = RESULTS / "step1c-baseline.json"
+    if future_baseline.exists():
+        future = json.loads(future_baseline.read_text())
+        spot = future["spot_full_rules_ms"]
+        mixed = future["mixed_full_rules_ms"]
+        simple = future["simple_exact_ms"]
+        ledger = future["mixed_reference_ledger"]
+        lines += [
+            "",
+            "## 步骤 1c：期货对冲腿",
+            "",
+            "4000×5500 现货面板加 20 列期货、约 100 只现货、每 21 日调仓；同一已校验市场对象、9 次交替调用、单线程。完整规则的 NumPy 对照不适用：下方 NumPy 基线只实现同义的简化对冲，不含保证金、到期、强平或公司行为。市场构建及输入转换不计入时间。原始采样写入被忽略的 `.cache/panelbt/futures-current.json`；当前机器有并行任务，空闲时用 `make bench && make bench-docs` 重测。",
+            "",
+            "| 任务 | panelbt 最小 ms | panelbt 中位数 ms | NumPy 中位数 ms | 净值最大误差 |",
+            "|---|---:|---:|---:|---:|",
+            f"| 完整现货规则 | {spot['min']:.3f} | {spot['median']:.3f} | 不适用 | — |",
+            f"| 完整现货+20 列期货 | {mixed['min']:.3f} | {mixed['median']:.3f} | 不适用 | — |",
+            f"| 同义简化对冲任务 | {simple['panelbt']['min']:.3f} | {simple['panelbt']['median']:.3f} | {simple['numpy']['median']:.3f} | {future['simple_max_nav_error']:.3g} |",
+            "",
+            f"简化任务使用活跃证券稀疏 NumPy 运算；该任务 NumPy 比自研快，不能用它外推完整规则。首轮混合语料 {ledger['cases']} 组、{ledger['trades']} 笔成交：独立账本 {ledger['ledger_failures']} 不符（当时的参考实现是内核的逐段转写，已在返工中删除，对拍以下方返工小节为准）。复现：`uv run --no-sync python bench/validate.py --corpus futures --start 40000 --count 20000`。",
+            "",
+            f"机器：{future['machine']['platform']}，Python {future['machine']['python']}，NumPy {future['machine']['numpy']}；开始时 1/5/15 分钟负载 {', '.join(f'{x:.2f}' for x in future['machine']['load_start'])}，峰值 RSS {future['machine']['rss_peak_bytes'] / 2**30:.2f} GiB。",
+        ]
+        if "spot_pair_to_1b" in future:
+            pair = future["spot_pair_to_1b"]
+            lines += [
+                "",
+                f"同输入现货路径与 1b `{pair['base_ref']}` 各自 LTO 构建、AB/BA 交替配对（{pair['T']}×{pair['N']}，不含准备）；三场景最小值比均小于 1.05：",
+                "",
+                "| 场景 | 1b 最小 / 中位 ms | 当前最小 / 中位 ms | 最小值比 |",
+                "|---|---:|---:|---:|",
+            ]
+            for key, label in (
+                ("full_rules", "完整规则含退市"),
+                ("no_delist_panel", "不传退市面板"),
+                ("prices_only", "仅价格"),
+            ):
+                row = pair["scenarios"][key]
+                lines.append(
+                    f"| {label} | {row['base_min_ms']:.3f} / {row['base_median_ms']:.3f} | {row['current_min_ms']:.3f} / {row['current_median_ms']:.3f} | {row['minimum_ratio']:.3f} |"
+                )
+    rework = RESULTS / "step1c-validation.json"
+    if rework.exists():
+        timing = json.loads(rework.read_text())
+        lines += [
+            "",
+            "## 步骤 1c 返工：输入检查挪进内核",
+            "",
+            f"逐格内容检查、`first_delist` 与公司行为索引改在 Rust 里按 16384 个元素一块多线程扫描。计时：{timing['method']}；左边是改动前的包快照（NumPy 检查），右边是当前构建。开始/结束时 1/5/15 分钟负载 {timing['load_1_5_15'][0]} / {timing['load_1_5_15'][1]}，机器上有其他任务，只比较同轮配对。原始样本在被忽略的 `.cache/fix/`。复现：`uv run --no-sync python bench/validation_timing.py --before <旧包目录>`。",
+            "",
+            "| 场景 | 改动前 最小 / 中位 ms | 改动后 最小 / 中位 ms |",
+            "|---|---:|---:|",
+        ]
+        labels = {
+            "market_4000x5500": "4000×5500 行情构建（含检查）",
+            "batch_1000_check_and_run": "1000×100 行情 + 1000 份目标 + 多线程回测",
+            "single_total_validated": "4000×5500 行情 + 目标 + 单次回测，检查",
+            "single_total_unchecked": "同上，`validate=False`",
+        }
+        for key, label in labels.items():
+            row = timing["ms"].get(key, {})
+            before = row.get("before")
+            after = row["after"]
+            left = f"{before[0]:.3f} / {before[1]:.3f}" if before else "不适用"
+            lines.append(f"| {label} | {left} | {after[0]:.3f} / {after[1]:.3f} |")
+        pair = timing.get("spot_pair_to_round_start")
+        if pair:
+            lines += [
+                "",
+                f"不含期货的回测本身（不含准备）与本轮起点 `{pair['base_ref']}` 各自构建、AB/BA 交替配对（{pair['T']}×{pair['N']}；负载 {pair['load_start']} → {pair['load_end']}，忙机，只看比值）；三个场景末日净值和成交笔数相同：",
+                "",
+                "| 场景 | 起点 最小 / 中位 ms | 当前 最小 / 中位 ms | 最小值比 |",
+                "|---|---:|---:|---:|",
+            ]
+            for key, label in (
+                ("full_rules", "完整规则含退市"),
+                ("no_delist_panel", "不传退市面板"),
+                ("prices_only", "仅价格"),
+            ):
+                row = pair["scenarios"][key]
+                lines.append(
+                    f"| {label} | {row['base_min_ms']:.3f} / {row['base_median_ms']:.3f} | {row['current_min_ms']:.3f} / {row['current_median_ms']:.3f} | {row['minimum_ratio']:.3f} |"
+                )
     (ROOT / "docs/BENCHMARKS.md").write_text("\n".join(lines) + "\n")
 
 
@@ -292,7 +387,9 @@ def main():
                         timed_out[engine, task] = t * n
             print(row.get("median_s", row["status"]), flush=True)
         report["records"].append(row)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        output.write_text(
+            json.dumps(compact(report), ensure_ascii=False, indent=2) + "\n"
+        )
     # The optional open-source Rust engine is explicitly selected and isolated.
     report["vectorbt_rust"] = (
         f"vectorbt-rust {versions['vectorbt-rust']} installed; explicit engine=rust measured separately from engine=numba."
@@ -310,7 +407,7 @@ def main():
             )
         }
     )
-    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    output.write_text(json.dumps(compact(report), ensure_ascii=False, indent=2) + "\n")
     from collections import Counter
 
     print(

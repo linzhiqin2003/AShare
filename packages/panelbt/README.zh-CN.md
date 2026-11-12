@@ -75,7 +75,30 @@ A 股监管担保物/负债公式与模型不同，`markets.ashare_margin` 要�
 `run_batch(..., threads=0)` 使用全部可用 CPU，批量共享行情；同一环境下，线程数不改变单策略浮点执行顺序。
 开启 `record_trades=True` 会保存 T×N（批量 K×T×N）持仓及成交，较大的批量通常保持默认关闭。
 
-详细顺序、公式、监管来源、T+1 日频约定和不支持的功能见 [SPEC.md](SPEC.md)。多币种、日内多次成交和期货尚不支持。
+## 期货对冲列
+
+在 `Market(futures=Futures(...))` 中逐列标记期货，现货与期货在同一面板结算。期货权重表示名义金额除以权益，股数模式表示整数手数；开仓只支付费用并占用保证金。必须提供结算价、合约乘数、到期行和保证金率；手续费、交割费可分别按名义金额和按手设置。示意用法见 [英文 README](README.md#futures-hedge-columns)；示例费率并非市场默认值，使用前须核实。
+
+`panelbt.futures.roll_targets` 按到期前交易日生成换月目标；`hedge_contracts` 按组合市值或贝塔计算对冲手数。`markets.cffex_index_futures` 只内置核实过的 IF/IH/IC/IM 合约乘数，费率及保证金率由调用方提供。
+
+`hedge_contracts` 与引擎一样向零取整，敞口不足一手时给出 `HedgeRoundingWarning`。现金账户挂上期货后，股票部分仍按原来的现金账户规则成交：先从现金里预留期货保证金，持有过合约后才会追保。现金只约束保证金占用、不约束名义金额：保证金率 12% 时，现金账户可以持有约 8 倍权益的合约名义。期货亏损使现金为负后，股票卖出只要成交额够付自身费用就照常成交。费率接受标量、(1, N) 按合约、(T, 1) 按日和 T×N，一维数组因含义不明确而报错。到期行的 `settlement` 必须填交易所的交割结算价。引擎不区分平今仓手续费（中金所平今费率远高于普通平仓），同一天开平的换月会低估成本。
+
+## 输入检查
+
+`Market(...)` 与 `Targets(...)` 默认逐格检查（价格为正或 NaN、掩码取值、送转为正、分红非负、期货结算价与费率、调仓日递增、权重有限、同一行列号不重复），检查在 Rust 内核里多线程完成。传 `validate=False` 只跳过这些逐格的内容检查：
+
+```python
+fast_market = bt.Market(prices, prices, prices > 0, prices > 0, validate=False)
+fast_targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]],
+                                     validate=False)
+fast = bt.run(fast_market, fast_targets, costs, config)
+np.testing.assert_allclose(fast.nav, [1.0, 1.025, 1.125])
+assert not fast.inputs_validated
+```
+
+适用于同一份行情已经检查过一次、之后反复重建，或输入来自上游已校验过的数据。形状、dtype、内存布局、各面板形状一致、目标的指针和行列号范围始终检查，所以未检查的输入不会越界访问，只是坏值会算出没有意义的结果。需要账户条款的检查（做空权限、整数手、现金账户权重和）对未检查的目标同样跳过。未检查的调仓日如果重复或倒序不会报错，后面那些行会静默地不执行。`result.inputs_validated` 说明这次回测（批量时为全部目标）用的行情和目标是否都检查过。
+
+详细顺序、公式、监管来源、T+1 日频约定和不支持的功能见 [SPEC.md](SPEC.md)。多币种和日内多次成交尚不支持。
 
 ## 独立构建
 

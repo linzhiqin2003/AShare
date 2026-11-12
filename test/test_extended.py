@@ -61,7 +61,9 @@ def test_preparation_content_and_sparse_conversion():
         cash_flow=[5, -7],
         margin=bt.MarginModel(allow_short=True, borrow_rate=[0.001, 0.002]),
     )
-    f, m, p, v, s, flags, first = _prepare(market, [target], costs, cfg)
+    f, m, p, v, s, flags, first, actions, futures = _prepare(
+        market, [target], costs, cfg
+    )
     np.testing.assert_array_equal(p[0][0], [1])
     np.testing.assert_array_equal(p[0][1], [0, 2])
     np.testing.assert_array_equal(p[0][2], [0, 1])
@@ -74,16 +76,18 @@ def test_preparation_content_and_sparse_conversion():
     np.testing.assert_array_equal(v[7], [100, 1])
     np.testing.assert_array_equal(v[10], [5, -7])
     np.testing.assert_array_equal(first, [2, 1])
+    np.testing.assert_array_equal(actions[0], [0, 0, 1])
+    np.testing.assert_array_equal(actions[1], [1])
     np.testing.assert_array_equal(f[5], [[0.01, 0.02], [0.03, 0.04]])
     np.testing.assert_array_equal(f[7], [[0.001], [0.002]])
     assert flags[2] and not flags[-1] and s[5] == 1e7
     assert m[2].shape == (2, 2)
+    assert len(futures[0]) == 0 and futures[3] == []
 
 
 def test_legacy_bitwise_fixture():
-    from bench.review_legacy import capture, digest
-
     from .generators import case
+    from .legacy import capture, digest
 
     with np.load(
         ROOT / "test/fixtures/legacy_sha256.npz", allow_pickle=False
@@ -441,7 +445,8 @@ def test_1000_extended_random_cases(tmp_path):
             post_checks["metrics_invalid_rejected"] += 1
         for k, v in a.coverage.items():
             total[k] += v
-    assert all(v > 0 for v in total.values()), total
+    assert all(total[k] > 0 for k in EXTRA_COUNTERS[:22]), total
+    assert all(total[k] == 0 for k in EXTRA_COUNTERS[22:]), total
     (tmp_path / "coverage_extended.json").write_text(
         json.dumps({**total, **post_checks}, indent=2) + "\n"
     )

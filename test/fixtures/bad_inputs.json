@@ -1,0 +1,882 @@
+{
+ "futures.cash_div.chunk": [
+  "ValueError",
+  "cash_div: futures columns cannot have corporate actions"
+ ],
+ "futures.cash_div.first": [
+  "ValueError",
+  "cash_div: futures columns cannot have corporate actions"
+ ],
+ "futures.cash_div.last_row": [
+  "ValueError",
+  "cash_div: futures columns cannot have corporate actions"
+ ],
+ "futures.delist.chunk": [
+  "ValueError",
+  "delist: futures columns use expiry, not delisting"
+ ],
+ "futures.delist.first": [
+  "ValueError",
+  "delist: futures columns use expiry, not delisting"
+ ],
+ "futures.delist.last_row": [
+  "ValueError",
+  "delist: futures columns use expiry, not delisting"
+ ],
+ "futures.expiry.beyond": [
+  "ValueError",
+  "expiry: futures columns require row indices in [0, T]"
+ ],
+ "futures.expiry.neg": [
+  "ValueError",
+  "expiry: futures columns require row indices in [0, T]"
+ ],
+ "futures.fee_rate.inf.chunk2_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.chunk2_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.chunk_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.chunk_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.first": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.last": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.inf.last_row": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.chunk2_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.chunk2_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.chunk_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.chunk_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.first": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.last": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.nan.last_row": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.chunk2_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.chunk2_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.chunk_end": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.chunk_start": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.first": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.last": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.fee_rate.neg.last_row": [
+  "ValueError",
+  "fee_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.chunk2_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.chunk2_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.chunk_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.chunk_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.first": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.last": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.inf.last_row": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.chunk2_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.chunk2_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.chunk_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.chunk_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.first": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.last": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.nan.last_row": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.chunk2_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.chunk2_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.chunk_end": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.chunk_start": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.first": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.last": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.margin_rate.neg.last_row": [
+  "ValueError",
+  "margin_rate: expected finite nonnegative values"
+ ],
+ "futures.multiplier.inf": [
+  "ValueError",
+  "multiplier: futures columns require finite positive values"
+ ],
+ "futures.multiplier.nan": [
+  "ValueError",
+  "multiplier: futures columns require finite positive values"
+ ],
+ "futures.multiplier.neg": [
+  "ValueError",
+  "multiplier: futures columns require finite positive values"
+ ],
+ "futures.multiplier.zero": [
+  "ValueError",
+  "multiplier: futures columns require finite positive values"
+ ],
+ "futures.settlement.inf.chunk": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.inf.first": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.inf.last_row": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.nan.chunk": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.nan.first": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.nan.last_row": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.neg.chunk": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.neg.first": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.neg.last_row": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.zero.chunk": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.zero.first": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.settlement.zero.last_row": [
+  "ValueError",
+  "settlement: futures columns require finite positive prices"
+ ],
+ "futures.split.chunk": [
+  "ValueError",
+  "split: futures columns cannot have corporate actions"
+ ],
+ "futures.split.first": [
+  "ValueError",
+  "split: futures columns cannot have corporate actions"
+ ],
+ "futures.split.last_row": [
+  "ValueError",
+  "split: futures columns cannot have corporate actions"
+ ],
+ "market.cash_div.inf.chunk2_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.chunk2_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.chunk_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.chunk_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.first": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.last": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.inf.last_row": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.chunk2_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.chunk2_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.chunk_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.chunk_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.first": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.last": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.nan.last_row": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.chunk2_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.chunk2_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.chunk_end": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.chunk_start": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.first": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.last": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.cash_div.neg.last_row": [
+  "ValueError",
+  "cash_div: expected finite nonnegative values"
+ ],
+ "market.close.inf.chunk2_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.chunk2_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.chunk_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.chunk_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.first": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.last": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.inf.last_row": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.chunk2_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.chunk2_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.chunk_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.chunk_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.first": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.last": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.neg.last_row": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.chunk2_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.chunk2_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.chunk_end": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.chunk_start": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.first": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.last": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.close.zero.last_row": [
+  "ValueError",
+  "close: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.chunk2_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.chunk2_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.chunk_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.chunk_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.first": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.last": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.inf.last_row": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.chunk2_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.chunk2_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.chunk_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.chunk_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.first": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.last": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.neg.last_row": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.chunk2_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.chunk2_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.chunk_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.chunk_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.first": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.last": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.ninf.last_row": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.chunk2_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.chunk2_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.chunk_end": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.chunk_start": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.first": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.last": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.exec_price.zero.last_row": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.order.exec_then_close": [
+  "ValueError",
+  "exec_price: expected finite positive values or NaN"
+ ],
+ "market.order.volume_then_split": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.split.inf.chunk2_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.chunk2_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.chunk_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.chunk_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.first": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.last": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.inf.last_row": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.chunk2_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.chunk2_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.chunk_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.chunk_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.first": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.last": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.nan.last_row": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.chunk2_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.chunk2_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.chunk_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.chunk_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.first": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.last": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.neg.last_row": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.chunk2_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.chunk2_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.chunk_end": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.chunk_start": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.first": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.last": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.split.zero.last_row": [
+  "ValueError",
+  "split: expected finite positive values"
+ ],
+ "market.volume.inf.chunk2_end": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.chunk2_start": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.chunk_end": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.chunk_start": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.first": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.last": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.inf.last_row": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.chunk2_end": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.chunk2_start": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.chunk_end": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.chunk_start": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.first": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.last": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "market.volume.neg.last_row": [
+  "ValueError",
+  "volume: expected finite nonnegative values or NaN"
+ ],
+ "run.cols.beyond_n": [
+  "ValueError",
+  "cols: expected index < N=300"
+ ],
+ "run.days.beyond_t": [
+  "ValueError",
+  "days: expected index < T=120"
+ ],
+ "run.futures_fractional_shares": [
+  "ValueError",
+  "futures shares: target contracts must be integers"
+ ],
+ "run.negative_without_short.first": [
+  "ValueError",
+  "weights: negative targets require allow_short"
+ ],
+ "run.negative_without_short.last": [
+  "ValueError",
+  "weights: negative targets require allow_short"
+ ],
+ "run.negative_without_short.middle": [
+  "ValueError",
+  "weights: negative targets require allow_short"
+ ],
+ "run.row_sum.first": [
+  "ValueError",
+  "weights: cash account requires row sum <= 1 + 1e-9"
+ ],
+ "run.row_sum.last": [
+  "ValueError",
+  "weights: cash account requires row sum <= 1 + 1e-9"
+ ],
+ "run.row_sum.middle": [
+  "ValueError",
+  "weights: cash account requires row sum <= 1 + 1e-9"
+ ],
+ "targets.cols.duplicate.chunk": [
+  "ValueError",
+  "cols: duplicate columns in a rebalance row are not allowed"
+ ],
+ "targets.cols.duplicate.first": [
+  "ValueError",
+  "cols: duplicate columns in a rebalance row are not allowed"
+ ],
+ "targets.cols.duplicate.last": [
+  "ValueError",
+  "cols: duplicate columns in a rebalance row are not allowed"
+ ],
+ "targets.cols.neg.chunk_end": [
+  "ValueError",
+  "cols/weights: expected equal lengths and nonnegative cols"
+ ],
+ "targets.cols.neg.chunk_start": [
+  "ValueError",
+  "cols/weights: expected equal lengths and nonnegative cols"
+ ],
+ "targets.cols.neg.first": [
+  "ValueError",
+  "cols/weights: expected equal lengths and nonnegative cols"
+ ],
+ "targets.cols.neg.last": [
+  "ValueError",
+  "cols/weights: expected equal lengths and nonnegative cols"
+ ],
+ "targets.days.neg.first": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.days.neg.last": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.days.neg.middle": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.days.repeat.first": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.days.repeat.last": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.days.repeat.middle": [
+  "ValueError",
+  "days: expected nonnegative strictly increasing rebalance indices"
+ ],
+ "targets.indptr.decrease": [
+  "ValueError",
+  "indptr: expected length R+1, nondecreasing from 0 to nnz"
+ ],
+ "targets.indptr.end": [
+  "ValueError",
+  "indptr: expected length R+1, nondecreasing from 0 to nnz"
+ ],
+ "targets.indptr.start": [
+  "ValueError",
+  "indptr: expected length R+1, nondecreasing from 0 to nnz"
+ ],
+ "targets.weights.inf.chunk_end": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.inf.chunk_start": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.inf.first": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.inf.last": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.nan.chunk_end": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.nan.chunk_start": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.nan.first": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.nan.last": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.ninf.chunk_end": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.ninf.chunk_start": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.ninf.first": [
+  "ValueError",
+  "weights: expected finite targets"
+ ],
+ "targets.weights.ninf.last": [
+  "ValueError",
+  "weights: expected finite targets"
+ ]
+}

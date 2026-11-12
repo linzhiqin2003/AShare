@@ -16,6 +16,9 @@ from statistics import median
 from time import perf_counter
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from test.build_guard import assert_current_build  # noqa: E402
 
 
 def inputs(t, n, actions=True, delist=True):
@@ -103,24 +106,32 @@ def worker(t, n):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument(
+        "--base-ref", help="Explicit revision to compare; no historical default"
+    )
     parser.add_argument("--t", type=int, default=2000)
     parser.add_argument("--n", type=int, default=2000)
     args = parser.parse_args()
     if args.worker:
         return worker(args.t, args.n)
-    historical = ROOT / ".cache/rework/round1"
+    if not args.base_ref:
+        parser.error("--base-ref is required for paired timing")
+    assert_current_build()
+    historical = ROOT / ".cache/panelbt/pair-base"
+    if historical.exists():
+        shutil.rmtree(historical)
     if not (historical / ".venv/bin/python").exists():
         historical.mkdir(parents=True, exist_ok=True)
-        archive = ROOT / ".cache/rework/round1.tar"
+        archive = ROOT / ".cache/panelbt/pair-base.tar"
         with archive.open("wb") as stream:
             subprocess.run(
-                ["git", "archive", "faec31e"], cwd=ROOT, stdout=stream, check=True
+                ["git", "archive", args.base_ref], cwd=ROOT, stdout=stream, check=True
             )
         subprocess.run(["tar", "-xf", str(archive), "-C", str(historical)], check=True)
         archive.unlink()
-        logdir = ROOT / "bench/results/logs"
+        logdir = ROOT / ".cache/panelbt"
         logdir.mkdir(parents=True, exist_ok=True)
-        with (logdir / "historical-build.log").open("w") as stream:
+        with (logdir / "pair-base-build.log").open("w") as stream:
             subprocess.run(
                 ["uv", "sync", "--all-packages"],
                 cwd=historical,
@@ -144,6 +155,7 @@ def main():
         cpus=os.cpu_count(),
         T=args.t,
         N=args.n,
+        base_ref=args.base_ref,
         method="LTO in both builds; 6 alternating AB/BA rounds, 40 calls per scenario each round; imports/data construction excluded",
         load_start=os.getloadavg(),
         scenarios={},
@@ -169,10 +181,10 @@ def main():
                     trades=r["trades"],
                 )
                 for label, v, r in zip(
-                    ["first_round", "current"], values, results, strict=True
+                    ["base", "current"], values, results, strict=True
                 )
             }
-            row["minimum_ratio"] = row["current"]["min_s"] / row["first_round"]["min_s"]
+            row["minimum_ratio"] = row["current"]["min_s"] / row["base"]["min_s"]
             row["passes_5pct"] = row["minimum_ratio"] <= 1.05
             report["scenarios"][name] = row
             print(name, row["minimum_ratio"], flush=True)
@@ -181,9 +193,7 @@ def main():
             p.stdin.close()
             p.wait()
     report["load_end"] = os.getloadavg()
-    (ROOT / "bench/results/review-perf.json").write_text(
-        json.dumps(report, indent=2) + "\n"
-    )
+    (ROOT / ".cache/panelbt/pair.json").write_text(json.dumps(report, indent=2) + "\n")
 
     shutil.rmtree(historical)
 

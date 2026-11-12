@@ -351,9 +351,9 @@ def main():
         executor = prepare(engine, m, target, c, g, args.task)
     elif engine == "panelbt":
         from panelbt import _core
-        from panelbt.api import _batch_result, _prepare
+        from panelbt.api import _batch_result, _checks, _prepare
 
-        arguments = _prepare(m, targets, c, g)
+        arguments = (*_prepare(m, targets, c, g), *_checks(targets, g))
 
         def executor():
             return _batch_result(_core.run(*arguments, 0), *m.shape, False).nav

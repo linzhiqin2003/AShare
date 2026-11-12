@@ -5,7 +5,7 @@ from dataclasses import fields
 
 import panelbt as panel
 from panelbt import _core
-from panelbt.api import _prepare, _result
+from panelbt.api import _checks, _prepare, _result
 from panelbt.reference import run as reference
 
 
@@ -21,7 +21,7 @@ def clone_inputs(market, targets):
 
 def prepare(engine, market, target, costs, config, task):
     if engine == "panelbt":
-        args = _prepare(market, [target], costs, config)
+        args = (*_prepare(market, [target], costs, config), *_checks([target], config))
         return lambda: _result(_core.run(*args, 1)[0]).nav
     if engine == "reference":
         return lambda: reference(market, target, costs, config).nav

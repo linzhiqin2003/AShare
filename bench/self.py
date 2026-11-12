@@ -16,9 +16,8 @@ from common import inputs  # noqa: E402
 
 
 def main():
-    subprocess.run([sys.executable, str(ROOT / "bench/review_perf.py")], check=True)
     subprocess.run([sys.executable, str(ROOT / "bench/benchmark.py")], check=True)
-    report = json.loads((ROOT / "bench/results/benchmark.json").read_text())
+    report = json.loads((ROOT / ".cache/panelbt/benchmark.json").read_text())
     m, target, c, g = inputs(4000, 5500)
     weights = target.weights.copy()
     weights[::2] *= -1
@@ -33,10 +32,10 @@ def main():
         bt.run(m, target, c, g)
         samples.append(perf_counter() - start)
     report["long_short"] = {"total_s": median(samples), "total_samples": samples}
-    output = ROOT / "bench/results/panelbt-current.json"
+    output = ROOT / ".cache/panelbt/panelbt-current.json"
     baseline = ROOT / "bench/results/panelbt-baseline.json"
     if not baseline.exists():
-        baseline.write_text(json.dumps(report, indent=2) + "\n")
+        raise FileNotFoundError("frozen panelbt baseline is missing")
     original = json.loads(baseline.read_text())
     regressions = {}
     for name in ("lots", "fractional", "batch", "long_short"):

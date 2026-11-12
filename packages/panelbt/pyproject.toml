@@ -14,8 +14,6 @@ classifiers = [
   "Topic :: Office/Business :: Financial :: Investment",
 ]
 
-[project.urls]
-
 [build-system]
 requires = ["maturin>=1.16.0,<2"]
 build-backend = "build_backend"

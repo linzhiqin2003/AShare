@@ -86,6 +86,79 @@ zero threads means all available CPUs. Thread counts do not change per-strategy
 floating-point execution order. Recording positions/trades explicitly allocates
 T×N (or K×T×N) output; leave `record_trades=False` for large batches.
 
+## Futures hedge columns
+
+Attach `Futures` to a `Market` to mix daily settled futures and cash equities in
+one panel. Futures weights are signed notional divided by equity; share targets
+are integer contracts. Contract multipliers, settlement prices, expiry rows,
+dated margin rates, trading fees, and delivery fees are explicit inputs.
+
+```python
+hedge_prices = np.array([[10., 100.], [11., 101.], [12., 99.]])
+futures = bt.Futures(
+    is_future=[False, True], multiplier=[1, 10], margin_rate=0.12,
+    settlement=hedge_prices,
+    expiry=[3, 3], fee_rate=0.0002, fee_per_contract=0,
+    delivery_fee_rate=0, delivery_fee_per_contract=0,
+)
+hedge_market = bt.Market(hedge_prices, hedge_prices,
+                         hedge_prices > 0, hedge_prices > 0,
+                         futures=futures)
+hedge_targets = bt.Targets.from_dense(
+    [[0.5, -1.0], [np.nan, np.nan], [0, 0]]
+)
+hedge_result = bt.run(hedge_market, hedge_targets, costs, config)
+```
+
+The prices, rates, and margin above are illustrative; verify contract terms
+before using them. `panelbt.futures.roll_targets` creates a deterministic
+pre-expiry roll schedule, and `hedge_contracts` converts equity value or beta
+exposure into a signed contract count. `panelbt.markets.cffex_index_futures`
+supplies verified IF/IH/IC/IM multipliers but requires fee and margin inputs.
+
+`hedge_contracts` rounds toward zero, like the engine, and warns
+(`HedgeRoundingWarning`) when an exposure is smaller than one contract. A cash
+account keeps its exact cash-account behaviour for stocks when futures are
+attached: contract collateral is reserved from cash first, and maintenance
+calls apply only after a contract has been held. Only collateral, not
+notional, is limited by cash: at a 12% margin rate a cash account can hold
+about eight times its equity in contract notional. If a futures loss leaves
+cash negative, stock sales still execute as long as their proceeds cover their
+own fees. Rates are scalars, `(1, N)`
+per contract, `(T, 1)` per day or `T×N`; 1-D rates are rejected as ambiguous.
+On an expiry row, `settlement` must be the exchange delivery settlement price.
+The engine does not distinguish close-today fees, which CFFEX charges at a much
+higher rate; same-day open-and-close rolls are therefore under-costed.
+
+## Input validation
+
+`Market(...)` and `Targets(...)` check every cell by default (finite positive
+prices or NaN, valid masks, positive splits, nonnegative dividends, futures
+settlement and rates, increasing rebalance days, finite weights, unique
+columns), in parallel in the Rust core. Pass `validate=False` to skip only these
+per-cell content checks:
+
+```python
+fast_market = bt.Market(prices, prices, prices > 0, prices > 0, validate=False)
+fast_targets = bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [0, 0]],
+                                     validate=False)
+fast = bt.run(fast_market, fast_targets, costs, config)
+np.testing.assert_allclose(fast.nav, [1.0, 1.025, 1.125])
+assert not fast.inputs_validated
+```
+
+Use it when the same market has already been validated once and is rebuilt
+repeatedly, or when inputs come from an upstream pipeline that already enforces
+these rules. Shapes, dtypes, memory layout, matching panel shapes, plan pointers
+and row/column bounds are always checked, so unchecked inputs cannot cause
+out-of-bounds access; invalid values then simply produce meaningless results.
+Context checks that need the account (short permission, integer contracts,
+cash-account weight sums) are skipped for unchecked plans as well. Unchecked
+rebalance days that repeat or decrease are not rejected: the later rows are
+silently never executed.
+`result.inputs_validated` tells whether the market and every plan of a run
+(all plans of a batch) were checked.
+
 See [SPEC.md](SPEC.md) for exact ordering, accounting conventions and limitations.
 
 ## Build

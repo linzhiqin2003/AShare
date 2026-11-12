@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "machine": {
+    "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+    "python": "3.13.13",
+    "numpy": "2.5.4",
+    "cpus": 15,
+    "rss_peak_bytes": 2222850048,
+    "load_start": [
+      2.41455078125,
+      2.408203125,
+      2.60009765625
+    ],
+    "load_end": [
+      2.41455078125,
+      2.408203125,
+      2.60009765625
+    ]
+  },
+  "parameters": {
+    "T": 4000,
+    "spot_N": 5500,
+    "futures_N": 20,
+    "holdings": 100,
+    "rebalance_interval": 21,
+    "repeats": 9,
+    "threads": 1
+  },
+  "spot_full_rules_ms": {
+    "min": 1.7744590004440397,
+    "median": 2.081290993373841
+  },
+  "mixed_full_rules_ms": {
+    "min": 3.0766250056331046,
+    "median": 3.5277089991723187
+  },
+  "simple_exact_ms": {
+    "panelbt": {
+      "min": 0.982209006906487,
+      "median": 1.015083005768247
+    },
+    "numpy": {
+      "min": 0.5548330009332858,
+      "median": 0.5615000045509078
+    }
+  },
+  "simple_max_nav_error": 3.3306690738754696e-15,
+  "mixed_reference_ledger": {
+    "cases": 20000,
+    "trades": 227243,
+    "divergences": 0,
+    "ledger_failures": 0
+  },
+  "raw_samples": "ignored .cache/panelbt/futures-current.json; regenerate with make bench",
+  "spot_pair_to_1b": {
+    "T": 4000,
+    "N": 5500,
+    "base_ref": "4d080d0",
+    "method": "LTO in both builds; 6 alternating AB/BA rounds, 40 calls per scenario each round; imports/data construction excluded",
+    "load_start": [
+      4.57568359375,
+      5.22412109375,
+      4.38720703125
+    ],
+    "scenarios": {
+      "full_rules": {
+        "base_min_ms": 2.2471669944934547,
+        "base_median_ms": 2.630540999234654,
+        "current_min_ms": 1.7131249987869523,
+        "current_median_ms": 1.7735000001266599,
+        "minimum_ratio": 0.7623487720248919
+      },
+      "no_delist_panel": {
+        "base_min_ms": 2.5470830005360767,
+        "base_median_ms": 2.6621670003805775,
+        "current_min_ms": 1.7148339975392446,
+        "current_median_ms": 1.8169374998251442,
+        "minimum_ratio": 0.6732540703142884
+      },
+      "prices_only": {
+        "base_min_ms": 1.9573749959818088,
+        "base_median_ms": 2.02312500186963,
+        "current_min_ms": 1.6618329973425716,
+        "current_median_ms": 1.7145630008599255,
+        "minimum_ratio": 0.8490110483448805
+      }
+    }
+  }
+}
