@@ -71,6 +71,7 @@ class Factor:
     name: str
     expression: Expr
     description: str
+    notes: tuple = ()  # 原文问题的标记，元素为 (标记, 疑点编号)，见 docs/factors/CONVENTIONS.md
 
     @property
     def fields(self):
@@ -83,12 +84,19 @@ class Registry:
     def __init__(self):
         self._factors = {}
 
-    def register(self, name, expression, description=""):
+    def register(self, name, expression, description="", notes=()):
         if name in self._factors:
             raise ValueError(f"因子重名：{name}")
         if not isinstance(name, str) or not name or not isinstance(expression, Expr):
             raise ValueError("需要非空名称和 Expr 表达式")
-        factor = Factor(name, expression, description)
+        if isinstance(notes, str) or any(isinstance(n, str) for n in notes):
+            raise ValueError("notes 的每一项须是 (标记, 编号) 两个非空字符串")
+        notes = tuple(tuple(n) for n in notes)
+        if any(
+            len(n) != 2 or not all(isinstance(v, str) and v for v in n) for n in notes
+        ):
+            raise ValueError("notes 的每一项须是 (标记, 编号) 两个非空字符串")
+        factor = Factor(name, expression, description, notes)
         self._factors[name] = factor
         return factor
 
@@ -101,6 +109,12 @@ class Registry:
     def names(self):
         """按登记顺序列出名字。"""
         return tuple(self._factors)
+
+    def with_note(self, tag):
+        """返回带某个标记（如「两读」）的因子。"""
+        return tuple(
+            f for f in self._factors.values() if any(n[0] == tag for n in f.notes)
+        )
 
     def using_field(self, name):
         """返回依赖指定字段的因子。"""

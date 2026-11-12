@@ -181,3 +181,18 @@ uv run --no-sync python bench/panelops/report.py --input bench/panelops/results/
 ```
 
 结果写入被忽略的 `.cache/panelops/`；比较以 op/method/shape/window/missing/condition 精确匹配，超过 10% 的回退列入 comparison JSON。冻结文件不保存每次计时采样和本机绝对路径。
+
+## 并列取最早（`ties="earliest"`，2026-11-13 新增）
+
+`ts_argmin/ts_argmax/ts_idxmin/ts_idxmax` 新增 `ties="earliest"`（并列取窗口里最早的一次，即 `numpy.argmax` 的规则），供 Qlib 表达式的 `IdxMax/IdxMin` 使用；用法和约定见 `packages/panelops/SPEC.md`。内核改动只在两趟分块极值算法的三处并列判定，默认（`"latest"`）路径的算术与原来相同。
+
+代表配置 T=4000、N=5500、W=20、min_periods=10、缺失 5%；另测一档大量并列的整数面板（取值 0..4）。同一进程内交替运行，预热后三次取中位数，毫秒；负载 6.6–7.3（同机有别的会话在跑回测）。NumPy 基线是 `sliding_window_view` 加 `argmax`（缺失填 −inf、按有效个数判 min_periods），每 256 行一块，单线程；与 Rust 在 300 × 300 的角上逐格核对一致后才计时。脚本：`bench/panelops/ties.py`。
+
+| 面板 | 算子 | Rust 1 线程 latest | Rust 1 线程 earliest | Rust 默认线程 latest | Rust 默认线程 earliest | NumPy earliest（1 线程） |
+|---|---|---:|---:|---:|---:|---:|
+| 正态 | ts_idxmax | 87.0 | 87.0 | 11.4 | 11.1 | 424.7 |
+| 正态 | ts_argmax | 90.8 | 92.4 | 11.6 | 13.1 | — |
+| 整数并列 | ts_idxmax | 88.3 | 87.1 | 15.3 | 12.4 | 430.7 |
+| 整数并列 | ts_argmax | 95.9 | 92.7 | 12.5 | 14.5 | — |
+
+`earliest` 与 `latest` 在噪声范围内持平，单线程比 NumPy 快约 4.9 倍；默认 `latest` 的单线程数字与冻结基线（ts_idxmax 92.52、ts_argmax 77.79 ms，不同负载）同一量级，没有退步。没有重跑冻结 JSON。

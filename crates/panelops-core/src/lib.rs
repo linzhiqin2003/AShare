@@ -45,6 +45,8 @@ pub struct Options {
     pub normalize: bool,
     pub alpha: f64,
     pub periods: usize,
+    /// Extremum position operators break ties toward the oldest observation.
+    pub earliest: bool,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -745,6 +747,7 @@ mod tests {
                     normalize: false,
                     alpha: 0.5,
                     periods: 1,
+                    earliest: false,
                 };
                 let actual = simple_series(|i| values[i], values.len(), op, p);
                 for (t, &a) in actual.iter().enumerate() {
@@ -769,6 +772,7 @@ mod tests {
                 normalize: false,
                 alpha: 0.5,
                 periods: 1,
+                earliest: false,
             };
             let actual = simple_series(|i| values[i], values.len(), "product", p);
             assert_eq!(actual[2], values[..3].iter().product::<f64>());
@@ -797,6 +801,7 @@ mod tests {
                         normalize: false,
                         alpha: 0.5,
                         periods: 1,
+                        earliest: false,
                     };
                     let result = higher_series(|i| values[i], values.len(), op, p);
                     for (t, &actual) in result.iter().enumerate() {
