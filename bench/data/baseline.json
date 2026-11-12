@@ -1,0 +1,42 @@
+{
+  "round": 3,
+  "date": "2026-11-12",
+  "shape": [
+    4824,
+    5923
+  ],
+  "fields": 46,
+  "version": "8c770ce48a062445b10440733250765443eee612ffed243ff6ea4b39b2340568",
+  "full_seconds": 42.91294975000346,
+  "full_peak_rss_bytes": 4325228544,
+  "incremental_seconds": 4.110269374999916,
+  "incremental_wall_seconds": 5.834194374998333,
+  "incremental_peak_rss_bytes": 2051899392,
+  "panel_bytes": 6721564316,
+  "verify_seconds": 49.291835957999865,
+  "verify_peak_rss_bytes": 2966077440,
+  "actions_checked": 53487,
+  "action_failures": 0,
+  "over_one_percent_before": 515,
+  "over_one_percent_after": 0,
+  "mutation_caught": 30,
+  "mutation_total": 30,
+  "tests_passed": 162,
+  "skipped": 0,
+  "scatter": [
+    {
+      "method": "numpy",
+      "t": 4800,
+      "n": 5900,
+      "seconds": 0.08963699999731034,
+      "peak_rss_mib": 722.046875
+    },
+    {
+      "method": "polars",
+      "t": 4800,
+      "n": 5900,
+      "seconds": 10.086155917000724,
+      "peak_rss_mib": 1422.765625
+    }
+  ]
+}
