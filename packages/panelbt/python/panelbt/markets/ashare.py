@@ -71,13 +71,24 @@ def lot_rules(board: ArrayLike) -> tuple[FloatArray, FloatArray]:
 
 
 def infer_board(codes: ArrayLike) -> IntArray:
-    """Infer board candidates from six-digit codes; verify historical membership."""
-    c = np.asarray(codes, dtype=np.str_)
+    """Infer board candidates from code prefixes; verify historical membership.
+
+    Accepts six-digit codes, optionally with an exchange suffix (``.SH``,
+    ``.SZ``, ``.BJ``). Prefer an authoritative board column where one exists:
+    prefixes are a heuristic and new code ranges appear over time (ChiNext
+    ``302`` from 2025). Unrecognised codes raise and are listed in the error.
+    """
+    raw = np.asarray(codes, dtype=np.str_)
+    stripped = [
+        x[:6] if len(x) == 9 and x[6:] in (".SH", ".SZ", ".BJ") else x
+        for x in raw.ravel().tolist()
+    ]
+    c = np.asarray(stripped, dtype="U16").reshape(raw.shape)
     valid = (np.char.str_len(c) == 6) & np.char.isdecimal(c)
     out = np.full(c.shape, -1, dtype=np.int64)
     for prefixes, board in [
         (("600", "601", "603", "605", "000", "001", "002", "003"), Board.MAIN),
-        (("300", "301"), Board.CHINEXT),
+        (("300", "301", "302"), Board.CHINEXT),
         (("688", "689"), Board.STAR),
         (("43", "83", "87", "88", "920"), Board.BSE),
     ]:
@@ -86,5 +97,10 @@ def infer_board(codes: ArrayLike) -> IntArray:
             mask |= np.char.startswith(c, prefix)
         out[mask & valid] = int(board)
     if np.any(out < 0):
-        raise ValueError("codes: expected supported six-digit A-share code prefixes")
+        bad = raw[out < 0]
+        raise ValueError(
+            "codes: unsupported A-share code prefix for "
+            + ", ".join(bad[:10].tolist())
+            + (f" (+{bad.size - 10} more)" if bad.size > 10 else "")
+        )
     return out

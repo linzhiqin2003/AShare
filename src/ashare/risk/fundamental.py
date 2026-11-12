@@ -55,6 +55,9 @@ class FundamentalConfig:
     # 特质风险三个指数加权方差：逐日递推（相对误差 ≤1e-12）或每天从头算。
     specific_incremental: bool = True
     specific_reanchor_days: int = 252
+    # 行业因子的名字（与 industry_codes 一一对应），因子名为 industry_<名字>；
+    # None 时沿用 industry_<编码>。只改名字，不影响任何数值。
+    industry_names: tuple[str, ...] | None = None
 
     def __post_init__(self):
         if (
@@ -62,6 +65,17 @@ class FundamentalConfig:
             or -1 in self.industry_codes
         ):
             raise ValueError("industry_codes: 需要唯一编码，-1 保留给未知行业")
+        if self.industry_names is not None:
+            names = tuple(self.industry_names)
+            if (
+                len(names) != len(self.industry_codes)
+                or len(set(names)) != len(names)
+                or any(not isinstance(x, str) or not x or x == "unknown" for x in names)
+            ):
+                raise ValueError(
+                    "industry_names: 需要与 industry_codes 等长、唯一、非空，且不能叫 unknown"
+                )
+            object.__setattr__(self, "industry_names", names)
         if (
             self.min_listing_days < 1
             or self.min_descriptor_days < 2
@@ -112,6 +126,16 @@ class FundamentalConfig:
             or self.eigen_scale < 0
         ):
             raise ValueError("收缩和特征调整参数必须为非负有限数")
+
+
+def industry_factor_names(config):
+    """行业因子名（含末尾的 industry_unknown），顺序与暴露矩阵的列一致。"""
+    labels = (
+        config.industry_codes
+        if config.industry_names is None
+        else config.industry_names
+    )
+    return tuple(f"industry_{x}" for x in labels) + ("industry_unknown",)
 
 
 def standardize(values, cap, estimation, industries, size=None, limit=5.0):
@@ -335,12 +359,7 @@ def exposures_at(
             inverse("pe_ttm"),
         )
     )
-    names = (
-        ("country",)
-        + tuple(f"industry_{code}" for code in c.industry_codes)
-        + ("industry_unknown",)
-        + STYLE_NAMES
-    )
+    names = ("country",) + industry_factor_names(c) + STYLE_NAMES
     b = np.column_stack((np.ones(len(cap)), inds, style))
     if external is not None:
         ex = np.asarray(external[day], dtype=float)

@@ -146,7 +146,7 @@ ashare.report.tearsheet(result, market, targets, dates, symbols,
 
 指标口径见 [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md)。
 
-目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次。
+目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次：`ashare.backtest.execution_targets`。
 
 ## 数据
 

@@ -144,7 +144,7 @@ ashare.report.tearsheet(result, market, targets, dates, symbols,
 
 Metric definitions are in [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md) (Chinese).
 
-Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare`.
+Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare` (`ashare.backtest.execution_targets`).
 
 ## Data
 
