@@ -67,6 +67,99 @@ def default_threads():
     return os.cpu_count() or 1
 
 
+def _row_parts(source, external, day):
+    """第 day 天进入前缀链的字节，顺序与旧实现的 `h.update` 完全一致。"""
+    yield str(source.dates[day]).encode()
+    for field in FIELDS:
+        try:
+            value = np.ascontiguousarray(source[field][day])
+        except KeyError:
+            continue
+        yield field.encode() + value.dtype.str.encode() + value.tobytes()
+    if external is not None:
+        yield np.ascontiguousarray(external[day]).tobytes()
+
+
+def _row_digests(source, external, days, threads):
+    """逐日输入的独立摘要（不含前缀），按日期分段交给线程池；hashlib 释放 GIL。"""
+    out = np.zeros((len(days), 32), np.uint8)
+
+    def run(chunk):
+        for i in chunk:
+            h = hashlib.sha256()
+            for part in _row_parts(source, external, days[i]):
+                h.update(part)
+            out[i] = np.frombuffer(h.digest(), np.uint8)
+
+    chunks = [range(i, min(i + 256, len(days))) for i in range(0, len(days), 256)]
+    if threads == 1 or len(chunks) < 2:
+        for chunk in chunks:
+            run(chunk)
+    else:
+        with ThreadPoolExecutor(threads, thread_name_prefix="risk-prefix") as pool:
+            list(pool.map(run, chunks))
+    return out
+
+
+def _prefix_chain(source, external, end, cache, threads):
+    """逐日前缀链摘要（与旧实现逐位相同，进入缓存键和元数据 `prefix_hash`）。
+
+    链是顺序的：第 t 天的摘要 = SHA-256(第 t−1 天的摘要 ‖ 第 t 天的输入)。
+    缓存目录里存一份索引：每天输入的独立摘要和链摘要。下次先并行重算每天的独立摘要，
+    与索引一致的最长前缀直接沿用索引里的链摘要（输入逐日相同，链必然相同），
+    从第一个不一致或新增的日期起才顺序重算链。历史被改写照样能发现。
+    """
+    days = list(range(end))
+    rows = _row_digests(source, external, days, threads) if cache else None
+    index = cache.load_index() if cache else None
+    reuse = 0
+    if index is not None:
+        stored_rows, stored_prefixes = index
+        limit = min(len(stored_rows), end)
+        same = np.all(stored_rows[:limit] == rows[:limit], axis=1)
+        reuse = limit if same.all() else int(np.argmin(same))
+    prefixes = [bytes(stored_prefixes[i]) for i in range(reuse)] if reuse else []
+    prefix = prefixes[-1] if prefixes else b""
+    for day in range(reuse, end):
+        h = hashlib.sha256(prefix)
+        for part in _row_parts(source, external, day):
+            h.update(part)
+        prefix = h.digest()
+        prefixes.append(prefix)
+    # 索引只在变长或历史改了时重写；只看了较短一段且全部一致时保留原来更长的索引。
+    if cache and (index is None or reuse < end or len(index[0]) < end) and end:
+        chain = np.frombuffer(b"".join(prefixes), np.uint8).reshape(-1, 32)
+        cache.save_index(rows, chain)
+    return prefixes
+
+
+def _plan(cache, keys, start, end, history):
+    """决定从哪天开始逐日处理，并预读需要的缓存状态。
+
+    第一个未命中的日期 d 之前的日子不必重算；它们的状态只在 d 的估计窗口
+    （最近 history 天）里用到，所以只读 [d − history, d) 这一段，不再逐个打开全部历史文件。
+    全部命中时只读要交给调用方的 [start, end)。预读中途发现快照损坏或被换掉，
+    就把 d 提前到那一天再来一遍。
+    """
+    if not cache:
+        return 0, 0, {}
+    miss = next((d for d in range(end) if cache.entries.get(d) != keys[d]), end)
+    while True:
+        first = max(0, miss - history) if miss < end else max(0, min(start, end))
+        preloaded = {}
+        # start 之后的日子在主循环里带模型读（逐个交给调用方，不一次全读进内存）。
+        for day in range(first, min(miss, start)):
+            # 第一个未命中日的前一天要完整状态（回归和偏差统计用）；更早的只进历史窗口。
+            fields = None if day == miss - 1 else ("f", "residual", "bias")
+            loaded = cache.load(keys[day], day=day, with_model=False, fields=fields)
+            if loaded is None:
+                miss = day
+                break
+            preloaded[day] = loaded
+        else:
+            return first, miss, preloaded
+
+
 def _digest(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, default=str).encode()
@@ -179,7 +272,9 @@ def model_series(
         return exposure_for(day)[0]
 
     try:
+        prefixes = _prefix_chain(source, external, end, cache, threads)
         yield from _iterate(
+            prefixes,
             source,
             c,
             cache,
@@ -204,6 +299,7 @@ def model_series(
 
 
 def _iterate(
+    prefixes,
     source,
     c,
     cache,
@@ -231,30 +327,46 @@ def _iterate(
     )
     previous = None
     previous_key = None
-    prefix = b""
-    for day in range(end):
-        h = hashlib.sha256(prefix)
-        h.update(str(source.dates[day]).encode())
-        for field in FIELDS:
-            try:
-                value = np.ascontiguousarray(source[field][day])
-            except KeyError:
-                continue
-            h.update(field.encode() + value.dtype.str.encode() + value.tobytes())
-        if external is not None:
-            h.update(np.ascontiguousarray(external[day]).tobytes())
-        prefix = h.digest()
-        key = hashlib.sha256(params.encode() + prefix).hexdigest()
-        cached = (
-            cache.load(
-                key,
-                day=day,
-                with_model=day >= max(0, start - 1),
-                exposure_loader=lambda day=day: cached_exposure(day),
+    keys = [hashlib.sha256(params.encode() + p).hexdigest() for p in prefixes]
+    first, miss, preloaded = _plan(cache, keys, start, end, c.history)
+    for day in range(first, end):
+        prefix = prefixes[day]
+        key = keys[day]
+        if day in preloaded:
+            # 第一个未缓存日之前、窗口之内的日子：状态已在计划阶段读过。
+            cached = preloaded.pop(day)
+        else:
+            cached = (
+                cache.load(
+                    key,
+                    day=day,
+                    with_model=day >= start,
+                    exposure_loader=lambda day=day: cached_exposure(day),
+                )
+                if cache
+                else None
             )
-            if cache
-            else None
-        )
+        if cached is None and first > 0 and day < miss:
+            # 预计会命中的快照读失败（损坏或被换掉）：这一天要重算，但它的估计窗口
+            # 可能早于已读的范围。已经交出的日子不再交出，从这一天起重新计划。
+            yield from _iterate(
+                prefixes,
+                source,
+                c,
+                cache,
+                max(start, day),
+                end,
+                external,
+                kind,
+                params,
+                returns,
+                rolling,
+                exposure_batch,
+                statistical_for,
+                cached_exposure,
+                batch_size,
+            )
+            return
         if cached is not None:
             model, state = cached
         else:

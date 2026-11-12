@@ -99,8 +99,12 @@ def test_lazy_catch_up_is_bitwise_identical_to_daily_updates():
 def test_window_bounds_are_enforced():
     c = replace(FundamentalConfig(), history=5, specific_reanchor_days=3)
     moments = SpecificMoments(4, c)
+    late = SpecificMoments(4, c)
+    late.push(3, np.zeros(4))  # 追加时缓冲可以从窗口起点开始
     with pytest.raises(ValueError, match="逐日连续"):
-        moments.push(1, np.zeros(4))
+        late.push(5, np.zeros(4))
+    with pytest.raises(ValueError, match="不在缓冲内"):
+        late.window(2, 3)
     for day in range(20):
         moments.push(day, np.full(4, day, dtype=float))
     with pytest.raises(ValueError, match="覆盖"):

@@ -7,6 +7,7 @@
 
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import queue
@@ -29,6 +30,7 @@ _HIDDEN = (
     ".checkpoint.cache",
     ".generation.json",
     ".symbols.npy",
+    ".prefix-index",
 )
 # 读快照时这些异常都意味着文件不完整或不是本缓存写的：当作未命中，重算后覆盖。
 _UNREADABLE = (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile)
@@ -238,7 +240,10 @@ class ModelCache:
         if self.entries.get(day) == path.stem.split("-", 1)[-1]:
             del self.entries[day]
 
-    def load(self, key, *, day=None, with_model=True, exposure_loader=None):
+    def load(
+        self, key, *, day=None, with_model=True, exposure_loader=None, fields=None
+    ):
+        """fields：只读这些状态字段（默认全部）；只读历史窗口的日子用得上。"""
         if day is None:
             day = next((i for i, value in self.entries.items() if value == key), None)
         if day is None:
@@ -261,7 +266,10 @@ class ModelCache:
             with np.load(path, allow_pickle=False) as data:
                 if str(data["key"]) != key:
                     raise ValueError("快照键不符")
-                state = {name: data[name].copy() for name in STATE_FIELDS}
+                state = {
+                    name: data[name].copy()
+                    for name in (STATE_FIELDS if fields is None else fields)
+                }
                 if with_model:
                     meta = json.loads(str(data["meta"]))
                     factors = tuple(data["factors"].tolist())
@@ -328,8 +336,8 @@ class ModelCache:
                 _write_atomic(
                     self.directory,
                     target,
-                    # 只在最后一天写一次；递推检查点里大量计数可压缩，保持压缩。
-                    lambda stream: np.savez_compressed(stream, **exposure),
+                    # 只在最后一天写一次，但每次追加都要等它落盘：用最快一级压缩。
+                    lambda stream: _savez(stream, exposure),
                 )
 
             self._submit(target, write_latest)
@@ -348,6 +356,50 @@ class ModelCache:
         except _UNREADABLE:
             path.unlink(missing_ok=True)
             return None
+
+    # 输入前缀索引 ---------------------------------------------------------
+
+    def load_index(self):
+        """逐日输入摘要和前缀链摘要（各 T×32 字节）；没有、损坏或校验和不符时为 None。"""
+        path = self.directory / ".prefix-index"
+        self._wait_for(path)
+        try:
+            with np.load(path, allow_pickle=False) as data:
+                rows, prefixes = data["rows"], data["prefixes"]
+                checksum = str(data["checksum"])
+        except (*_UNREADABLE, FileNotFoundError):
+            return None
+        if (
+            rows.dtype != np.uint8
+            or prefixes.dtype != np.uint8
+            or rows.ndim != 2
+            or rows.shape[1:] != (32,)
+            or rows.shape != prefixes.shape
+            or hashlib.sha256(rows.tobytes() + prefixes.tobytes()).hexdigest()
+            != checksum
+        ):
+            return None
+        return rows, prefixes
+
+    def save_index(self, rows, prefixes):
+        rows = np.ascontiguousarray(rows, dtype=np.uint8)
+        prefixes = np.ascontiguousarray(prefixes, dtype=np.uint8)
+        checksum = hashlib.sha256(rows.tobytes() + prefixes.tobytes()).hexdigest()
+        target = self.directory / ".prefix-index"
+
+        def write():
+            _write_atomic(
+                self.directory,
+                target,
+                lambda stream: np.savez(
+                    stream,
+                    rows=rows,
+                    prefixes=prefixes,
+                    checksum=np.asarray(checksum),
+                ),
+            )
+
+        self._submit(target, write)
 
     def checkpoint(self, key):
         latest = self._latest(key)

@@ -277,6 +277,74 @@ CASES = {
             "test/risk/test_parallel_exposures.py",
         ),
     ],
+    "P-008": [
+        (
+            "索引不核对逐日输入就沿用",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "reuse = limit if same.all() else int(np.argmin(same))",
+                    "reuse = limit",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+        (
+            "索引不核对校验和",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "            or hashlib.sha256(rows.tobytes() + prefixes.tobytes()).hexdigest()\n            != checksum\n",
+                    "",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+        (
+            "仍从第 0 天逐个读快照",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "first = max(0, miss - history) if miss < end else max(0, min(start, end))",
+                    "first = 0",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+        (
+            "预读失败不提前起点",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "                miss = day\n                break\n",
+                    "                continue\n",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+        (
+            "交出之后才发现损坏时不重新计划",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "if cached is None and first > 0 and day < miss:",
+                    "if False:",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+        (
+            "较短的运行截掉较长的索引",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "or len(index[0]) < end) and end:",
+                    "or len(index[0]) != end) and end:",
+                )
+            ],
+            "test/risk/test_prefix_index.py",
+        ),
+    ],
 }
 
 

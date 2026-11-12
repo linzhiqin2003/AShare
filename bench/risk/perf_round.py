@@ -76,7 +76,8 @@ def run(args):
     if args.threads is not None:
         os.environ["ASHARE_RISK_THREADS"] = str(args.threads)
     t = len(source.dates)
-    work = Path(args.work or tempfile.mkdtemp(prefix="riskperf-"))
+    (ROOT / ".cache").mkdir(exist_ok=True)
+    work = Path(args.work or tempfile.mkdtemp(prefix="riskperf-", dir=ROOT / ".cache"))
     cache_dir = work / "cache"
     days, timings = [], {}
     keep_all = args.digests
@@ -201,9 +202,11 @@ def run(args):
 def pair(args):
     """旧、新交替各跑 rounds 次，每次一个全新进程。"""
     rows = {"old": [], "new": []}
-    work = Path(tempfile.mkdtemp(prefix="riskpair-"))
-    base = [sys.executable, __file__, "run", "--days", str(args.days)]
-    base += ["--scenario", args.scenario]
+    (ROOT / ".cache").mkdir(exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="riskpair-", dir=ROOT / ".cache"))
+    base = [sys.executable, __file__, "run", "--scenario", args.scenario]
+    if args.days is not None:
+        base += ["--days", str(args.days)]
     try:
         for i in range(args.rounds):
             for side in ("old", "new"):

@@ -20,14 +20,19 @@ class ResidualWindow:
         self.capacity = capacity
         self.rows = np.full((2 * capacity, n), np.nan)
         self.latest = -1
+        self.first = None  # 第一次推入的日期；追加时可以从窗口起点而不是第 0 天开始
 
     def leaving(self, day):
         """推入 day 时将被覆盖（出界）的那一行；没有则为 None。"""
-        if day - self.capacity < 0:
+        if self.first is None or day - self.capacity < self.first:
             return None
         return self.rows[day % self.capacity]
 
     def push(self, day, residual):
+        if self.first is None:
+            if day < 0:
+                raise ValueError("残差必须逐日连续推入")
+            self.first, self.latest = day, day - 1
         if day != self.latest + 1:
             raise ValueError("残差必须逐日连续推入")
         slot = day % self.capacity
@@ -38,7 +43,11 @@ class ResidualWindow:
     def window(self, first, last):
         """第 first..last 天（含）的残差，按时间排列的连续视图。"""
         length = last - first + 1
-        if not 0 <= first <= last <= self.latest or length > self.capacity:
+        if (
+            self.first is None
+            or not self.first <= first <= last <= self.latest
+            or length > self.capacity
+        ):
             raise ValueError("请求的残差窗口不在缓冲内")
         if self.latest - self.capacity >= first:
             raise ValueError("请求的残差窗口已被覆盖")
