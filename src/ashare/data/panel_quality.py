@@ -21,6 +21,7 @@ def code_version():
         "panel_increment",
         "panel_io",
         "panel_quality",
+        "panel_trade",
         "catalog",
         "store",
         "manifest",

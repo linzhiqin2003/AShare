@@ -2,6 +2,7 @@
 
 from .construction import (
     SparseTargets,
+    independent_periods,
     industry_proportional,
     optimize_sequence,
     score_weighted,
@@ -28,6 +29,7 @@ __all__ = [
     "VerificationError",
     "SolverSession",
     "SparseTargets",
+    "independent_periods",
     "industry_proportional",
     "objective",
     "optimize",

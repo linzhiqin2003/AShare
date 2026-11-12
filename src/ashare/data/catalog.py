@@ -545,6 +545,32 @@ add(
     dtype="bool",
     known_at="收盘后；has_quote且volume>0；是日频可成交代理，不保证盘中任意时刻可成交",
 )
+_OPEN_RULE = (
+    "以当日开盘价成交的回测掩码，与panelbt.markets.ashare.tradability逐格相同："
+    "有效=开盘价有限且>0、非全天停牌(is_suspended)且有行情(has_quote)；"
+    "{side}；容差0.005元；涨跌停价缺失视为该方向无限制。"
+    "一字板用当日最高最低价判断（收盘后才知道），只能当回测的成交约束，不能当盘前信号"
+)
+add(
+    "can_buy_open",
+    "daily",
+    "",
+    "布尔",
+    dtype="bool",
+    known_at=_OPEN_RULE.format(
+        side="开盘价≥涨停价−容差不能买；最高最低价相差≤容差且最高价≥涨停价−容差（一字涨停）不能买"
+    ),
+)
+add(
+    "can_sell_open",
+    "daily",
+    "",
+    "布尔",
+    dtype="bool",
+    known_at=_OPEN_RULE.format(
+        side="开盘价≤跌停价+容差不能卖；最高最低价相差≤容差且最低价≤跌停价+容差（一字跌停）不能卖"
+    ),
+)
 add(
     "action_source",
     "dividend",

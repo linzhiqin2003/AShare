@@ -118,5 +118,21 @@ def run(ctx):
                 },
             }
         )
+        # P-014：各期互不依赖时的显式并行选项（与串行不逐位相同，差异见 docs/perf_log.d）。
+        stats, (results, targets) = measure(
+            lambda pl=plist: optimize_sequence(np.arange(len(pl)), pl, parallel=True),
+            ctx["repeat"](1),
+        )
+        cases.append(
+            {
+                "case": f"sequence_parallel_{size or 'all'}",
+                "scale": scale,
+                **stats,
+                "summary": {
+                    "weights": digest(targets.weights, targets.cols),
+                    "failed": sum(not r.success for r in results),
+                },
+            }
+        )
         del plist, results
     return cases
