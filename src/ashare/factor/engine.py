@@ -6,7 +6,7 @@ import os
 import tempfile
 import threading
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Protocol
 
@@ -35,6 +35,16 @@ _POOL_LOCK = threading.Lock()
 _POOL = None
 
 
+def _forget_pool_in_child():
+    # fork 出的子进程里没有父进程的工作线程，沿用旧池对象会让提交的任务永远等不到；
+    # 锁也可能在 fork 时被别的线程拿着。子进程里两者都换新的，用到时再建池。
+    global _POOL, _POOL_LOCK
+    _POOL, _POOL_LOCK = None, threading.Lock()
+
+
+os.register_at_fork(after_in_child=_forget_pool_in_child)
+
+
 def _hash_pool():
     global _POOL
     with _POOL_LOCK:
@@ -61,15 +71,21 @@ def _chunk_digest(fd, start, length):
 
 def _checksum(path):
     fd = os.open(path, os.O_RDONLY)
+    futures = []
     try:
         size = os.fstat(fd).st_size
-        parts = list(
-            _hash_pool().map(
-                lambda start: _chunk_digest(fd, start, min(_CHUNK, size - start)),
-                range(0, size, _CHUNK),
-            )
-        )
+        pool = _hash_pool()
+        futures = [
+            pool.submit(_chunk_digest, fd, start, min(_CHUNK, size - start))
+            for start in range(0, size, _CHUNK)
+        ]
+        parts = [future.result() for future in futures]
     finally:
+        # 某一块失败时其余块可能还在读：全部结束（或取消）后才关 fd，免得它们读到
+        # 被别的文件复用的同一个 fd 号。
+        for future in futures:
+            future.cancel()
+        wait(futures)
         os.close(fd)
     total = hashlib.sha256(f"ashare-factor-cache:{CACHE_FORMAT}:{size}:".encode())
     for part in parts:
@@ -152,9 +168,20 @@ class Evaluator:
         ``expressions`` 是 ``{名字: Expr}`` 或 ``Expr`` 序列；返回迭代器，按输入顺序
         逐个给出 ``(名字或下标, 结果)``，每个结果与单独 ``evaluate`` 逐位相同。
         中间结果在最后一个消费者算完后释放，已给出的结果不再由求值器持有，
-        调用方用完即丢就不会累积。``memory_limit`` 是预计同时存活的面板字节上限
-        （默认物理内存的 1/12）；按图模拟的峰值超限时自动拆成几批，批与批之间不共享
-        中间结果（结果仍逐位相同）。缓存目录的读写规则与 ``evaluate`` 相同。
+        调用方用完即丢就不会累积。
+
+        ``memory_limit``（字节，默认物理内存的 1/12）换算成面板张数后，用来限制
+        「按执行顺序模拟、同时存活的中间面板数」（含正在写的输出和调用方手里的一个
+        结果）；模拟值超限时按输入顺序拆成几批，批与批之间不共享中间结果（结果仍逐位
+        相同）。它不是驻留内存的硬上限：字段本身（内存映射）、内核的临时缓冲和分配器
+        滞留都不计入，实测驻留可达模拟值的约 1.7 倍。一个表达式自己就超限时单独成批。
+
+        参数在调用时就检查；缓存读取和计算都是惰性的，发生在迭代过程中。
+        ``last_batch``（表达式数、缓存命中数、批数）、``last_counts``、
+        ``last_peak_arrays`` 在迭代结束后才完整；``cache_hit`` 在全部表达式都由缓存
+        给出时为 True（空批为 False）。迭代中途调用 ``evaluate`` 会覆盖这些统计。
+        同一批里重复的表达式只写一次缓存，结果仍按每个输入位置各给一次。
+        缓存目录的读写和校验规则与 ``evaluate`` 相同。
         """
         items = (
             list(expressions.items())
@@ -189,6 +216,8 @@ class Evaluator:
             else:
                 hits[position] = cached
                 self.last_batch["cache_hits"] += 1
+        self.cache_hit = bool(items) and not pending
+        stored = set()  # 本次已写过的缓存文件；重复的表达式不再写第二遍
         batches = _split(
             [items[i][1] for i in pending], max(1, memory_limit // panel_bytes)
         )
@@ -221,7 +250,9 @@ class Evaluator:
                         yield items[first][0], hits.pop(first)
                     root = roots[emitted]
                     result = _finish(memo[root.digest], shape, mask)
-                    self._store(paths[position], result)
+                    if paths[position] not in stored:
+                        self._store(paths[position], result)
+                        stored.add(paths[position])
                     uses[root.digest] -= 1
                     if uses[root.digest] == 0:
                         del memo[root.digest]
@@ -384,15 +415,30 @@ def _peak(roots):
 
 
 def _split(roots, limit):
-    """按输入顺序贪心分批，使每批模拟峰值不超过 limit 个面板；单个超限的自成一批。"""
-    batches, current = [], []
-    for root in roots:
-        if current and _peak([*current, root]) > limit:
-            batches.append(current)
-            current = []
-        current.append(root)
-    if current:
-        batches.append(current)
+    """按输入顺序贪心分批，使每批模拟峰值不超过 limit 个面板；单个超限的自成一批。
+
+    往一批里再加一个根只会延长已有节点的存活期、追加新节点，模拟峰值随批的长度
+    单调不减，所以「贪心地加到第一次超限为止」等价于找满足上限的最长前缀：先倍增
+    再二分，每批只做 O(log 长度) 次模拟，总量约 O(n log n)（逐个加入要 O(n²)）。
+    """
+    batches, start = [], 0
+    while start < len(roots):
+        remaining = len(roots) - start
+        fits, high, step = 1, remaining + 1, 1  # fits 个已知放得下；high 个已知放不下
+        while fits < remaining:
+            trial = min(fits + step, remaining)
+            if _peak(roots[start : start + trial]) > limit:
+                high = trial
+                break
+            fits, step = trial, step * 2
+        while high - fits > 1:
+            middle = (fits + high) // 2
+            if _peak(roots[start : start + middle]) <= limit:
+                fits = middle
+            else:
+                high = middle
+        batches.append(roots[start : start + fits])
+        start += fits
     return batches
 
 

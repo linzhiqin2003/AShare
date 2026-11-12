@@ -478,6 +478,8 @@ def rank_ic_many(scores, returns, *, mask=None, backend=None):
     of panels and is consumed one panel at a time, so a generator keeps only the
     current panel alive. Returns a list of 1-D arrays in input order.
     """
+    if isinstance(scores, np.ndarray):
+        raise TypeError("scores must be an iterable of panels, not a single array")
     panel(returns, "returns")
     mm = optional(mask, returns, "mask", bool)
     selected = backend or BACKENDS.get("rank_ic", "rust")

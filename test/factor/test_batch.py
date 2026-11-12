@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 """批量求值（P-009）：与逐个 evaluate 逐位相同、分批、缓存、释放。"""
 
+import os
 import sys
 from pathlib import Path
 
@@ -241,6 +242,17 @@ def test_unnormalized_leaves_match_normalized(masked, monkeypatch):
         "neutral": af.neutralize(
             x, y, groups=af.field("industry", dtype="int64"), weights=y
         ),
+        # 暴露与权重用不同字段，暴露里的 ±inf 不会被权重的有限性检查顺带挡掉
+        "neutral_split": af.neutralize(
+            x,
+            af.field("high"),
+            groups=af.field("industry", dtype="int64"),
+            weights=af.field("volume"),
+        ),
+        "neutral_plain": af.neutralize(x, af.field("low")),
+        "zscore": af.call("cs_zscore", x),
+        "demean": af.call("cs_demean", x),
+        "scale": af.call("cs_scale", x),
         "market": af.field("mkt", broadcast=True) * x,
         "market_ts": af.call("ts_mean", af.field("mkt", broadcast=True), window=3),
         "flag": af.call("ts_sum", af.field("flag"), window=4) - x,
@@ -256,3 +268,67 @@ def test_unnormalized_leaves_match_normalized(masked, monkeypatch):
         same(single[name], normalized[name])
     # 字段直接作为结果时仍改写成 NaN
     assert np.isnan(plain["leaf"][~np.isfinite(source.fields["close"])]).all()
+
+
+def _greedy_split(roots, limit):
+    """拆批的定义：逐个加入，第一次超限就另起一批（P-009 最初的实现）。"""
+    batches, current = [], []
+    for root in roots:
+        if current and engine._peak([*current, root]) > limit:
+            batches.append(current)
+            current = []
+        current.append(root)
+    if current:
+        batches.append(current)
+    return batches
+
+
+def test_split_matches_greedy_definition():
+    exprs = list(batch().values())
+    rng = np.random.default_rng(0)
+    for trial in range(60):
+        order = [exprs[i] for i in rng.integers(0, len(exprs), rng.integers(1, 60))]
+        limit = int(rng.integers(1, 40)) if trial % 4 else 10**6
+        got = engine._split(order, limit)
+        expected = _greedy_split(order, limit)
+        assert [[r.digest for r in b] for b in got] == [
+            [r.digest for r in b] for b in expected
+        ]
+
+
+def test_split_simulations_grow_logarithmically(monkeypatch):
+    exprs = list(batch().values()) * 20
+    calls = []
+    real = engine._peak
+    monkeypatch.setattr(engine, "_peak", lambda roots: calls.append(1) or real(roots))
+    assert len(engine._split(exprs, 10**6)) == 1
+    assert len(calls) <= 2 * int(np.log2(len(exprs))) + 2
+
+
+def test_default_memory_limit_is_twelfth_of_ram():
+    total = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    assert engine.default_memory_limit() == total // 12
+
+
+def test_cache_hit_flag_and_duplicate_writes(tmp_path, monkeypatch):
+    source = Source(t=30, n=5)
+    x = af.field("close")
+    a, b = af.call("ts_mean", x, window=3), x * 2
+    ev = af.Evaluator(tmp_path)
+    writes = []
+    real = af.Evaluator._store
+    monkeypatch.setattr(
+        af.Evaluator,
+        "_store",
+        staticmethod(lambda p, r: writes.append(p) or real(p, r)),
+    )
+    got = list(ev.evaluate_many([a, b, a, a], source))
+    assert [k for k, _ in got] == [0, 1, 2, 3] and len(writes) == 2
+    same(got[0][1], got[2][1])
+    assert not ev.cache_hit
+    list(ev.evaluate_many([a, b, a], source))
+    assert ev.cache_hit and ev.last_batch["cache_hits"] == 3 and len(writes) == 2
+    list(ev.evaluate_many([a, x + 5], source))
+    assert not ev.cache_hit
+    list(ev.evaluate_many([], source))
+    assert not ev.cache_hit

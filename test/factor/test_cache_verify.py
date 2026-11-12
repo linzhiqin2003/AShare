@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -137,3 +138,136 @@ def test_metadata_fields(cached):
         "bytes": path.stat().st_size,
         "tree_sha256": reference(path, 256),
     }
+
+
+@pytest.mark.parametrize("field", ["format", "key", "bytes", "tree_sha256"])
+def test_missing_metadata_field(cached, field):
+    ev, source, expression, expected, path = cached
+    meta = path.with_suffix(".json")
+    data = json.loads(meta.read_text())
+    del data[field]
+    meta.write_text(json.dumps(data))
+    recomputes(ev, source, expression, expected)
+
+
+def test_short_read_raises_and_counts_as_miss(cached, monkeypatch):
+    """校验中文件变短：_checksum 报 EOFError，求值按未命中处理而不是抛出。"""
+    ev, source, expression, expected, path = cached
+    inode, real = path.stat().st_ino, os.preadv
+
+    def shrunk(fd, buffers, offset):
+        # 只让这份缓存文件「变短」；重算后写新文件时照常读
+        return 0 if os.fstat(fd).st_ino == inode else real(fd, buffers, offset)
+
+    monkeypatch.setattr(engine.os, "preadv", shrunk)
+    with pytest.raises(EOFError):
+        engine._checksum(path)
+    got = ev.evaluate(expression, source)
+    assert not ev.cache_hit and got.tobytes() == expected.tobytes()
+
+
+@pytest.mark.parametrize("damage", ["flip", "truncate", "metadata"])
+def test_batch_entry_rejects_damaged_cache(tmp_path, monkeypatch, damage):
+    monkeypatch.setattr(engine, "_CHUNK", 256)
+    source = Source()
+    exprs = {
+        "a": af.call("ts_mean", af.field("x"), window=3),
+        "b": af.call("abs", af.field("y")),
+    }
+    expected = {
+        k: np.array(af.Evaluator().evaluate(e, source)) for k, e in exprs.items()
+    }
+    ev = af.Evaluator(tmp_path)
+    list(ev.evaluate_many(exprs, source))
+    list(ev.evaluate_many(exprs, source))
+    assert ev.cache_hit and ev.last_batch["cache_hits"] == 2
+    path = ev._cache_path(exprs["a"], source, None, "all")
+    if damage == "flip":
+        data = bytearray(path.read_bytes())
+        data[len(data) // 2] ^= 0x10
+        path.write_bytes(bytes(data))
+    elif damage == "truncate":
+        path.write_bytes(path.read_bytes()[:-3])
+    else:
+        meta = path.with_suffix(".json")
+        meta.write_text(json.dumps(json.loads(meta.read_text()) | {"bytes": 1}))
+    got = dict(ev.evaluate_many(exprs, source))
+    assert ev.last_batch["cache_hits"] == 1 and not ev.cache_hit
+    for name in exprs:
+        assert got[name].tobytes() == expected[name].tobytes()
+    list(ev.evaluate_many(exprs, source))
+    assert ev.cache_hit
+
+
+def test_fd_stays_open_until_every_chunk_finishes(tmp_path, monkeypatch):
+    """一块读失败时，其余块读完才关 fd，不会读到复用同一 fd 号的别的文件。"""
+    import threading
+    import time
+
+    monkeypatch.setattr(engine, "_CHUNK", 64)
+    path = tmp_path / "f.bin"
+    path.write_bytes(bytes(64 * 6))
+    inode = path.stat().st_ino
+    seen, lock = [], threading.Lock()
+    started = threading.Event()
+    real = engine._chunk_digest
+
+    def chunk(fd, start, length):
+        if start == 0:
+            # 等别的块真正开始读再失败，否则它们会被直接取消，测不到关 fd 的时机
+            assert started.wait(10)
+            raise OSError("injected")
+        started.set()
+        time.sleep(0.2)
+        try:
+            observed = os.fstat(fd).st_ino
+        except OSError:
+            observed = None
+        with lock:
+            seen.append(observed)
+        return real(fd, start, length)
+
+    monkeypatch.setattr(engine, "_chunk_digest", chunk)
+    with pytest.raises(OSError, match="injected"):
+        engine._checksum(path)
+    # 失败后立刻打开别的文件，若 fd 已关就会拿到同一个号
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"x")
+    with other.open("rb"):
+        time.sleep(0.3)
+    assert seen and all(s == inode for s in seen)
+
+
+FORK_CHILD = """
+import os, signal, sys, numpy as np
+import ashare.factor as af
+root = sys.argv[1]
+class S:
+    dates = list(range(50)); symbols = list(range(40)); version = "fork"
+    f = {"a": np.random.default_rng(0).normal(size=(50, 40))}
+    def __getitem__(self, k): return self.f[k]
+e = af.call("ts_mean", af.field("a"), window=5)
+af.Evaluator(root).evaluate(e, S())
+ev = af.Evaluator(root); ev.evaluate(e, S()); assert ev.cache_hit
+pid = os.fork()
+if pid == 0:
+    signal.alarm(20)
+    ev = af.Evaluator(root); ev.evaluate(e, S())
+    os._exit(0 if ev.cache_hit else 3)
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status))
+"""
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="需要 fork")
+def test_cache_hit_in_forked_child_does_not_hang(tmp_path):
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", FORK_CHILD, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, (result.returncode, result.stderr[-2000:])
