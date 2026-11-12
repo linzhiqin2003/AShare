@@ -406,6 +406,8 @@ T=4800、N=5900的全规模合成散布基线（两种方法各独立进程）�
 |action_source|uint8|28,572,552|28,572,680|
 |adj_factor|float64|228,580,416|228,580,544|
 |amount|float64|228,580,416|228,580,544|
+|can_buy_open|bool|28,572,552|28,572,680|
+|can_sell_open|bool|28,572,552|28,572,680|
 |cash_dividend|float64|228,580,416|228,580,544|
 |close|float64|228,580,416|228,580,544|
 |delist|bool|28,572,552|28,572,680|
@@ -576,3 +578,7 @@ test/test_rules.py ..........                                            [100%]
 ============================= 162 passed in 45.24s =============================
 Fresh copy: make dev && make check passed; default test data root untouched.
 ```
+
+## 开盘可买、可卖掩码（性能优化 P-016，2026-11-12）
+
+面板新增两个 1 字节布尔字段 `can_buy_open`、`can_sell_open`（共 48 个字段）：以当日开盘价成交能否买入、卖出，口径与 `panelbt.markets.ashare.tradability(open, high, low, upper_limit, lower_limit, is_suspended | ~has_quote)` 逐格相同，规则写在字段说明（`metadata.fields.*.known_at`）里。构建在 `panel_trade.py`（进入代码哈希），只算新增行，增量与全量逐位相同；`verify` 用 panelbt 的函数按年重算逐格比对（检查名 `open_masks_match_panelbt`）。回测适配直接读这两个字段，不再每次从 6 个字段现算。全历史验证、计时和留给负责人定的口径疑问见 `docs/perf_log.d/P-016-open-masks.md`。

@@ -33,16 +33,28 @@ REBALANCE_EVERY = 21
 BATCH = 200
 
 
+# 数据层建面板时已算好的开盘可买、可卖掩码（P-016）；旧面板没有时现算，口径相同。
+MASKS = ("can_buy_open", "can_sell_open")
+
+
+def panel_fields(data):
+    return list(FIELDS) + [m for m in MASKS if m in data.fields()]
+
+
 def market_inputs(panel):
-    p = {name: np.asarray(panel[name]) for name in FIELDS}
-    can_buy, can_sell = tradability(
-        p["open"],
-        p["high"],
-        p["low"],
-        p["upper_limit"],
-        p["lower_limit"],
-        p["is_suspended"] | ~p["has_quote"],
-    )
+    if all(m in panel._arrays for m in MASKS):
+        can_buy, can_sell = (np.asarray(panel[m]) for m in MASKS)
+        p = {name: np.asarray(panel[name]) for name in FIELDS[:2] + FIELDS[8:]}
+    else:
+        p = {name: np.asarray(panel[name]) for name in FIELDS}
+        can_buy, can_sell = tradability(
+            p["open"],
+            p["high"],
+            p["low"],
+            p["upper_limit"],
+            p["lower_limit"],
+            p["is_suspended"] | ~p["has_quote"],
+        )
     return {
         "exec_price": p["open"],
         "close": p["close"],
@@ -104,7 +116,7 @@ def plans(score, t, validate=True, count=1):
 def run(ctx):
     panelops.set_num_threads(ctx["threads"])
     data = ashare.data.open(ctx["data"])
-    panel = data.panel(list(FIELDS) + ["adj_factor"])
+    panel = data.panel(panel_fields(data) + ["adj_factor"])
     t, n = panel.shape
     stats, inputs = measure(lambda: market_inputs(panel), 1)
     cases = [{"case": "adapter_inputs", "scale": {"days": t, "symbols": n}, **stats}]

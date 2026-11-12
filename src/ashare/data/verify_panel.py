@@ -141,3 +141,44 @@ def audit_panel(store, dates):
         ],
         reconciliation=reconciliation,
     )
+
+
+def audit_open_masks(store, dates):
+    """用 panelbt 的 tradability 从发布矩阵重算开盘可买、可卖掩码，逐格比对。"""
+    from panelbt.markets.ashare import tradability
+
+    current = store.root / "panel/current.json"
+    if not current.exists():
+        return {"status": "not_built"}
+    path = current.parent / json.loads(current.read_text())["version"]
+    meta = json.loads((path / "metadata.json").read_text())
+    if not {"can_buy_open", "can_sell_open"} <= set(meta["fields"]):
+        return {"status": "field_absent"}
+    ds, symbols = np.array(meta["dates"]), np.array(meta["symbols"])
+    start = int(np.searchsorted(ds, dates[0]))
+    end = int(np.searchsorted(ds, dates[-1], side="right"))
+    if start >= end:
+        return {"status": "no_overlap"}
+
+    def load(name):
+        return np.asarray(np.load(path / f"{name}.npy", mmap_mode="r")[start:end])
+
+    buy, sell = tradability(
+        load("open"),
+        load("high"),
+        load("low"),
+        load("upper_limit"),
+        load("lower_limit"),
+        load("is_suspended") | ~load("has_quote"),
+    )
+    bad = (buy != load("can_buy_open")) | (sell != load("can_sell_open"))
+    ii, jj = np.nonzero(bad)
+    return dict(
+        status="complete",
+        checked=int(bad.size),
+        failed=int(bad.sum()),
+        examples=[
+            dict(symbol=str(symbols[j]), date=str(ds[start + i]))
+            for i, j in zip(ii[:20], jj[:20], strict=True)
+        ],
+    )

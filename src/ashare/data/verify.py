@@ -16,7 +16,7 @@ from .rules import SOURCES
 from .store import atomic_json
 from .sync import plan
 from .verify_limits import audit_limits
-from .verify_panel import audit_panel
+from .verify_panel import audit_open_masks, audit_panel
 from .verify_tables import Audit, audit_tables
 
 __all__ = ["Audit", "audit_limits", "audit_tables", "verify"]
@@ -198,6 +198,15 @@ def verify(store, *, output=None):
                 check["examples"],
                 failed=check["failed"],
                 note="独立核对：事件隐含比/相邻交易日因子比误差不超过构建容差（来源5按摊薄比例k核对且k在[k_min,1)）；有事件必须有因子变化；来源与事件一致",
+            )
+        masks = audit_open_masks(store, block)
+        if masks.get("status") == "complete":
+            part.add(
+                "open_masks_match_panelbt",
+                masks["checked"],
+                masks["examples"],
+                failed=masks["failed"],
+                note="已发布面板：can_buy_open/can_sell_open 与 panelbt.markets.ashare.tradability（开盘价成交，停牌取 is_suspended|~has_quote）逐格相同",
             )
         yearly[year] = part.checks
         audit.merge(part)

@@ -22,6 +22,7 @@ from .panel_cache import event_table
 from .panel_increment import reuse_prefix
 from .panel_io import clone_append
 from .panel_quality import code_version, required, securities_table
+from .panel_trade import fill as open_masks_fill
 from .store import atomic_json, lock
 from .sync import compact
 
@@ -241,6 +242,17 @@ def build(
                 np.isfinite(destination("close")[prefix:])
                 & (destination("volume")[prefix:] > 0),
             )
+            # 停牌、有行情、涨跌停价都已落盘；只算新增行，增量与全量逐位相同。
+            rows = len(dates) - prefix
+            buy, sell = open_masks_fill(
+                destination,
+                np.zeros((rows, shape[1]), dtype=bool),
+                np.zeros((rows, shape[1]), dtype=bool),
+                prefix,
+            )
+            save("can_buy_open", buy)
+            save("can_sell_open", sell)
+            del buy, sell
             industry_values, industry_sources, industry_caveat = (
                 events.stitched_industry(store, tail_dates, symbols)
             )
