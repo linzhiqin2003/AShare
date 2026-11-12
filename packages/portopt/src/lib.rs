@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::{
+    IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
+    PyUntypedArrayMethods,
+};
 use portopt_core::{ConicProblem, RegressionInput, SolveResult};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -131,6 +134,46 @@ fn solve_many(
         .map_err(PyValueError::new_err)
 }
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn ew_moments_segment<'py>(
+    py: Python<'py>,
+    window: PyReadonlyArray2<'py, f64>,
+    first: usize,
+    last: usize,
+    floor: usize,
+    shift: PyReadonlyArray1<'py, f64>,
+    half_life: f64,
+    lags: usize,
+    threads: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (t, n) = (window.shape()[0], window.shape()[1]);
+    let window = window.as_slice()?;
+    let shift = shift.as_slice()?;
+    let out = py
+        .detach(|| {
+            portopt_core::ew_moments_segment(
+                window, t, n, first, last, floor, shift, half_life, lags, threads,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    Ok(out.into_pyarray(py))
+}
+#[pyfunction]
+fn ew_moments_variance<'py>(
+    py: Python<'py>,
+    state: PyReadonlyArray1<'py, f64>,
+    n: usize,
+    lags: usize,
+    used: usize,
+    half_life: f64,
+) -> PyResult<ArrayPair<'py>> {
+    let state = state.as_slice()?;
+    let (v, m) = py
+        .detach(|| portopt_core::ew_moments_variance(state, n, lags, used, half_life))
+        .map_err(PyValueError::new_err)?;
+    Ok((v.into_pyarray(py), m.into_pyarray(py)))
+}
+#[pyfunction]
 fn available_threads() -> usize {
     portopt_core::available_threads()
 }
@@ -149,6 +192,8 @@ fn portopt_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ew_variance, m)?)?;
     m.add_function(wrap_pyfunction!(ew_covariance, m)?)?;
     m.add_function(wrap_pyfunction!(rolling_bias, m)?)?;
+    m.add_function(wrap_pyfunction!(ew_moments_segment, m)?)?;
+    m.add_function(wrap_pyfunction!(ew_moments_variance, m)?)?;
     m.add_function(wrap_pyfunction!(regress, m)?)?;
     m.add_function(wrap_pyfunction!(solve, m)?)?;
     m.add_function(wrap_pyfunction!(solve_many, m)?)?;

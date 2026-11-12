@@ -1,6 +1,7 @@
 """阶段 4：基本面风险模型在真实面板上的全量重建、追加一天、读缓存和内部各步占比。"""
 
 import hashlib
+import json
 import shutil
 import time
 
@@ -60,7 +61,17 @@ def prefix_hash_cost(source, end):
 
 
 def summarize(model):
-    return digest(model.B, model.F, model.D)
+    """逐项摘要：特质风险默认模式（P-006）只保证 D 在 1e-12 以内，B、F 仍逐位相同，分开报才看得出。"""
+    meta = {k: v for k, v in model.metadata.items() if k != "parameter_hash"}
+    return {
+        "B": digest(model.B),
+        "F": digest(model.F),
+        "D": digest(model.D),
+        "meta": digest(
+            np.frombuffer(json.dumps(meta, sort_keys=True).encode(), np.uint8)
+        ),
+        "parameter_hash": model.metadata.get("parameter_hash"),
+    }
 
 
 def run(ctx):
@@ -95,7 +106,7 @@ def run(ctx):
             "case": "rebuild_full_with_cache",
             "scale": {**shape, "days": t - 1},
             **stats,
-            "summary": {"last_model": value},
+            "summary": value,
             "detail": {"steps": phases.report()},
         }
     )
@@ -139,16 +150,14 @@ def run(ctx):
         return summarize(models[-1])
 
     stats, value = measure(append, ctx["repeat"](2), setup=reset)
-    cases.append(
-        {"case": "append_one_day", "scale": shape, **stats, "summary": {"model": value}}
-    )
+    cases.append({"case": "append_one_day", "scale": shape, **stats, "summary": value})
     stats, value = measure(append, ctx["repeat"](2))
     cases.append(
         {
             "case": "read_cached_last_day",
             "scale": shape,
             **stats,
-            "summary": {"model": value},
+            "summary": value,
         }
     )
     size = sum(p.stat().st_size for p in cache_dir.rglob("*") if p.is_file())

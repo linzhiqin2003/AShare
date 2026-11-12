@@ -45,6 +45,40 @@ def ew_variance(x, half_life=252.0, lags=0, threads=0):
     return _core.ew_variance(x, half_life, lags, _threads(threads))
 
 
+def ew_moments_segment(
+    window, first, last, shift, half_life=252.0, lags=0, floor=0, threads=0
+):
+    """Exponentially weighted moments of rows first..last of a T by N window.
+
+    Built from empty one row at a time; values shifted by ``shift``; lag pairs kept
+    only when the earlier row index is at least ``floor``. Returns an N*(3+4*lags)
+    column-major vector for ``ew_moments_variance``.
+    """
+    x = np.ascontiguousarray(window, dtype=np.float64)
+    shift = np.ascontiguousarray(shift, dtype=np.float64)
+    if x.ndim != 2 or shift.shape != (x.shape[1],):
+        raise ValueError("Expected a T by N window and an N shift; missing values NaN")
+    if not all(isinstance(v, int) for v in (first, last, floor, lags)) or not (
+        0 <= first <= last < len(x) and floor >= 0 and lags >= 0
+    ):
+        raise ValueError("Invalid segment bounds or lag count")
+    if half_life <= 0 or np.isnan(half_life) or np.isinf(x[first : last + 1]).any():
+        raise ValueError("Invalid half-life or infinite value")
+    return _core.ew_moments_segment(
+        x, first, last, floor, shift, half_life, lags, _threads(threads)
+    )
+
+
+def ew_moments_variance(state, n, lags, used, half_life=252.0):
+    """Variance and term magnitude from moments, Bartlett weights over ``used`` lags."""
+    state = np.ascontiguousarray(state, dtype=np.float64)
+    if not isinstance(lags, int) or lags < 0 or state.shape != (n * (3 + 4 * lags),):
+        raise ValueError("Moment state must hold n*(3+4*lags) values")
+    if not isinstance(used, int) or not 0 <= used <= lags:
+        raise ValueError("Invalid lag count")
+    return _core.ew_moments_variance(state, n, lags, used, half_life)
+
+
 def ew_covariance(x, half_life=252.0, lags=0, threads=0):
     x = _panel(x)
     if (

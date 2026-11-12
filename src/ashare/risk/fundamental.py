@@ -9,6 +9,7 @@ from .kernels import (
     exp_weights,
     psd,
 )
+from .window import WindowVariances
 
 STYLE_NAMES = (
     "size",
@@ -51,6 +52,9 @@ class FundamentalConfig:
     variance_floor: float = 1e-10
     cold_specific_variance: float = 0.02**2
     cold_factor_variance: float = 0.005**2
+    # 特质风险三个指数加权方差：逐日递推（相对误差 ≤1e-12）或每天从头算。
+    specific_incremental: bool = True
+    specific_reanchor_days: int = 252
 
     def __post_init__(self):
         if (
@@ -66,8 +70,16 @@ class FundamentalConfig:
             or self.momentum_window < 1
             or self.momentum_skip < 0
             or self.structural_days < 1
+            or not isinstance(self.specific_reanchor_days, int)
+            or self.specific_reanchor_days < 1
         ):
             raise ValueError("样本窗口过短")
+        if not isinstance(self.specific_incremental, bool) or isinstance(
+            self.specific_reanchor_days, bool
+        ):
+            raise ValueError(
+                "specific_incremental 须为 bool，specific_reanchor_days 须为整数"
+            )
         for name in (
             "beta_half_life",
             "momentum_half_life",
@@ -362,17 +374,23 @@ def eigen_adjustment(
 
 
 def specific_variance(residuals, b, cap, config, estimation=None):
+    """residuals 是 T×N 残差窗口；也可以是已经算好的 `WindowVariances`（逐日分块累加）。"""
     c = config
-    base = ew_variance(residuals, c.specific_half_life)
-    corr0 = ew_variance(residuals, c.specific_corr_half_life)
-    corrnw = ew_variance(
-        residuals, c.specific_corr_half_life, min(c.specific_lags, len(residuals) - 1)
-    )
+    if isinstance(residuals, WindowVariances):
+        base, corr0, corrnw, count = residuals
+    else:
+        base = ew_variance(residuals, c.specific_half_life)
+        corr0 = ew_variance(residuals, c.specific_corr_half_life)
+        corrnw = ew_variance(
+            residuals,
+            c.specific_corr_half_life,
+            min(c.specific_lags, len(residuals) - 1),
+        )
+        count = np.isfinite(residuals).sum(axis=0)
     adjustment = np.divide(
         corrnw, corr0, out=np.ones_like(corr0), where=corr0 > c.variance_floor
     )
     vol = np.sqrt(np.maximum(base * adjustment, c.variance_floor))
-    count = np.isfinite(residuals).sum(axis=0)
     estimation = (
         (count > 0) if estimation is None else np.asarray(estimation, dtype=bool)
     )
