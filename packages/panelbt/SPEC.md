@@ -399,6 +399,222 @@ offsets, broker add-ons, special closing fees or current rates from these
 contract specifications.
 
 
+## Stepping interface
+
+`Simulator(market, costs, config, kind="weights"|"shares")` runs the same
+daily loop as `run`, one row per `step(target)`. The loop is split into two
+phases that `run` also uses: *open* (external cash flow, corporate actions,
+delisting) and *trade* (resolve targets, execute, close). Construction runs
+the open phase of row 0; `step` runs the trade phase of the current row and
+then the open phase of the next row. Therefore, before step `t`, `state`
+contains exactly what is known before row `t` trades: the close of row `t-1`
+plus row `t`'s cash flow, dividends, splits and delisting. Row `t`'s prices,
+masks, volumes and settlements are never read before step `t`.
+
+A target is `None` (no new target row), a length-N row (NaN is zero; an
+all-NaN row is `None`; an all-zero row is an empty target row that closes all
+positions) or `(cols, values)`. Rows are validated with the same context rules
+as plans (short permission, integer contracts, cash-account weight sum). For
+any plan, stepping its rows reproduces `run` bit for bit in every field,
+event, trade and counter, for cash, margin and futures accounts.
+
+`state` fields: `day`, `cash`, `equity` (last close), `shares`, `cost`
+(quantity-weighted raw execution price of the open position, excluding
+slippage, impact and fees; adds reweight it, reductions keep it, a new or
+reversed position resets it; splits divide it; dividends do not change it),
+`entry_day` (row of entry; adds keep it; -1 when flat), `last` (valuation mark
+of held columns), `futures_basis`, `pending_cols`/`pending_targets` (carried
+blocked orders), `margin_call`, `bankrupt`. `cost` and `entry_day` are kept for
+spot columns only: on futures columns they always read 0 and -1, whatever the
+position (read `shares`). Arrays are zero-copy live views over read-only
+buffers: numpy refuses to make them writeable, and the state cannot be
+modified through the public interface. Writing to the simulator's memory by
+bypassing that protection (for example through the views' `.base` chain) is
+undefined behaviour. `result()` requires every row to be stepped.
+
+`snapshot()` returns a binary blob (format version 2, closed by a CRC-32 of
+all preceding bytes); `Simulator.restore(blob, market, costs, config, kind)`
+checks the checksum first, then the fingerprint, and continues bit for bit.
+The fingerprint covers shapes, account type, target kind, every cost and
+configuration vector and scalar, every rule term and every cell of the rule
+percentage arrays (stop, take, trail), and a digest of every market panel
+the kernel reads (prices, masks, volume, actions, open/high/low, futures
+panels). `Simulator(..., fingerprint="sample")` (default) digests each
+panel's shape, dtype, first and last rows and a fixed-stride sample of about
+64K cells, computed once at construction (about 5–7 ms on a 4000×5500
+market); a change confined to unsampled cells of a larger panel is not
+detected. `fingerprint="full"` hashes every cell (about 0.8–1.2 s on the same
+market). Restore with the choice used when the snapshot was taken. `bt.run`
+computes no digest. Any truncated, extended or corrupted blob, a blob of an
+older format and any mismatch raise `ValueError`; a failed restore leaves no
+half-loaded simulator.
+
+Threads: `step` releases the GIL, so independent simulators may advance in
+parallel threads. One simulator must not be used from two threads at once:
+a second concurrent `step`, or reading `state` from another thread during a
+`step`, raises `RuntimeError` (the state is not damaged).
+
+## Declarative exit rules and limit targets
+
+`Config(rules=Rules(...))` runs fixed state-dependent patterns inside the
+kernel, so `run`, `run_batch` and `Simulator` all use them at kernel speed.
+Daily bars only give open, high, low and close, not their order inside the day:
+every choice below takes the pessimistic side so a rule never gains from an
+unknowable intraday path. Rules and limit targets are not supported with
+futures columns (rejected at input).
+
+**Inputs.** `Market` accepts optional `open`, `high`, `low` T×N panels
+(positive or NaN; with validation, `low <= open <= high` where all three are
+finite and `low <= high`). Price rules and limit targets require all three.
+`Rules(fill_time, stop_loss=None, take_profit=None, trailing_stop=None,
+max_hold=None, both_hit="stop", cooldown=None, dividend_adjusts_cost=False,
+sell_lock=True, limit_valid="day", limit_fill="cross")`. Percentages are positive fractions given
+as a scalar, a length-N vector (per security) or a T×N panel (read on the
+evaluation row); NaN disables a cell. `max_hold` is a positive number of rows.
+`fill_time` is required and states where `exec_price` sits in the day:
+`"open"`, `"close"` or `"average"` (a VWAP-like price).
+`Targets(..., limits=...)` (and `from_dense(..., limits=...)`) gives a positive
+limit price per entry; NaN means an ordinary target. Limit targets need a
+`Rules` object (for `fill_time`), possibly with no exit rule. `sell_lock`
+defaults to True for every market (A-share T+1); set it to False for markets
+without a same-day sale restriction. With `Market(validate=False)` the
+`low <= open <= high` checks are skipped; on rows that violate them the
+guarantee that a trigger fill lies within `[l, h]` no longer holds.
+
+**Daily order.** Pre-open phase (flow, actions, delisting) is unchanged. On a
+new target row, limit entries replace all active limit orders and are removed
+from the ordinary row; the row also lifts `cooldown=None` re-entry blocks set
+on earlier rows. Then: with `fill_time="open"` the ordinary rebalance at
+`exec_price` comes first and the intraday phase second; with `"close"` and
+`"average"` the intraday phase comes first. `"average"` is treated like
+`"close"`: rules act on the positions held at the start of the day over the
+full range, and positions bought at the average price are not evaluated until
+the next row, because the part of the range before the purchase cannot be
+separated (otherwise a take-profit could use a high that came before the buy).
+The intraday phase is: (a) rule exits, (b) limit orders. Forced-liquidation
+rows (margin call, bankruptcy) skip the intraday phase: due exits wait, limit
+orders do not trade (day orders lapse). The close is unchanged. A column that
+had a rule fill or a due exit today, or that has a limit entry in today's row,
+is skipped entirely by today's ordinary rebalance (the exit or the limit order
+takes precedence).
+
+**Position bookkeeping.** `cost` is the quantity-weighted *raw* execution price
+(before slippage and impact, fees excluded); adds reweight it, reductions keep
+it, a new or reversed position resets it. Splits divide `cost` and `peak`.
+Cash dividends do not change them by default (an ex-dividend drop moves the
+price toward a long stop); `dividend_adjusts_cost=True` subtracts the dividend
+from both (floored at zero). `entry_day` is the entry row (adds keep it).
+`peak` is the highest high (long) or lowest low (short) since entry, starting
+at the entry's raw price. A position is *fresh* on the row it was entered
+unless it was entered by an ordinary fill with `fill_time="open"`: fresh
+positions are not evaluated that row and that row's range is not added to
+`peak`. At each close, for held non-fresh positions, `peak` takes that row's
+high (long) or low (short) when finite: today's high therefore never raises
+today's trailing line.
+
+**Exit evaluation** (each held column, ascending, skipping fresh ones and those
+with a due exit; `o, h, l` are the row's open, high and low; with any of them
+NaN there is no price trigger that row). For a long position:
+stop line `S = cost × (1 − stop_loss)`, trailing line `R = peak × (1 −
+trailing_stop)`, the effective stop is `max(S, R)` (the one hit first on the
+way down; on a tie, stop-loss); target line `P = cost × (1 + take_profit)`.
+1. Gap: if `o <= stop` the stop fills at `o`; else if `o >= P` the target fills
+   at `o` (the open is the first price of the day, so this is certain).
+2. Otherwise stop is hit when `l <= stop`, target when `h >= P`. If both are
+   hit their order is unknown: `both_hit="stop"` (default, pessimistic) takes
+   the stop at its line, `"target"` the target at its line. If one is hit it
+   fills at its line.
+Short positions mirror this: `S = cost × (1 + stop_loss)`, `R = peak × (1 +
+trailing_stop)`, effective stop `min(S, R)`, `P = cost × (1 − take_profit)`
+(no target when `take_profit >= 1`), gap when `o >= stop` or `o <= P`, hits
+when `h >= stop` or `l <= P`. The fill price is the line or open *before*
+slippage and impact, which then apply as for any fill; therefore a trigger
+fill's raw price always lies within `[l, h]`.
+3. Holding period: when no price rule fired and `row − entry_day >=
+max_hold`, the position exits at `exec_price`. With `fill_time="open"` this
+check comes before the price rules (the open fill happens first).
+
+**Exit execution.** An exit closes the whole position. It is an ordinary fill
+at its raw price: long sales need `can_sell`, covers need `can_buy`; the
+participation cap counts today's earlier fills of that column; quantities round
+like closes (`min_qty`/`qty_step`, full close of any odd balance). With
+`sell_lock=True` (default, A-share T+1) shares bought on this row cannot be sold
+by an exit or a limit sell on the same row. Cash rules are those of
+reductions: the cash account's legacy fee check, and the margin account's
+own-cash trim (account valued at `last` marks, the traded column at its raw
+fill price; the exit is cut to what keeps own cash non-negative). If an exit
+cannot complete it stays *due*: on following rows it retries at that row's
+`exec_price` (not the old trigger price) until the position is closed, before
+any new evaluation, keeping its reason. A due exit ends when the position
+reaches zero by any route (a forced liquidation, a delisting, an ordinary
+reduction on a forced row). Each row
+with an unfinished due exit counts one `rule_deferred`. Triggers are counted
+once when they fire (`stop_loss`, `take_profit`, `trailing_stop`, `max_hold`).
+
+**Re-entry.** After a rule exit fires on a column, openings of that column (ordinary,
+carried or limit, either direction) are blocked: with `cooldown=None` until a
+target row on a later row arrives; with `cooldown=k` through row `exit + k`
+(target rows inside the window do not lift it). A target row on the exit row
+itself never lifts it. Each blocked opening counts `reentry_blocked`. A due
+exit also blocks openings. A target for that column in the exit row itself is
+not an opening attempt (the exit takes precedence, see the daily order) and is
+not counted.
+
+**Limit targets.** Each limit entry `(col, target, L)` becomes an order for the
+rest of the row (`limit_valid="day"`) or until filled or replaced by the next
+target row (`"until_next"`). In the intraday phase after exits, orders first
+reduce (all columns, ascending), then open (short openings, then long, by
+column). Sizing uses `E = cash + Σ shares × last` at the start of the limit
+step (no price from the current row) and the limit price: weight targets
+become `w × max(E, 0) × (1 − cash_buffer) / L`, rounded like ordinary targets
+(no trade band). With `limit_fill="cross"` (default) a buy needs the range to
+cross the limit, `l < L`, and a sell `h > L`; a day whose low (high) only
+equals the limit does not fill, because a limit order resting at the day's
+extreme may well not have traded. `limit_fill="touch"` also fills on equality
+(optimistic). A buy fills at `min(o, L)`, a sell at `max(o, L)` (a gap through
+the limit fills at the open). Masks, short permission, sell lock,
+participation cap, re-entry blocks and bankruptcy apply. Cash account
+openings are cut to what cash affords including fees (bisection then lot
+rounding, per order in sequence, no common scaling), like an ordinary
+purchase; margin account openings to what keeps initial margin and, without
+financing, own cash feasible (account at `last` marks). Such a cut counts
+`cash_scaled` (cash account) or `margin_scaled` (margin account). It completes
+the order only when the shortfall is at most one lot (`qty_step`), or, for
+fractional quantities, at most the quantity the order's own slippage, impact
+and fees amount to at its fill price; a zero fill never completes an order.
+Any other shortfall, from the account or from a mask, participation cap,
+block, bankruptcy or a reduction that could not complete, counts
+`limit_blocked` and keeps the remainder for `"until_next"` orders (retried on
+later rows under the same rules); day orders drop it. An order whose target
+is reached is removed. Counters: `limit_filled` (fills: an order that reduces
+and then opens on the other side counts two), `limit_unfilled` (rows on which
+an active order's price was not reached), `limit_blocked` (reached but left
+short of target beyond that allowance).
+
+`cash_scaled` counts rows: a row on which an ordinary purchase basket, a
+limit opening or both were cut to what cash affords counts once. Without
+limit orders the count is unchanged from earlier versions. For
+`margin_scaled` a limit cut likewise counts only on a row that has no margin
+scaling yet; ordinary margin baskets keep their existing counting. A limit opening is fresh. Limit fills are not carry
+trades and limit orders are never carried by `carry_blocked`.
+
+**Results.** With rules configured, `Result.diagnostics` additionally holds
+`stop_loss`, `take_profit`, `trailing_stop`, `max_hold`, `rule_deferred`,
+`reentry_blocked`, `limit_filled`, `limit_unfilled` and `limit_blocked`.
+`Trade.reason` is a `TradeReason` (an `IntEnum`, so `astuple(trade)` stays
+numeric): `REBALANCE` (0) for ordinary, carried and liquidation fills,
+otherwise `STOP_LOSS` (1), `TAKE_PROFIT` (2), `TRAILING_STOP` (3), `MAX_HOLD`
+(4) or `LIMIT` (5). Without rules and limit targets every output is
+bit-for-bit what it was before rules existed: the rule code is compiled out.
+
+**Same-day cash order (approximation).** Within a row, cash released by a rule
+exit is available to that row's limit openings (the intraday phase runs exits
+before limit orders), and with `fill_time="close"`/`"average"` to the row's
+ordinary rebalance. In a real session a limit buy may fill before the stop
+that funds it, and with an average price the rebalance trades through the day
+while an exit may come late; both are mildly optimistic for cash-constrained
+accounts.
+
 ## Review clarifications
 
 - A partial close must meet `min_qty` and `qty_step`; a full close may dispose of
