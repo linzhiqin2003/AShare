@@ -17,6 +17,7 @@
 - 端到端剖析工具 `bench/e2e`（`make perf-profile`、`make perf-compare`）和第一份基线。
 
 ## 2026-11-13
+- 归因与容量（`ashare.analysis`，`docs/DESIGN.md` 6.5、`docs/ANALYSIS_NOTES.md`）：基于风险模型的收益归因（市场 / 行业 / 风格 / 特质 / 交易 / 成本，GRAP 或 Carino 多期链接）、事前风险拆分与偏差统计、Brinson 行业归因（BF / BHB）、按冲击模型的容量与成本（解析模拟与 `panelbt` 实跑对账）、按年的成本拆解；结果都能转成列式 dict。
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。
