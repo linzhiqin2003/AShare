@@ -169,6 +169,9 @@ def test_group_benchmark_members_only():
     member = np.array([[False, True, True, True]])  # 第 0 只停牌：收益 0 不计入同组
     out = group_benchmark(r, g, min_size=2, member=member)
     np.testing.assert_allclose(out[0], [0.04, 0.05, 0.04, 0.03])
+    # 不计入的股票自己的基准是全部成员的平均，不减自己的收益（即使它当天收益不为 0）
+    r2 = np.array([[0.05, 0.02, 0.04, 0.06]])
+    np.testing.assert_allclose(group_benchmark(r2, g, 2, member)[0, 0], 0.04)
 
 
 def test_cluster_se_single_cluster_is_nan():
@@ -401,6 +404,32 @@ def test_calendar_time_matches_loop(seed):
     np.testing.assert_allclose(res["mean_daily"], np.mean(daily), rtol=1e-12)
     np.testing.assert_allclose(res["se_nw"], newey_west_loop(daily, 3), rtol=1e-10)
     np.testing.assert_allclose(res["implied_car"], np.mean(daily) * 5, rtol=1e-12)
+    # 默认滞后：floor(4·(n/100)^(2/9))，n 是非空的日子数
+    default = st.calendar_time(a, b).row(0, named=True)
+    lag = int(np.floor(4 * (len(daily) / 100) ** (2 / 9)))
+    assert lag > 0 and default["lags"] == lag
+    np.testing.assert_allclose(
+        default["se_nw"], newey_west_loop(daily, lag), rtol=1e-10
+    )
+    # 按事件数加权：日均 × 天数 = 按事件平均的 CAR（窗口完整）
+    ev_w = st.calendar_time(a, b, weight="events").row(0, named=True)
+    np.testing.assert_allclose(ev_w["implied_car"], st.car(a, b).mean(), rtol=1e-10)
+    with pytest.raises(ValueError, match="weight"):
+        st.calendar_time(a, b, weight="value")
+
+
+def test_calendar_time_skips_missing_cells():
+    """宽松口径（complete=False）下缺失的格子不以 0 混进当天的组合。"""
+    t = 12
+    r = np.full((t, 3), 0.01)
+    r[6, 1] = np.nan  # B 第 6 天缺失
+    ev = frame(["A", "B"], [DATES[4], DATES[4]])
+    st = event_study(
+        ev, r, np.zeros(t), DATES, SYMS, window=(0, 3), reps=10, complete=False
+    )
+    res = st.calendar_time(0, 3, lags=0).row(0, named=True)
+    # 每天的组合都是 0.01（第 6 天只有 A），不会被 B 的缺失拉成 0.005
+    np.testing.assert_allclose(res["mean_daily"], 0.01, rtol=1e-12)
 
 
 # ---------- 审查给的两个扎堆场景：拒绝率回归 ----------

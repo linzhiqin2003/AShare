@@ -287,14 +287,25 @@ class EventStudy:
         }
         return pl.DataFrame([row])
 
-    def calendar_time(self, a, b, mask=None, lags=None):
+    def calendar_time(self, a, b, mask=None, lags=None, weight="days"):
         """日历时间组合检验（首选的显著性口径）。
 
         每个交易日 τ，把相对日落在 [a, b] 内、当天有真实数据的事件等权成一个组合，得到组合的
-        日异常收益 r_τ；只用组合非空的日子。检验 r_τ 的均值是否为 0，标准误用 Newey–West
-        （Bartlett 权，``lags`` 默认 floor(4·(T/100)^(2/9))）。``implied_car`` = 日均 × 区间天数，
-        与按事件平均的 CAR 不完全相同（这里每个交易日权重相同，事件多的日子不加权）。
+        日异常收益 r_τ（缺失的格子不计入）；只用组合非空的日子。标准误用 Newey–West
+        （Bartlett 权，``lags`` 默认 floor(4·(n/100)^(2/9))，n 为非空的日子数）。
+
+        ``weight`` 决定检验的是哪个量：
+
+        - ``"days"``（默认）：每个交易日权重相同，检验 r_τ 的均值，即「按日等权」的漂移；
+          事件少的日子和事件多的日子一样重。
+        - ``"events"``：按当天事件数加权，检验 x_τ = r_τ·n_τ / mean(n) 的均值，等于所有
+          （事件, 日）格子的平均异常收益——窗口完整时 ``implied_car`` 与按事件平均的 CAR
+          （:meth:`test` 的 ``mean``）完全相同，标准误仍按日历时间序列算（NW）。
+
+        ``implied_car`` = 日均 × 区间天数。
         """
+        if weight not in ("days", "events"):
+            raise ValueError('weight 只能是 "days" 或 "events"')
         sel = self._mask(mask)
         sl = self._cols(a, b)
         ar, cov = self.ar[sel][:, sl], self.coverage[sel][:, sl]
@@ -302,9 +313,12 @@ class EventStudy:
         sums = np.bincount(day[cov], weights=ar[cov], minlength=self.days)
         cnt = np.bincount(day[cov], minlength=self.days)
         active = cnt > 0
-        r = sums[active] / cnt[active]
+        if weight == "days":
+            r = sums[active] / cnt[active]
+        else:
+            r = sums[active] / cnt[active].mean()
         n = len(r)
-        row = {"window": f"[{a},{b}]", "days": n}
+        row = {"window": f"[{a},{b}]", "weight": weight, "days": n}
         if n < 3:
             return pl.DataFrame([row | {"mean_daily": np.nan}])
         if lags is None:

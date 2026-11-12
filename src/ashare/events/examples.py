@@ -64,14 +64,19 @@ def strong_expresses(ds):
 
 
 def _tables(study, mask=None):
-    """每个区间一行：按事件平均的 CAR 与朴素/按月聚类/自助法，加日历时间组合的 NW t。"""
+    """每个区间一行：按事件平均的 CAR 与朴素/按月聚类/自助法，加日历时间组合的 NW t
+    （按日等权与按事件数加权两种）。"""
     rows = []
     for a, b in PARAMS["tests"]:
         row = study.test(a, b, mask)
         ct = study.calendar_time(a, b, mask).select(
             "t_nw", "p_nw", "implied_car", pl.col("days").alias("ct_days")
         )
-        rows.append(pl.concat([row, ct], how="horizontal"))
+        ce = study.calendar_time(a, b, mask, weight="events").select(
+            pl.col("t_nw").alias("t_nw_events"),
+            pl.col("implied_car").alias("implied_car_events"),
+        )
+        rows.append(pl.concat([row, ct, ce], how="horizontal"))
     return pl.concat(rows, how="diagonal_relaxed")
 
 
@@ -206,6 +211,28 @@ def run_example(key, name, ev, m, groups_bench, pct):
             "close_to_close_all": float(st.car(0, 20).mean()),
         }
         res["date_cluster_1_20"] = st.test(1, 20, cluster="date").to_dicts()
+        # 敏感性（事后补做，不改主口径）：NW 滞后加大；缺失记 0 的宽松口径
+        res["lag_sensitivity"] = [
+            {"window": f"[{a},{b}]", "lags": lag, "weight": w,
+             "t_nw": st.calendar_time(a, b, lags=lag, weight=w)["t_nw"][0]}
+            for a, b in ((1, 20), (1, 60))
+            for lag in (None, 20, 60)
+            for w in ("days", "events")
+        ]  # fmt: skip
+        loose = event_study(
+            aligned,
+            m.returns,
+            bench,
+            m.dates,
+            m.symbols,
+            window=p["window"],
+            reps=p["bootstrap_reps"],
+            complete=False,
+        )
+        res["complete_false"] = {
+            "events": len(loose),
+            "tests": _tables(loose).to_dicts(),
+        }
         out[label] = res
         studies[label] = st
     plan = to_targets(
