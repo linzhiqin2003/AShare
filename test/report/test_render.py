@@ -8,7 +8,7 @@ from importlib import resources
 import pytest
 
 from ashare.report import Benchmark, render_html, to_html
-from ashare.report.render import expand
+from ashare.report.render import EXTRA_KEYS, expand
 from test.report.helpers import build, make_case
 
 
@@ -62,7 +62,8 @@ def test_embedded_data_round_trips(ts, tmp_path):
     html = path.read_text(encoding="utf-8")
     p = parse(html)
     data = expand(json.loads(p.scripts["data"]))
-    want = dict(ts)
+    # 补充内容（render.EXTRA_KEYS）这次不上页面、不嵌入；其余键照旧全部嵌入
+    want = {k: v for k, v in ts.items() if k not in EXTRA_KEYS}
     want["rebalances"] = [
         {k: v for k, v in r.items() if k != "unfilled_detail"} for r in ts["rebalances"]
     ]
