@@ -4,6 +4,8 @@ A 股量化研究框架。回测、因子算子、风险模型、组合优化和
 
 [English](README.en.md)
 
+![AShare 的架构与成果](docs/assets/architecture.png)
+
 下面每个数字都出自仓库里的记录，可以重跑。测量机器是一台 Apple M5 Pro 笔记本。
 
 ## 为什么选它

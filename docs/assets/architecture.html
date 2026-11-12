@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AShare 剖面</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0A0F1E; --ink2:#273049;
+  --blue:#1746D4; --blue-d:#0E2F99;
+  --s1:#F2F6FF; --s2:#E2EAFF; --s3:#CEDBFF; --s4:#B6C9FF;
+  --node:#FFFFFF; --pale:#B7C9F7; --rule:#8EA4DB; --bg:#FFFFFF;
+}
+html,body{margin:0;background:var(--bg);}
+body{width:1600px;height:1000px;overflow:hidden;}
+svg{display:block;}
+text{font-family:"Noto Sans SC","PingFang SC","Hiragino Sans GB",sans-serif;fill:var(--ink);}
+.m,.m text{font-family:"JetBrains Mono","SF Mono",Menlo,monospace;}
+.b{font-weight:700;} .k{font-weight:900;}
+.blue{fill:var(--blue);} .i2{fill:var(--ink2);}
+</style>
+</head>
+<body>
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="8" stroke="#9FB3E6" stroke-width="1.2"/>
+  </pattern>
+  <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L8,4 L0,8 z" fill="#1746D4"/>
+  </marker>
+</defs>
+
+<!-- ============ HEADER ============ -->
+<text x="48" y="70" class="m b blue" font-size="28">AShare</text>
+<text x="48" y="146" class="k" font-size="66" letter-spacing="-1">全市场回测 <tspan class="blue">2.7</tspan> 毫秒，</text>
+<text x="48" y="222" class="k" font-size="66" letter-spacing="-1">一次完整研究一分钟。</text>
+<text x="48" y="262" font-size="16" class="i2">A 股量化研究框架。回测、因子算子、风险模型、组合优化和模拟盘都是 Rust 内核加 NumPy 数组接口，交易所规则内置。</text>
+
+<!-- ============ SECTION ============ -->
+<!-- surface: planned (not done) -->
+<text x="48" y="314" font-size="14" class="b i2">还没做</text>
+<g font-size="14" class="i2">
+  <rect x="180" y="290" width="131" height="34" fill="none" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="245.5" y="312" text-anchor="middle">时点财务数据</text>
+  <rect x="760" y="290" width="131" height="34" fill="none" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="825.5" y="312" text-anchor="middle">与 <tspan class="m">rqalpha</tspan> 对账</text>
+  <rect x="905" y="290" width="145" height="34" fill="none" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="977.5" y="312" text-anchor="middle"><tspan class="m">miniQMT</tspan> 实盘适配</text>
+  <line x1="245.5" y1="324" x2="245.5" y2="340" stroke="var(--rule)" stroke-dasharray="3 3"/>
+  <line x1="825.5" y1="324" x2="825.5" y2="340" stroke="var(--rule)" stroke-dasharray="3 3"/>
+  <line x1="977.5" y1="324" x2="977.5" y2="340" stroke="var(--rule)" stroke-dasharray="3 3"/>
+</g>
+
+<!-- strata bands -->
+<rect x="40" y="340" width="1030" height="170" fill="var(--s1)"/>
+<rect x="40" y="510" width="1030" height="130" fill="var(--s2)"/>
+<rect x="40" y="640" width="1030" height="130" fill="var(--s3)"/>
+<!-- ground + boundaries -->
+<line x1="40" y1="340" x2="1070" y2="340" stroke="var(--ink)" stroke-width="2"/>
+<g stroke="var(--ink)" stroke-width="1">
+  <line x1="40" y1="510" x2="1070" y2="510"/>
+  <line x1="40" y1="640" x2="1070" y2="640"/>
+  <line x1="40" y1="770" x2="1070" y2="770"/>
+</g>
+<!-- depth ticks on the left edge -->
+<g stroke="var(--ink)" stroke-width="1">
+  <line x1="40" y1="340" x2="40" y2="770"/>
+  <line x1="40" y1="370" x2="46" y2="370"/><line x1="40" y1="400" x2="46" y2="400"/><line x1="40" y1="430" x2="46" y2="430"/><line x1="40" y1="460" x2="46" y2="460"/><line x1="40" y1="490" x2="46" y2="490"/>
+  <line x1="40" y1="540" x2="46" y2="540"/><line x1="40" y1="570" x2="46" y2="570"/><line x1="40" y1="600" x2="46" y2="600"/>
+  <line x1="40" y1="670" x2="46" y2="670"/><line x1="40" y1="700" x2="46" y2="700"/><line x1="40" y1="730" x2="46" y2="730"/>
+</g>
+
+<!-- gutter labels -->
+<text x="58" y="378" class="m b blue" font-size="20">ashare</text>
+<text x="58" y="402" font-size="15" class="b">Python 研究层</text>
+<text x="58" y="452" font-size="14" class="i2">站间传递</text>
+<text x="58" y="472" font-size="14" class="i2">日 × 股票</text>
+<text x="58" y="492" font-size="14" class="i2"><tspan class="m">NumPy</tspan> 数组</text>
+
+<text x="58" y="546" font-size="15" class="b">独立 Python 包</text>
+<text x="58" y="570" font-size="14" class="i2">只依赖 <tspan class="m">NumPy</tspan></text>
+<text x="58" y="590" font-size="14" class="i2">可以单独拿去用</text>
+
+<text x="58" y="676" font-size="15" class="b">Rust 内核</text>
+<text x="58" y="700" font-size="14" class="i2"><tspan class="m">PyO3</tspan> 绑定</text>
+<text x="58" y="720" font-size="14" class="i2">借用数组不复制</text>
+
+<!-- ---- boreholes (drawn first, under nodes) ---- -->
+<g stroke="var(--blue)" stroke-width="3">
+  <line x1="390.5" y1="470" x2="390.5" y2="530"/>
+  <line x1="390.5" y1="620" x2="390.5" y2="660"/>
+  <line x1="535.5" y1="470" x2="535.5" y2="530"/>
+  <line x1="680.5" y1="470" x2="680.5" y2="530"/>
+  <line x1="608" y1="620" x2="608" y2="660"/>
+  <line x1="825.5" y1="470" x2="825.5" y2="530"/>
+  <line x1="825.5" y1="620" x2="825.5" y2="660"/>
+  <line x1="825.5" y1="740" x2="825.5" y2="792"/>
+  <line x1="970.5" y1="470" x2="970.5" y2="530"/>
+  <line x1="970.5" y1="620" x2="970.5" y2="660"/>
+  <line x1="970.5" y1="740" x2="970.5" y2="792"/>
+</g>
+<!-- data column: empty borehole -->
+<line x1="245.5" y1="470" x2="245.5" y2="530" stroke="var(--rule)" stroke-width="2" stroke-dasharray="5 4"/>
+<rect x="180" y="530" width="131" height="210" fill="url(#hatch)" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="5 4"/>
+<rect x="190" y="600" width="111" height="70" fill="var(--s2)"/>
+<text x="245.5" y="624" text-anchor="middle" font-size="15" class="b">无 Rust 内核</text>
+<text x="245.5" y="644" text-anchor="middle" font-size="13" class="i2">实测 <tspan class="m">NumPy</tspan></text>
+<text x="245.5" y="662" text-anchor="middle" font-size="13" class="i2">已经够快</text>
+
+<!-- ---- stations ---- -->
+<g stroke="var(--blue)" stroke-width="1.8" fill="var(--node)">
+  <rect x="180" y="356" width="131" height="114"/>
+  <rect x="325" y="356" width="131" height="114"/>
+  <rect x="470" y="356" width="131" height="114"/>
+  <rect x="615" y="356" width="131" height="114"/>
+  <rect x="760" y="356" width="131" height="114"/>
+  <rect x="905" y="356" width="131" height="114"/>
+</g>
+<!-- flow arrows -->
+<g stroke="var(--blue)" stroke-width="1.8" marker-end="url(#ar)">
+  <line x1="311" y1="413" x2="324" y2="413"/>
+  <line x1="456" y1="413" x2="469" y2="413"/>
+  <line x1="601" y1="413" x2="614" y2="413"/>
+  <line x1="746" y1="413" x2="759" y2="413"/>
+  <line x1="891" y1="413" x2="904" y2="413"/>
+</g>
+<g font-size="13">
+  <text x="194" y="384" font-size="21" class="k">数据</text><text x="244" y="384" class="m blue" font-size="14">data</text>
+  <text x="194" y="414" class="i2">Tushare · 2.7 GB</text>
+  <text x="194" y="434" class="i2">2007 年至今</text>
+  <text x="194" y="456" class="m i2" font-size="12.5">4825×5923×48</text>
+
+  <text x="339" y="384" font-size="21" class="k">因子</text><text x="389" y="384" class="m blue" font-size="14">factor</text>
+  <text x="339" y="414" class="i2">表达式求值</text>
+  <text x="339" y="434" class="i2">缓存 · 因子库</text>
+  <text x="339" y="456" class="i2">IC · 分组 · 换手</text>
+
+  <text x="484" y="384" font-size="21" class="k">风险</text><text x="534" y="384" class="m blue" font-size="14">risk</text>
+  <text x="484" y="414" class="i2">风格 + 行业因子</text>
+  <text x="484" y="434" class="i2">因子协方差</text>
+  <text x="484" y="456" class="i2">特质风险</text>
+
+  <text x="627" y="384" font-size="20" class="k">组合</text><text x="741" y="384" text-anchor="end" class="m blue" font-size="12">portfolio</text>
+  <text x="629" y="414" class="i2">锥规划优化</text>
+  <text x="629" y="434" class="m i2">Clarabel</text>
+
+  <text x="774" y="384" font-size="21" class="k">回测</text>
+  <text x="774" y="414" class="i2">目标持仓</text>
+  <text x="774" y="434" class="i2">完整 A 股规则</text>
+
+  <text x="919" y="384" font-size="21" class="k">模拟盘</text><text x="988" y="384" class="m blue" font-size="14">paper</text>
+  <text x="919" y="414" class="i2">实时行情录制</text>
+  <text x="919" y="434" class="i2">调度</text>
+  <text x="919" y="456" class="i2">策略对接</text>
+</g>
+
+<!-- ---- packages ---- -->
+<g stroke="var(--blue)" stroke-width="1.8" fill="var(--s1)">
+  <rect x="325" y="530" width="131" height="90"/>
+  <rect x="470" y="530" width="276" height="90"/>
+  <rect x="760" y="530" width="131" height="90"/>
+  <rect x="905" y="530" width="131" height="90"/>
+</g>
+<g font-size="13">
+  <text x="339" y="556" class="m b" font-size="17">panelops</text>
+  <text x="339" y="580" class="i2">因子算子</text>
+  <text x="339" y="602"><tspan class="m b blue" font-size="16">68</tspan><tspan class="i2"> 个算子</tspan></text>
+
+  <text x="608" y="560" text-anchor="middle" class="m b" font-size="17">portopt</text>
+  <text x="608" y="586" text-anchor="middle" class="i2">风险模型内核</text>
+  <text x="608" y="606" text-anchor="middle" class="i2">求解器绑定</text>
+
+  <text x="774" y="556" class="m b" font-size="17">panelbt</text>
+  <text x="774" y="580" class="i2">回测引擎</text>
+  <text x="774" y="602" class="i2">权重 → 净值</text>
+
+  <text x="919" y="556" class="m b" font-size="16">paperbroker</text>
+  <text x="919" y="580" class="i2">模拟盘引擎</text>
+  <text x="919" y="602" class="i2">确定性状态机</text>
+</g>
+
+<!-- ---- rust kernels ---- -->
+<g stroke="var(--blue)" stroke-width="1.8" fill="var(--s2)">
+  <rect x="325" y="660" width="131" height="80"/>
+  <rect x="470" y="660" width="276" height="80"/>
+  <rect x="760" y="660" width="131" height="80"/>
+  <rect x="905" y="660" width="131" height="80"/>
+</g>
+<g class="m b" font-size="14" text-anchor="middle">
+  <text x="390.5" y="705">panelops-core</text>
+  <text x="608" y="705">portopt-core</text>
+  <text x="825.5" y="705">panelbt-core</text>
+  <text x="970.5" y="705" font-size="12.5">paperbroker-core</text>
+</g>
+
+<!-- ---- bedrock: tradecore ---- -->
+<path d="M730,792 L1070,792 L1070,872 L730,872 Z" fill="var(--s4)" stroke="var(--blue)" stroke-width="2"/>
+<text x="900" y="822" text-anchor="middle" class="m k" font-size="20">tradecore</text>
+<text x="900" y="846" text-anchor="middle" font-size="14">费用 · 申报单位 · 保证金</text>
+<text x="900" y="864" text-anchor="middle" font-size="12.5" class="i2">两个引擎共用同一份</text>
+
+<!-- ---- A-share rules ---- -->
+<text x="48" y="812" font-size="16" class="b">内置 A 股规则</text>
+<text x="48" y="840" font-size="15">T+1 · 涨跌停 · 停牌 · 整手 · 最低佣金 · 分红送转与红利税</text>
+<text x="48" y="864" font-size="15">退市 · 未成交顺延 · 股指期货对冲腿</text>
+
+<!-- footer -->
+<text x="48" y="950" class="m" font-size="15">github.com/linzhiqin2003/AShare</text>
+<text x="370" y="950" class="m i2" font-size="15">Apache-2.0</text>
+
+<!-- ============ RIGHT COLUMN ============ -->
+<line x1="1100" y1="48" x2="1100" y2="952" stroke="var(--ink)" stroke-width="1"/>
+
+<!-- Chart 1: backtest, log scale -->
+<text x="1128" y="78" class="k" font-size="24">一次回测</text>
+<text x="1240" y="78" class="m i2" font-size="13">4000 日 × 5500 只 · 月度调仓</text>
+<!-- log axis: 1ms at x=1232, 51 px/decade -->
+<g stroke="#D3DCF2" stroke-width="1">
+  <line x1="1232" y1="96" x2="1232" y2="300"/><line x1="1283" y1="96" x2="1283" y2="300"/><line x1="1334" y1="96" x2="1334" y2="300"/>
+  <line x1="1385" y1="96" x2="1385" y2="300"/><line x1="1436" y1="96" x2="1436" y2="300"/><line x1="1487" y1="96" x2="1487" y2="300"/><line x1="1538" y1="96" x2="1538" y2="300"/>
+</g>
+<g font-size="13">
+  <text x="1128" y="122" class="m b">panelbt</text>
+  <rect x="1232" y="108" width="22" height="20" fill="var(--blue)"/>
+  <text x="1262" y="123" class="m b blue" font-size="15">2.7 ms</text>
+
+  <text x="1128" y="152" class="i2">规则全开</text>
+  <rect x="1232" y="138" width="12" height="20" fill="var(--blue)"/>
+  <text x="1252" y="153" class="m b blue" font-size="15">1.7 ms</text>
+
+  <text x="1128" y="182" class="i2">手写 <tspan class="m">NumPy</tspan></text>
+  <rect x="1232" y="168" width="49" height="20" fill="var(--pale)"/>
+  <text x="1289" y="183" class="m">9.0 ms</text>
+
+  <text x="1128" y="212" class="m">vectorbt</text>
+  <rect x="1232" y="198" width="157" height="20" fill="var(--pale)"/>
+  <text x="1397" y="213" class="m">1.20 s</text>
+
+  <text x="1128" y="242" class="m">bt</text>
+  <rect x="1232" y="228" width="198" height="20" fill="var(--pale)"/>
+  <text x="1438" y="243" class="m">7.4 s</text>
+
+  <text x="1128" y="272" class="m">backtrader</text>
+  <rect x="1232" y="258" width="282" height="20" fill="var(--pale)"/>
+  <text x="1506" y="273" text-anchor="end" class="m b">331 s</text>
+</g>
+<g class="m i2" font-size="12" text-anchor="middle">
+  <text x="1232" y="318">1ms</text><text x="1334" y="318">100ms</text><text x="1436" y="318">10s</text><text x="1538" y="318" text-anchor="end">1000s</text>
+</g>
+<!-- memory -->
+<text x="1128" y="356" font-size="14" class="b">峰值内存</text>
+<!-- 0..8.2GB over 1232..1520 => 35.1 px/GB -->
+<rect x="1232" y="343" width="16" height="16" fill="var(--blue)"/>
+<text x="1256" y="356" class="m b blue" font-size="14">0.46 GB</text>
+<text x="1128" y="384" class="m" font-size="13">vectorbt</text>
+<rect x="1232" y="371" width="232" height="16" fill="var(--pale)"/>
+<rect x="1464" y="371" width="56" height="16" fill="none" stroke="var(--pale)" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="1272" y="384" class="m" font-size="13">6.6–8.2 GB</text>
+
+<!-- Chart 2: operators -->
+<line x1="1128" y1="414" x2="1552" y2="414" stroke="var(--ink)" stroke-width="1"/>
+<text x="1128" y="448" class="k" font-size="24">因子算子</text>
+<text x="1240" y="448" class="m i2" font-size="13">单线程 · 毫秒</text>
+<!-- linear 0..2500 over 1232..1490 -> 0.1032 px/ms -->
+<g>
+  <text x="1128" y="478" class="m b" font-size="15">ts_rank</text>
+  <text x="1146" y="500" class="m b blue" font-size="12.5">panelops</text>
+  <rect x="1232" y="488" width="12" height="15" fill="var(--blue)"/><text x="1250" y="500" class="m b blue" font-size="13">119</text>
+  <text x="1146" y="519" class="m i2" font-size="12.5">bottleneck</text>
+  <rect x="1232" y="507" width="126" height="15" fill="var(--pale)"/><text x="1364" y="519" class="m" font-size="13">1221</text>
+  <text x="1146" y="538" class="m i2" font-size="12.5">NumPy</text>
+  <rect x="1232" y="526" width="93" height="15" fill="var(--pale)"/><text x="1331" y="538" class="m" font-size="13">906</text>
+  <text x="1146" y="557" class="m i2" font-size="12.5">pandas</text>
+  <rect x="1232" y="545" width="255" height="15" fill="var(--pale)"/><text x="1493" y="557" class="m" font-size="13">2472</text>
+  <text x="1128" y="584" class="m b" font-size="15">cs_rank</text>
+  <text x="1146" y="606" class="m b blue" font-size="12.5">panelops</text>
+  <rect x="1232" y="594" width="27" height="15" fill="var(--blue)"/><text x="1265" y="606" class="m b blue" font-size="13">265</text>
+  <text x="1146" y="625" class="m i2" font-size="12.5">bottleneck</text>
+  <rect x="1232" y="613" width="92" height="15" fill="var(--pale)"/><text x="1330" y="625" class="m" font-size="13">891</text>
+  <text x="1146" y="644" class="m i2" font-size="12.5">NumPy</text>
+  <rect x="1232" y="632" width="117" height="15" fill="var(--pale)"/><text x="1355" y="644" class="m" font-size="13">1135</text>
+  <text x="1146" y="663" class="m i2" font-size="12.5">pandas</text>
+  <rect x="1232" y="651" width="129" height="15" fill="var(--pale)"/><text x="1367" y="663" class="m" font-size="13">1250</text>
+</g>
+<text x="1128" y="698" font-size="15"><tspan class="b">68</tspan> 个算子里 <tspan class="b blue">67</tspan> 个单线程最快，用全部核时全部最快</text>
+
+<!-- Chart 3: full research -->
+<line x1="1128" y1="716" x2="1552" y2="716" stroke="var(--ink)" stroke-width="1"/>
+<text x="1128" y="750" class="k" font-size="24">一次完整研究</text>
+<text x="1290" y="750" class="m i2" font-size="13">4824 日 × 5923 只</text>
+<!-- linear 0..190 over 1232..1520 -> 1.516 px/s -->
+<g font-size="13">
+  <text x="1128" y="782" class="i2">优化前</text>
+  <rect x="1232" y="768" width="287" height="20" fill="var(--pale)"/>
+  <text x="1512" y="783" text-anchor="end" class="m b">189.6 s</text>
+
+  <text x="1128" y="812" class="i2">优化后</text>
+  <rect x="1232" y="798" width="115" height="20" fill="var(--pale)"/>
+  <text x="1355" y="813" class="m">75.9 s</text>
+
+  <text x="1128" y="842" class="i2">批量并行</text>
+  <rect x="1232" y="828" width="88" height="20" fill="var(--blue)"/>
+  <rect x="1320" y="828" width="13" height="20" fill="var(--s4)"/>
+  <text x="1341" y="844" class="m b blue" font-size="16">66.5 s</text>
+</g>
+<rect x="1232" y="871" width="12" height="12" fill="var(--blue)"/><text x="1250" y="882" font-size="13">风险模型 <tspan class="m b">58.3</tspan></text>
+<rect x="1232" y="893" width="12" height="12" fill="var(--s4)"/><text x="1250" y="904" font-size="13" class="i2">因子 <tspan class="m">3.9</tspan> · IC <tspan class="m">2.1</tspan> · 优化 <tspan class="m">1.1</tspan> · 其余 <tspan class="m">1.1</tspan></text>
+<text x="1128" y="942" font-size="15"><tspan class="b">13</tspan> 项优化里 <tspan class="b blue">10</tspan> 项结果逐位不变</text>
+
+</svg>
+</body>
+</html>
