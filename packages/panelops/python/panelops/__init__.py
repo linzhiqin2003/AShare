@@ -10,6 +10,7 @@ __all__ = [
     "elementwise",
     "ic",
     "rank_ic",
+    "rank_ic_many",
     "factor_autocorr",
     "group_returns",
     "group_turnover",

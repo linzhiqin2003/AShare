@@ -1069,9 +1069,15 @@ fn ordered<const O: usize, const D: bool>(
         vec![f64::NAN; capacity * n]
     };
     let mut counts = vec![0usize; n];
-    let mut scratch = Vec::with_capacity(capacity);
     let mut sorted = if O == QUANTILE || O == MEDIAN {
         vec![vec![f64::INFINITY; capacity]; n]
+    } else {
+        Vec::new()
+    };
+    // MAD keeps each column's finite window sorted by total order. Both medians are
+    // read from it, so the result equals selecting on an unordered copy bit for bit.
+    let mut mad = if O == MAD {
+        vec![0f64; capacity * n]
     } else {
         Vec::new()
     };
@@ -1095,6 +1101,30 @@ fn ordered<const O: usize, const D: bool>(
             values[slot] = value;
             counts[k] += usize::from(ok);
             counts[k] -= usize::from(old.is_finite());
+            if O == MAD {
+                let window = &mut mad[k * capacity..(k + 1) * capacity];
+                let mut len = counts[k] + usize::from(old.is_finite()) - usize::from(ok);
+                // Short windows: a branch-free count of smaller keys beats a binary search.
+                if old.is_finite() {
+                    let key = total_key(old);
+                    let at = window[..len]
+                        .iter()
+                        .map(|&v| usize::from(total_key(v) < key))
+                        .sum::<usize>();
+                    debug_assert_eq!(window[at].to_bits(), old.to_bits());
+                    window.copy_within(at + 1..len, at);
+                    len -= 1;
+                }
+                if ok {
+                    let key = total_key(value);
+                    let to = window[..len]
+                        .iter()
+                        .map(|&v| usize::from(total_key(v) < key))
+                        .sum::<usize>();
+                    window.copy_within(to..len, to + 1);
+                    window[to] = value;
+                }
+            }
             if O == QUANTILE || O == MEDIAN {
                 let order = &mut sorted[k];
                 let old = if old.is_finite() { old } else { f64::INFINITY };
@@ -1145,17 +1175,71 @@ fn ordered<const O: usize, const D: bool>(
             } else if O == QUANTILE || O == MEDIAN {
                 super::quantile(&sorted[k][..counts[k]], if O == MEDIAN { 0.5 } else { p.q })
             } else {
-                scratch.clear();
-                scratch.extend(values.iter().copied().filter(|v| v.is_finite()));
-                let median = select(&mut scratch, 0.5);
-                for v in &mut scratch {
-                    *v = (*v - median).abs();
-                }
-                select(&mut scratch, 0.5)
+                sorted_mad(&mad[k * capacity..k * capacity + counts[k]])
             };
         }
     }
 }
+/// The integer key whose order is `f64::total_cmp`.
+#[inline(always)]
+fn total_key(v: f64) -> i64 {
+    let bits = v.to_bits() as i64;
+    bits ^ ((((bits >> 63) as u64) >> 1) as i64)
+}
+
+/// `select(v, 0.5)` on a slice already sorted by `total_cmp`.
+#[inline(always)]
+fn sorted_median(s: &[f64], q: f64) -> f64 {
+    let pos = q * (s.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    let a = s[lo];
+    if lo == hi {
+        a
+    } else {
+        a + (s[lo + 1] - a) * (pos - lo as f64)
+    }
+}
+
+/// Median absolute deviation of a nonempty window sorted by `total_cmp`, equal bit for
+/// bit to two `select` calls on unordered copies. Deviations below and above the median
+/// form two monotone runs (rounded subtraction is monotone), so the order statistics
+/// come from merging them. Inputs are finite, so the median is finite or +/-inf (an
+/// overflowing interpolation) and never NaN; both runs stay monotone either way.
+fn sorted_mad(s: &[f64]) -> f64 {
+    let median = sorted_median(s, 0.5);
+    let split = s.partition_point(|&v| v <= median);
+    // Below: indices split-1 down to 0 give nondecreasing |v - median|; above: split up.
+    // Deviations are >= +0 (abs clears the sign), so `<=` agrees with `total_cmp`.
+    let (mut below, mut above) = (split, split);
+    let pos = 0.5 * (s.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let take = lo + 1 + usize::from(pos != lo as f64);
+    let (mut a, mut b) = (0., 0.);
+    for step in 0..take {
+        let from_below = above == s.len()
+            || (below > 0 && (s[below - 1] - median).abs() <= (s[above] - median).abs());
+        let d = if from_below {
+            below -= 1;
+            (s[below] - median).abs()
+        } else {
+            above += 1;
+            (s[above - 1] - median).abs()
+        };
+        if step == lo {
+            a = d;
+        } else if step > lo {
+            b = d;
+        }
+    }
+    if take == lo + 1 {
+        a
+    } else {
+        a + (b - a) * (pos - lo as f64)
+    }
+}
+
+#[cfg(test)]
 fn select(v: &mut [f64], q: f64) -> f64 {
     let pos = q * (v.len() - 1) as f64;
     let lo = pos.floor() as usize;
@@ -1471,6 +1555,52 @@ fn std_rows<const O: usize, const D: bool>(
                     }
                 };
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod mad_tests {
+    use super::{select, sorted_mad};
+
+    /// The sorted-window MAD equals two selections on unordered copies, bit for bit.
+    #[test]
+    fn sorted_mad_matches_selection() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let pools: [&[f64]; 4] = [
+            &[0., -0., 1., -1., 2., 2., 3.],
+            &[1.7e308, -1.7e308, 1., 0., -5e-324, 5e-324],
+            &[0.1, 0.2, 0.30000000000000004, 1e-300, -1e300],
+            &[7., 7., 7., -7.],
+        ];
+        for round in 0..20_000 {
+            let pool = pools[round % pools.len()];
+            let len = 1 + (next() % 41) as usize;
+            let mut v: Vec<f64> = (0..len)
+                .map(|_| {
+                    let x = pool[(next() % pool.len() as u64) as usize];
+                    if next() % 3 == 0 {
+                        x * (next() % 9) as f64
+                    } else {
+                        x
+                    }
+                })
+                .collect();
+            let mut sorted = v.clone();
+            sorted.sort_by(f64::total_cmp);
+            let median = select(&mut v, 0.5);
+            for x in &mut v {
+                *x = (*x - median).abs();
+            }
+            let expected = select(&mut v, 0.5);
+            let actual = sorted_mad(&sorted);
+            assert_eq!(actual.to_bits(), expected.to_bits(), "{sorted:?}");
         }
     }
 }

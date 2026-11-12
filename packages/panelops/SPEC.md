@@ -113,6 +113,8 @@ Returns supplied to evaluation functions must already be aligned by the caller;
 no implicit return shift is performed. `ic(x, returns)` is daily Pearson
 correlation on the valid intersection, length T; >=2 pairs and nonzero variance
 required. `rank_ic` ranks each operand on the paired intersection before Pearson.
+`rank_ic_many(scores, returns)` sorts each day's valid returns once and reuses the
+order for every score panel; each output equals `rank_ic(score, returns)` bit for bit.
 `factor_autocorr(x, periods=1, rank=True)` compares today's and lagged cross-section
 on their common finite intersection (ranks recomputed on that intersection).
 

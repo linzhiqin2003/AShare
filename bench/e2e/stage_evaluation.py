@@ -78,6 +78,22 @@ def run(ctx):
             "detail": {"by_test": phases.report(), "including_factor_eval": total},
         }
     ]
+    # 多个因子对同一远期收益的秩 IC：逐个 rank_ic 与（P-011 起的）rank_ic_many。
+    scores = [np.asarray(evaluator.evaluate(f.expression, source)) for f in factors[:8]]
+    variants = {"rank_ic_loop": lambda: [panelops.rank_ic(x, forward) for x in scores]}
+    if hasattr(panelops, "rank_ic_many"):
+        variants["rank_ic_many"] = lambda: panelops.rank_ic_many(scores, forward)
+    for name, fn in variants.items():
+        stats, value = measure(lambda fn=fn: digest(*fn()), ctx["repeat"](3))
+        cases.append(
+            {
+                "case": f"{name}_{len(scores)}_factors",
+                "scale": {"factors": len(scores), "shape": source.shape},
+                **stats,
+                "summary": value,
+            }
+        )
+    scores.clear()
     score = np.asarray(evaluator.evaluate(factors[1].expression, source))
     stats, value = measure(lambda: suite(score, forward, days), ctx["repeat"](3))
     cases.append(

@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Protocol
 
@@ -24,9 +26,71 @@ class PanelSource(Protocol):
     def __getitem__(self, field: str) -> np.ndarray: ...
 
 
+# 缓存文件校验：按 8 MiB 分块并行算 SHA-256，再对「格式标记 + 文件长度 + 各块摘要」
+# 算一次 SHA-256。hashlib 对大缓冲区释放 GIL，块之间真正并行；强度仍是 SHA-256，
+# 任何一个字节变化都会改变某个块的摘要。
+CACHE_FORMAT = 2
+_CHUNK = 8 << 20
+_POOL_LOCK = threading.Lock()
+_POOL = None
+
+
+def _forget_pool_in_child():
+    # fork 出的子进程里没有父进程的工作线程，沿用旧池对象会让提交的任务永远等不到；
+    # 锁也可能在 fork 时被别的线程拿着。子进程里两者都换新的，用到时再建池。
+    global _POOL, _POOL_LOCK
+    _POOL, _POOL_LOCK = None, threading.Lock()
+
+
+os.register_at_fork(after_in_child=_forget_pool_in_child)
+
+
+def _hash_pool():
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is None:
+            _POOL = ThreadPoolExecutor(
+                max_workers=min(10, os.cpu_count() or 1),
+                thread_name_prefix="factor-cache-hash",
+            )
+        return _POOL
+
+
+def _chunk_digest(fd, start, length):
+    # 用 preadv 读进自有缓冲区：刚写完的文件第一次 mmap 要逐页建映射，实测慢 7 倍。
+    buffer = bytearray(length)
+    view = memoryview(buffer)
+    done = 0
+    while done < length:
+        count = os.preadv(fd, [view[done:]], start + done)
+        if count == 0:
+            raise EOFError("缓存文件在校验中变短")
+        done += count
+    return hashlib.sha256(buffer).digest()
+
+
 def _checksum(path):
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+    fd = os.open(path, os.O_RDONLY)
+    futures = []
+    try:
+        size = os.fstat(fd).st_size
+        pool = _hash_pool()
+        futures = [
+            pool.submit(_chunk_digest, fd, start, min(_CHUNK, size - start))
+            for start in range(0, size, _CHUNK)
+        ]
+        parts = [future.result() for future in futures]
+    finally:
+        # 某一块失败时其余块可能还在读：全部结束（或取消）后才关 fd，免得它们读到
+        # 被别的文件复用的同一个 fd 号。
+        for future in futures:
+            future.cancel()
+        wait(futures)
+        os.close(fd)
+    total = hashlib.sha256(f"ashare-factor-cache:{CACHE_FORMAT}:{size}:".encode())
+    for part in parts:
+        total.update(part)
+    return total.hexdigest()
 
 
 def _implementation_id():
@@ -44,6 +108,7 @@ class Evaluator:
         self.cache_dir = None if cache_dir is None else Path(cache_dir)
         self.last_counts = {}
         self.last_peak_arrays = 0
+        self.last_batch = {}
         self.cache_hit = False
         if self.cache_dir is not None and self.cache_dir.exists():
             for path in self.cache_dir.glob("*.tmp"):
@@ -64,6 +129,140 @@ class Evaluator:
     ):
         if not isinstance(expression, Expr):
             raise TypeError("expression 必须是 Expr")
+        shape = self._check(source, mask, universe_id)
+        path = self._cache_path(expression, source, mask, universe_id)
+        self.cache_hit = False
+        self.last_counts = {}
+        self.last_peak_arrays = 0
+        cached = self._load(path, shape)
+        if cached is not None:
+            self.cache_hit = True
+            return cached
+        order, uses = _schedule([expression])
+        memo = {}
+        for node in order:
+            self.last_counts[node.digest] = 1
+            memo[node.digest] = _compute(
+                node, memo, source, shape, mask, node is expression
+            )
+            self.last_peak_arrays = max(
+                self.last_peak_arrays,
+                sum(isinstance(v, np.ndarray) for v in memo.values()),
+            )
+            _release(node, uses, memo)
+        result = _finish(memo[expression.digest], shape, mask)
+        self._store(path, result)
+        return result
+
+    def evaluate_many(
+        self,
+        expressions,
+        source: PanelSource,
+        *,
+        mask=None,
+        universe_id="all",
+        memory_limit=None,
+    ):
+        """批量求值：一批表达式合成一张图，公共子式与字段叶子只算一次。
+
+        ``expressions`` 是 ``{名字: Expr}`` 或 ``Expr`` 序列；返回迭代器，按输入顺序
+        逐个给出 ``(名字或下标, 结果)``，每个结果与单独 ``evaluate`` 逐位相同。
+        中间结果在最后一个消费者算完后释放，已给出的结果不再由求值器持有，
+        调用方用完即丢就不会累积。
+
+        ``memory_limit``（字节，默认物理内存的 1/12）换算成面板张数后，用来限制
+        「按执行顺序模拟、同时存活的中间面板数」（含正在写的输出和调用方手里的一个
+        结果）；模拟值超限时按输入顺序拆成几批，批与批之间不共享中间结果（结果仍逐位
+        相同）。它不是驻留内存的硬上限：字段本身（内存映射）、内核的临时缓冲和分配器
+        滞留都不计入，实测驻留可达模拟值的约 1.7 倍。一个表达式自己就超限时单独成批。
+
+        参数在调用时就检查；缓存读取和计算都是惰性的，发生在迭代过程中。
+        ``last_batch``（表达式数、缓存命中数、批数）、``last_counts``、
+        ``last_peak_arrays`` 在迭代结束后才完整；``cache_hit`` 在全部表达式都由缓存
+        给出时为 True（空批为 False）。迭代中途调用 ``evaluate`` 会覆盖这些统计。
+        同一批里重复的表达式只写一次缓存，结果仍按每个输入位置各给一次。
+        缓存目录的读写和校验规则与 ``evaluate`` 相同。
+        """
+        items = (
+            list(expressions.items())
+            if isinstance(expressions, dict)
+            else list(enumerate(expressions))
+        )
+        if any(not isinstance(e, Expr) for _, e in items):
+            raise TypeError("expression 必须是 Expr")
+        shape = self._check(source, mask, universe_id)
+        if memory_limit is None:
+            memory_limit = default_memory_limit()
+        elif (
+            isinstance(memory_limit, bool)
+            or not isinstance(memory_limit, int)
+            or memory_limit <= 0
+        ):
+            raise ValueError("memory_limit 必须是正整数字节数")
+        paths = [self._cache_path(e, source, mask, universe_id) for _, e in items]
+        return self._many(items, paths, source, shape, mask, memory_limit)
+
+    def _many(self, items, paths, source, shape, mask, memory_limit):
+        self.cache_hit = False
+        self.last_counts = {}
+        self.last_peak_arrays = 0
+        self.last_batch = {"expressions": len(items), "cache_hits": 0, "batches": 0}
+        panel_bytes = 8 * shape[0] * shape[1]
+        pending, hits = [], {}  # 未命中的位置；命中的在原位置直接给出
+        for position, path in enumerate(paths):
+            cached = self._load(path, shape)
+            if cached is None:
+                pending.append(position)
+            else:
+                hits[position] = cached
+                self.last_batch["cache_hits"] += 1
+        self.cache_hit = bool(items) and not pending
+        stored = set()  # 本次已写过的缓存文件；重复的表达式不再写第二遍
+        batches = _split(
+            [items[i][1] for i in pending], max(1, memory_limit // panel_bytes)
+        )
+        self.last_batch["batches"] = len(batches)
+        cursor = 0
+        for batch in batches:
+            roots = [items[pending[cursor + k]][1] for k in range(len(batch))]
+            positions = [pending[cursor + k] for k in range(len(batch))]
+            cursor += len(batch)
+            order, uses = _schedule(roots)
+            # 每个根在批内每出现一次就多一个消费者，给出后才减掉。
+            for root in roots:
+                uses[root.digest] += 1
+            root_digests = {root.digest for root in roots}
+            memo, emitted = {}, 0
+            for node in order:  # _schedule 已去重，每个节点只算一次
+                self.last_counts[node.digest] = 1
+                memo[node.digest] = _compute(
+                    node, memo, source, shape, mask, node.digest in root_digests
+                )
+                self.last_peak_arrays = max(
+                    self.last_peak_arrays,
+                    sum(isinstance(v, np.ndarray) for v in memo.values()),
+                )
+                _release(node, uses, memo)
+                while emitted < len(roots) and roots[emitted].digest in memo:
+                    position = positions[emitted]
+                    while hits and min(hits) < position:
+                        first = min(hits)
+                        yield items[first][0], hits.pop(first)
+                    root = roots[emitted]
+                    result = _finish(memo[root.digest], shape, mask)
+                    if paths[position] not in stored:
+                        self._store(paths[position], result)
+                        stored.add(paths[position])
+                    uses[root.digest] -= 1
+                    if uses[root.digest] == 0:
+                        del memo[root.digest]
+                    emitted += 1
+                    yield items[position][0], result
+                    del result
+        for first in sorted(hits):
+            yield items[first][0], hits[first]
+
+    def _check(self, source, mask, universe_id):
         shape = (len(source.dates), len(source.symbols))
         if mask is not None:
             panelops.api.panel(mask, "mask", bool, shape)
@@ -71,6 +270,11 @@ class Evaluator:
             raise ValueError("数据 version 必须是非空字符串")
         if not isinstance(universe_id, str) or not universe_id:
             raise ValueError("universe_id 必须是非空字符串")
+        return shape
+
+    def _cache_path(self, expression, source, mask, universe_id):
+        if self.cache_dir is None:
+            return None  # 没有缓存目录时缓存键用不上，不必对日期和代码表做哈希
         axes = hashlib.sha256(
             json.dumps(
                 [list(map(str, source.dates)), list(map(str, source.symbols))],
@@ -89,30 +293,90 @@ class Evaluator:
         digest = hashlib.sha256(
             json.dumps(key, separators=(",", ":")).encode()
         ).hexdigest()
-        path = None if self.cache_dir is None else self.cache_dir / (digest + ".npy")
-        self.cache_hit = False
-        self.last_counts = {}
-        self.last_peak_arrays = 0
-        if path is not None and path.exists():
-            try:
-                metadata = json.loads(path.with_suffix(".json").read_text())
-                if metadata["sha256"] != _checksum(path):
-                    raise ValueError("缓存校验和不符")
-                result = np.load(path, mmap_mode="r", allow_pickle=False)
-                if (
-                    result.shape != shape
-                    or result.dtype != np.float64
-                    or not result.flags.c_contiguous
-                ):
-                    raise ValueError("缓存面板协议不符")
-                self.cache_hit = True
-                return result
-            except (OSError, ValueError, KeyError, TypeError, EOFError):
-                # 半截、损坏及旧格式缓存均按未命中重算，后续原子替换。
-                pass
+        return self.cache_dir / (digest + ".npy")
 
-        order, seen, stack = [], set(), [(expression, False)]
-        uses = Counter()
+    @staticmethod
+    def _load(path, shape):
+        if path is None or not path.exists():
+            return None
+        try:
+            metadata = json.loads(path.with_suffix(".json").read_text())
+            # 先比格式、键和长度（不读数据），再做完整的分块 SHA-256。
+            if (
+                metadata["format"] != CACHE_FORMAT
+                or metadata["key"] != path.stem
+                or metadata["bytes"] != path.stat().st_size
+            ):
+                raise ValueError("缓存元数据不符")
+            if metadata["tree_sha256"] != _checksum(path):
+                raise ValueError("缓存校验和不符")
+            result = np.load(path, mmap_mode="r", allow_pickle=False)
+            if (
+                result.shape != shape
+                or result.dtype != np.float64
+                or not result.flags.c_contiguous
+            ):
+                raise ValueError("缓存面板协议不符")
+            return result
+        except (OSError, ValueError, KeyError, TypeError, EOFError):
+            # 半截、损坏及旧格式缓存均按未命中重算，后续原子替换。
+            return None
+
+    @staticmethod
+    def _store(path, result):
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = []
+        try:
+            fd, name = tempfile.mkstemp(
+                prefix=f"{path.stem}.{os.getpid()}.", suffix=".tmp", dir=path.parent
+            )
+            temporary.append(Path(name))
+            with os.fdopen(fd, "wb") as output:
+                np.save(output, result, allow_pickle=False)
+                output.flush()
+                os.fsync(output.fileno())
+            checksum = _checksum(temporary[0])
+            fd, name = tempfile.mkstemp(
+                prefix=f"{path.stem}.{os.getpid()}.", suffix=".tmp", dir=path.parent
+            )
+            temporary.append(Path(name))
+            with os.fdopen(fd, "w") as output:
+                json.dump(
+                    {
+                        "format": CACHE_FORMAT,
+                        "key": path.stem,
+                        "bytes": temporary[0].stat().st_size,
+                        "tree_sha256": checksum,
+                    },
+                    output,
+                )
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary[0], path)
+            os.replace(temporary[1], path.with_suffix(".json"))
+        finally:
+            for temp in temporary:
+                temp.unlink(missing_ok=True)
+
+
+def default_memory_limit():
+    """批量求值的默认面板内存上限：物理内存的 1/12（24 GB 机器上 2 GB，约 9 张全尺寸面板）。
+
+    实测 1/4（6 GB）在别的任务同时占内存时出现过 2 倍的抖动，1/12 稳定且只比逐个求值
+    多约 0.4 GB 驻留。"""
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 12
+    except (ValueError, OSError):
+        return 4 * 2**30
+
+
+def _schedule(roots):
+    """依次对每个根做后序遍历，跳过已出现的节点；返回顺序和每个节点的消费者数。"""
+    order, seen, uses = [], set(), Counter()
+    for root in roots:
+        stack = [(root, False)]
         while stack:
             node, ready = stack.pop()
             if ready:
@@ -123,123 +387,147 @@ class Evaluator:
                 for child in node.args:
                     uses[child.digest] += 1
                 stack.extend((child, False) for child in reversed(node.args))
-        memo = {}
+    return order, uses
 
-        def panel(value):
-            if np.isscalar(value):
-                return np.full(shape, value, dtype=np.float64)
-            return np.ascontiguousarray(value)
 
-        for node in order:
-            params = dict(node.params)
-            self.last_counts[node.digest] = 1
-            if node.op == "field":
-                raw = source[params["value"]]
-                dtype = np.int64 if params["dtype"] == "int64" else np.float64
-                if not isinstance(raw, np.ndarray) or raw.dtype.kind not in (
-                    "b",
-                    "i",
-                    "u",
-                    "f",
-                ):
-                    raise TypeError("数据字段必须是数值数组")
-                if dtype == np.int64 and raw.dtype.kind not in ("i", "u"):
-                    raise TypeError("行业字段必须为整数")
-                raw = np.ascontiguousarray(raw, dtype=dtype)
-                if params["broadcast"]:
-                    # 数值或布尔序列已在上面统一转换为 float64，这里只核对形状。
-                    if raw.shape not in ((shape[0],), (shape[0], 1)):
-                        raise ValueError("市场字段必须是长度 T 或 T×1 的数值序列")
-                    raw = np.ascontiguousarray(
-                        np.broadcast_to(raw.reshape(-1, 1), shape)
-                    )
-                else:
-                    panelops.api.panel(raw, params["value"], dtype=dtype, shape=shape)
-                valid = (
-                    np.isfinite(raw)
-                    if dtype == np.float64
-                    else np.ones(shape, dtype=bool)
-                )
-                if mask is not None:
-                    valid &= mask
-                result = (
-                    raw
-                    if valid.all()
-                    else np.where(valid, raw, -1 if dtype == np.int64 else np.nan)
-                )
-            elif node.op == "constant":
-                result = params["value"]
+def _peak(roots):
+    """按与 _many 相同的顺序和释放规则模拟同时存活的面板数（含正在写的输出）。"""
+    order, uses = _schedule(roots)
+    for root in roots:
+        uses[root.digest] += 1
+    live, done, peak, emitted = set(), set(), 0, 0
+    for node in order:
+        done.add(node.digest)
+        if node.op != "constant":
+            peak = max(peak, len(live) + 1)
+            live.add(node.digest)
+        for child in node.args:
+            uses[child.digest] -= 1
+            if uses[child.digest] == 0:
+                live.discard(child.digest)
+        while emitted < len(roots) and roots[emitted].digest in done:
+            uses[roots[emitted].digest] -= 1
+            if uses[roots[emitted].digest] == 0:
+                live.discard(roots[emitted].digest)
+            emitted += 1
+    # 调用方手里还拿着刚给出的一个结果。
+    return peak + 1
+
+
+def _split(roots, limit):
+    """按输入顺序贪心分批，使每批模拟峰值不超过 limit 个面板；单个超限的自成一批。
+
+    往一批里再加一个根只会延长已有节点的存活期、追加新节点，模拟峰值随批的长度
+    单调不减，所以「贪心地加到第一次超限为止」等价于找满足上限的最长前缀：先倍增
+    再二分，每批只做 O(log 长度) 次模拟，总量约 O(n log n)（逐个加入要 O(n²)）。
+    """
+    batches, start = [], 0
+    while start < len(roots):
+        remaining = len(roots) - start
+        fits, high, step = 1, remaining + 1, 1  # fits 个已知放得下；high 个已知放不下
+        while fits < remaining:
+            trial = min(fits + step, remaining)
+            if _peak(roots[start : start + trial]) > limit:
+                high = trial
+                break
+            fits, step = trial, step * 2
+        while high - fits > 1:
+            middle = (fits + high) // 2
+            if _peak(roots[start : start + middle]) <= limit:
+                fits = middle
             else:
-                args = [memo[a.digest] for a in node.args]
-                if node.op.startswith(("ts_", "cs_")):
-                    args = [panel(a) for a in args]
-                    if node.op == "cs_group_demean":
-                        result = panelops.cs_group_demean(
-                            args[0], groups=args[1], mask=mask, **params
-                        )
-                    elif node.op == "cs_neutralize":
-                        count = params.pop("exposure_count")
-                        groups = args[1 + count] if params.pop("has_groups") else None
-                        weights = args[-1] if params.pop("has_weights") else None
-                        result = panelops.cs_neutralize(
-                            args[0],
-                            exposures=args[1 : 1 + count],
-                            groups=groups,
-                            weights=weights,
-                            mask=mask,
-                            **params,
-                        )
-                    else:
-                        result = getattr(panelops, node.op)(*args, mask=mask, **params)
-                else:
-                    result = panelops.elementwise(
-                        node.op,
-                        *args,
-                        mask=mask
-                        if any(isinstance(a, np.ndarray) for a in args)
-                        else None,
-                        **params,
-                    )
-                del args
-            memo[node.digest] = result
-            self.last_peak_arrays = max(
-                self.last_peak_arrays,
-                sum(isinstance(v, np.ndarray) for v in memo.values()),
+                high = middle
+        batches.append(roots[start : start + fits])
+        start += fits
+    return batches
+
+
+def _release(node, uses, memo):
+    for child in node.args:
+        uses[child.digest] -= 1
+        if uses[child.digest] == 0:
+            del memo[child.digest]
+
+
+def _panel(value, shape):
+    if np.isscalar(value):
+        return np.full(shape, value, dtype=np.float64)
+    return np.ascontiguousarray(value)
+
+
+def _finish(value, shape, mask):
+    result = np.ascontiguousarray(_panel(value, shape), dtype=np.float64)
+    if mask is not None and np.isscalar(value):
+        result[~mask] = np.nan
+    # 创建只读视图，不修改数据源原数组的 writeable 标志。
+    result = result.view()
+    result.flags.writeable = False
+    return result
+
+
+def _compute(node, memo, source, shape, mask, root):
+    """单个节点的求值；单个与批量入口共用，保证逐位相同。
+
+    浮点字段叶子只在作为结果直接给出时才把非有限值和掩码外的格子改写成 NaN。
+    作为算子输入时省掉这一遍 isfinite 和 where 复制：Rust 内核对每个输入格子都按
+    「非有限即缺失」处理，掩码也随每次调用传入，结果逐位相同（见 PERF_LOG P-010）。
+    配置了 NumPy 分派（``panelops.api.BACKENDS`` 非空）时仍照旧改写。"""
+    params = dict(node.params)
+    if node.op == "field":
+        raw = source[params["value"]]
+        dtype = np.int64 if params["dtype"] == "int64" else np.float64
+        if not isinstance(raw, np.ndarray) or raw.dtype.kind not in (
+            "b",
+            "i",
+            "u",
+            "f",
+        ):
+            raise TypeError("数据字段必须是数值数组")
+        if dtype == np.int64 and raw.dtype.kind not in ("i", "u"):
+            raise TypeError("行业字段必须为整数")
+        raw = np.ascontiguousarray(raw, dtype=dtype)
+        if params["broadcast"]:
+            # 数值或布尔序列已在上面统一转换为 float64，这里只核对形状。
+            if raw.shape not in ((shape[0],), (shape[0], 1)):
+                raise ValueError("市场字段必须是长度 T 或 T×1 的数值序列")
+            raw = np.ascontiguousarray(np.broadcast_to(raw.reshape(-1, 1), shape))
+        else:
+            panelops.api.panel(raw, params["value"], dtype=dtype, shape=shape)
+        if dtype == np.float64 and not root and not panelops.api.BACKENDS:
+            return raw
+        valid = np.isfinite(raw) if dtype == np.float64 else np.ones(shape, dtype=bool)
+        if mask is not None:
+            valid &= mask
+        return (
+            raw
+            if valid.all()
+            else np.where(valid, raw, -1 if dtype == np.int64 else np.nan)
+        )
+    if node.op == "constant":
+        return params["value"]
+    args = [memo[a.digest] for a in node.args]
+    if node.op.startswith(("ts_", "cs_")):
+        args = [_panel(a, shape) for a in args]
+        if node.op == "cs_group_demean":
+            return panelops.cs_group_demean(
+                args[0], groups=args[1], mask=mask, **params
             )
-            for child in node.args:
-                uses[child.digest] -= 1
-                if uses[child.digest] == 0:
-                    del memo[child.digest]
-        result = np.ascontiguousarray(panel(memo[expression.digest]), dtype=np.float64)
-        if mask is not None and np.isscalar(memo[expression.digest]):
-            result[~mask] = np.nan
-        # 创建只读视图，不修改数据源原数组的 writeable 标志。
-        result = result.view()
-        result.flags.writeable = False
-        if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = []
-            try:
-                fd, name = tempfile.mkstemp(
-                    prefix=f"{path.stem}.{os.getpid()}.", suffix=".tmp", dir=path.parent
-                )
-                temporary.append(Path(name))
-                with os.fdopen(fd, "wb") as output:
-                    np.save(output, result, allow_pickle=False)
-                    output.flush()
-                    os.fsync(output.fileno())
-                checksum = _checksum(temporary[0])
-                fd, name = tempfile.mkstemp(
-                    prefix=f"{path.stem}.{os.getpid()}.", suffix=".tmp", dir=path.parent
-                )
-                temporary.append(Path(name))
-                with os.fdopen(fd, "w") as output:
-                    json.dump({"sha256": checksum}, output)
-                    output.flush()
-                    os.fsync(output.fileno())
-                os.replace(temporary[0], path)
-                os.replace(temporary[1], path.with_suffix(".json"))
-            finally:
-                for temp in temporary:
-                    temp.unlink(missing_ok=True)
-        return result
+        if node.op == "cs_neutralize":
+            count = params.pop("exposure_count")
+            groups = args[1 + count] if params.pop("has_groups") else None
+            weights = args[-1] if params.pop("has_weights") else None
+            return panelops.cs_neutralize(
+                args[0],
+                exposures=args[1 : 1 + count],
+                groups=groups,
+                weights=weights,
+                mask=mask,
+                **params,
+            )
+        return getattr(panelops, node.op)(*args, mask=mask, **params)
+    return panelops.elementwise(
+        node.op,
+        *args,
+        mask=mask if any(isinstance(a, np.ndarray) for a in args) else None,
+        **params,
+    )

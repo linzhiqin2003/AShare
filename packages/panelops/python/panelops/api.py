@@ -470,6 +470,35 @@ def rank_ic(x, returns, **kwargs):
     return ic(x, returns, rank=True, **kwargs)
 
 
+def rank_ic_many(scores, returns, *, mask=None, backend=None):
+    """Daily Spearman correlation of several score panels against one return panel.
+
+    Returns are ranked once per day and reused for every score; each output equals
+    ``rank_ic(score, returns, mask=mask)`` bit for bit. ``scores`` may be any iterable
+    of panels and is consumed one panel at a time, so a generator keeps only the
+    current panel alive. Returns a list of 1-D arrays in input order.
+    """
+    if isinstance(scores, np.ndarray):
+        raise TypeError("scores must be an iterable of panels, not a single array")
+    panel(returns, "returns")
+    mm = optional(mask, returns, "mask", bool)
+    selected = backend or BACKENDS.get("rank_ic", "rust")
+    if selected not in ("rust", "numpy"):
+        raise ValueError("backend must be rust or numpy")
+    order = None
+    out = []
+    for score in scores:
+        panel(score)
+        panel(returns, "returns", shape=score.shape)
+        if selected == "numpy":
+            out.append(ic(score, returns, mask=mask, rank=True, backend="numpy"))
+            continue
+        if order is None:
+            order = _core.return_order(returns, mm, _THREADS)
+        out.append(_core.rank_ic_ordered(score, order, _THREADS))
+    return out
+
+
 def factor_autocorr(x, periods=1, *, rank=True, mask=None, backend=None):
     """Lagged daily cross-sectional correlation on the common valid universe."""
     panel(x)

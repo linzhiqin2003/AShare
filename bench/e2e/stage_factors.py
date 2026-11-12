@@ -120,6 +120,22 @@ def run(ctx):
         }
     )
 
+    if hasattr(evaluator, "evaluate_many"):
+        # 批量入口（P-009 起）：同一批表达式合成一张图求值，结果应与上面逐个求值逐位相同。
+        stats, values = measure(
+            lambda: {k: digest(v) for k, v in evaluator.evaluate_many(batch, source)},
+            ctx["repeat"](2),
+        )
+        cases.append(
+            {
+                "case": "expressions_evaluate_many",
+                "scale": {"expressions": len(batch), "shape": source.shape},
+                **stats,
+                "summary": values,
+                "detail": dict(evaluator.last_batch),
+            }
+        )
+
     leaves = sorted({name for e in batch.values() for name in e.fields})
 
     def prepare_fields():
