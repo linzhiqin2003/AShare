@@ -597,6 +597,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "panelops-core"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
+name = "panelops-python"
+version = "0.1.0"
+dependencies = [
+ "numpy",
+ "panelops-core",
+ "pyo3",
+ "rayon",
+]
+
+[[package]]
 name = "paperbroker-core"
 version = "0.1.0"
 dependencies = [

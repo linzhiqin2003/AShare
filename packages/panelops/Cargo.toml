@@ -1,0 +1,14 @@
+[package]
+name = "panelops-python"
+version = "0.1.0"
+edition = "2024"
+[lib]
+name = "panelops_ext"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+[dependencies]
+panelops-core = { path = "../../crates/panelops-core" }
+pyo3 = { workspace = true, features = ["extension-module"] }
+numpy.workspace = true
+rayon.workspace = true
