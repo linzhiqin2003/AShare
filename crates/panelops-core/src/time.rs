@@ -823,6 +823,9 @@ fn extrema<const O: usize, const D: bool>(
     let mut prefix_ids = vec![usize::MAX; n];
     let mut prefix_counts = vec![0usize; n];
     let maximum = O == MAX || O == ARGMAX || O == IDXMAX;
+    // Tie rule for positions: by default the newest tied extremum wins; with
+    // `earliest` the oldest wins. Values (min/max) are the same either way.
+    let earliest = p.earliest;
     for (t, row) in rows.into_iter().enumerate() {
         let offset = t % p.window;
         if offset == 0 {
@@ -842,14 +845,16 @@ fn extrema<const O: usize, const D: bool>(
                             counts[i] = 0;
                         }
                         counts[i] += usize::from(ok);
-                        // Keep the newer suffix position on a tie.
+                        // Rows arrive newest first: a tie keeps the newer position,
+                        // unless ties go to the earliest row.
                         let better = ok
                             & ((indices[i] == usize::MAX)
                                 | if maximum {
                                     x > suffix[i]
                                 } else {
                                     x < suffix[i]
-                                });
+                                }
+                                | (earliest & (x == suffix[i])));
                         suffix[i] = choose(x, suffix[i], better);
                         indices[i] = choose_index(t - p.window + r, indices[i], better);
                     }
@@ -861,26 +866,30 @@ fn extrema<const O: usize, const D: bool>(
             let (x, _, ok) = values::<O, D>(pan, t, first + k);
             // Missing values and comparisons are data dependent: select, do not branch.
             prefix_counts[k] += usize::from(ok);
+            // Rows arrive oldest first: a tie moves to the newer position by default.
             let better = ok
                 & ((prefix_ids[k] == usize::MAX)
                     | if maximum {
-                        x >= prefix[k]
+                        x > prefix[k]
                     } else {
-                        x <= prefix[k]
-                    });
+                        x < prefix[k]
+                    }
+                    | (!earliest & (x == prefix[k])));
             prefix[k] = choose(x, prefix[k], better);
             prefix_ids[k] = choose_index(t, prefix_ids[k], better);
             let (mut count, mut best, mut index) = (prefix_counts[k], prefix[k], prefix_ids[k]);
             if t >= p.window && offset + 1 < p.window {
                 let i = (offset + 1) * n + k;
                 count += counts[i];
+                // The suffix holds older rows than the prefix.
                 let better = (indices[i] != usize::MAX)
                     & ((index == usize::MAX)
                         | if maximum {
                             suffix[i] > best
                         } else {
                             suffix[i] < best
-                        });
+                        }
+                        | (earliest & (suffix[i] == best)));
                 best = choose(suffix[i], best, better);
                 index = choose_index(indices[i], index, better);
             }

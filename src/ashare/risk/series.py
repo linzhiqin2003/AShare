@@ -270,7 +270,12 @@ def model_series(
             "schema": CACHE_SCHEMA,
             "version": source.version,
             "symbols": source.symbols,
-            "config": asdict(c),
+            # 行业名只改因子名；不给名字时键与改动前相同，旧缓存继续命中。
+            "config": {
+                k: v
+                for k, v in asdict(c).items()
+                if k != "industry_names" or v is not None
+            },
             "kind": kind,
             "statistical": statistical_options,
             "external_names": external_names,

@@ -34,6 +34,7 @@ AShare/
 │  ├─ eval/                单因子检验报告
 │  ├─ model/               滚动训练、LightGBM
 │  ├─ portfolio/           组合构建与优化
+│  ├─ backtest/            信号日到成交日的错位、面板到 panelbt 的行情与 A 股规则
 │  ├─ research/            试验账本、显著性检验
 │  ├─ recon/               与 rqalpha 对账
 │  └─ paper/               模拟盘的行情、调度、策略对接
@@ -55,7 +56,7 @@ AShare/
 | 模拟盘 | 自研 `paperbroker`（Rust 内核） | 与回测共用规则代码；行情用 Tushare 实时日线接口 `rt_k`，现有密钥实测三次请求取全市场，带买一卖一价量 |
 | 因子算子 | 自研 `panelops` | 统一接口；逐个算子与 polars / numpy 对比，Rust 更快的就写 Rust，其余直接包一层 |
 | 因子合成 | 自研滚动训练 + LightGBM | Qlib 没有 Python 3.13 的安装包，对 pandas 3 的修复未合并 |
-| 组合优化 | cvxpy | 成熟，本机实测可用 |
+| 组合优化 | Clarabel 直接调用（默认）；cvxpy 只作后备和参考 | 问题先换成标准锥形式再交给 Clarabel 的 Python 接口，同结构问题复用；Clarabel 报数值失败时退到 cvxpy + Clarabel 重解；`backend="rust"` 走 `portopt`（Rust 里调 Clarabel，可批量并行）；`backend="cvxpy_*"` 是用来对拍的参考实现。见 6.4 |
 | 对照与对账 | alphalens-reloaded、rqalpha（仅开发依赖） | 用独立实现核对自研代码的结果 |
 | 报告 | quantstats，加自己的统计检验 | 实测可用 |
 
@@ -107,7 +108,18 @@ results = bt.run_batch(market, [targets_1, targets_2, ...], costs, config, threa
 
 ### 4.3 时间约定
 
-`targets` 里第 t 行是**第 t 日成交时**要达到的目标。引擎不做任何移位。用 t−1 日收盘的信息算信号、在 t 日成交，这个错位由调用方负责，`ashare` 里统一封装，防止前视。
+`targets` 里第 t 行是**第 t 日成交时**要达到的目标。引擎不做任何移位。用 t−1 日收盘的信息算信号、在 t 日成交，这个错位由调用方负责，项目里只在 `ashare.backtest` 做一次：
+
+```python
+from ashare.backtest import execution_targets, execution_days
+plan = execution_targets(signal)                 # 稠密 T×N，行 = 信号日
+plan = execution_targets(picks, t=T)             # panelops.targets 等稀疏目标，行 = 信号日
+days = execution_days(signal_days, T)            # 只要成交日行号（如交给 optimize_sequence）
+```
+
+- 行号就是交易日：周末、节假日不在面板里，周五收盘的信号落到下一个交易日那一行。`lag` 默认 1，必须是正整数；信号只用开盘前已知信息、本来就不需要错位的，直接构造 `panelbt.Targets`。
+- 末尾 `lag` 行的信号在面板里没有成交日：默认丢掉，`tail="error"` 时报错。
+- 成交日停牌或涨跌停：错位不管，引擎按 `can_buy`/`can_sell` 拦下，`carry_blocked=True`（默认）在之后每天重试直到下一个调仓行。
 
 第 t 日的处理顺序：
 
@@ -126,9 +138,11 @@ results = bt.run_batch(market, [targets_1, targets_2, ...], costs, config, threa
 ### 4.4 A 股规则（`panelbt.markets.ASHARE`）
 
 - 可买可卖：停牌不可买卖；成交价等于涨停价不可买；成交价等于跌停价不可卖；全天一字板按最高价等于最低价判断。
-- 印花税：按日期给出税率序列（2008-09-19 起卖出单边 0.1%，2023-08-28 起 0.05%）。
+- 印花税和过户费：`ASHARE.costs(dates)` 按日期展开，覆盖 2005-01-24 起的全部历史（面板从 2007-01-04 开始），不用再手填。每一条的生效日期和依据见 [ASHARE_FEES.md](ASHARE_FEES.md)：印花税 2005-01-24 双边 0.1%、2007-05-30 双边 0.3%、2008-04-24 双边 0.1%、2008-09-19 起卖出单边 0.1%、2023-08-28 起 0.05%；过户费 2015-08-01 起两市按成交金额 0.02‰、2022-04-29 起 0.01‰。2015 年以前沪市按面值、深市按金额，引擎的费率只能按日期不能按证券区分，所以两种同时计入（保守，偏高），这几条标「未核实」。
+- 全区间固定费率要显式写：`panelbt.Costs(tax_sell=0.001, fee_rate_buy=1e-5, fee_rate_sell=1e-5, …)`，或在 `ASHARE.costs` 里把四个分量都覆盖。覆盖某个方向的过户费（按金额或按股）时，同方向的另一种写法自动清零，同一笔费用不会算两次。佣金由券商定，调用方给。
 - 申报单位：主板和创业板 100 股的整数倍；科创板 200 股起、1 股递增；北交所 100 股起、1 股递增。
 - 佣金最低 5 元；过户费双边。
+- 从面板一步建行情：`ashare.backtest.market_from_panel(data, start, end, exec="open")`（见 6.1）。
 
 ### 4.5 性能目标与实现语言
 
@@ -305,6 +319,20 @@ ds.calendar(); ds.securities(); ds.field("close")
 ds.version                                       # 进因子缓存和试验账本的键
 ```
 
+接到回测和风险模型的转接只有两处，都在 `ashare` 里：
+
+```python
+from ashare.backtest import market_from_panel
+bm = market_from_panel(ds, start="2015-01-05", exec="open", fields=["adj_factor"])
+bm.market, bm.config(initial_cash=1e7), bm.costs(commission_rate=2.5e-4)
+
+from ashare.risk import from_panel
+source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
+```
+
+- `market_from_panel`：成交价 `exec` 取 `open`（默认，直接用面板的 `can_buy_open`/`can_sell_open`）、`close` 或 `vwap`（按同一条涨跌停、一字板、停牌规则现算）；`split`、`cash_dividend` 的「缺失 = 无事件」换成 1 和 0；板块取证券表的板块列，为空时按代码前缀推断（如 `T600018.SH`），都认不出就报错列出证券；`delist` 原样交给引擎。
+- `from_panel`：`total_market_cap`/`float_market_cap`/`turnover` 改名为风险模型的 `total_mv`/`circ_mv`/`turnover_rate`；区间里出现过的申万一级代码按升序编成 0..K−1，行业因子用申万名称命名（`industry_银行`，代码两版都有时取 SW2021 名称）。
+
 - 数据层以外的代码不出现 Tushare 的接口名、字段名、原始单位和文件路径。
 - 同一个 Tushare 账号的限速和「单 IP」规则由同一个客户端管，历史采集和模拟盘的实时轮询共用它。
 - 换数据源或加数据源（BaoStock 核对、以后的港股美股）只加一个源适配模块和几条数据集声明，读取接口不变。
@@ -337,10 +365,71 @@ ds.version                                       # 进因子缓存和试验账�
 - 第一批：市值、短期反转、动量、波动率、换手率、估值（EP、BP）、股息率，以及 Alpha158 的量价部分。
 - 单因子报告：IC 与 ICIR、分组收益、**多头组扣成本后相对基准的超额**（调用 panelbt）、换手、分年度、分市值段、与已有因子的相关性。评价以多头端为准，因为做不了空。
 
+#### 6.2.1 外部因子包
+
+成套的公式型因子（公式、独立参考实现、约定文件、核对结果）不放在本仓库，写成单独的 Python 包，经入口点组 `ashare.factors` 被发现。本仓库的 `ashare.factor.formula` 只提供机制：
+
+- `dsl`：WorldQuant 式、国君式公式的翻译用语言（口径集中在这一个文件）；`qlib`：Qlib 表达式字符串到 `Expr` 的确定性转换；`ops`：用现有算子精确组合出的算子。
+- `registry_from_module(模块, 前缀, 条数, notes=..., excluded=...)`：从「一个函数一条因子」的模块构造注册表，按名字挂元数据标记 `notes`（`(标记, 编号)`），`registry.with_note(标记)` 筛选。
+- `inputs`：取数（`load_inputs`）与参考实现的输入（`reference_frames`）；`verify`：候选对独立参考实现逐格核对，支持「已知例外」（`KnownException`：只对条件成立、按正常规则不过关、候选恰为声明值的格子生效，单独计数）。
+- `plugins`：`discover()` 列出全部因子集，`load_registry(名字, **选项)` 取注册表。没装任何外部包时只有内置示例集 `example`（两条自编因子和它们的参考实现），一切功能照常。
+
+外部包的最小写法：
+
+```toml
+# 外部包的 pyproject.toml
+[project]
+name = "my_factors"
+version = "0.1"
+dependencies = ["ashare"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.entry-points."ashare.factors"]
+my_factors = "my_factors.plugin:register"
+```
+
+```python
+# my_factors/plugin.py
+from ashare.factor.formula import FactorSet, dsl as d
+from ashare.factor.library import Registry
+
+
+def build(window="7"):
+    registry = Registry()
+    registry.register(
+        "my_range", d.ts_mean(d.high - d.low, int(window)), "mean(high - low, window)",
+        notes=[("自编", "M-1")],
+    )
+    return registry
+
+
+def register(hub):
+    hub.add(FactorSet("mine", build, reference="my_factors.reference", options=("window",)))
+```
+
+```python
+# my_factors/reference.py：独立参考实现（pandas），选项以字符串原样传入
+def my_range(frames, window="7"):
+    return (frames["high"] - frames["low"]).rolling(int(window)).mean()
+
+
+REFERENCES = {"my_range": my_range}
+```
+
+装进同一个环境（`uv pip install -e 路径`）后：`load_registry("mine", window="9")` 取注册表，`python -m ashare.factor.formula.verify mine --option window=9` 核对。约定：
+
+- `register(hub)` 只有一个参数；入口点导入失败、`register` 报错、两个包登记同名因子集，都会直接报错并指明入口点，不静默跳过。
+- `FactorSet` 的 `build(**选项)` 返回 `Registry`，只接受 `options` 里声明的选项（命令行传进来的值是字符串）；`reference` 是参考实现模块（`REFERENCES = {名字: 函数}` 或 `compute_many(frames, names, **选项)`），选项同样传给它；参考实现只有时序运算时可以给 `chunk`（按证券分块并行）；`exceptions = {因子名: (KnownException, ...)}`。
+- 参考实现要独立：照约定文件自己写 pandas，不调用 `ashare.factor` 的表达式和 `panelops`。
+- 外部包的测试可以用 `ashare.factor.formula.testing.synthetic_source` 造合成面板。
+
 ### 6.3 合成、组合与研究纪律
 
 - 滚动训练：按时间切分，训练集和测试集之间留隔离期；LightGBM；各折并行。
-- 组合：前 N 等权；或用 cvxpy 约束相对基准的行业和市值偏离、个股上限、换手。
+- 组合：前 N 等权；或用 `ashare.portfolio` 约束相对基准的行业和市值偏离、个股上限、换手（6.4）。
 - 纪律：先写假设和判定规则再跑；每个试验记账；最近两年的数据留作最终检验；用试验次数折算显著性。统计检验从 Quant 项目移植。
 
 ### 6.4 风险模型与组合优化
@@ -352,7 +441,9 @@ ds.version                                       # 进因子缓存和试验账�
 - **时点**：第 t 天的模型只用第 t 天收盘前已知的数据；暴露用第 t 天的值解释第 t+1 天的收益。
 - **检验**：在已知因子结构的合成数据上要能还原参数；用偏差统计量（预测波动与实现波动之比）检验预测是否准确，两种模型互相对照。
 
-**组合优化 `ashare.portfolio`**：不自己写求解器。用 cvxpy 描述问题，Clarabel 或 OSQP 求解；按项目的性能原则，测直接调用求解器和 Rust 批量并行求解，更快就用。
+**组合优化 `ashare.portfolio`**：不自己写求解器。实测后的默认路径（`backend="auto"`）是把问题换成标准锥形式、直接调 Clarabel 的 Python 接口，同结构的问题复用；Clarabel 报数值失败时退到 cvxpy + Clarabel 重解。`backend="rust"` 走 `portopt`（Rust 里调 Clarabel，可批量并行），`backend="osqp"` 和 `backend="cvxpy_*"` 留作对照和参考实现，不在默认路径上。
+
+- 接真实面板：`ashare.risk.from_panel(data, start=...)` 返回交给 `model_series` 的 `(source, config)`（见 6.1）。`PortfolioProblem` 的 `industry_factors`、`style_factors` 可以给因子列号，也可以给因子名（`"industry_银行"`、`"size"`，可混用），风格因子名的全集是 `ashare.risk.STYLE_NAMES`。
 
 - 目标：预期收益 − 风险厌恶 × 主动风险 − 交易成本。
 - 约束：满仓或留现金比例、只做多和个股上限、相对基准的个股 / 行业 / 风格偏离上限、换手上限、跟踪误差上限；停牌和涨跌停买卖不了的股票权重冻结。
