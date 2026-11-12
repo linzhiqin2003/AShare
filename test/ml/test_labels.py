@@ -221,7 +221,10 @@ def test_carry_widens_minimum_gap():
             for i in range(900)
         ]
     )
-    with pytest.raises(ValueError, match="不能小于标签跨度"):
+    with pytest.raises(
+        ValueError,
+        match=r"不能小于标签跨度 10（lag \+ horizon；sell_blocked=\"carry\" 时再加 max_carry）",
+    ):
         ml.schedule(days, lab.span, start=600, gap=1 + 5)  # 旧的 lag+h 不够
     sched = ml.schedule(days, lab.span, start=600)
     ml.check_schedule(sched, lab.span)

@@ -162,7 +162,8 @@ def schedule(
         gap = span
     if isinstance(gap, bool) or not isinstance(gap, (int, np.integer)) or gap < span:
         raise ValueError(
-            f"gap: 不能小于标签跨度 {span}（lag + horizon），否则训练样本的标签会和后一段重叠"
+            f'gap: 不能小于标签跨度 {span}（lag + horizon；sell_blocked="carry" 时再加 '
+            "max_carry），否则训练样本的标签会和后一段重叠"
         )
     gap = int(gap)
     if window not in ("rolling", "expanding"):
