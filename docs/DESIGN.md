@@ -516,6 +516,20 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - **校验**（`futures_verify`，原始库部分与同步、适配器不共用代码）：每项判 pass / explained / fail，「已解释」只认已知例外清单（`futures_known_exceptions.json`，逐条写合约、日期、原因）里的条目，清单外的不符一律 fail，命令行以非零状态退出。清单只放匹配键和原因（不放由行情算出的数值，测试按白名单核对键集合）；「不符已确认、原因未查明」的原因单列在 `cause_unknown`，报告里单独计数。检查项：清单对文件、日分区覆盖与截断、主键唯一、日历对照与「休市日有日线」、合约覆盖、前结算连续、日线取值范围（价格为正、最高 ≥ 最低等）、结算参数取值范围、整天零手续费、单双边奇偶（含单边以后的双边复发）、合约表单位对成交额、代码对齐、按日乘数逐行核对成交额；面板部分（不允许例外）：统一参数取值范围、引用完整性。
 - 只做日频；分钟线、涨跌停幅度（Tushare 没有，以后取交易所每日交易参数文件）、交割结算价（商品期货）不在这一批。
 
+#### 6.1.2 境外期货的来源适配（Databento、Bloomberg，2026-11-13 第 2 批）
+
+用户的 Tushare 取不到境外期货（WTI、布伦特）。先把两个适配器写好，有了账号装上可选依赖就能用；**两个都未用真实账号验证**。口径、字段映射、出处、未核实清单和首次核对清单见 `docs/FOREIGN_FUTURES.md`。
+
+- **分层**照境内：取数层在 `ashare.data.sources.databento`、`ashare.data.sources.bloomberg`（只用官方客户端 `databento`、`blpapi`，不自己拼请求，不导入其他 ashare 模块）；换算层 `futures_foreign`（品种表、代码解析、交易日归属、分钟线字段、落盘、接面板）、`futures_foreign_databento`、`futures_foreign_bloomberg`，交出 `futures_schema` 的统一字段，面板、连续合约、`panelbt_inputs` 都不改。
+- **可选依赖**：`ashare[databento]`、`ashare[bloomberg]`，默认不装；`blpapi` 只在 Bloomberg 的包索引上（`pyproject.toml` 登记为显式索引）。没装时报错并提示装哪个 extra；换算层不依赖官方库（测试用假客户端）。
+- **费用闸门**：Databento 按量计费。每次取数前先调 `metadata.get_cost`，累计估算超过调用方给的预算就不取并报出估算值；默认预算 0，即默认只估不取。密钥只从环境变量 `DATABENTO_API_KEY` 读；Bloomberg 桌面 API 走本机终端，不要密钥。
+- **交易日**：CME 本地 17:00（芝加哥）、ICE 布伦特 23:00（伦敦）以后的成交归下一个交易日，再顺延过周末和休市日；日线不用 Databento 的 `ohlcv-1d`（按 UTC 日切分），用小时线按交易日聚合，结算价、持仓量取 `statistics`。
+- **合约标识**：两家的代码（`CLZ6`、`BRN FMZ0026!`、`CLZ6 Comdty`、`COZ6 Comdty`）解析成 `CL2612.NYMEX`、`B2612.ICE`；一位、两位年份按最后交易日解十年回绕。
+- **连续合约**：适配器只取具体合约，连续合约由 `futures_continuous` 用同一套换月规则拼；两家自带的连续序列（Databento `CL.c.0`/`n.0`/`v.0`、Bloomberg `CL1 Comdty`）只作对账参照。
+- **分钟线**：统一字段新增分钟线表（`futures_foreign.MINUTE`：K 线开始时刻 UTC、所属交易日、合约、开高低收、成交量），暂时定义在 `futures_foreign` 里；境内以后加分钟线时挪进 `futures_schema`。
+- **面板**：`build_panel(adapter, root)` 走 `build_futures`。境外没有原始库清单，适配器名字带输出内容的哈希，使面板版本随数据变化；境外用单独的数据根。
+- 不做：原始分区 + 清单的落盘（另一条线），只到「取数 → 统一字段的表 → parquet」；保证金、费用来源没有，`params` 只有调用方给的保证金率，费用留空。
+
 ### 6.2 因子与检验
 
 - 因子用算子组合定义，登记名字、所需字段和说明；结果按「定义的哈希 + 数据版本」缓存。

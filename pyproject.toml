@@ -5,6 +5,11 @@ license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = ["panelbt", "panelops", "paperbroker", "portopt", "httpx>=0.28.1", "polars>=1.35", "pyarrow>=21", "scipy>=1.14", "cvxpy>=1.6", "clarabel>=0.11", "osqp>=1.0"]
 
+[project.optional-dependencies]
+# 境外期货的两个来源（docs/FOREIGN_FUTURES.md），默认不装。blpapi 只在 Bloomberg 自己的包索引上。
+databento = ["databento>=0.90"]
+bloomberg = ["blpapi>=3.24"]
+
 [build-system]
 requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
@@ -12,7 +17,13 @@ build-backend = "hatchling.build"
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[[tool.uv.index]]
+name = "bloomberg"
+url = "https://blpapi.bloomberg.com/repository/releases/python/simple/"
+explicit = true
+
 [tool.uv.sources]
+blpapi = { index = "bloomberg" }
 panelbt = { workspace = true }
 panelops = { workspace = true }
 paperbroker = { workspace = true }

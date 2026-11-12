@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-13（境外期货的来源适配）
+- 新增 Databento、Bloomberg 两个境外期货适配器（`docs/DESIGN.md` 6.1.2、`docs/FOREIGN_FUTURES.md`），**未用真实账号验证**：取数层 `ashare.data.sources.databento`（费用闸门：先 `metadata.get_cost`，默认预算 0 只估不取）、`ashare.data.sources.bloomberg`（`//blp/refdata` 的历史、参考、分钟线请求）；换算层 `futures_foreign*` 把合约表、日线、分钟线、日历转成与境内相同的统一字段（CME / ICE 交易日归属、十年回绕、final 结算价、持仓量归属），`build_panel` 接期货面板、连续合约和 `panelbt_inputs`。可选依赖 `ashare[databento]`、`ashare[bloomberg]`，默认不装。
+
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。
 
