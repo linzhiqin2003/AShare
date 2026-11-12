@@ -20,6 +20,9 @@
 - 端到端剖析工具 `bench/e2e`（`make perf-profile`、`make perf-compare`）和第一份基线。
 
 ## 2026-11-13
+- 归因与容量（`ashare.analysis`，`docs/DESIGN.md` 6.5、`docs/ANALYSIS_NOTES.md`）：基于风险模型的收益归因（市场 / 行业 / 风格 / 特质 / 交易 / 成本，GRAP 或 Carino 多期链接）、事前风险拆分与偏差统计、Brinson 行业归因（BF / BHB）、按冲击模型的容量与成本（解析模拟与 `panelbt` 实跑对账）、按年的成本拆解；结果都能转成列式 dict。
+- 归因与容量返工：停牌中除权的收益改为后复权价整体沿用（原先在除权日记假收益、复牌日反向，沪深 300 基准 2015 年起累计被高估约 1.3 个百分点）；持仓估值改用 panelbt 的除权参考价；成本率加上红利税和融资利息。容量改为取成本曲线上升段的交点（原先报搜索下限 1 万元，真实例子现为约 7.15 千万元），另报最小可行规模，边界情况给 NaN/inf 加状态。未覆盖基准成分超过阈值时告警；诊断加停牌持仓在特质项里的部分；偏差区间改用块自助法。行情、账户规则、费用表、信号错位改用主干入口。
+- 归因与容量收尾：解析模拟一次算多个规模（`simulate_many`），交点改用成批多分法，真实例子一次容量求解 15.7 s → 3.1 s，结果相对差 ≤ 2e-7；容量表里被最低佣金打穿的规模记 NaN 并加 `wiped_out` 列；诊断加分红口径差 `dividend_convention`。
 - 性能优化一轮合入主干（13 项，逐项记录见 `docs/PERF_LOG.md`）：一次完整研究 189.6 → 75.9 s，改用新增的批量和并行入口 66.5 s。新增 `Evaluator.evaluate_many`、`panelops.rank_ic_many`、`optimize_sequence(parallel=True)`、`FundamentalConfig.specific_incremental`；风险模型缓存格式升到 5、因子缓存格式升到 2（旧缓存自动重算）。
 - 面板新增 `can_buy_open`、`can_sell_open` 两个字段（共 48 个）。
 - 开源：许可证 Apache-2.0，新增根目录 README（中英文，附对比数字和图）。
