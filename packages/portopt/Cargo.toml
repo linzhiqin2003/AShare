@@ -1,0 +1,15 @@
+[package]
+name = "portopt-python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "portopt_ext"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+portopt-core = { path = "../../crates/portopt-core" }
+pyo3 = { workspace = true, features = ["extension-module"] }
+numpy.workspace = true

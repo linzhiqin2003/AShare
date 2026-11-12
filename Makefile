@@ -3,7 +3,7 @@ export CARGO_HOME := $(CURDIR)/.cache/cargo-home
 endif
 export PYO3_PYTHON := $(CURDIR)/.venv/bin/python
 
-.PHONY: dev check bench bench-compare bench-docs spike mutate
+.PHONY: dev check bench bench-compare bench-docs spike mutate risk-bench risk-validate risk-mutate
 
 dev:
 	uv sync --all-packages --group dev --inexact
@@ -33,3 +33,12 @@ mutate:
 
 bench-docs:
 	uv run --no-sync python bench/compare/docs.py
+
+risk-bench:
+	uv run --no-sync python bench/risk/run.py
+
+risk-validate:
+	uv run --no-sync python -m ashare.risk.validate
+
+risk-mutate:
+	uv run --no-sync python bench/risk/mutations.py

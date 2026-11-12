@@ -1,0 +1,28 @@
+[project]
+name = "portopt"
+version = "0.1.0"
+description = "Array-only risk kernels and conic solver bindings"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.5.4,<3"]
+readme = "README.md"
+
+[build-system]
+requires = ["maturin>=1.16.0,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "portopt._core"
+profile = "release"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "src/**/*.rs" },
+  { file = "../../crates/portopt-core/Cargo.toml" },
+  { file = "../../crates/portopt-core/src/**/*.rs" },
+  { file = "../../Cargo.toml" },
+  { file = "../../Cargo.lock" },
+  { file = "python/**/*.py" },
+]
