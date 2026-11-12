@@ -1,5 +1,7 @@
 """简单对照组合和不依赖 panelbt 的稀疏目标数组。"""
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -108,6 +110,29 @@ def to_targets(days, weights, columns=None):
     )
 
 
+def independent_periods(problems):
+    """各期能否互不依赖地求解：只在确定上一期持仓不进入问题时返回 True。
+
+    上一期持仓进入问题的途径：交易成本和冲击成本（目标函数）、换手约束、不能买或
+    不能卖的冻结股票（个股边界取当前持仓）。都没有时，前期持仓只出现在
+    「主动权重 − 买入 + 卖出 = 持仓 − 基准」这条等式的右端，买卖变量没有代价也没有
+    上限，最优权重与持仓无关；但求解器看到的右端不同，数值解不逐位相同（差异见
+    docs/perf_log.d/P-014）。拿不准一律返回 False。
+    """
+    for p in problems:
+        c = p.constraints
+        if (
+            c.turnover is not None
+            or np.any(p.buy_cost)
+            or np.any(p.sell_cost)
+            or np.any(p.impact)
+            or not np.all(p.can_buy)
+            or not np.all(p.can_sell)
+        ):
+            return False
+    return True
+
+
 def optimize_sequence(
     days,
     problems,
@@ -117,25 +142,53 @@ def optimize_sequence(
     relaxations=(),
     tolerance=1e-7,
     columns=None,
+    parallel=False,
+    threads=None,
 ):
+    """逐期递推优化，上一期结果作为下一期的当前持仓。
+
+    parallel=True 时，若各期互不依赖（见 `independent_periods`），各期用各自的
+    会话在线程池里独立求解（求解器释放 GIL）；每期的当前持仓取该问题自带的
+    `current`。结果与串行在求解容差内一致但不逐位相同，所以默认仍串行。有依赖时
+    忽略 parallel、照常串行。任一期失败时从第一个失败期起改回串行递推，使
+    fallback_previous 的语义与串行相同。threads 默认取 CPU 核数与期数的较小值。
+    """
     problems = list(problems)
     if len(days) != len(problems) or not problems:
         raise ValueError("需要等长且非空的日期与问题序列")
+    if threads is not None and (not isinstance(threads, int) or threads < 1):
+        raise ValueError("threads: 需要正整数或 None")
     current = (
         problems[0].current if initial is None else np.asarray(initial, dtype=float)
     )
     symbols = problems[0].risk.symbols
-    session = SolverSession(backend)
-    results = []
     for p in problems:
         if p.risk.symbols != symbols:
             raise ValueError("批量模型必须按同一主证券表排列")
+    options = dict(backend=backend, relaxations=relaxations, tolerance=tolerance)
+    results = []
+    if parallel and len(problems) > 1 and independent_periods(problems):
+        first = replace(problems[0], current=current)
+        workers = min(len(problems), threads or os.cpu_count() or 1)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            solved = list(
+                pool.map(
+                    lambda p: optimize(p, session=SolverSession(backend), **options),
+                    [first, *problems[1:]],
+                )
+            )
+        for result in solved:
+            if not result.success:
+                break
+            results.append(result)
+        if results:
+            current = results[-1].weights
+    session = SolverSession(backend)
+    for p in problems[len(results) :]:
         result = optimize(
             replace(p, current=current),
-            backend=backend,
             session=session,
-            relaxations=relaxations,
-            tolerance=tolerance,
+            **options,
         )
         results.append(result)
         current = result.weights
