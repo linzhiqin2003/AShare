@@ -7,6 +7,13 @@ No imports from ashare, panelbt, or panelops. The Rust core forbids unsafe code.
 trading-day lag positions. `rolling_bias(realized, predicted, window, threads)`
 computes rolling sample standard deviations of standardized returns.
 
+`ew_moments_segment(window, first, last, shift, half_life, lags, floor, threads)`
+returns per-column exponentially weighted moments of rows `first..last` (shifted
+sums, squares and lag-pair products, only adding positively weighted terms), so a
+rolling window can be assembled from cached segments without subtracting old rows.
+`ew_moments_variance(state, n, lags, used, half_life)` turns them into the same
+Newey-West variance as `ew_variance`, plus the magnitude of the summed terms.
+
 `regress` accepts a shared N×K exposure matrix or a T×N×K panel and T×N
 returns, market capitalization and estimation masks. Regression weights in the
 loss are square roots of capitalization; industry constraints use capitalization.

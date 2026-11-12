@@ -468,3 +468,115 @@ pub fn ew_covariance(
     }
     Ok(result)
 }
+
+/// Number of moments kept per column by the exponentially weighted window moments.
+pub fn ew_moment_count(lags: usize) -> usize {
+    3 + 4 * lags
+}
+
+/// Exponentially weighted moments of rows `first..=last` of a time ordered `t` by `n`
+/// window, built from empty one row at a time (`state = decay * state + terms`), so a
+/// segment's value refers to its last row. Values are shifted by `shift` per column.
+///
+/// Per column, column-major in the result: weight sum, weighted shifted sum and squares;
+/// then per lag (1-based) the pair weight, the two pair sums and the cross products,
+/// each pair `(i, i - lag)` weighted by its later row and kept only if `i - lag >= floor`.
+/// Every term is added with a positive weight: no value is ever subtracted, so window
+/// sums assembled from segments carry no cancellation drift.
+#[allow(clippy::too_many_arguments)]
+pub fn ew_moments_segment(
+    window: &[f64],
+    t: usize,
+    n: usize,
+    first: usize,
+    last: usize,
+    floor: usize,
+    shift: &[f64],
+    half_life: f64,
+    lags: usize,
+    threads: usize,
+) -> Result<Vec<f64>, String> {
+    if window.len() != t * n || shift.len() != n || first > last || last >= t {
+        return Err("window, shift or segment bounds have the wrong shape".into());
+    }
+    let m = ew_moment_count(lags);
+    let decay = (-1. / half_life).exp2();
+    let mut state = vec![0.; n * m];
+    pool(threads)?.install(|| {
+        state.par_chunks_mut(m).enumerate().for_each(|(j, s)| {
+            let offset = shift[j];
+            for i in first..=last {
+                for value in s.iter_mut() {
+                    *value *= decay;
+                }
+                let newest = window[i * n + j];
+                if !newest.is_finite() {
+                    continue;
+                }
+                let x = newest - offset;
+                s[0] += 1.;
+                s[1] += x;
+                s[2] += x * x;
+                for lag in 1..=lags {
+                    if i < lag || i - lag < floor {
+                        break;
+                    }
+                    let earlier = window[(i - lag) * n + j];
+                    if earlier.is_finite() {
+                        let y = earlier - offset;
+                        let base = 3 + 4 * (lag - 1);
+                        s[base] += 1.;
+                        s[base + 1] += x;
+                        s[base + 2] += y;
+                        s[base + 3] += x * y;
+                    }
+                }
+            }
+        })
+    });
+    Ok(state)
+}
+
+/// Newey-West variance from window moments with `used` lags (Bartlett weights over
+/// `used`), equal in exact arithmetic to `ew_variance` on the same window. Also returns
+/// the magnitude of the summed terms, a scale for the cancellation in the result.
+pub fn ew_moments_variance(
+    state: &[f64],
+    n: usize,
+    lags: usize,
+    used: usize,
+    half_life: f64,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    let m = ew_moment_count(lags);
+    if state.len() != n * m || used > lags {
+        return Err("moment state has the wrong length or too many lags".into());
+    }
+    let mut variance = vec![0.; n];
+    let mut magnitude = vec![0.; n];
+    for j in 0..n {
+        let s = &state[j * m..(j + 1) * m];
+        if s[0] == 0. {
+            continue;
+        }
+        let mean = s[1] / s[0];
+        let second = s[2] / s[0];
+        let mut v = second - mean * mean;
+        let mut size = second + mean * mean;
+        for lag in 1..=used {
+            let base = 3 + 4 * (lag - 1);
+            let (count, later, earlier, cross) = (s[base], s[base + 1], s[base + 2], s[base + 3]);
+            let scale = 2.
+                * (1. - lag as f64 / (used + 1) as f64)
+                * (-(lag as f64) / (2. * half_life)).exp2()
+                / s[0];
+            v += scale * (cross - mean * (later + earlier) + mean * mean * count);
+            size += scale
+                * (cross.abs()
+                    + mean.abs() * (later.abs() + earlier.abs())
+                    + mean * mean * count.abs());
+        }
+        variance[j] = v;
+        magnitude[j] = size;
+    }
+    Ok((variance, magnitude))
+}

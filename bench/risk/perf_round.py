@@ -43,6 +43,14 @@ def summarize(model, *, ignore=()):
             json.dumps(meta, sort_keys=True, default=str).encode()
         ).hexdigest()[:20],
         "parameter_hash": model.metadata.get("parameter_hash"),
+        # 不含 parameter_hash 的元数据：配置新增字段只改它，其余必须逐位相同。
+        "meta_core": hashlib.sha256(
+            json.dumps(
+                {k: v for k, v in meta.items() if k != "parameter_hash"},
+                sort_keys=True,
+                default=str,
+            ).encode()
+        ).hexdigest()[:20],
     }
 
 
@@ -123,6 +131,55 @@ def run(args):
         if hasattr(cache, "flush"):
             cache.flush()
         timings["seconds"] = time.perf_counter() - start
+    elif args.scenario == "tolerance":
+        # P-006：同一进程里逐日并排跑「分块累加」和「从头算」，记录三个方差相对
+        # 从头算的最大误差、改用从头算的列数，以及最终 D 的最大相对差。
+        from dataclasses import replace
+
+        import numpy as np
+
+        import ashare.risk.specific as specific
+
+        worst = {"base": 0.0, "corr0": 0.0, "corrnw": 0.0}
+        fallback = [0, 0]
+        original = specific.SpecificMoments.variances
+
+        def checked(self, day):
+            got = original(self, day)
+            fallback[:] = [self.fallback_columns, fallback[1] + self.n]
+            window = self.window(max(0, day - self.capacity + 1), day)
+            for name, a, b in zip(
+                worst,
+                got[:3],
+                specific.direct_variances(window, self.config),
+                strict=True,
+            ):
+                scale = np.where(b != 0, np.abs(b), 1.0)
+                error = np.abs(a - b) / scale
+                worst[name] = max(worst[name], float(error.max()))
+            return got
+
+        specific.SpecificMoments.variances = checked
+        fast = model_series(source, config=replace(config, specific_incremental=True))
+        slow = model_series(source, config=replace(config, specific_incremental=False))
+        start = time.perf_counter()
+        d_error, b_same, f_same, total = 0.0, True, True, 0
+        for a, b in zip(fast, slow, strict=True):
+            d_error = max(d_error, float((np.abs(a.D - b.D) / b.D).max()))
+            b_same &= bool(np.array_equal(a.B, b.B))
+            f_same &= bool(np.array_equal(a.F, b.F))
+            total += 1
+            last = summarize(a)
+        timings["seconds"] = time.perf_counter() - start
+        timings["tolerance"] = {
+            "variance_max_relative_error": worst,
+            "D_max_relative_error": d_error,
+            "B_identical": b_same,
+            "F_identical": f_same,
+            "days": total,
+            "fallback_columns": fallback[0],
+            "column_days": fallback[1],
+        }
     else:
         raise SystemExit(f"unknown scenario {args.scenario}")
     if not args.work:
@@ -191,11 +248,14 @@ def diff(args):
     a, b = (json.loads(Path(p).read_text()) for p in (args.a, args.b))
     da, db = a["daily"], b["daily"]
     assert len(da) == len(db), (len(da), len(db))
-    counts = {k: 0 for k in ("B", "F", "D", "meta", "parameter_hash")}
+    counts = {k: 0 for k in ("B", "F", "D", "meta", "meta_core", "parameter_hash")}
     for x, y in zip(da, db, strict=True):
         assert x["date"] == y["date"]
         for k in counts:
-            counts[k] += x[k] != y[k]
+            if k in x and k in y:
+                counts[k] += x[k] != y[k]
+            else:
+                counts[k] = None
     print(json.dumps({"days": len(da), "differing_days": counts}))
 
 

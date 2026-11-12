@@ -19,6 +19,7 @@ from .fundamental import (
 from .kernels import exp_weights
 from .model import RiskModel
 from .rolling import RollingDescriptors
+from .specific import SpecificMoments
 from .statistical import statistical_model
 
 CACHE_SCHEMA = 3
@@ -158,6 +159,10 @@ def _iterate(
 ):
     prepared, regressed = {}, {}
     history_f, history_r, history_bias = [], [], []
+    # 特质方差逐日递推；从头算模式下为 None，与旧实现同一路径。
+    moments = (
+        SpecificMoments(len(source.symbols), c) if c.specific_incremental else None
+    )
     previous = None
     previous_key = None
     prefix = b""
@@ -262,13 +267,20 @@ def _iterate(
                         ]
                     )
             fs = np.asarray((history_f + [f])[-c.history :])
-            rs = np.asarray((history_r + [residual])[-c.history :])
+            if moments is not None:
+                moments.push(day, residual)
             good_f = np.isfinite(fs).all(axis=1)
             if good_f.sum() >= c.min_descriptor_days:
                 # 不压缩时间轴：没有回归的日期保留 NaN，NW 的 lag 仍是交易日。
-                covariance, d, base_f, base_d = estimate_covariances(
-                    fs, rs, b, cap, c, est
-                )
+                if moments is None:
+                    rs = np.asarray((history_r + [residual])[-c.history :])
+                    covariance, d, base_f, base_d = estimate_covariances(
+                        fs, rs, b, cap, c, est
+                    )
+                else:
+                    covariance, d, base_f, base_d = estimate_covariances(
+                        fs, moments.variances(day), b, cap, c, est
+                    )
             else:
                 covariance = np.eye(k) * c.cold_factor_variance
                 d = np.full(n, c.cold_specific_variance)
@@ -325,6 +337,8 @@ def _iterate(
                     latest=day == end - 1,
                     checkpoint=rolling.checkpoint() if day == end - 1 else None,
                 )
+        if moments is not None and moments.latest < day:
+            moments.push(day, state["residual"])
         history_f.append(state["f"])
         history_r.append(state["residual"])
         history_bias.append(state["bias"])

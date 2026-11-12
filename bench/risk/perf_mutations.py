@@ -84,7 +84,109 @@ CASES = {
             "test/risk/test_cache_format.py",
         ),
     ],
+    "P-006": [
+        (
+            "最老残块不延伸到覆盖滞后对",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "edge = (start + lags) - (start + lags) % BLOCK + BLOCK - 1",
+                    "edge = start - start % BLOCK + BLOCK - 1",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "去掉条件数闸",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "| (variance * TAU < magnitude)",
+                    "| (variance * 0 < 0)",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "去掉均值闸",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "| (mean * mean > MEAN_RATIO**2 * variance)",
+                    "| (mean * 0 > 1)",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "去掉阈值闸",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "bad |= np.abs(v - floor) <= THRESHOLD_GUARD * floor",
+                    "pass",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "重取移位时不清空整块",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "        self.blocks.clear()\n        self.sums.clear()\n",
+                    "",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "有效天数出界行不减",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "                self.count -= np.isfinite(self.rows[slot])",
+                    "                pass",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "Rust 滞后对忽略下限",
+            [
+                (
+                    "crates/portopt-core/src/lib.rs",
+                    "if i < lag || i - lag < floor {",
+                    "if i < lag {",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+        (
+            "Rust Bartlett 权重按全部滞后而不是实际滞后",
+            [
+                (
+                    "crates/portopt-core/src/lib.rs",
+                    "* (1. - lag as f64 / (used + 1) as f64)",
+                    "* (1. - lag as f64 / (lags + 1) as f64)",
+                )
+            ],
+            "test/risk/test_specific_incremental.py",
+        ),
+    ],
 }
+
+
+def native():
+    return next((ROOT / "packages/portopt/python/portopt").glob("_core*.so"))
+
+
+def rebuild():
+    before = hashlib.sha256(native().read_bytes()).hexdigest()
+    subprocess.run(
+        ["make", "dev"], cwd=ROOT, check=True, capture_output=True, timeout=1800
+    )
+    return before, hashlib.sha256(native().read_bytes()).hexdigest()
 
 
 def pytest(target):
@@ -125,6 +227,7 @@ def main():
             assert code == 0, tail
         for label, edits, target in cases:
             originals = {}
+            native_edit = False
             try:
                 for path, old, new in edits:
                     file = ROOT / path
@@ -132,10 +235,18 @@ def main():
                     current = file.read_text()
                     assert current.count(old) == 1, (label, old)
                     file.write_text(current.replace(old, new))
+                native_edit = any(
+                    p.startswith(("crates/", "packages/")) for p, *_ in edits
+                )
+                if native_edit:
+                    before, after = rebuild()
+                    assert before != after, "扩展没有重建"
                 code, tail = pytest(target)
             finally:
                 for file, text in originals.items():
                     file.write_text(text)
+                if native_edit:
+                    rebuild()
             caught = code != 0
             report.append({"item": item, "case": label, "caught": caught, "tail": tail})
             print(json.dumps(report[-1], ensure_ascii=False), flush=True)
