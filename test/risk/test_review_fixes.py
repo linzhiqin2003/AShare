@@ -102,6 +102,46 @@ def test_damaged_snapshot_before_the_window_still_yields_every_day(
     _same_series(got, full[start:])
 
 
+@pytest.mark.parametrize(
+    ("cached", "start", "gone"),
+    [
+        (80, 0, (40,)),
+        (80, 65, (65,)),
+        (80, 0, (5, 40, 79)),
+        (85, 0, (0,)),
+        (85, 70, (84,)),
+    ],
+)
+def test_snapshot_removed_after_open_is_recomputed(
+    tmp_path, reference, cached, start, gone
+):
+    """缓存对象打开之后快照文件消失：这一天当作未命中重算，不反复重新计划。"""
+    p, c, full = reference
+    list(model_series(p, config=c, cache=tmp_path, end=cached))
+    cache = ModelCache(tmp_path)
+    for day in gone:
+        next(tmp_path.glob(f"{day:06d}-*.npz")).unlink()
+    got = list(model_series(p, config=c, cache=cache, start=start, end=85))
+    _same_series(got, full[start:])
+    # 重算后的日子重新落盘并登记，再读一遍全部命中。
+    for day in gone:
+        assert len(list(tmp_path.glob(f"{day:06d}-*.npz"))) == 1
+    again = list(
+        model_series(p, config=c, cache=ModelCache(tmp_path), start=start, end=85)
+    )
+    _same_series(again, full[start:])
+
+
+def test_load_of_a_missing_snapshot_unregisters_the_day(tmp_path, reference):
+    p, c, _ = reference
+    list(model_series(p, config=c, cache=tmp_path, end=30))
+    cache = ModelCache(tmp_path)
+    key = cache.entries[12]
+    next(tmp_path.glob("000012-*.npz")).unlink()
+    assert cache.load(key, day=12, with_model=False) is None
+    assert 12 not in cache.entries and 11 in cache.entries and 13 in cache.entries
+
+
 # P0-2：fork ------------------------------------------------------------------
 
 _PREAMBLE = """

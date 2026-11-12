@@ -366,6 +366,9 @@ class ModelCache:
         path = self.directory / f"{day:06d}-{key}.npz"
         self._wait_for(path)
         if not path.exists():
+            # 打开之后文件不见了（别的进程清理了目录，或 fork 前父进程排队的写还没落盘）：
+            # 注销登记，调用方重新计划时才会把这一天当作未命中，而不是反复回到同一天。
+            self._discard(day, path)
             return None
         try:
             with np.load(path, allow_pickle=False) as data:
