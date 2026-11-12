@@ -92,7 +92,7 @@ A 股量化研究框架。回测、因子算子、风险模型、组合优化和
 | [`panelops`](packages/panelops/) | 因子研究用的面板算子和因子检验（IC、分组收益、换手）。 |
 | [`portopt`](packages/portopt/) | 风险模型内核和锥规划求解器绑定。 |
 | [`paperbroker`](packages/paperbroker/) | 确定性的模拟盘引擎：订单、撮合、账户、结算。 |
-| [`src/ashare`](src/ashare/) | 研究层：Tushare 数据仓库与时点面板、因子表达式与缓存、基本面风险模型、组合构建、模拟盘。 |
+| [`src/ashare`](src/ashare/) | 研究层：Tushare 数据仓库与时点面板、因子表达式与缓存、基本面风险模型、组合构建、回测报告、模拟盘。 |
 
 四个包只依赖 NumPy，不导入 `ashare`。设计说明在 [docs/DESIGN.md](docs/DESIGN.md)。
 
@@ -134,7 +134,19 @@ forward = np.vstack([ret[1:], np.full((1, 300), np.nan)])                # 下�
 ic = panelops.rank_ic(momentum, forward)                                 # 每天一个值
 ```
 
-目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次。
+回测完出一份报告（自包含的 HTML，离线可打开，可直接打印成 A4 PDF；需 `Config(record_trades=True)`）：
+
+```python
+import ashare.data, ashare.report
+
+ashare.report.tearsheet(result, market, targets, dates, symbols,
+                        data=ashare.data.open(), benchmark="000300.SH",
+                        benchmark_kind="price").save("report.html")
+```
+
+指标口径见 [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md)。
+
+目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次：`ashare.backtest.execution_targets`。
 
 ## 数据
 

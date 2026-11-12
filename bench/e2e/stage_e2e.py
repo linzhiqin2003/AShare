@@ -32,6 +32,7 @@ from stage_portfolio import problems
 from stage_risk import MONTH, PERIODS
 
 import ashare.data
+from ashare.backtest import execution_days
 from ashare.factor import Evaluator, default_registry
 from ashare.portfolio import optimize_sequence
 from ashare.risk import FundamentalConfig, ModelCache, model_series
@@ -141,7 +142,7 @@ def research(ctx, fast=False, exact=False):
     mark("portfolio_setup")
     universe = np.flatnonzero(np.isin(panel.symbols, plist[0].risk.symbols))
     results, sparse = optimize_sequence(
-        rows + 1,
+        execution_days(rows, len(panel.dates), tail="error"),
         plist,
         columns=universe.astype(np.int64),
         **({"parallel": True} if fast else {}),
@@ -156,7 +157,9 @@ def research(ctx, fast=False, exact=False):
     market = panelbt.Market(**market_inputs(panel))
     mark("backtest_market_build")
     targets = panelbt.Targets(sparse.days, sparse.indptr, sparse.cols, sparse.weights)
-    result = panelbt.run(market, targets, costs(panel.dates), config(panel.symbols))
+    result = panelbt.run(
+        market, targets, costs(panel.dates), config(ctx["data"], panel.symbols)
+    )
     summary["backtest"] = {
         "nav": digest(result.nav),
         "final_nav": float(result.nav[-1]),
