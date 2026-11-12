@@ -33,10 +33,10 @@ def build(name):
 def main():
     source = CORE.read_text()
     before = marker()
-    assert before == "panelbt-core-v1"
+    assert before == "panelbt-core-v2"
     try:
         CORE.write_text(
-            source.replace('"panelbt-core-v1"', '"panelbt-core-cache-check"')
+            source.replace('"panelbt-core-v2"', '"panelbt-core-cache-check"')
         )
         build("cache-changed-build.log")
         changed = marker()

@@ -1,0 +1,20 @@
+{
+  "command": "make dev SANDBOX=1 && make check SANDBOX=1",
+  "exit_code": 0,
+  "tail": [
+    "configfile: pyproject.toml",
+    "testpaths: test",
+    "plugins: platformdirs-4.14.5, hypothesis-6.170.15",
+    "collected 131 items",
+    "",
+    "test/test_engine.py ................                                     [ 12%]",
+    "test/test_extended.py ....................                               [ 27%]",
+    "test/test_inputs.py ....................................                 [ 54%]",
+    "test/test_properties.py .....                                            [ 58%]",
+    "test/test_random.py .                                                    [ 59%]",
+    "test/test_review.py ...........................................          [ 92%]",
+    "test/test_rules.py ..........                                            [100%]",
+    "",
+    "============================= 131 passed in 18.52s ============================="
+  ]
+}

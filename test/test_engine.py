@@ -7,7 +7,15 @@ from panelbt.models import METRICS
 
 assert Path(bt.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
 
-ZERO = bt.Costs(0, 0, 0, 0, 0, 0)
+ZERO = bt.Costs(
+    commission_rate=0,
+    commission_min=0,
+    tax_sell=0,
+    tax_buy=0,
+    fee_rate_buy=0,
+    slippage=0,
+    fee_rate_sell=0,
+)
 
 
 def simple(prices, weights, *, costs=ZERO, config=None, **overrides):
@@ -34,7 +42,15 @@ def test_sell_before_buy():
 
 def test_fees_and_tax_on_slipped_amount():
     cfg = bt.Config(initial_cash=10000, record_trades=True)
-    costs = bt.Costs(0.001, 5, 0.001, 0.0003, 0.00002, 0.0005)
+    costs = bt.Costs(
+        commission_rate=0.001,
+        commission_min=5,
+        tax_sell=0.001,
+        tax_buy=0.0003,
+        fee_rate_buy=0.00002,
+        slippage=0.0005,
+        fee_rate_sell=0.00002,
+    )
     r = simple([[10], [10]], [[0.5], [0]], costs=costs, config=cfg)
     buy, sell = r.trades
     assert buy.qty == 500 and sell.qty == -500
@@ -46,7 +62,7 @@ def test_fees_and_tax_on_slipped_amount():
         r.tax, [500 * buy.price * 0.0003, 500 * sell.price * 0.001], rtol=1e-14
     )
     np.testing.assert_allclose(
-        r.transfer_fee,
+        r.other_fee,
         [500 * buy.price * 0.00002, 500 * sell.price * 0.00002],
         rtol=1e-14,
     )
@@ -54,7 +70,7 @@ def test_fees_and_tax_on_slipped_amount():
     assert (
         abs(
             r.cash[-1]
-            - (10000 - sum(r.commission + r.tax + r.transfer_fee + r.slippage_cost))
+            - (10000 - sum(r.commission + r.tax + r.other_fee + r.slippage_cost))
         )
         < 1e-9
     )
@@ -62,7 +78,20 @@ def test_fees_and_tax_on_slipped_amount():
 
 def test_min_commission_and_cash_scaling():
     cfg = bt.Config(initial_cash=10, min_qty=100, qty_step=0, record_trades=True)
-    r = simple([[1]], [[1]], config=cfg, costs=bt.Costs(0, 5, 0, 0, 0, 0))
+    r = simple(
+        [[1]],
+        [[1]],
+        config=cfg,
+        costs=bt.Costs(
+            commission_rate=0,
+            commission_min=5,
+            tax_sell=0,
+            tax_buy=0,
+            fee_rate_buy=0,
+            slippage=0,
+            fee_rate_sell=0,
+        ),
+    )
     assert r.positions[0, 0] == 5
     assert r.cash[0] == 0
     assert r.commission[0] == 5
@@ -73,7 +102,18 @@ def test_min_commission_and_cash_scaling():
 def test_cash_shortfall_is_not_carried():
     cfg = bt.Config(initial_cash=2000, min_qty=200, qty_step=1, record_trades=True)
     r = simple(
-        [[10], [1]], [[1], [np.nan]], config=cfg, costs=bt.Costs(0, 5, 0, 0, 0, 0)
+        [[10], [1]],
+        [[1], [np.nan]],
+        config=cfg,
+        costs=bt.Costs(
+            commission_rate=0,
+            commission_min=5,
+            tax_sell=0,
+            tax_buy=0,
+            fee_rate_buy=0,
+            slippage=0,
+            fee_rate_sell=0,
+        ),
     )
     np.testing.assert_array_equal(r.positions, [[0], [0]])
     assert r.diagnostics["cash_scaled"] == 1
@@ -191,7 +231,20 @@ def test_unheld_missing_close_history():
 
 def test_minimum_sell_fee_cannot_overdraw():
     cfg = bt.Config(initial_cash=10, min_qty=0, qty_step=0, record_trades=True)
-    r = simple([[1], [0.001]], [[1], [0]], config=cfg, costs=bt.Costs(0, 5, 0, 0, 0, 0))
+    r = simple(
+        [[1], [0.001]],
+        [[1], [0]],
+        config=cfg,
+        costs=bt.Costs(
+            commission_rate=0,
+            commission_min=5,
+            tax_sell=0,
+            tax_buy=0,
+            fee_rate_buy=0,
+            slippage=0,
+            fee_rate_sell=0,
+        ),
+    )
     assert r.cash[0] == 0
     assert r.cash[1] == 0
     assert r.positions[-1, 0] == 5
@@ -238,6 +291,19 @@ def test_batch_bitwise_and_threads():
 
 def test_proportional_cash_scaling_before_column_order():
     cfg = bt.Config(initial_cash=10000, record_trades=True)
-    r = simple([[10, 10]], [[0.5, 0.5]], config=cfg, costs=bt.Costs(0.1, 0, 0, 0, 0, 0))
+    r = simple(
+        [[10, 10]],
+        [[0.5, 0.5]],
+        config=cfg,
+        costs=bt.Costs(
+            commission_rate=0.1,
+            commission_min=0,
+            tax_sell=0,
+            tax_buy=0,
+            fee_rate_buy=0,
+            slippage=0,
+            fee_rate_sell=0,
+        ),
+    )
     np.testing.assert_array_equal(r.positions, [[400, 400]])
     assert r.cash[0] == 1200

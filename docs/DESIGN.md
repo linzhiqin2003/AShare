@@ -89,9 +89,9 @@ market = bt.Market(
     cash_div=None,    # T×N 除息日每股派现
     delist=None,      # T×N bool，退市处理日
 )
-costs = bt.Costs(commission=2.5e-4, min_commission=5.0,
+costs = bt.Costs(commission_rate=2.5e-4, commission_min=5.0,
                  tax_sell=..., tax_buy=0.0,   # 标量或长度 T 的数组
-                 transfer_fee=1e-5, slippage=5e-4)
+                 fee_rate_buy=1e-5, fee_rate_sell=1e-5, slippage=5e-4)
 config = bt.Config(initial_cash=1e7, min_qty=..., qty_step=...,   # 标量或长度 N
                    max_participation=0.1, carry_blocked=True,
                    delist_recovery=1.0, cash_buffer=0.0, record_trades=False)
@@ -101,15 +101,17 @@ result = bt.run(market, targets, costs, config)
 results = bt.run_batch(market, [targets_1, targets_2, ...], costs, config, threads=0)
 ```
 
-目标权重用稀疏结构传入：调仓日下标、每个调仓日的（列号，权重）列表。原因是批量回测时，一千组稠密的 T×N 权重矩阵放不进内存。`Targets.from_dense` 约定：整行 NaN 表示当日不调仓，其余行里的 NaN 当作 0。权重为负或一行之和大于 1 直接报错（第一版只做多头、不加杠杆）。
+目标权重用稀疏结构传入：调仓日下标、每个调仓日的（列号，权重）列表。原因是批量回测时，一千组稠密的 T×N 权重矩阵放不进内存。`Targets.from_dense` 约定：整行 NaN 表示当日不调仓，其余行里的 NaN 当作 0。支持 `kind="shares"` 直接给目标股数。负目标需要 `Config(margin=MarginModel(allow_short=True, ...))`；只做多现金账户仍拒绝负目标和权重和超过 1 的计划。
 
-`result` 包含逐日的净值、现金、换手、分项成本（佣金、印花税、过户费、滑点）、受限未成交的笔数，以及可选的持仓和成交明细。
+`result` 包含逐日的净值、现金、换手、分项成本（佣金、税、其他费用、滑点、冲击）、受限未成交的笔数，以及可选的持仓和成交明细。
 
 ### 4.3 时间约定
 
 `targets` 里第 t 行是**第 t 日成交时**要达到的目标。引擎不做任何移位。用 t−1 日收盘的信息算信号、在 t 日成交，这个错位由调用方负责，`ashare` 里统一封装，防止前视。
 
 第 t 日的处理顺序：
+
+第二轮增加了最先入账的外部资金流、税后分红、收盘借券/融资费用和自有闲置现金利息；多空账户先减风险，再同比例缩放开仓篮子。收盘追保在下一行强平，详见包内 SPEC。以下是默认现金账户的基础顺序：
 
 1. 公司行为：先按除权前股数派现，再按 `split` 调整股数。
 2. 退市：持仓按最近有效收盘价 × `delist_recovery` 变现，并记录。
@@ -121,7 +123,7 @@ results = bt.run_batch(market, [targets_1, targets_2, ...], costs, config, threa
 
 日频下每天只成交一次，当天买入的不会当天卖出，T+1 自然满足。
 
-### 4.4 A 股规则（`panelbt.rules.ashare`）
+### 4.4 A 股规则（`panelbt.markets.ASHARE`）
 
 - 可买可卖：停牌不可买卖；成交价等于涨停价不可买；成交价等于跌停价不可卖；全天一字板按最高价等于最低价判断。
 - 印花税：按日期给出税率序列（2008-09-19 起卖出单边 0.1%，2023-08-28 起 0.05%）。
@@ -178,6 +180,23 @@ Claude 独立复测（同一台机器，五次中位数）：四个场景的单�
 已知的改进点：完整实现在「100 只、月度调仓」上是 9.6 ms，同一场景的最小摸底版本是 0.5 ms，差距要在第二轮查清并消除。
 
 脚本、筛选方法（30 组筛选后，胜者实际运行 1000 组，没有外推）、全部原始样本、瓶颈和流程偏离见 [STEP1_NOTES.md](STEP1_NOTES.md) 与 [step1/](step1/)。
+
+<!-- PANELBT_1B_BASELINE_START -->
+#### 第二轮完整引擎实测
+
+机器存在并行任务，以下是当前实测值；原始样本见 `bench/results/panelbt-current.json`。
+
+|场景|API 中位数 ms|
+|---|---:|
+|lots|4.453|
+|fractional|3.313|
+|batch|535.048|
+|long_short|3.994|
+
+第一轮同机消融测量：完整 9.692 ms，去掉退市面板 2.406 ms，去掉公司行为 9.350 ms。主要差距来自每个新目标重复扫描全部退市历史；现在 Market 构造时计算首次退市日期。规则转换与验证继续使用 NumPy。
+
+新增功能与参数化使每笔报价和结果记账更多；当前完整规则的 2 ms 目标是否达到，以表内 lots 数字为准。准备/内核/后处理拆分和原始样本已落盘，不将忙机测量宣称为硬件极限。
+<!-- PANELBT_1B_BASELINE_END -->
 
 ### 4.6 正确性
 

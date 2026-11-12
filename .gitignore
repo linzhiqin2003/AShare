@@ -13,3 +13,6 @@ __pycache__/
 /data/
 .env
 .DS_Store
+/bench/results/logs/
+
+/dist/

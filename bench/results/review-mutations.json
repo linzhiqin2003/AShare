@@ -1,0 +1,290 @@
+{
+  "mutations": [
+    {
+      "id": 1,
+      "mutation": "tax omitted",
+      "test": "test_engine.py::test_fees_and_tax_on_slipped_amount",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "mutation": "can_sell ignored",
+      "test": "test_engine.py::test_can_sell_and_carry",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "mutation": "cash scaling omitted",
+      "test": "test_engine.py::test_proportional_cash_scaling_before_column_order",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "mutation": "commission floor omitted",
+      "test": "test_engine.py::test_min_commission_and_cash_scaling",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "mutation": "dividend cash omitted",
+      "test": "test_engine.py::test_dividend_before_split_and_odd_buy",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "mutation": "split omitted",
+      "test": "test_engine.py::test_dividend_before_split_and_odd_buy",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "mutation": "carry touches all holdings",
+      "test": "test_engine.py::test_carry_only_blocked_security",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "mutation": "volume cap omitted",
+      "test": "test_engine.py::test_volume_and_odd_lot_liquidation",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "mutation": "sell slippage reversed",
+      "test": "test_engine.py::test_fees_and_tax_on_slipped_amount",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "mutation": "delist recovery ignored",
+      "test": "test_engine.py::test_delist_prior_close_and_no_reentry",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "mutation": "shares rounded",
+      "test": "test_extended.py::test_shares_bypass_lots_and_trade_band_exceptions",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "mutation": "band omitted",
+      "test": "test_extended.py::test_shares_bypass_lots_and_trade_band_exceptions",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "mutation": "dividend tax omitted",
+      "test": "test_extended.py::test_dividend_flow_interest_and_contribution",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "mutation": "external flow omitted",
+      "test": "test_extended.py::test_dividend_flow_interest_and_contribution",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "mutation": "cash interest omitted",
+      "test": "test_extended.py::test_dividend_flow_interest_and_contribution",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "mutation": "impact omitted",
+      "test": "test_extended.py::test_impact_cash_and_panel_slippage",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "mutation": "per-share commission omitted",
+      "test": "test_extended.py::test_per_share_commission_without_cap",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "mutation": "commission cap omitted",
+      "test": "test_extended.py::test_commission_cap_directional_share_fees",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "mutation": "can_short ignored",
+      "test": "test_extended.py::test_short_permission_dividend_borrow_cover_and_delist",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "mutation": "short dividends omitted",
+      "test": "test_extended.py::test_short_permission_dividend_borrow_cover_and_delist",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
+      "mutation": "borrow fee omitted",
+      "test": "test_extended.py::test_short_permission_dividend_borrow_cover_and_delist",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "mutation": "maintenance call omitted",
+      "test": "test_extended.py::test_margin_call_liquidate_record_and_bankruptcy",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 23,
+      "mutation": "forced direction reversed",
+      "test": "test_extended.py::test_margin_call_liquidate_record_and_bankruptcy",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 24,
+      "mutation": "initial margin uses maintenance",
+      "test": "test_extended.py::test_margin_scaling_financing_and_account_identity",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 25,
+      "mutation": "M3 restricted interest base",
+      "test": "test_review.py::test_restricted_proceeds_interest_bases",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 26,
+      "mutation": "S28 cash interest includes proceeds",
+      "test": "test_review.py::test_restricted_proceeds_interest_bases",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 27,
+      "mutation": "S29 financing ignores restricted proceeds",
+      "test": "test_review.py::test_restricted_proceeds_interest_bases",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 28,
+      "mutation": "S11 reversal volume reset",
+      "test": "test_review.py::test_reversal_shares_daily_volume",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 29,
+      "mutation": "S12 longs open before shorts",
+      "test": "test_review.py::test_opening_and_reduction_order",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 30,
+      "mutation": "S13 covers precede long sales",
+      "test": "test_review.py::test_opening_and_reduction_order",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 31,
+      "mutation": "S19 unfilled plan forgotten",
+      "test": "test_review.py::test_unfilled_liquidation_continues_without_maintenance_breach",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 32,
+      "mutation": "split stale mark",
+      "test": "test_review.py::test_suspended_action_preserves_wealth",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 33,
+      "mutation": "dividend stale mark",
+      "test": "test_review.py::test_suspended_action_preserves_wealth",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 34,
+      "mutation": "cash account bankruptcy enabled",
+      "test": "test_review.py::test_cash_account_missing_mark_is_not_bankrupt",
+      "scope": "kernel",
+      "exit_code": 1
+    },
+    {
+      "id": 35,
+      "mutation": "empty account bankrupt",
+      "test": "test_review.py::test_empty_account_can_resume_after_deposit",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 36,
+      "mutation": "initial margin repeats liquidation",
+      "test": "test_review.py::test_liquidation_stops_at_filled_plan",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 37,
+      "mutation": "partial sale minimum omitted",
+      "test": "test_review.py::test_selling_minimum_and_nonzero_small_target",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 38,
+      "mutation": "quantity dust tolerance omitted",
+      "test": "test_review.py::test_split_dust_has_no_commission",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 39,
+      "mutation": "forced day reducing row discarded",
+      "test": "test_review.py::test_liquidation_day_honors_reducing_target",
+      "scope": "dual",
+      "exit_code": 1
+    },
+    {
+      "id": 40,
+      "mutation": "S15 prefix check bypassed",
+      "test": "test_review.py::test_prefix_check_when_previous_fees_created_cash_deficit",
+      "scope": "dual",
+      "exit_code": 1
+    }
+  ],
+  "restored_git_diff_exit": 0,
+  "source_sha256": {
+    "crates/panelbt-core/src/lib.rs": "fbd8bde90b2bd5a1b7b97a877926089bee1e93ae02b745766605707d7d2cd434",
+    "crates/tradecore/src/lib.rs": "abaec0ddcd5fa7ddf51512c1062fe32b1310408ede639b3896aae4d5be2a8d39",
+    "packages/panelbt/python/panelbt/reference.py": "7e2f2527708171dc3a0b4fe82b242837a6856a77768c3d9fbdee98d22a136423"
+  }
+}

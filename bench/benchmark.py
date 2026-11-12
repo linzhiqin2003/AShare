@@ -165,7 +165,9 @@ def main():
     report["reference"] = {"T": 120, "N": 80, "rust_s": rust, "python_s": reference}
     print("reference", json.dumps(report["reference"]), flush=True)
     out = (
-        ROOT / ".cache" / ("benchmark-single.json" if args.single else "benchmark.json")
+        ROOT
+        / "bench/results"
+        / ("benchmark-single.json" if args.single else "benchmark.json")
     )
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
 

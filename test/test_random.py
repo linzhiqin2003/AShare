@@ -11,7 +11,7 @@ from .generators import case
 assert Path(bt.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
 
 
-def test_2000_random_cases():
+def test_2000_random_cases(tmp_path):
     counts = dict.fromkeys(COUNTERS, 0)
     for seed in range(2000):
         market, target, costs, config = case(seed)
@@ -34,8 +34,8 @@ def test_2000_random_cases():
         for a, b in zip(actual.trades, expected.trades, strict=True):
             assert (a.day, a.col) == (b.day, b.col), seed
             np.testing.assert_allclose(
-                [a.qty, a.price, a.commission, a.tax, a.transfer_fee, a.slippage_cost],
-                [b.qty, b.price, b.commission, b.tax, b.transfer_fee, b.slippage_cost],
+                [a.qty, a.price, a.commission, a.tax, a.other_fee, a.slippage_cost],
+                [b.qty, b.price, b.commission, b.tax, b.other_fee, b.slippage_cost],
                 rtol=1e-9,
                 atol=1e-9,
                 err_msg=f"seed={seed}",
@@ -53,7 +53,6 @@ def test_2000_random_cases():
         for name, value in actual.diagnostics.items():
             counts[name] += value
     assert all(value > 0 for value in counts.values()), counts
-    output = Path(__file__).resolve().parents[1] / ".cache" / "coverage.json"
-    output.parent.mkdir(exist_ok=True)
+    output = tmp_path / "coverage.json"
     output.write_text(json.dumps(counts, indent=2) + "\n")
     print("\n随机 2000 例覆盖计数:", json.dumps(counts, ensure_ascii=False))

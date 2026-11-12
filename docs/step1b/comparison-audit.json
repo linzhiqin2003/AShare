@@ -1,0 +1,14 @@
+{
+  "records": 160,
+  "status_counts": {
+    "ok": 105,
+    "not_applicable": 55
+  },
+  "comparison_sha256": "ebf3f55990fa8656fe602d8c8f73b0ce25bbd952a92f6c4ac9741974c0b46a18",
+  "source_hashes_match": true,
+  "rendered_timing_rows_checked": 160,
+  "two_timing_scopes_have_raw_samples": true,
+  "batch_portfolios_per_engine": 1000,
+  "approximate_batch_zero_fee_controls": 1000,
+  "note": "Delivery-time audit of the referenced compare.json hash; rerun the audit after changing this baseline."
+}
