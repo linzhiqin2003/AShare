@@ -1,6 +1,7 @@
 [project]
 name = "paperbroker"
 version = "0.1.0"
+license = "Apache-2.0"
 description = "Deterministic event-driven paper trading engine"
 requires-python = ">=3.13"
 dependencies = ["numpy>=2.5.4,<3"]

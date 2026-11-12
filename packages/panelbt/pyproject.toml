@@ -1,6 +1,7 @@
 [project]
 name = "panelbt"
 version = "0.1.0"
+license = "Apache-2.0"
 description = "Deterministic market-agnostic panel portfolio backtesting with a Rust kernel"
 requires-python = ">=3.13"
 dependencies = ["numpy>=2.1,<3"]

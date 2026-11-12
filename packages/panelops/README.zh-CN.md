@@ -1,6 +1,6 @@
 # panelops
 
-独立的 T × N 面板算子库，Python 运行依赖只有 NumPy，不导入 ashare、panelbt 或 paperbroker。Rust 内核使用 Rayon 并释放 GIL，所有正式代码禁止 unsafe；许可证尚未决定。
+独立的 T × N 面板算子库，Python 运行依赖只有 NumPy，不导入 ashare、panelbt 或 paperbroker。Rust 内核使用 Rayon 并释放 GIL，所有正式代码禁止 unsafe；许可证 Apache-2.0。
 
 在仓库根目录运行 `make dev`。需要 Python 3.13、uv 和 Rust 编译器；也可用 maturin 构建 wheel。
 

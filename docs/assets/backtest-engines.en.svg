@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 348" width="860" height="348" role="img" aria-label="Backtest wall time by engine, log scale">
+<style>
+  .surface { fill: #fcfcfb; } .ink { fill: #0b0b0b; } .ink2 { fill: #52514e; }
+  .muted { fill: #898781; } .grid { stroke: #e1e0d9; } .axis { stroke: #c3c2b7; }
+  .other { fill: #b9b7ae; } .hero { fill: #2a78d6; }
+  .s1 { fill: #2a78d6; } .s2 { fill: #eb6834; } .s3 { fill: #1baf7a; } .s4 { fill: #eda100; }
+  .s5 { fill: #b9b7ae; }
+  text { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+         "Noto Sans CJK SC", Helvetica, Arial, sans-serif; }
+  .t { font-size: 15px; font-weight: 600; } .l { font-size: 13px; } .s { font-size: 12px; }
+  .b { font-weight: 600; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; } .ink { fill: #f0efec; } .ink2 { fill: #c3c2b7; }
+    .grid { stroke: #2c2c2a; } .axis { stroke: #383835; }
+    .other { fill: #6f6d66; } .hero { fill: #3987e5; }
+    .s1 { fill: #3987e5; } .s2 { fill: #d95926; } .s3 { fill: #199e70; } .s4 { fill: #c98500; }
+    .s5 { fill: #6f6d66; }
+  }
+</style>
+<rect class="surface" width="860" height="348" rx="10"/><text class="t ink" x="24" y="30">One backtest: 4,000 trading days × 5,500 stocks, monthly rebalance</text><text class="s ink2" x="24" y="48">Wall time of the backtest itself, log scale. Same inputs, daily NAV equal within 1e-9 unless noted.</text><line class="grid" x1="290.0" y1="60" x2="290.0" y2="302"/><text class="s muted" x="290.0" y="320" text-anchor="middle">1 ms</text><line class="grid" x1="360.0" y1="60" x2="360.0" y2="302"/><text class="s muted" x="360.0" y="320" text-anchor="middle">10 ms</text><line class="grid" x1="430.0" y1="60" x2="430.0" y2="302"/><text class="s muted" x="430.0" y="320" text-anchor="middle">100 ms</text><line class="grid" x1="500.0" y1="60" x2="500.0" y2="302"/><text class="s muted" x="500.0" y="320" text-anchor="middle">1 s</text><line class="grid" x1="570.0" y1="60" x2="570.0" y2="302"/><text class="s muted" x="570.0" y="320" text-anchor="middle">10 s</text><line class="grid" x1="640.0" y1="60" x2="640.0" y2="302"/><text class="s muted" x="640.0" y="320" text-anchor="middle">100 s</text><text class="l ink b" x="278" y="85" text-anchor="end">panelbt</text><path class="hero" d="M290.0,70.0h26.2a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-26.2z"/><text class="l ink b" x="328.2" y="85">2.7 ms</text><text class="l ink2" x="278" y="119" text-anchor="end">NumPy, hand-written (sparse holdings)</text><path class="other" d="M290.0,104.0h62.8a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-62.8z"/><text class="l ink" x="364.8" y="119">9.0 ms · 3×</text><text class="l ink2" x="278" y="153" text-anchor="end">NumPy, hand-written (full cross-section)</text><path class="other" d="M290.0,138.0h77.3a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-77.3z"/><text class="l ink" x="379.3" y="153">14.5 ms · 5×</text><text class="l ink2" x="278" y="187" text-anchor="end">vectorbt (Numba)</text><path class="other" d="M290.0,172.0h211.4a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-211.4z"/><text class="l ink" x="513.4" y="187">1.20 s · 443×</text><text class="l ink2" x="278" y="221" text-anchor="end">vectorbt (Rust engine)</text><path class="other" d="M290.0,206.0h213.7a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-213.7z"/><text class="l ink" x="515.7" y="221">1.29 s · 477×</text><text class="l ink2" x="278" y="255" text-anchor="end">bt</text><path class="other" d="M290.0,240.0h267.0a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-267.0z"/><text class="l ink" x="569.0" y="255">7.44 s · 2,756×</text><text class="s muted" x="278" y="269" text-anchor="end">fees approximated</text><text class="l ink2" x="278" y="289" text-anchor="end">backtrader</text><path class="other" d="M290.0,274.0h382.4a4,4 0 0 1 4,4v14.0a4,4 0 0 1 -4,4h-382.4z"/><text class="l ink" x="684.4" y="289">331 s · 122,626×</text><line class="axis" x1="290" y1="60" x2="290" y2="302"/><text class="s muted" x="24" y="336">Apple M5 Pro, single thread, medians of 3 runs. Source: docs/BENCHMARKS.md</text></svg>

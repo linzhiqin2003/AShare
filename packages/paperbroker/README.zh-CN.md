@@ -1,6 +1,6 @@
 # paperbroker
 
-确定性的快照模拟交易引擎。Rust 内核不读时间、不联网、不操作文件；Python 运行依赖只有 numpy。许可证待定。
+确定性的快照模拟交易引擎。Rust 内核不读时间、不联网、不操作文件；Python 运行依赖只有 numpy。许可证 Apache-2.0。
 
 完整接口、数组列定义、费用口径和恢复格式见 [README.md](README.md)。主要入口：
 

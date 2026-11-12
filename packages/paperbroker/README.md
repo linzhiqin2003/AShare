@@ -2,7 +2,7 @@
 
 Deterministic, event-driven paper trading with a Rust kernel and a typed NumPy API.
 Runtime dependency: NumPy only. No network access, filesystem access, wall clock,
-or Python dependencies in the kernel. License undecided.
+or Python dependencies in the kernel. Licensed under Apache-2.0.
 
 ## Quick start
 

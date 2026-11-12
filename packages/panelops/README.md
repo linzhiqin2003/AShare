@@ -4,7 +4,7 @@
 panels. It does not read market data or place orders. NumPy is its only Python
 runtime dependency. The native module ships in the wheel and is built from safe
 Rust with Rayon. It imports no research or backtest package.
-No license has been selected yet.
+Licensed under Apache-2.0.
 
 ## Installation
 

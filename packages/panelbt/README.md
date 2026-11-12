@@ -2,7 +2,7 @@
 
 A deterministic, market-agnostic daily portfolio engine. NumPy is the only
 Python runtime dependency; the Rust kernel shares per-fill primitives with
-`tradecore`. License pending (许可证待定). No publication license is granted yet.
+`tradecore`. Licensed under Apache-2.0.
 
 ## Minimal example
 

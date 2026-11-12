@@ -1,6 +1,7 @@
 [project]
 name = "ashare"
 version = "0.1.0"
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = ["panelbt", "panelops", "paperbroker", "portopt", "httpx>=0.28.1", "polars>=1.35", "pyarrow>=21", "scipy>=1.14", "cvxpy>=1.6", "clarabel>=0.11", "osqp>=1.0"]
 

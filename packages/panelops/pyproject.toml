@@ -1,6 +1,7 @@
 [project]
 name = "panelops"
 version = "0.1.0"
+license = "Apache-2.0"
 description = "Deterministic numerical operators for time-by-security panels"
 requires-python = ">=3.13"
 dependencies = ["numpy>=2.5.4,<3"]
