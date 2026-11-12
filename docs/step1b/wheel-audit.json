@@ -1,0 +1,8 @@
+{
+  "wheel": "panelbt-0.1.0-cp313-abi3-macosx_11_0_arm64.whl",
+  "sha256": "56a221085b788d73f60ff30c63129410303e02fe46edc5e0a4d842422cb3279e",
+  "local_path_leaks": [],
+  "sdist": "panelbt-0.1.0.tar.gz",
+  "sdist_local_path_leaks": [],
+  "verified_record_entries": 15
+}

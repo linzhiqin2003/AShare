@@ -1,1 +1,1 @@
-"""独立于模拟内核的市场规则转换。"""
+"""Compatibility namespace for market rule adapters."""

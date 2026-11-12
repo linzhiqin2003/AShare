@@ -16,6 +16,14 @@ panelbt = { workspace = true }
 panelops = { workspace = true }
 
 [dependency-groups]
+compare = [
+    "backtrader>=1.9.78.123",
+    "bt>=1.4.1",
+    "pandas>=3.1.1",
+    "polars>=2.1.0",
+    "psutil>=7.2.2",
+    "vectorbt[rust]>=1.2.1",
+]
 dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0"]
 
 [tool.pytest.ini_options]

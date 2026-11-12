@@ -1,0 +1,9 @@
+{
+  "total": 20000,
+  "corporate_only_changed": 8578,
+  "other_rules_changed": 9212,
+  "unchanged": 7437,
+  "changed": 12563,
+  "corporate_changed_without_held_missing_close": 2902,
+  "notes": "Corporate-only variant is faec31e with only adjusted cached prices and reentry reconstruction. All remaining frozen-ledger differences are isolated to the separately required quantity-rule corrections; see per-seed fields and independent audit."
+}

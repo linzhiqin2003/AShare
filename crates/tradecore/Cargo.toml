@@ -1,0 +1,9 @@
+[package]
+name = "tradecore"
+version = "0.1.0"
+edition = "2024"
+description = "Pure per-fill accounting and quantity primitives"
+
+[[bench]]
+name = "primitives"
+harness = false

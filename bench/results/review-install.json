@@ -1,0 +1,39 @@
+{
+  "python": "3.13.13",
+  "numpy": "2.1.0",
+  "package": "0.1.0",
+  "distributions": [
+    "numpy",
+    "panelbt"
+  ],
+  "isolated": true,
+  "extension_source_sha256": "30ca367ae5eb2478079bc63265f3c3d0b4831055b21df82c76e01ee2dc4f67a2",
+  "readme_examples": {
+    "README.md": {
+      "blocks_passed": 3,
+      "hk_nav": [
+        0.99822,
+        1.02722,
+        1.114204
+      ],
+      "us_nav": [
+        0.998,
+        1.0229502994011974,
+        1.1206754493013973
+      ]
+    },
+    "README.zh-CN.md": {
+      "blocks_passed": 3,
+      "hk_nav": [
+        0.99822,
+        1.02722,
+        1.114204
+      ],
+      "us_nav": [
+        0.998,
+        1.0229502994011974,
+        1.1206754493013973
+      ]
+    }
+  }
+}

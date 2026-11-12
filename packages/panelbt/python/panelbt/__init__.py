@@ -1,13 +1,23 @@
-"""只依赖 numpy 的面板组合回测 API。"""
+"""Panel portfolio backtesting with NumPy as the only runtime dependency."""
 
 from .api import run, run_batch
-from .models import Config, Costs, DelistEvent, Market, Result, Targets, Trade
+from .models import (
+    Config,
+    Costs,
+    DelistEvent,
+    MarginModel,
+    Market,
+    Result,
+    Targets,
+    Trade,
+)
 
 __all__ = [
     "Config",
     "Costs",
     "DelistEvent",
     "Market",
+    "MarginModel",
     "Result",
     "Targets",
     "Trade",

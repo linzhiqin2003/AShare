@@ -1,4 +1,4 @@
-"""校验、零拷贝只读绑定和 numpy 结果整理。"""
+"""Validated zero-copy binding and NumPy result assembly."""
 
 from __future__ import annotations
 
@@ -10,101 +10,187 @@ import numpy as np
 from . import _core
 from .models import (
     COUNTERS,
+    EXTRA_COUNTERS,
     METRICS,
     Config,
     Costs,
     DelistEvent,
+    LiquidationEvent,
     Market,
     Result,
     Targets,
     Trade,
+    array,
     vector,
 )
+
+
+def _panel(value, t, n, name, *, optional=False):
+    if value is None and optional:
+        return np.empty((0, 0))
+    a = np.asarray(value, dtype=float)
+    if a.ndim == 0:
+        a = a.reshape(1, 1)
+    elif a.shape == (t,):
+        a = a.reshape(t, 1)
+    if a.shape not in ((1, 1), (t, 1), (t, n)):
+        raise ValueError(f"{name}: expected scalar, T or T×N")
+    if not np.isfinite(a).all() or (a < 0).any():
+        raise ValueError(f"{name}: expected finite nonnegative values")
+    return array(a, name, np.float64, 2)
 
 
 def _prepare(
     market: Market, targets: Sequence[Targets], costs: Costs, config: Config
 ) -> tuple:
     if not isinstance(market, Market):
-        raise ValueError("market: 期望 Market")
+        raise ValueError("market: expected Market")
     t, n = market.shape
+    margin = config.margin
     for target in targets:
         if not isinstance(target, Targets):
-            raise ValueError("targets: 期望 Targets 或 Targets 序列")
+            raise ValueError("targets: expected Targets")
         target.validate_shape(t, n)
-    scalars = [
-        costs.commission,
-        costs.min_commission,
-        costs.transfer_fee,
-        costs.slippage,
-        config.initial_cash,
-        config.max_participation,
-        config.delist_recovery,
-        config.cash_buffer,
-    ]
-    names = [
-        "commission",
-        "min_commission",
-        "transfer_fee",
-        "slippage",
+        if not margin.allow_short and target.has_negative:
+            raise ValueError("weights: negative targets require allow_short")
+        if (
+            target.kind == "weights"
+            and not margin.allow_financing
+            and not margin.allow_short
+        ):
+            if target.max_row_sum > 1 + 1e-9:
+                raise ValueError("weights: cash account requires row sum <= 1 + 1e-9")
+    names = (
+        "commission_rate",
+        "commission_min",
+        "commission_per_share",
+        "commission_max_rate",
+        "impact_exponent",
+    )
+    scalars = [getattr(costs, k) for k in names]
+    scalars[1] = 0.0 if scalars[1] is None else scalars[1]
+    scalars[3] = -1.0 if scalars[3] is None else scalars[3]
+    cnames = (
         "initial_cash",
         "max_participation",
         "delist_recovery",
         "cash_buffer",
-    ]
-    for name, value in zip(names, scalars, strict=True):
+        "trade_band",
+    )
+    scalars += [getattr(config, k) for k in cnames]
+    for i, (name, value) in enumerate(zip((*names, *cnames), scalars, strict=True)):
+        if i == 3 and costs.commission_max_rate is None:
+            continue
         try:
             valid = np.isscalar(value) and np.isfinite(value) and value >= 0
         except (TypeError, ValueError, OverflowError):
             valid = False
         if not valid:
-            raise ValueError(f"{name}: 期望有限非负标量")
-    if config.initial_cash <= 0:
-        raise ValueError("initial_cash: 期望 > 0")
-    if costs.slippage >= 1:
-        raise ValueError("slippage: 期望 < 1")
+            raise ValueError(f"{name}: expected finite nonnegative scalar")
+    if config.initial_cash <= 0 or costs.impact_exponent <= 0:
+        raise ValueError("initial_cash/impact_exponent: expected > 0")
     for name in ("max_participation", "delist_recovery", "cash_buffer"):
         if getattr(config, name) > 1:
-            raise ValueError(f"{name}: 期望在 [0, 1] 内")
+            raise ValueError(f"{name}: expected [0, 1]")
+    if costs.impact_k is not None and market.volume is None:
+        raise ValueError("impact_k requires volume")
+    if margin.margin_call not in ("liquidate", "record"):
+        raise ValueError("margin_call: expected liquidate or record")
     vectors = [
-        vector(costs.tax_sell, t, "tax_sell"),
-        vector(costs.tax_buy, t, "tax_buy"),
+        vector(getattr(costs, k), t, k)
+        for k in (
+            "tax_sell",
+            "tax_buy",
+            "fee_rate_sell",
+            "fee_rate_buy",
+            "fee_per_share_sell",
+            "fee_per_share_buy",
+        )
+    ]
+    vectors += [
         vector(config.min_qty, n, "min_qty"),
         vector(config.qty_step, n, "qty_step"),
     ]
-    empty_f = np.empty((0, 0), dtype=np.float64)
-    empty_b = np.empty((0, 0), dtype=np.bool_)
+    vectors += [
+        vector(getattr(config, k), t, k) for k in ("dividend_tax_rate", "cash_rate")
+    ]
+    if (vectors[8] > 1).any():
+        raise ValueError("dividend_tax_rate: expected [0, 1]")
+    flow = np.asarray(config.cash_flow, dtype=float)
+    if flow.ndim == 0:
+        flow = np.full(t, flow)
+    flow = array(flow, "cash_flow", np.float64, 1)
+    if flow.shape != (t,) or not np.isfinite(flow).all():
+        raise ValueError("cash_flow: expected finite length T")
+    vectors += [flow]
+    vectors += [
+        vector(getattr(margin, k), t, k)
+        for k in (
+            "long_initial",
+            "short_initial",
+            "long_maintenance",
+            "short_maintenance",
+            "financing_rate",
+        )
+    ]
+    ef, eb = np.empty((0, 0)), np.empty((0, 0), bool)
     floats = [
-        getattr(market, name) if getattr(market, name) is not None else empty_f
-        for name in ("exec_price", "close", "volume", "split", "cash_div")
+        getattr(market, k) if getattr(market, k) is not None else ef
+        for k in ("exec_price", "close", "volume", "split", "cash_div")
     ]
+    slip = _panel(costs.slippage, t, n, "slippage")
+    if (slip >= 1).any():
+        raise ValueError("slippage: expected < 1")
+    # Slippage and impact require scalar or full panels; borrow additionally accepts T.
+    if np.asarray(costs.slippage).ndim == 1:
+        raise ValueError("slippage: expected scalar or T×N")
+    impact = _panel(costs.impact_k, t, n, "impact_k", optional=True)
+    if costs.impact_k is not None and np.asarray(costs.impact_k).shape != (t, n):
+        raise ValueError("impact_k: expected T×N")
+    floats += [slip, impact, _panel(margin.borrow_rate, t, n, "borrow_rate")]
     masks = [
-        getattr(market, name) if getattr(market, name) is not None else empty_b
-        for name in ("can_buy", "can_sell", "delist")
+        getattr(market, k) if getattr(market, k) is not None else eb
+        for k in ("can_buy", "can_sell", "delist", "can_short")
     ]
-    plans = [(x.days, x.indptr, x.cols, x.weights) for x in targets]
-    return (
-        floats,
-        masks,
-        plans,
-        vectors,
-        scalars,
-        [config.carry_blocked, config.record_trades],
+    plans = [(x.days, x.indptr, x.cols, x.weights, x.kind == "shares") for x in targets]
+    classic = (
+        not margin.allow_short
+        and not margin.allow_financing
+        and np.all(vectors[11] == 1)
+        and np.all(vectors[13] == 0)
+        and np.all(vectors[14] == 0)
     )
+    flags = [
+        config.carry_blocked,
+        config.record_trades,
+        margin.allow_short,
+        margin.allow_financing,
+        margin.short_proceeds_usable,
+        margin.margin_call == "liquidate",
+        classic,
+    ]
+    return floats, masks, plans, vectors, scalars, flags, market.first_delist
 
 
 def _result(raw: dict[str, Any]) -> Result:
-    daily = raw["daily"]
     values = {
-        name: daily[i].astype(np.int64) if name.startswith("n_blocked") else daily[i]
-        for i, name in enumerate(METRICS)
+        k: raw["daily"][i].astype(np.int64)
+        if k.startswith("n_")
+        else raw["daily"][i].astype(bool)
+        if k == "margin_call"
+        else raw["daily"][i]
+        for i, k in enumerate(METRICS)
     }
     return Result(
         **values,
         positions=raw["positions"],
         trades=None if raw["trades"] is None else [Trade(*x) for x in raw["trades"]],
         delist_events=[DelistEvent(*x) for x in raw["events"]],
-        diagnostics=dict(zip(COUNTERS, raw["counts"], strict=True)),
+        diagnostics=dict(zip(COUNTERS, raw["counts"][: len(COUNTERS)], strict=True)),
+        coverage=dict(zip(EXTRA_COUNTERS, raw["counts"][len(COUNTERS) :], strict=True)),
+        contribution=raw["contribution"],
+        liquidation_events=[LiquidationEvent(*x) for x in raw["liquidations"]],
+        bankruptcy_events=raw["bankruptcies"],
     )
 
 
@@ -114,7 +200,7 @@ def run(
     costs: Costs | None = None,
     config: Config | None = None,
 ) -> Result:
-    """目标在给定行成交，不自动移动信号；nav 从初始资金 1 开始。"""
+    """Execute targets on their given rows without shifting signals."""
     prepared = _prepare(market, [targets], costs or Costs(), config or Config())
     return _result(_core.run(*prepared, 1)[0])
 
@@ -126,38 +212,88 @@ def run_batch(
     config: Config | None = None,
     threads: int = 0,
 ) -> Result:
-    """K 组目标共享市场；threads=0 使用所有核，输出前置 K 维。"""
+    """Share one market across K strategies; threads=0 uses available CPUs."""
     if not isinstance(threads, int) or isinstance(threads, bool) or threads < 0:
-        raise ValueError("threads: 期望非负整数，0 表示全部核")
+        raise ValueError("threads: expected nonnegative integer")
     config = config or Config()
-    prepared = _prepare(market, targets, costs or Costs(), config)
     return _batch_result(
-        _core.run(*prepared, threads), *market.shape, config.record_trades
+        _core.run(*_prepare(market, targets, costs or Costs(), config), threads),
+        *market.shape,
+        config.record_trades,
     )
 
 
-def _batch_result(raw: list[dict[str, Any]], t: int, n: int, record: bool) -> Result:
+def _batch_result(raw, t, n, record):
+    if not record:
+        # Assemble one contiguous daily tensor without K intermediate Results.
+        tensor = (
+            np.stack([x["daily"] for x in raw])
+            if raw
+            else np.empty((0, len(METRICS), t))
+        )
+        counts = np.asarray([x["counts"] for x in raw], dtype=np.int64).reshape(
+            len(raw), len(COUNTERS) + len(EXTRA_COUNTERS)
+        )
+        daily = {
+            key: tensor[:, i].astype(np.int64)
+            if key.startswith("n_")
+            else tensor[:, i].astype(bool)
+            if key == "margin_call"
+            else tensor[:, i]
+            for i, key in enumerate(METRICS)
+        }
+        return Result(
+            **daily,
+            positions=None,
+            trades=None,
+            diagnostics={key: counts[:, i] for i, key in enumerate(COUNTERS)},
+            coverage={
+                key: counts[:, len(COUNTERS) + i]
+                for i, key in enumerate(EXTRA_COUNTERS)
+            },
+            delist_events=[[DelistEvent(*e) for e in x["events"]] for x in raw],
+            liquidation_events=[
+                [LiquidationEvent(*e) for e in x["liquidations"]] for x in raw
+            ],
+            bankruptcy_events=[x["bankruptcies"] for x in raw],
+            contribution=np.stack([x["contribution"] for x in raw])
+            if raw
+            else np.empty((0, n)),
+        )
     results = [_result(x) for x in raw]
     daily = {
-        name: np.stack([getattr(x, name) for x in results])
+        k: np.stack([getattr(x, k) for x in results])
         if results
         else np.empty(
-            (0, t), dtype=np.int64 if name.startswith("n_blocked") else np.float64
+            (0, t),
+            dtype=bool
+            if k == "margin_call"
+            else np.int64
+            if k.startswith("n_")
+            else float,
         )
-        for name in METRICS
+        for k in METRICS
     }
-    positions = None
-    if record:
-        positions = (
-            np.stack([x.positions for x in results]) if results else np.empty((0, t, n))
-        )
     return Result(
         **daily,
-        positions=positions,
+        positions=(
+            np.stack([x.positions for x in results]) if results else np.empty((0, t, n))
+        )
+        if record
+        else None,
         trades=[x.trades for x in results] if record else None,
         delist_events=[x.delist_events for x in results],
         diagnostics={
-            key: np.array([x.diagnostics[key] for x in results], dtype=np.int64)
-            for key in COUNTERS
+            k: np.array([x.diagnostics[k] for x in results], dtype=np.int64)
+            for k in COUNTERS
         },
+        coverage={
+            k: np.array([x.coverage[k] for x in results], dtype=np.int64)
+            for k in EXTRA_COUNTERS
+        },
+        contribution=np.stack([x.contribution for x in results])
+        if results
+        else np.empty((0, n)),
+        liquidation_events=[x.liquidation_events for x in results],
+        bankruptcy_events=[x.bankruptcy_events for x in results],
     )

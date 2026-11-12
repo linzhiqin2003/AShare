@@ -43,13 +43,17 @@ def test_targets_dense_roundtrip_and_empty_rows():
 )
 def test_invalid_targets(args, match):
     with pytest.raises(ValueError, match=match):
-        bt.Targets(*args)
+        target = bt.Targets(*args)
+        n = max(max(args[2], default=0) + 1, 1)
+        p = np.ones((1, n))
+        bt.run(bt.Market(p, p, p > 0, p > 0), target)
 
 
 def test_dense_invalid_and_tolerance():
     for w in ([[np.nan, -0.1]], [[np.inf, 0]], [[0.8, 0.3]]):
         with pytest.raises(ValueError, match="weights"):
-            bt.Targets.from_dense(w)
+            p = np.ones((1, 2))
+            bt.run(bt.Market(p, p, p > 0, p > 0), bt.Targets.from_dense(w))
     bt.Targets.from_dense([[0.5, 0.5 + 5e-10]])
 
 
@@ -119,8 +123,8 @@ def test_bad_config(key, value):
 @pytest.mark.parametrize(
     "key,value",
     [
-        ("commission", -1),
-        ("min_commission", np.inf),
+        ("commission_rate", -1),
+        ("commission_min", np.inf),
         ("tax_buy", [0, 1]),
         ("tax_sell", np.nan),
         ("slippage", 1),
@@ -131,7 +135,9 @@ def test_bad_costs(key, value):
         bt.run(market(), bt.Targets.from_dense([[1]]), costs=bt.Costs(**{key: value}))
 
 
-@pytest.mark.parametrize("key,value", [("commission", "bad"), ("tax_buy", ["bad"])])
+@pytest.mark.parametrize(
+    "key,value", [("commission_rate", "bad"), ("tax_buy", ["bad"])]
+)
 def test_nonnumeric_costs_name_parameter(key, value):
     with pytest.raises(ValueError, match=key):
         bt.run(market(), bt.Targets.from_dense([[1]]), costs=bt.Costs(**{key: value}))

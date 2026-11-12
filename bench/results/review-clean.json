@@ -1,0 +1,22 @@
+{
+  "command": "git archive HEAD plus allowed git diff/untracked overlay; make dev SANDBOX=1 && make check SANDBOX=1",
+  "cache_target_venv_absent_before": true,
+  "overlaid_files": 103,
+  "source_sha256": "fbd8bde90b2bd5a1b7b97a877926089bee1e93ae02b745766605707d7d2cd434",
+  "check_tail": [
+    "plugins: hypothesis-6.170.15",
+    "collected 131 items",
+    "",
+    "test/test_engine.py ................                                     [ 12%]",
+    "test/test_extended.py ................s...                               [ 27%]",
+    "test/test_inputs.py ....................................                 [ 54%]",
+    "test/test_properties.py .....                                            [ 58%]",
+    "test/test_random.py .                                                    [ 59%]",
+    "test/test_review.py ...........................................          [ 92%]",
+    "test/test_rules.py ..........                                            [100%]",
+    "",
+    "=========================== short test summary info ============================",
+    "SKIPPED [1] test/test_extended.py:518: could not import 'pandas': No module named 'pandas'",
+    "======================= 130 passed, 1 skipped in 18.87s ========================"
+  ]
+}

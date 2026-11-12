@@ -1,86 +1,266 @@
-# panelbt 0.1 规格
+# panelbt 0.1 execution specification (round 1b)
 
-## 1. 范围与数据
+## Scope and alignment
 
-市场无关、日频、只做多、无杠杆、单一现金账户。一个证券一天最多一个方向的成交，因此当天买入不会当天卖出。目标 t 行在 t 日成交，内核不移动信号。货币和股数使用 IEEE float64；日期在内核中仅是行下标。
+A deterministic, daily, single-currency spot portfolio simulator. Each row is
+one execution opportunity, followed by a closing mark. The caller aligns signals;
+no signal shifting occurs inside the engine. Prices and quantities use float64.
+The default is the original long-only, unlevered cash account. Signed holdings
+are enabled only by `MarginModel.allow_short`.
 
-所有行情同为非空 `T×N`。float 面板：exec_price、close、volume、split、cash_div；bool 面板：can_buy、can_sell、delist。转成 C 连续 float64/bool，必要的复制不报错。价格允许 NaN 或有限正数，不允许 0、负数或无穷；volume 允许 NaN 或有限非负数；split 必须有限且 >0；cash_div 必须有限且 >=0。省略 volume 不限量、split 当 1、cash_div 当 0、delist 当 False。所有必需面板必须提供。
+Market panels share nonempty T×N shapes. Required: `exec_price`, `close`,
+`can_buy`, `can_sell`. Optional: `volume`, `split`, `cash_div`, `delist`,
+`can_short`. Prices are positive finite values or NaN; volumes are nonnegative
+finite values or NaN; splits are positive finite multipliers; dividends are
+nonnegative finite amounts per pre-split share. NaN execution prices never trade.
+NaN closing marks use the most recent valid close adjusted for intervening
+corporate actions: `mark = max(mark - cash_div, 0) / split`. This price series
+also applies on reentry and to delisting recovery. Before any valid close,
+default cash accounts retain the legacy zero valuation without bankruptcy or
+forced liquidation. Margin accounts use a valid execution price when no close
+mark exists; bankruptcy is deferred while a held security has no valid mark.
+Delisting uses the previous valid close, never that day's future closing mark.
+The first delist row permanently disables a column. Short delisting buys back
+at prior close × recovery; negative event proceeds debit cash.
 
-构造 Market 时做一次完整形状、值域校验；随后重复运行只检查上下文维度与配置。数组为只读借用，原数组拥有者不得在对象使用期间改变其内容。只读视图不会把原数组的 writeable 标志改为 False，也不会隔离原数组的可写别名。
+Construction validates and converts arrays to C-contiguous float64/bool once.
+Arrays are borrowed through read-only views; writable aliases must not be
+mutated during the lifetime of the market. `first_delist[N]` is computed once,
+avoiding repeated historical scans for newly targeted securities.
 
-初始现金有限且 >0；成本参数均为有限非负数，slippage <1；max_participation、delist_recovery、cash_buffer 在 [0,1] 内。税率标量或长度 T；申报单位标量或长度 N，均有限非负；qty_step=0 时忽略 min_qty。输入错误报告参数名与期望条件，抛 ValueError。
+## Targets, lots and limits
 
-## 2. 稀疏目标
+`Targets(days, indptr, cols, weights, kind="weights")` is a CSR rebalance plan.
+Days are strictly increasing nonnegative int64; pointers start at zero and end
+at nnz; columns are unique within each row and are sorted with their values.
+All target values must be finite. Context checks enforce row/column bounds,
+short permission and, for an unlevered cash account, weight sums ≤ 1+1e-9.
+An all-NaN dense row means no rebalance; other NaNs become zero. Scheduled empty
+rows close positions. `to_dense` preserves that distinction.
 
-- days：int64[R]，非负严格升序，运行时要求 <T。
-- indptr：int64[R+1]，从 0 单调不减到 nnz。
-- cols：int64[nnz]，非负，运行时要求 <N，每个调仓行无重复；输入可无序，构造时排序并同步重排权重。
-- weights：float64[nnz]，有限非负，各行和 <=1+1e-9。不强制把容差以内的权重归一化，现金限制仍然生效。
+For weights, target quantity is signed floor-to-lot of
+`abs(weight × max(pretrade equity,0) × (1-cash_buffer) / valuation_price)`.
+For an existing position, a same-sign nonzero residual below min_qty is retained
+for sizing reductions. The execution price values a held position when available,
+otherwise the corporate-action-adjusted prior mark.
+With step>0, opening lot rounding is zero below min_qty, otherwise
+`min_qty + floor((q-min_qty)/qty_step)×qty_step`. Step=0 allows fractional shares.
+Partial closes round down by step and must meet the minimum. Complete closes permit the actual odd-lot
+quantity. `kind="shares"` bypasses quantity rounding altogether, but still obeys
+eligibility, volume, cash and margin constraints; it does not guarantee execution.
 
-from_dense 的整行 NaN 是不调仓；其余行 NaN 为 0，零权重不存。即使 nnz=0，调仓日也会保留，因此清仓与不调仓不同。空计划 `Targets([], [0], [], [])` 合法。to_dense 返回不调仓行 NaN、调仓行未列出的列为 0。
+For weight targets, a nonzero current position and nonzero target are left alone
+when `abs(target_weight-current_weight)<trade_band`. Zero-target liquidation and
+opening from zero are exempt. The band compares the requested weight before the
+cash buffer. Share targets ignore the band.
 
-## 3. 时序和估值
+Buys/short covers require can_buy; long sales require can_sell; short openings
+also require can_short when supplied (omission permits all sellable securities).
+Volume participation is disabled when max_participation=0. Otherwise a fill is
+capped by volume×participation, rounded down by step. Zero/NaN volume prevents
+participation-limited fills. Sign reversals share one day's participation budget.
 
-每日顺序：公司行为 → 退市 → 更新或顺延目标 → 成交前估值与目标股数 → 全部卖单 → 全部买单 → 收盘估值。
+New rebalance rows replace pending orders. With carry_blocked, only price/mask/
+volume-blocked names are retried using the original target and current equity.
+Cash/margin shortfalls and lot-rounding residuals are not carried. Delisted names
+never reenter. Forced liquidation suspends the old plan until a subsequent
+rebalance row. On a liquidation-day rebalance, increases are discarded but
+risk-reducing targets are honored: the executed reduction is the larger of the
+liquidation plan and the target's reduction. A reversal's new exposure is discarded.
 
-分红按除权前股数入现金，然后股数乘 split；送转零股原样保留。之后才处理退市。退市以此前最近有效 close × delist_recovery 变现，没有费用；即使当日 close 有值，也不能用于成交前的退市结算。记录当时股数、回收单价、回收现金。同一证券首次 delist 后永久不可重新买入，没有持仓时不产生事件。
+## Fees and execution prices
 
-成交前持仓估值：当日 exec_price 有效用该价格，否则用此前最近有效 close。目标证券当天没有有效 exec_price 就不可交易，不能用估值价代替成交价。有效 exec_price 本身即是有效的当日成交报价，不要求它之前已有收盘价。收盘估值：当日 close 有效则使用，否则回退此前 close；没有任何有效 close 时价值为 0。第一日有成交价但 close 缺失时，也遵循这个保守估值约定。
+For signed fill direction s, positive quantity q and effective price p_eff:
 
-所有历史查询都不读取未来。持仓证券缓存最新收盘价；新目标的历史 close 按需向前查找。内核每次运行初始化 O(N) 状态，日循环只处理持仓或目标，不每天分配 O(N) 临时数组。开持仓记录时写出 T×N 是调用方明确请求的输出成本。
+- A=q×p_eff.
+- Commission=max(commission_rate×A+commission_per_share×q, commission_min).
+  If commission_max_rate is provided, take min of that commission and
+  commission_max_rate×A. The cap wins over the floor. Zero fills incur no charge.
+- Tax=tax_buy[t]×A or tax_sell[t]×A.
+- Other fee=fee_rate_buy/sell[t]×A+fee_per_share_buy/sell[t]×q.
+- The old transfer_fee input/output name is removed; transfer fees belong in the
+  directional fee_rate arrays and are reported in other_fee.
 
-## 4. 目标及申报单位
+Slippage is scalar or T×N. Slipped price is p×(1+s×slippage).
+Optional impact_k is T×N and requires volume; impact exponent defaults to 0.5.
+Effective price is slipped_price×(1+s×impact_k×(q/volume)^exponent).
+Slippage cost=q×p×slippage; impact cost=q×abs(p_eff-slipped_price).
+Both are embedded in cash execution and reported separately, never debited twice.
+An undefined/nonpositive impact quote is rejected. Volume impact applies even
+when max_participation is disabled. Nonlinear buy affordability uses bisection.
+All fees are nonnegative; scalar/daily/panel domains are validated before Rust.
 
-成交前总资产 V 为现金与全部持仓成交前估值之和。对本次需要调整的证券：
+## Daily sequence and cash flows
 
-`x = weight × V × (1-cash_buffer) / valuation_price`。
+1. Apply external cash_flow before corporate actions. Withdrawals use available
+   positive own cash and never increase debt. Record actual signed flow and
+   nonnegative requested-minus-available withdrawal shortfall.
+2. Pay gross dividends using pre-split signed quantities. Positive dividends are
+   taxed by dividend_tax_rate; shorts pay the gross dividend without tax.
+   Apply split multipliers, then delisting recovery.
+3. Resolve forced liquidation, scheduled targets or eligible carried targets.
+4. Compute target quantities at execution marks. Risk reductions precede all
+   openings: sell longs, cover shorts, then open shorts and buy longs. Original
+   cash-account order and floating-point arithmetic are preserved.
+5. Increasing-risk baskets are scaled by a common factor to fit initial margin
+   and cash, then rounded. The margin path also verifies each fill prefix; it
+   may reduce a prefix further to avoid consuming unavailable cash. Long-only
+   cash scaling preserves the original proportional-then-affordable algorithm.
+6. Mark at close. Charge borrow fees on closing short values. Charge financing
+   interest on negative own cash, and credit cash_rate on positive own cash.
+   Both are per-period rates. Closing fees and adverse price moves can create a
+   deficit even if every opening was affordable; do not clip account debt away.
+7. Record equity, maintenance status, bankruptcy and flow-adjusted returns.
 
-qty_step=0：q*=x，允许小数股。否则 x<min_qty 时 q*=0，其他为 `min_qty + floor((x-min_qty)/qty_step)×qty_step`。
+Own cash is C-S when short proceeds are restricted, otherwise C. C includes
+short-sale proceeds, L is long market value, S is positive short market value,
+and E=C+L-S. Initial margin is long_initial[t]×L+short_initial[t]×S≤E.
+Without financing, an opening must additionally leave own cash≥0. Borrow rate
+accepts scalar, T or T×N; other margin rates accept scalar or T.
 
-卖出：q*=0 可清掉全部持股，包括零股；其他卖出量是 `floor((持股-q*)/qty_step)×qty_step`，小数股模式不取整。负数卖出量按 0 处理。
+A healthy nonfinancing account cannot use a risk reduction to create a cash
+shortfall; reductions are trimmed when necessary to pay fees. An already
+insolvent/deficient account may close risk despite remaining debt. It is
+mathematically impossible to promise nonnegative own cash at every close under
+arbitrary short price gaps, restricted proceeds, fees and blocked trading.
+Likewise, a blocked liquidation cannot make initial margin hold immediately.
+These deficits are retained and observable, not hidden by truncation.
 
-买入：先算目标与持仓的正差额，再按同样的最小申报量/步长规则向下取整。送转等原因可能让差额不足最小申报量，此时不下单。这种取整余量不属于交易受限，也不顺延。
+Maintenance call is `long_maintenance×L+short_maintenance×S>E` at close.
+`margin_call="record"` records only. With `"liquidate"`, next-row holdings are
+scaled toward initial-margin compliance, accounting for fees, eligibility and
+volume. If full feasible liquidation cannot restore compliance, close what is
+possible and continue flagging only while planned reductions remain unfilled
+(with a relative quantity tolerance). A completed plan does not create a new
+call merely because initial margin is breached at the close: maintenance margin
+is the closing criterion. The exact trial quantities are reused for execution.
+E≤0 records the first bankruptcy row only for a valued margin account with
+holdings or debt; an empty debt-free account may resume after a deposit. Subsequent
+rows attempt closure and never reopen, even after deposits or new targets.
 
-## 5. 交易资格和成交量
+## Result accounting
 
-成交价必须有效；买单需 can_buy，卖单需 can_sell。volume 存在且 max_participation>0 时，单笔最大股数为 participation×volume，整手模式先向下取整为 qty_step 的倍数。NaN/0 volume 的上限是 0；不启用 participation 时忽略 volume。买入截量后还必须符合最小申报量，卖出全部零股允许小于 step，但也不能超过成交量上限。
+Daily arrays include nav=E/initial_cash, equity, cash, long_value, short_value,
+turnover, commission, tax, other_fee, slippage_cost, impact_cost, blocked counts,
+dividend_gross, dividend_tax, actual cash_flow, withdrawal_shortfall, cash_interest,
+borrow_cost, financing_interest, initial margin_usage and maintenance margin_call.
+Trade and position recording is optional; delisting, liquidation and bankruptcy
+events are always available. Diagnostics count original branches; coverage counts
+new branches separately so original coverage tests retain their meaning.
 
-本来存在合法委托但因方向掩码、价格或成交量不足未达成，计为该方向受限一次。没有历史估值且权重>0 的目标也记为受限买入。受限统计按证券/日/方向计数，与是否开启顺延无关。
+Turnover=(sum of absolute effective execution amounts)/2/pretrade equity.
+Corporate actions and external flows do not count as trades. Returns are
+`E[t]/(E[t-1]+actual_flow[t])-1`, with E[-1]=initial_cash. Unit NAV is their
+cumulative product. When the denominator is effectively zero (≤8 float64 eps ×
+max(initial_cash,abs(previous equity),abs(flow))), return is defined as zero;
+this avoids a meaningless return from residual roundoff after full withdrawal.
 
-## 6. 费用、先卖后买与现金
+Contribution[N] is cumulative signed security cash flows plus the final mark:
+price P&L, net dividends, delisting recovery, all execution costs and borrow fees.
+For cash accounts, sum(contribution)+sum(cash_interest)=final equity-initial
+cash-net inflows. With financing, subtract financing_interest as a separate
+account-level expense. Financing is not arbitrarily attributed to one security.
 
-买入含滑点价格 `p×(1+slippage)`，卖出 `p×(1-slippage)`。成交额 = |股数|×含滑点价格。成交额>0 才收佣金 `max(amount×commission,min_commission)`，买卖税各用当日税率，过户费双边 `amount×transfer_fee`。slippage_cost 单独记为 `|股数|×p×slippage`；已包含在现金成交价中，不重复扣除。
+`to_npz` stores versioned arrays and JSON, never pickle; `from_npz` rejects unknown
+versions and loads with allow_pickle=False. Event types, batch axes and counters
+round-trip. `to_frame` lazily imports optional pandas and accepts only a single
+strategy. Batch results prepend K, preserve input order, and are bitwise identical
+across thread counts in the same architecture/compiler environment.
 
-先完成全部卖单，再汇总全部合法买单含费用所需 S，现金为 C。S>C 时每笔买入量乘 C/S，再按最小申报量与步长向下取整。按列升序逐笔买入；若最低佣金等使剩余现金仍不足，减到现金可负担的最大合法股数，允许 0。内核使用比例费和最低佣金两个界限的较小值；参考实现独立使用二分搜索。浮点边界仍超现金时继续减一个步长或一个浮点 ulp，不通过截断负现金隐藏超支。
+## Analytics
 
-极小卖单若卖出收入加现有现金都不足费用，则取消该卖单，避免最低佣金使现金变负；这属于现金不足，不新增顺延。股数和现金不允许负值。初始资产、有限浮点价格和股数须处于正常金融数值范围；不提供任意精度算术。
+`metrics.calculate` takes simple returns and explicit periods_per_year. Cumulative
+and annual returns are geometric; volatility/tracking error use sample standard
+deviation (ddof=1). Sharpe annualizes mean period excess over per-period risk-free
+rate. Sortino uses the RMS of all negative excess returns, including zero terms
+for nonnegative periods. Drawdown starts from wealth 1; duration includes an
+unrecovered terminal decline. Calmar=geometric annual return/max drawdown.
+Turnover and cost ratios annualize arithmetic means. Zero denominators yield NaN.
+Relative annual return/drawdown use relative wealth; information ratio uses
+arithmetic active returns. Beta is centered covariance/variance and alpha is the
+annualized arithmetic CAPM intercept. Benchmark returns must exceed -1.
 
-## 7. 顺延
+## Market profiles and regulatory provenance
 
-新调仓行覆盖旧计划，并清空旧的受限集合；该行未列出的持仓目标为 0。没有新调仓行且 carry_blocked=True 时，只重试前次受限证券，保留其原始目标权重，用最新全部资产重新计算目标股数。
+Frozen MarketProfile records name, currency, periods_per_year, dated FeeSchedule,
+lot/price-limit adapters, and sell_lock metadata (0 or 1). Fees are cumulative
+effective-date patches; dates before schedule inception fail. Broker commissions
+are overrides. Direct per-security lot sizes support heterogeneous board lots
+and zero for fractional shares. No-limit profiles require only valid prices and
+no suspension. A-share adapters preserve the original board and price-limit
+rules; `rules.ashare` remains an import facade over `markets.ashare`.
 
-其他持仓参与总资产估值，但不因顺延被调整。受限解除即退出集合；成交量导致部分成交则继续顺延。由于现金不足或申报取整未买足不算受限，不顺延。退市证券从任何计划中移除。carry_blocked=False 只记录当日受限，不在之后的非调仓日交易。
+ASHARE is the only built-in market. Before 2022-04-29 callers must explicitly
+override both other-fee rates: historical transfer fees differed by venue. The
+tax adapter still supports dates from 2008-09-19. HK-style bilateral tax/heterogeneous lots
+and US-style per-share commission/caps/fractional shares are illustrative tests
+and README examples, not trusted market defaults.
 
-## 8. 输出
+`ashare_margin` deliberately requires explicit long_initial, short_initial,
+long_maintenance, short_maintenance and collateral_haircut. The haircut is
+calibration metadata, not a second kernel deduction. Verified sources:
 
-nav=期末资产/initial_cash。cash 为日末现金。turnover=`(当日买卖含滑点成交额之和)/2/成交前总资产`，分母不含当日交易费用；资产为 0 时换手定义为 0。分红、送转、退市回收不计成交额或换手。
+- SSE notice No.98 (2024), effective **2024-07-22**: new short-sale margin at least
+  100%, private funds at least 120%; existing contracts retain old treatment until
+  extension. [Official notice](https://big5.sse.com.cn/site/cht/www.sse.com.cn/lawandrules/sselawsrules2025/trade/specific/margin/c/c_20250616_10782021.shtml).
+- CSRC statement **2019-08-09**: removed the universal 130% maintenance collateral
+  ratio floor; brokers and clients agree it.
+  [Official statement](https://www.csrc.gov.cn/csrc/c100028/c1000931/content.shtml).
+- SSE **2023 revised implementation rules**, article 36: collateral conversion
+  caps include 70% for SSE180 members, 65% for other A shares, and zero for specified
+  risk-warning/negative-earnings securities. Article 42 uses collateral/debt;
+  available margin separately depends on financing principal, short-sale proceeds
+  and discounted unrealized P&L.
+  [Official rules](https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/specific/margin/c/c_20250616_10782015.shtml).
 
-commission、tax、transfer_fee、slippage_cost 为当日货币金额；n_blocked_buy、n_blocked_sell 为 int64。delist_events 始终记录实际持仓的退市。
+Those regulatory ratios are not interchangeable with this engine's E-based
+coefficients, and individual broker haircuts/agreements cannot be verified from
+public maxima. Therefore none is silently installed as a misleading default.
+This model does not reproduce the full Chinese securities-credit ledger or
+contract-vintage rules. Daily bars also cannot simulate the rule that a short
+sale's quoted price must not be below the latest transaction price.
 
-record_trades=True 时 positions 是日末持仓 T×N；trades 每笔含 day、col、qty、price、commission、tax、transfer_fee、slippage_cost，卖为负，按执行顺序记录。关闭时二者为 None。diagnostics 统计实际发生的成交笔数、受限次数、现金同比缩减日数、最低佣金生效笔数、退市事件、持仓分红/送转事件、非调仓日成交笔数。
+## Currently unsupported: changes to the kernel are required
 
-run_batch 多 K 维，交易和事件为嵌套列表，顺序与输入计划一致。K=0 返回空的正确形状数组。线程数只控制不同策略间的并行，每个策略内部保持完全相同的运算顺序；1 和 0 在同一机器/版本上逐位一致，不承诺跨架构、跨编译器逐位一致。
+- Multiple execution opportunities within a day. A target may reverse sign via a
+  close and an opening in one opportunity, but never buys and then sells the same
+  long shares. Daily long-only T+1 is therefore naturally satisfied. Intraday
+  execution needs an explicit unlock inventory/clock; sell_lock is metadata now.
+- Multiple currencies, FX conversion, and cross-currency financing.
+- Full broker regulatory collateral/debt ledgers and contract-vintage terms.
+- Futures (planned next round): instrument kinds, multipliers, settlement marks,
+  expiry and cash variation margin are not implemented. `tradecore::Account`
+  separates cash from spot L/S, and its margin method accepts additional_margin;
+  per-fill fees are separate from principal movement. These are extension points,
+  not an advertised futures API. Future settlement must feed cash independently
+  of spot notional while contributing additional margin to the same constraint.
 
-## 9. A 股转换规则
 
-纯 numpy 函数。tradability 的输入形状必须一致；有效成交价且未停牌才可交易。价格>=涨停价-0.005 不可买，<=跌停价+0.005 不可卖。high/low 相差<=0.005 为一字价；一字涨停额外禁买、一字跌停禁卖；普通非涨跌停的一字价不自动禁止。NaN 上/下限视为该方向无价格限制。
+## Review clarifications
 
-stamp_tax_sell：日期必须一维有效，2008-09-19 前报错；2008-09-19 起 .001，2023-08-28 起 .0005。
-
-Board.MAIN、CHINEXT：(100,100)，STAR：(200,1)，BSE：(100,1)。推断函数要求六位代码字符串：主板 600/601/603/605/000/001/002/003，创业板 300/301，科创板 688/689，北交所 920 与历史 43/83/87/88。这些前缀是推断而非上市资格保证；未知代码报错。实际股池须由带时间的证券主表提供。
-
-## 10. 正确性约束的解释
-
-零成本、小数股、无交易受限的权重财富递推必须成立；现金始终非负，合法买入符合申报单位。逐日资产变化按送转前后持仓和原始价格计持仓损益，加分红，减交易成本；退市回收损益也计入持仓损益。
-
-“有成本净值不高于无成本”对同一实际成交/持仓路径成立，测试用无成本影子账本核对累计差额；对同一目标但不同实际持仓路径不普遍成立，特别是最低佣金和整手导致的现金留存可能躲避下跌。测试保留明确反例，同时测试共同上涨价格路径的成本单调性。
+- A partial close must meet `min_qty` and `qty_step`; a full close may dispose of
+  the entire odd balance, including a balance below the minimum. Liquidity caps
+  are applied before this final quantity check. Shares targets bypass lot rules.
+- A nonzero weight target below the opening minimum does not mean zero holdings.
+  Its unrounded residual is retained when deciding reductions; the proposed fill
+  itself is checked against the closing minimum. Zero targets still mean exit.
+- Target differences within `1e-9 * max(abs(target), abs(held), 1)` are zero.
+  Monetary branch diagnostics ignore interest below `1e-10` currency units;
+  maintenance comparisons use `1e-10 * max(abs(E), L, S, 1)` tolerance.
+- `n_reduction_clipped` counts reductions cut by the own-cash constraint;
+  `n_invalid_quote` counts rejected nonpositive/nonfinite effective quotes.
+  Both are daily arrays and have matching coverage counters. Such reductions
+  do not become ordinary carried orders; an unfilled forced plan stays due.
+- Coverage separately reports genuine bankruptcy (short exposure or own-cash
+  debt) and same-day reversals. `dividend_gross` remains the signed net distribution
+  across long and short positions; the two cash directions can be reconstructed
+  from holdings and the dividend panel.
+- Setting maintenance requirements explicitly selects the margin path, even for
+  long-only exposure. The default cash account has no maintenance enforcement.
+- `metrics.summarize` accepts losses below -100%, marks `bankrupt` and
+  `geometric_metrics_valid`, and returns NaN for geometric annualization and
+  Calmar when compounding crosses zero. Arithmetic risk metrics and drawdowns
+  remain available. `calculate` remains strict unless `allow_bankruptcy=True`.
+- `Costs` uses keyword-only construction. NumPy >=2.1 is sufficient: no API newer
+  than NumPy 2.1 is used, and 2.1 is the first series supporting Python 3.13
+  ([release notes](https://numpy.org/doc/2.1/release/2.1.0-notes.html)).

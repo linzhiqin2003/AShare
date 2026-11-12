@@ -1,0 +1,7 @@
+{
+  "adaptation": "Original review repro scripts copied inside ignored project cache; only ZERO Costs constructor changed to equivalent keyword arguments required by P2-12. External review files unchanged.",
+  "outputs": {
+    "repro_longonly_regression": "build: round 2\n(a) nav [0.  1.  1.1 1.2] positions [100. 100. 100. 100.] trades [(0, 100.0)]\n(b) n_blocked_buy [0 0 0] n_blocked_sell [0 1 0] positions [[400.0, 400.0], [400.0, 200.0], [400.0, 200.0]]\n",
+    "repro_stale_mark": "build: round 2\n2:1 split while suspended   nav [1. 1. 1. 1.] (economically flat: 1,1,1,1)\n1.0 dividend while suspended nav [1. 1. 1.] (economically flat: 1,1,1)\nSTAR-style lot (min 200, step 1): trades [(0, 500.0)] <- a 50-share sell that is not a full close\nshort suspended through a 2:1 split: short_value [500. 500. 500. 500.] margin_call [0 0 0 0] forced fills [] equity [1000. 1000. 1000. 1000.]\n"
+  }
+}

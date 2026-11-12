@@ -82,7 +82,11 @@ def test_random_lots_cash_accounting_and_cost_shadow():
         for day in range(m.shape[0]):
             div = float(np.dot(previous, m.cash_div[day]))
             after_split = previous * m.split[day]
-            end_prices = np.where(np.isfinite(m.close[day]), m.close[day], last)
+            end_prices = np.where(
+                np.isfinite(m.close[day]),
+                m.close[day],
+                np.maximum(last - m.cash_div[day], 0) / m.split[day],
+            )
             # 把送转后的持仓从上日收盘重估到今日收盘，零股也计入。
             pnl = float(np.dot(after_split, end_prices) - np.dot(previous, last))
             shadow_cash += div
@@ -95,7 +99,7 @@ def test_random_lots_cash_accounting_and_cost_shadow():
                 shadow_cash -= tr.qty * mid
             fees = sum(
                 getattr(r, k)[day]
-                for k in ("commission", "tax", "transfer_fee", "slippage_cost")
+                for k in ("commission", "tax", "other_fee", "slippage_cost")
             )
             assets = r.nav[day] * cfg.initial_cash
             delta = assets - previous_assets
@@ -113,7 +117,7 @@ def test_random_lots_cash_accounting_and_cost_shadow():
                 shadow_assets - assets,
                 sum(
                     np.sum(getattr(r, k)[: day + 1])
-                    for k in ("commission", "tax", "transfer_fee", "slippage_cost")
+                    for k in ("commission", "tax", "other_fee", "slippage_cost")
                 ),
                 rtol=1e-9,
                 atol=1e-9,
@@ -143,7 +147,20 @@ def test_same_targets_cost_monotonicity_has_counterexample():
     w = bt.Targets.from_dense([[1.0], [np.nan]])
     cfg = bt.Config(initial_cash=10000, record_trades=True)
     free = bt.run(m, w, ZERO, cfg)
-    paid = bt.run(m, w, bt.Costs(0, 5, 0, 0, 0, 0), cfg)
+    paid = bt.run(
+        m,
+        w,
+        bt.Costs(
+            commission_rate=0,
+            commission_min=5,
+            tax_sell=0,
+            tax_buy=0,
+            fee_rate_buy=0,
+            slippage=0,
+            fee_rate_sell=0,
+        ),
+        cfg,
+    )
     assert paid.commission[0] == 5
     assert free.positions[0, 0] == 1000
     assert paid.positions[0, 0] == 900

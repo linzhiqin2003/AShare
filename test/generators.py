@@ -57,11 +57,12 @@ def case(seed: int):
     minimum = np.array([100.0, 200.0, 100.0, 100.0])[kinds]
     steps = np.array([100.0, 1.0, 1.0, 0.0])[kinds]
     costs = bt.Costs(
-        commission=float(rng.choice([0.0, 0.00025, 0.005])),
-        min_commission=float(rng.choice([0.0, 5.0, 25.0])),
+        commission_rate=float(rng.choice([0.0, 0.00025, 0.005])),
+        commission_min=float(rng.choice([0.0, 5.0, 25.0])),
         tax_sell=rng.choice([0.0005, 0.001], t),
         tax_buy=rng.choice([0.0, 0.001], t),
-        transfer_fee=0.00001,
+        fee_rate_buy=0.00001,
+        fee_rate_sell=0.00001,
         slippage=float(rng.choice([0.0, 0.0005, 0.005])),
     )
     config = bt.Config(
