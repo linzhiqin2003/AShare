@@ -26,6 +26,7 @@ from .store import atomic_json, lock
 from .sync import compact
 
 FORMAT_VERSION = 4
+SNAPSHOT_MAX_AGE = 40
 LOG = logging.getLogger(__name__)
 
 
@@ -68,6 +69,7 @@ def build(
     keep=1,
     strict=False,
     action_tolerance=0.005,
+    action_k_min=0.85,
     allow_unreconciled=False,
 ):
     store = CanonicalStore(store.snapshot())
@@ -114,6 +116,7 @@ def build(
                     code=code,
                     format=FORMAT_VERSION,
                     action_tolerance=action_tolerance,
+                    action_k_min=action_k_min,
                     allow_unreconciled=allow_unreconciled,
                 ),
                 sort_keys=True,
@@ -122,9 +125,19 @@ def build(
         base = store.root / "panel"
         target = base / version
         if target.exists():
+            existing = json.loads((target / "metadata.json").read_text())
+            if strict:
+                # 版本不含 strict；复用已建代时也要守住快照日龄。
+                for index, item in (
+                    existing["diagnostics"].get("index_snapshots", {}).items()
+                ):
+                    if (item.get("age_days") or 0) > SNAPSHOT_MAX_AGE:
+                        raise ValueError(
+                            f"指数 {index} 快照已 {item['age_days']} 天，超过40天；请补抓 index_weight"
+                        )
             atomic_json(base / "current.json", {"version": version})
             collect_garbage(store, keep, locked=True)
-            return json.loads((target / "metadata.json").read_text())
+            return existing
         staging = base / f".building-{uuid.uuid4().hex}"
         staging.mkdir(parents=True)
         event_cache = {}
@@ -265,7 +278,7 @@ def build(
                 diagnostics["index_snapshots"][index] = dict(
                     snapshot=snapshot, age_days=age_days
                 )
-                if age_days is not None and age_days > 40:
+                if age_days is not None and age_days > SNAPSHOT_MAX_AGE:
                     if strict:
                         raise ValueError(
                             f"指数 {index} 快照已 {age_days} 天，超过40天；请补抓 index_weight"
@@ -316,6 +329,7 @@ def build(
                     end,
                 ),
                 tolerance=action_tolerance,
+                dilution_min=action_k_min,
                 allow_unreconciled=allow_unreconciled,
             )
             action_arrays.clear()
@@ -345,6 +359,21 @@ def build(
                         )
                     )
             diagnostics["industry_coverage"] = coverage
+            diagnostics["industry_mixing"] = events.industry_mixing(
+                destination("industry"),
+                destination("industry_source"),
+                destination("is_listed"),
+                dates,
+            )
+            unknown = (
+                diagnostics["joins"].get("daily", {}).get("unknown_symbol_rows", 0)
+            )
+            if unknown:
+                # 旧码不在证券表时行情被连接丢弃，最常见的原因是新出现的换码。
+                LOG.warning(
+                    "daily 有 %d 行证券不在证券表，疑似换码；见 docs/DATA_NOTES.md 加别名步骤",
+                    unknown,
+                )
             for array in arrays.values():
                 array.flush()
             arrays.clear()
@@ -371,7 +400,8 @@ def build(
                 },
                 aliases=store.aliases,
                 action_tolerance=action_tolerance,
-                pit_caveat="历史修订不能还原首次发布版本；bool缺失结合is_listed/has_quote；因子合成公司行为仅收盘后可知。",
+                action_k_min=action_k_min,
+                pit_caveat="历史修订不能还原首次发布版本；bool缺失结合is_listed/has_quote；公司行为裁决用当日复权因子，按事件记账（除权日开盘调整持仓）不受影响，当作当日盘前信号用就是前视。",
                 industry_caveat=industry_caveat or INDUSTRY_CAVEAT,
             )
             metadata["fields"]["industry"]["known_at"] = metadata["industry_caveat"]

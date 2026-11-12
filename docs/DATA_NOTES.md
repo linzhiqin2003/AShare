@@ -1,8 +1,146 @@
-# 数据层第三轮交付笔记（2026-11-12）
+# 数据层交付笔记（第三、四轮，2026-11-12）
 
 本轮只修改数据层允许的目录；没有提交、推送或修改其他 worktree。真实全历史沿用已有原始库，Tushare 和 BaoStock 新增真实调用均为 **0**。以下数字标为“实测”的均来自现有库或本轮执行，不把文档推测当成接口事实。
 
-## 结果与复跑入口
+## 第四轮（2026-11-12）：差异化分红口径与测试缺口
+
+本节是第四轮的全部结论；以下第三轮各节保留原文，凡与本节冲突的以本节为准（来源计数、公司行为口径、变异）。本轮没有下载数据，没有调用任何需要密钥的接口；真实原始库只读，面板建在系统临时目录、验证后删除，`data/cn` 下无新增或变化文件（`current.json` 仍指向 `8c770ce4…`）。
+
+### 第一部分：差异化分红（来源 5）
+
+**现象。** 有回购专户的公司分红时，专户股份不参与分配。持有人每股实得公告值，交易所按摊薄后的虚拟比例计算除权参考价，复权因子的变化因此比公告值小。第三轮的裁决在偏差超过 0.5% 时整格换成合成事件（`split=因子比`、`cash=0`、来源 3），同一种事件按回购比例大小被切成两种记法。
+
+**实现。**（`panel_actions.choose_action`）
+1. 候选顺序不变：去重全部、仅现金、仅送转、逐条，0.5% 内对上的照旧采信，来源 1/2 不变。
+2. 都对不上、且同日有满足时点要求的记录（公告日不晚于记账日；挪日后的记录同样要求公告日不晚于目标日）时，试「公告值按同一比例 k 摊薄」：前收 P、因子比 a、公告每股现金合计 c、公告每股送转合计 s=split−1，参考价 `(P−k·c)/(1+k·s)`，`k = P·(a−1)/(a·c+P·s)`（`panel_actions.dilution_ratio`；无现金时 `k=(a−1)/s`，不需要前收）。k∈[k_min,1) 就采信：`split`、`cash_dividend` 记**公告值**，`action_source=5`。
+3. 其余（k 越界、没有同日记录、只有晚公告记录）照旧按因子合成，来源 3。
+4. `k_min` 默认 0.85，`build(action_k_min=…)`、CLI `--action-k-min`；与 `action_tolerance` 一样进入版本哈希，写进元数据 `action_k_min`。
+5. 构建期对账：来源 5 的格子核对「k 在 [k_min,1)，且按 k 摊薄后的参考价比与因子比在容差内」；其余来源照旧。元数据 `diagnostics.actions` 新增 `dilution_min`、`diluted`（格数、k<0.90 格数、k 分位、前 20 个样例），`source_counts` 扩到 0–5。
+6. **独立校验。** `verify_panel` 重写，不再导入构建期的 `prior_prices`/`reconciliation_check`：前收逐行推进、公告值隐含比写成 `split/(1−cash/P)`、k 写成 `(a−1)/(a·c/P+s)` 后再由参考价反算摊薄比，另外核对「来源 1/2/3/5 必有事件、来源 0/4 必无事件」。构建与校验的 k 公式一起改错时，由手算用例（三格真实数字，用分数手算的 k 写死在测试里）抓到，见变异 N11。
+
+**含义（字段说明、`DESIGN.md` 6.1 已写）。** 来源 5 记的是持有人实得的公告值；按复权因子算的收益比按面板事件算的收益低 `(1−k)` 乘以分配比例（中位 0.78%）；下游 `panelbt` 按面板事件记账，现金流、红利税都按公告值计。
+
+**真实数据结果。** 来源 3 → 5 的格子正好 **72** 格（与复核人的 72 格逐格一致：抽查其列出的前 25 格全部在内，年份分布 2007:2、2019:11、2020:7、2021:6、2022:2、2023:9、2024:12、2025:10、2026:13 完全相同），含现金 56 格；没有同日多条不同记录的格子。
+
+|k 区间|格数|
+|---|---:|
+|[0.85,0.90)|1|
+|[0.90,0.93)|8|
+|[0.93,0.96)|15|
+|[0.96,0.97)|8|
+|[0.97,0.98)|24|
+|[0.98,0.99)|16|
+
+最小 0.8752、10 分位 0.9233、中位 0.9731、90 分位 0.9828、最大 0.9888。
+
+**k<0.90 只有一格：600382.SH 2024-07-12**（前收 3.74、派现 0.1828、因子比 1.044690、k=0.8752）。低价、小额派现时 k 对参考价的舍入很敏感：交易所参考价取到 0.01 元，±0.005 元的舍入让 k 变化 ±0.005/0.1828≈±0.027，区间 [0.848,0.903] 覆盖 0.90，与回购专户 10% 上限相容；离线无法确认是否另有大股东放弃分红，保留来源 5。
+
+**k_min 的结论：维持 0.85。** 理由：真实命中最小 0.875，0.85 给小额派现的参考价舍入留出约 0.03 的余量；k_min 以下最近的是 600025.SH 2019-07-05（k=0.842）和 2020-06-19（0.833），两格即使计入舍入（±0.028）也到不了 0.90，回购专户解释不了，保持来源 3 合成更稳妥；再往下是 2007 年股改期和 000409.SZ 2017（0.71）这类别的原因。改成 0.90 会把 600382.SH 一格挤回合成，改成 0.80 会收进 600025 两格而没有依据，都不比 0.85 好。
+
+**读 `action_source` 的地方。** 数据层内部：`panel_actions.reconcile`（写入与计数）、`panel.build`（字段与元数据）、`verify_panel.audit_panel`（独立核对，按来源分支）、`catalog`（字段说明）。`bench/data/round3/report_real.py`（来源计数扩到 0–5；它自带的公告值对账不计来源 5，由 verify 核对）。测试：`test_round3_actions.py`、`test_round3_increment.py`、本轮两个新文件。文档：本笔记、`DESIGN.md` 6.1。`src/ashare` 的其他模块（因子、风险、组合、模拟盘）、`packages/`、`research/` 均不读这个字段（全文检索 0 处）；`panelbt` 只读 `split`/`cash_div`。根目录 `CHANGELOG.md`、`CLAUDE.md` 只提到字段名、不涉及编号，不在本轮范围，未改。
+
+### 第二部分：补测试与变异
+
+新增两个测试文件 `test/data/test_round4_actions.py`（16 条）、`test/data/test_round4_alias_increment.py`（8 条），数据层 94 → **118** 条。夹具全部手写合成；三格手算用例只用了真实案例的四个数字（前收、因子比、公告送转、公告现金）。
+
+变异脚本在临时目录（`r4_mutate.py`，不入库）：克隆只含 `src/ashare` 与 `test/data`，先确认导入路径在克隆里，先跑不改动的对照（118 通过），每处跑**完整** `test/data`，并判断失败的是不是对应的那条测试；结束后源文件逐字节还原、再跑一次 118 通过。
+
+复核人 24 处（源码漂移处手工对应：X6 的 `bad` 表达式多了一项、X20 改为常量 `SNAPSHOT_MAX_AGE`、X21 版本哈希多了 `action_k_min` 一行；其余原样命中）：**24/24 抓到，且都由对应断言失败。**
+
+|编号|变异|抓到它的测试|
+|---|---|---|
+|X1|仅现金排到全部前|test_candidate_order_and_tolerance_boundary|
+|X2|容差 ×4|同上（另有手算的来源 5 用例）|
+|X3|挪日 ±3→±1|test_suspension_shift_and_fail_closed、test_shift_requires_known_target|
+|X4|挪日不查公告已知|test_shift_requires_known_target|
+|X5|记账不查公告已知|test_reconcile_guard_holds_without_upstream_filter（上游过滤被替换成不过滤的版本，记账层守卫单独守住）|
+|X6|对账不查有事件无因子变化|test_reconciliation_catches_bad_ratio_and_unbacked_event|
+|X7|因子噪声 0.1%→1%|test_factor_noise_threshold|
+|X8|前收不错位|test_suspension_shift_and_fail_closed 等 4 条|
+|X9|来源恒为 1|test_named_action_cases 等 6 条|
+|X10|平局取较晚日|test_shift_tie_prefers_earlier_day|
+|X11|dividend_rows 不过滤晚公告|test_late_announcement_filtered_by_dividend_rows|
+|X12|去重保留最晚公告|test_economic_dedup_key_and_candidate_order|
+|X13|2014-02-21 前不强制来源 3|test_industry_source_forced_before_sw2014|
+|X14|换码优先级反转|test_alias_priority_before_and_after_switch|
+|X15|接缝有公司行为不拦|test_alias_seam_action_and_missing_quote_rejected|
+|X16|接缝价不连续不拦|test_alias_prices_factors_all_datasets|
+|X17|因子比例取倒数|同上等 3 条|
+|X18|分红不按全列去重|test_alias_dividend_full_column_dedup（相同记录只记一次；同主键不同条款两条都留）|
+|X19|换码上下文变化不重建|test_alias_context_change_forces_full_rebuild|
+|X20|快照日龄 40→4000|test_snapshot_age_warning_and_strict|
+|X21|容差不进版本哈希|test_tolerance_and_k_min_enter_version|
+|X22|月定稿宽限期 3→0|test_month_finality_report_window_and_refresh_zero|
+|X23|GC 多留一代|test_rename_preserves_incremental_and_gc 等 2 条|
+|X24|verify 用 50% 容差|test_verify_fails_on_bad_panel（篡改已发布面板的现金，偏差约 2%）|
+
+第一部分新逻辑 13 处、第三部分 4 处：**17/17 抓到，都由对应断言失败。**
+
+|编号|变异|抓到它的测试|
+|---|---|---|
+|N1|k 分子 (a−1)→(a−0.99)（构建）|手算用例 test_differential_dividend_keeps_announced_values|
+|N2|k 分母去掉 a·c 的 a（构建）|同上|
+|N3|k_min 下界放宽 0.01|test_dilution_bounds_and_order（k=0.849 必须合成）|
+|N4|上界 1→1.05|同上（k=1.02 必须合成）|
+|N5|摊薄候选排到普通候选前|同上（偏差 0.3% 必须走来源 1），另 2 条|
+|N6|时点检查（记账层与 dividend_rows 两处守卫同时去掉）|test_differential_requires_known_record 等 4 条|
+|N7|来源编号 5→2|手算用例|
+|N8|k_min 不进版本哈希|test_tolerance_and_k_min_enter_version|
+|N9|verify 的来源 5 k 判定失效|test_dilution_bounds_and_order、test_verify_fails_on_bad_panel|
+|N10|构建期矩阵版 k 分子改错|test_differential_requires_known_record（构建对账拦截）|
+|N11|构建两处与 verify 两处的 k 一起改错|手算用例（k 用分数手算写死）|
+|N12|构建期对账不查来源 5 的 k 范围|test_build_reconciliation_rejects_out_of_range_k|
+|N13|verify 不查来源与事件一致|test_verify_source_event_consistency|
+|P1|权重非年月分区不整体重建|test_weight_revision_in_generic_partition|
+|P2|行业比较不转字符串|test_industry_null_typed_column_increment（`SchemaError`）|
+|P3|接缝缺行情静默跳过|test_alias_seam_action_and_missing_quote_rejected|
+|P4|行业混用计数取反|test_industry_mixing_counts_foreign_codes|
+
+P1 第一次跑**存活**：我当时把「无下划线的分区名」先折成空串，空串加 `01` 恰好排到最前、等价于整体重建，于是删掉守卫的变异和原代码等价。改回直写 `rsplit` + 显式守卫后单独重跑，抓到。
+
+### 第三部分：小问题的处理
+
+1. **增量的两个布局分支**（`panel_increment.py`）。指数权重分区名解析不出「代码_年月」（如通用的 `all` 分区）时，修订后整体重建（`reuse_prefix` 返回 0），不再把 `all01` 当日期。行业表新旧两份按列比较前一律转成字符串，整列为空、被存成 Null 类型的分区不再让 anti-join 报 `SchemaError`。测试：`test_weight_revision_in_generic_partition`、`test_industry_null_typed_column_increment`（两处都与独立全量逐字节比较）。
+2. **换码接缝缺行情改为报错。** 理由：接缝两天的行情决定旧码因子的缩放基准，缺一边时原来按 1 处理并照样改代码，旧段复权因子会静默错位；真实三只接缝都有行情，报错不影响现有构建。原始库根本不覆盖接缝日（两天的 daily 分区不是 complete）时库里至多只有一边的代码，不需要基准，照旧跳过——小样本库、只下载近几年的库都属于这种情形。报错信息提示核对 `catalog.SYMBOL_ALIASES` 的日期。
+   **出现新的换码股票时**：
+   1. 信号：构建日志出现「daily 有 N 行证券不在证券表，疑似换码」（来自 `diagnostics.joins.daily.unknown_symbol_rows`，本轮起构建时告警）；或者证券表里出现一只上市日很晚、却有多年回写历史的新码。
+   2. 量切换日：旧码最后一个有行情的交易日记为 `old_last`，其后新码第一个有行情的交易日记为 `switch`（不要用新码回写历史的最早日期）。
+   3. 核对接缝：旧码 `old_last` 收盘价等于新码 `switch` 的昨收（差不超过 1 分）；`switch` 当天两只代码都没有实施的公司行为。不满足时构建会拒绝，需要人工确认。
+   4. 在 `catalog.SYMBOL_ALIASES` 加一条 `{old, new, old_last, switch}`，补 `DATA_NOTES` 的换码表。
+   5. 改 `catalog.py` 会改变 `code_version`，下次构建自动全量；之后跑 `verify`，核对 `joins.daily.unknown_symbol_rows` 回到 0。
+3. **说明文字。** 写进了 `split`/`cash_dividend` 的 `known_at`（`catalog.ACTION_RULE`）、`action_source` 的 `known_at`、元数据 `pit_caveat`、`industry` 的 `known_at`：
+   - 派现小于最小报价单位、交易所不除权时按无事件处理（来源 4 或 0），持有人实得的小额现金不计（复核测得每格影响多数 <0.1%）。
+   - 合成事件（来源 3）：等效参考价再投资，不扣红利税、没有现金流、持股会变成非整数。
+   - 「收盘后可知」对两种用途的含义：按事件记账（`panelbt` 在除权日开盘先派现再调股数）不受影响；把 `split`/`cash_dividend`/`action_source` 当作当日盘前可用的信号（事件驱动策略）就是前视，信号要至少错一天。
+   - 行业回填后同一天可能混有 SW2014 与 SW2021 两套编码；构建时计算并写进 `metadata.diagnostics.industry_mixing`（实测数见下）。
+4. **已知限制：挪日窗口 ±3 个交易日。** 603014.SH 2025-10-24、603221.SH 2026-08-12 的因子变化与分红记录相隔 4 个交易日，超出窗口，变成「否决（来源 4）+ 合成（来源 3）」：按因子的收益仍对，只是现金被记成送转，红利税和现金流丢失。不放宽窗口：窗口越大，股改期相邻事件错配的风险越高（复核数到同一证券 3 个交易日内两次显著因子变化 46 处）。
+
+### 第三部分附带：`--strict` 复用已建代时也检查快照日龄
+
+补 X20 的测试时发现：版本哈希不含 `strict`，先非严格构建、再 `--strict` 构建时直接返回已存在的那一代，超过 40 天的快照不报错。现在复用已建代前读它的 `diagnostics.index_snapshots`，日龄超过 40 天就拒绝；阈值抽成 `panel.SNAPSHOT_MAX_AGE`。
+
+### 第四部分：真实原始库验证
+
+做法同复核的 `r3_fullbuild.py`：原始库符号链接只读引用、清单导出到临时目录，面板写在临时目录，结束删除（脚本 `r4_real.py`，不入库）。负载：全程 load average 7–8（同机有别的任务）。
+
+|项目|结果|第三轮|
+|---|---|---|
+|全量到 20261110|42.4 s|40–44 s|
+|追加 20261111（复用 4,823 行）|9.1 s|4–8 s|
+|全量到 20261111|39.8 s，峰值 RSS 4.77 GB|39.8 s|
+|增量 vs 全量|版本号相同，46 个字段逐字节相同，`actions` 诊断相同|同|
+|与已发布 `8c770ce4…` 比较|只有 `split`、`cash_dividend`、`action_source` 三个字段不同；差异格 72 格，全部是来源 3→5，其余 43 个字段逐字节相同|–|
+|全历史 verify|60.0 s；`action_reconciliation` 检查 53,487、失败 0；`factor_change_has_panel_event` 49,966、失败 0|52 s|
+
+新面板版本 `738d8a03…`（只在临时目录）。来源计数：0: 28,521,003；1: 49,248；2: 1,384；3: 458（原 530）；4: 387；5: 72。构建期对账 53,487 格失败 0，`over_one_percent` 0。行业混用：`industry_mixing.foreign_code_cells` = **4,639**（与复核一致），2014-02-21 前全部 3,352,090 个回填格另计。
+
+追加一天 9.1 s 比第三轮自述的 4.1 s 慢、与复核在负载下测得的 8.4 s 相当；构建多出的工作只有行业混用计数（读 2021-08-02 前的行业与来源矩阵），全量耗时没有可见增加。verify 比 52 s 多 8 s，负载也更高（7–8 对 3–6）；独立实现的前收逐行推进是新增的主要开销，逐年块只 250 行左右。
+
+**`make check`。** 工作区：450 通过、1 跳过（缺 pandas）。全新目录（rsync 锚定排除 `/target /.venv /.cache /data /.git`，核对数据层收集 118 条）：427 通过、24 跳过（23 条模拟盘真实夹具不在副本里、1 条缺 pandas），共 451 = 主干 427 + 本轮 24。
+
+`raw` 中 `factor_change_has_event`（源因子变化但无实施事件）4,549 条与第三轮相同，属源数据缺口，不受本轮影响。
+
+## 第三轮：结果与复跑入口
 
 真实范围为 2007-01-04 至 2026-11-11，4,824 × 5,923，46 个字段。公司行为偏差超过 1%：**515 → 0**；构建和独立全历史 verify 的对账失败均为 **0**。行情、复权因子、行业与指数的稠密数组仍为 C 连续 NPY；时间切片使用只读 mmap。
 

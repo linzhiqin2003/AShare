@@ -40,7 +40,7 @@ def main():
         name: np.load(directory / f"{name}.npy", mmap_mode="r")
         for name in meta["fields"]
     }
-    source_counts = {str(i): 0 for i in range(5)}
+    source_counts = {str(i): 0 for i in range(6)}
     failed = over_percent = checked = missing_no_suspension = quote_and_suspension = 0
     yearly = {}
     samples = list(CASES)
@@ -75,13 +75,16 @@ def main():
         changed = valid & (np.abs(ratio - 1) > 1e-10)
         event = listed[1:] & ((split[1:] != 1) | (cash[1:] != 0))
         checked += int((changed | event).sum())
+        # 第四轮起来源 5 记公告值、按摊薄比例 k 对账，由 verify 独立核对，这里不计。
+        diluted = source[1:] == 5
         failed += int(
             (
-                (changed & (~np.isfinite(error) | (error > 0.005))) | (event & ~changed)
+                (changed & ~diluted & (~np.isfinite(error) | (error > 0.005)))
+                | (event & ~changed)
             ).sum()
         )
         over_percent += int((valid & (error > 0.01)).sum())
-        for i in range(5):
+        for i in range(6):
             source_counts[str(i)] += int((source == i).sum())
         for year in sorted({d[:4] for d in dates}):
             yearly[year] = yearly.get(year, 0) + int(
