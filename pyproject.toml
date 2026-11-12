@@ -28,7 +28,8 @@ compare = [
     "vectorbt[rust]>=1.2.1",
 ]
 data-verify = ["baostock>=0.8.9"]
-dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0", {include-group = "risk-reference"}]
+dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0", {include-group = "risk-reference"}, {include-group = "factor-reference"}]
+factor-reference = ["pandas>=3.1.1"]
 risk-reference = ["scikit-learn>=1.6", "threadpoolctl>=3.5"]
 
 panelops-bench = ["pandas>=2.2", "polars>=2.1", "bottleneck>=1.4"]

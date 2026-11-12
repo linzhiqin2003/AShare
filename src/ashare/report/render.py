@@ -39,9 +39,13 @@ def _round_list(xs, k):
     return out
 
 
+# 补充内容（对比指数、胜率、个股贡献、尾部、集中度）页面暂不显示，不嵌入，页面与之前逐字节相同
+EXTRA_KEYS = ("benchmarks", "win_rates", "contributions", "tails", "concentration")
+
+
 def compact(tearsheet: dict) -> dict:
     """只为嵌入页面而做的瘦身：按显示精度取整、去掉页面不用的明细、滚动指标的日期改成起始行号。"""
-    d = dict(tearsheet)
+    d = {k: v for k, v in tearsheet.items() if k not in EXTRA_KEYS}
     daily = dict(d["daily"])
     for k, digits in _DIGITS.items():
         daily[k] = _round_list(daily.get(k), digits)

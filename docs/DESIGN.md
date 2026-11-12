@@ -354,6 +354,67 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - 第一批：市值、短期反转、动量、波动率、换手率、估值（EP、BP）、股息率，以及 Alpha158 的量价部分。
 - 单因子报告：IC 与 ICIR、分组收益、**多头组扣成本后相对基准的超额**（调用 panelbt）、换手、分年度、分市值段、与已有因子的相关性。评价以多头端为准，因为做不了空。
 
+#### 6.2.1 外部因子包
+
+成套的公式型因子（公式、独立参考实现、约定文件、核对结果）不放在本仓库，写成单独的 Python 包，经入口点组 `ashare.factors` 被发现。本仓库的 `ashare.factor.formula` 只提供机制：
+
+- `dsl`：WorldQuant 式、国君式公式的翻译用语言（口径集中在这一个文件）；`qlib`：Qlib 表达式字符串到 `Expr` 的确定性转换；`ops`：用现有算子精确组合出的算子。
+- `registry_from_module(模块, 前缀, 条数, notes=..., excluded=...)`：从「一个函数一条因子」的模块构造注册表，按名字挂元数据标记 `notes`（`(标记, 编号)`），`registry.with_note(标记)` 筛选。
+- `inputs`：取数（`load_inputs`）与参考实现的输入（`reference_frames`）；`verify`：候选对独立参考实现逐格核对，支持「已知例外」（`KnownException`：只对条件成立、按正常规则不过关、候选恰为声明值的格子生效，单独计数）。
+- `plugins`：`discover()` 列出全部因子集，`load_registry(名字, **选项)` 取注册表。没装任何外部包时只有内置示例集 `example`（两条自编因子和它们的参考实现），一切功能照常。
+
+外部包的最小写法：
+
+```toml
+# 外部包的 pyproject.toml
+[project]
+name = "my_factors"
+version = "0.1"
+dependencies = ["ashare"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.entry-points."ashare.factors"]
+my_factors = "my_factors.plugin:register"
+```
+
+```python
+# my_factors/plugin.py
+from ashare.factor.formula import FactorSet, dsl as d
+from ashare.factor.library import Registry
+
+
+def build(window="7"):
+    registry = Registry()
+    registry.register(
+        "my_range", d.ts_mean(d.high - d.low, int(window)), "mean(high - low, window)",
+        notes=[("自编", "M-1")],
+    )
+    return registry
+
+
+def register(hub):
+    hub.add(FactorSet("mine", build, reference="my_factors.reference", options=("window",)))
+```
+
+```python
+# my_factors/reference.py：独立参考实现（pandas），选项以字符串原样传入
+def my_range(frames, window="7"):
+    return (frames["high"] - frames["low"]).rolling(int(window)).mean()
+
+
+REFERENCES = {"my_range": my_range}
+```
+
+装进同一个环境（`uv pip install -e 路径`）后：`load_registry("mine", window="9")` 取注册表，`python -m ashare.factor.formula.verify mine --option window=9` 核对。约定：
+
+- `register(hub)` 只有一个参数；入口点导入失败、`register` 报错、两个包登记同名因子集，都会直接报错并指明入口点，不静默跳过。
+- `FactorSet` 的 `build(**选项)` 返回 `Registry`，只接受 `options` 里声明的选项（命令行传进来的值是字符串）；`reference` 是参考实现模块（`REFERENCES = {名字: 函数}` 或 `compute_many(frames, names, **选项)`），选项同样传给它；参考实现只有时序运算时可以给 `chunk`（按证券分块并行）；`exceptions = {因子名: (KnownException, ...)}`。
+- 参考实现要独立：照约定文件自己写 pandas，不调用 `ashare.factor` 的表达式和 `panelops`。
+- 外部包的测试可以用 `ashare.factor.formula.testing.synthetic_source` 造合成面板。
+
 ### 6.3 合成、组合与研究纪律
 
 - 滚动训练：按时间切分，训练集和测试集之间留隔离期；LightGBM；各折并行。
@@ -387,6 +448,14 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - **内置事件**：业绩预告（首次与修正按同一条规则区分）、业绩快报（相对上年同期与相对最近一次预告的超预期）、分红（年报期的预案日用年报公告日近似，其他报告期用股东大会决议日；另有决议日、实施公告日两种进度）、指数成分调整（沪深 300、中证 500、中证 1000；只有月末快照，只能用生效之后的快照日，推不出公告日）。快报、分红走公共的 `Data.table`；预告、利润表、指数权重的部分列数据层尚未公开，经数据层内部接口读原始表，源字段名只出现在 `extract.py`。
 - **事件转目标**：可成交日 + `entry_lag` 开盘买入，持有 `holding` 个交易日；买不进时放弃或顺延至多 `defer` 天；重叠时延长、忽略或叠加；权重等权、按数值或每份固定；持仓数上限、单只上限。只在持仓集合变化的日子写一行 `panelbt.Targets`。所有决定按时间顺序只用当时已知的信息：名额在决策日占用、不看之后能否买到，给了可卖掩码时在实际卖出日释放；按数值加权时延长事件只改它之后的权重。名额不够时按 `priority`，再相同时按只由事件自身决定的固定哈希，不按代码顺序。
 - **事件研究**：异常收益 = 个股收益 − 基准（指数，或同行业 × 市值分位组的留一等权组合，或调用方给的 T×N 预期收益，例如风险模型的因子部分）；基准缺失不当 0，窗口不完整和上市不足的事件默认剔除并计数，退市后的格子记 0；同股同日同类事件合并。**首选的显著性口径是日历时间组合检验**（每个交易日等权持有窗口内的事件，对组合日超额做 Newey–West t）；另并排给出朴素 t、按月聚类（可选按日、按季度）的标准误和按聚类整块重抽的自助法，聚类少于 30 个时警告。事件数按年、事件前走势、开盘可买与买不进（涨停、停牌）分开统计。风险模型的特质收益尚无公开接口，留待接入。
+
+### 6.7 回测报告（`ashare.report`）
+
+一次回测出一份报告数据（`build_tearsheet`，口径见 `docs/REPORT_NOTES.md`），同一份数据有两种看法：自包含的 HTML 页面（给人看），以及给终端和 AI 代理看的文本版。
+
+- **文本版**：`Tearsheet.text(sections, fmt, lang, start, end)`、`print(tearsheet)`，命令行 `python -m ashare.report show / html`，报告数据用 `save_json` / `load` 存取。默认摘要一屏（40 行内），其余按小节取；`text`（等宽、行宽 ≤ 100 列、中文按两列）、`markdown`、`json` 三种格式；`--lang en` 表头用 JSON 键名。文本版不另算指标：每个数取自报告数据，格式与页面相同；自选区间的指标用页面「切换区间」的同一套公式（Python 逐行照搬页面的 JS，测试里用 node 跑页面那段 JS 对拍）。
+- **提醒**：把看图能看出、只读数字容易漏的问题（基准不含分红、首末月年不完整、未成交多、现金高、持仓不足、回撤未修复、历史太短等）按保守阈值写成带数字的句子。
+- **补充内容**：对比指数、胜率（按年、滚动 1/3/5 年）、个股贡献（用持仓和价格重建，与引擎的 `result.contribution` 和权益恒等式核对）、收益分布与尾部、集中度；`compare()` 把几份报告放在共同区间上并排。这些只进数据层和文本版，页面先出设计稿、经用户选定后再改；在那之前不嵌入页面，HTML 逐字节不变。
 
 ## 7. 实施步骤
 
