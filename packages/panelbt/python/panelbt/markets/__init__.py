@@ -345,3 +345,61 @@ __all__ = [
     "lot_rules",
     "stamp_tax_sell",
 ]
+
+
+# Hong Kong and US profiles (docs/markets/PROFILES.md). Imported last: they
+# subclass MarketProfile defined above.
+from .hk import (  # noqa: E402
+    HK_DIRECT,
+    HK_SOUTHBOUND,
+    HKProfile,
+    RegionalProfile,
+    connect_home_equity,
+    hk_margin,
+    home_currency_nav,
+    net_dividends,
+)
+from .us import US, US_WITHHOLDING, USProfile, reg_t_margin, settlement_days  # noqa: E402
+
+PROFILES = MappingProxyType(
+    {
+        "ashare": ASHARE,
+        "hk_direct": HK_DIRECT,
+        "hk_southbound": HK_SOUTHBOUND,
+        "us": US,
+    }
+)
+
+
+def get(name: str) -> MarketProfile:
+    """Return a built-in market profile by name: one of `PROFILES`.
+
+    >>> from panelbt import markets
+    >>> markets.get("hk_southbound").currency
+    'HKD'
+    """
+    key = str(name).strip().lower().replace("-", "_")
+    if key not in PROFILES:
+        raise ValueError(
+            f"unknown market {name!r}; expected one of {', '.join(PROFILES)}"
+        )
+    return PROFILES[key]
+
+
+__all__ += [
+    "HK_DIRECT",
+    "HK_SOUTHBOUND",
+    "HKProfile",
+    "PROFILES",
+    "RegionalProfile",
+    "US",
+    "USProfile",
+    "US_WITHHOLDING",
+    "connect_home_equity",
+    "get",
+    "hk_margin",
+    "home_currency_nav",
+    "net_dividends",
+    "reg_t_margin",
+    "settlement_days",
+]
