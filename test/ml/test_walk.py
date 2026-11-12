@@ -74,6 +74,14 @@ def test_independent_labels_center_on_zero(tmp_path):
     assert 2 <= (means > 0).sum() <= 10
 
 
+# 预测期从第 300 行起每 40 行一折（300、340、380、420）。D 取三处：第一折中间（330）、
+# 第二折中间且不在任何折边界上（361）、折边界（380）。D 落在后面的折边界时，最后一折的
+# 训练集截止在 D 之前，「分箱边界用了较晚一折的训练集」这类前视改动碰不到它，测不出来；
+# D 放进前面的折里才能抓到（见 bench/ml/mutations.py 的 shared_bins_use_last_fold）。
+CUTS = (330, 361, 380)
+
+
+@pytest.mark.parametrize("cut", CUTS)
 @pytest.mark.parametrize(
     "model,params",
     [
@@ -84,12 +92,16 @@ def test_independent_labels_center_on_zero(tmp_path):
         ("lasso", {"alpha": 1e-5}),
     ],
 )
-def test_changing_later_data_never_changes_earlier_predictions(tmp_path, model, params):
+def test_changing_later_data_never_changes_earlier_predictions(
+    tmp_path, model, params, cut
+):
     """改动第 D 日及以后的全部数据（行情、可买性、特征），D 之前的预测逐位不变。"""
     panel, feats, _ = make(t=460, n=50, k=3, seed=4, blocked=0.1)
     base = _walk(panel, feats, tmp_path, model=model, params=params)
+    starts = [f.test[0] for f in base.schedule.folds]
+    assert starts == [300, 340, 380, 420]
+    assert (cut in starts) == (cut == 380)
     rng = np.random.default_rng(99)
-    cut = 380
     arrays = {}
     for name in ("open", "close", "total_market_cap"):
         a = np.array(panel[name], dtype=float)
@@ -107,6 +119,7 @@ def test_changing_later_data_never_changes_earlier_predictions(tmp_path, model, 
     assert changed.version != panel.version
     after = _walk(changed, other, tmp_path, model=model, params=params)
     np.testing.assert_array_equal(after.pred[:cut], base.pred[:cut])
+    assert np.isfinite(base.pred[300:cut]).any()  # D 之前确实有预测可比
     assert not np.array_equal(after.pred[cut:], base.pred[cut:], equal_nan=True)
     assert base.check() and after.check()
 
@@ -203,6 +216,13 @@ def test_gap_removes_overlap_leak():
     )
     assert leak > 0.6, leak  # 虚高：重叠 h−1 天
     assert abs(clean) < 0.04, clean
+    # 剂量关系而不只是开关：训练集截止在预测日前 g 天时，最后一天的标签与预测日标签
+    # 重叠 h−1−g 天，理论 Rank IC ≈ (h−1−g)/h；g = 5、h = 10 时约 0.4。
+    half = [
+        Fold(k, (d - 5 - 60, d - 5), None, (d, d + 1)) for k, d in enumerate(test_days)
+    ]
+    mid, _ = _ic(store, values, universe, half, span)
+    assert abs(mid - 0.4) < 0.05, mid
     # 正式入口不允许不安全的间隔
     with pytest.raises(ValueError, match="不能小于标签跨度"):
         ml.schedule(store.dates, span, start=150, gap=span - 1)

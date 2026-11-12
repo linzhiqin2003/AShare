@@ -4,7 +4,8 @@
 一折取一段日期就是取一段连续的样本，不整体拷贝。每列是一份预处理后的特征值
 （`Preprocess` 在建库时做，训练和预测读同一份）。
 
-缓存键：特征表达式（或面板内容）的哈希 + 预处理定义 + 股票池 + 面板版本 + 本模块代码。
+缓存键：特征表达式（或面板内容）的哈希 + 预处理定义 + 股票池 + 面板版本 + 本模块代码 +
+求值依赖的版本（`dependency_versions()`：numpy、panelops 的构建号、因子求值器代码哈希）。
 新特征只算新的那一列；`incremental=True` 时面板版本不进键，新增日期只追加尾部，追加前
 重算已存的最后 `verify_days` 天逐位核对，不一致就整列重算。
 """
@@ -48,6 +49,19 @@ def implementation_id():
 
 
 implementation_id()
+
+
+@functools.cache
+def dependency_versions():
+    """特征值依赖的库与代码版本：numpy、panelops 构建号、因子求值器（`ashare.factor`）
+    代码哈希。任何一项变了，特征库和运行缓存都失效；也写进账本。"""
+    from ..factor.engine import _implementation_id as factor_id
+
+    return {
+        "numpy": np.__version__,
+        "panelops": panelops.build_id,
+        "factor": factor_id(),
+    }
 
 
 def normalize_features(features):
@@ -309,6 +323,7 @@ def build(
         key = _sha(
             FORMAT,
             implementation_id(),
+            json.dumps(dependency_versions(), sort_keys=True),
             preprocess.digest,
             version,
             uid,
@@ -350,11 +365,28 @@ def _evaluate(features, source, names):
             )
 
 
+def _require_values(name, values, universe):
+    """特征在股票池内一个有限值都没有时报错：预处理会把缺失补成 0，模型照样能训练，
+    但只会给出常数预测，这几乎总是字段名写错或数据没下全。"""
+    values = np.asarray(values)
+    # 从最近的日期往前按块找，正常的特征第一块就找到有限值，不必扫全表。
+    for stop in range(len(values), 0, -256):
+        block = slice(max(stop - 256, 0), stop)
+        if np.isfinite(values[block][universe[block]]).any():
+            return
+    if universe.any():
+        raise ValueError(
+            f"特征 {name} 在股票池内全部缺失（没有一个有限值）：检查表达式用到的字段"
+            "是否存在、数据是否覆盖这段日期"
+        )
+
+
 def _build_memory(features, data, universe, preprocess, digests):
     day_ptr, rows, cols = _positions(universe)
     ctx = preprocess.context(data)
     columns = {}
     for name, value in _evaluate(features, data, list(features)):
+        _require_values(name, value, universe)
         columns[name] = _values(preprocess.apply(value, universe, ctx), universe)
     return FeatureStore(
         dates=data.dates,
@@ -423,6 +455,7 @@ def _build_disk(
     if todo_full or todo_tail:
         ctx = preprocess.context(data)
     for name, values in _evaluate(features, data, todo_full):
+        _require_values(name, values, universe)
         x = _values(preprocess.apply(values, universe, ctx), universe)
         file = path / (digests[name].replace(":", "_") + ".f32")
         _write_atomic(file, x.tobytes())

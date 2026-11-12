@@ -6,7 +6,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
   ],
-  "seconds": 2.7
+  "seconds": 3.0
  },
  {
   "name": "label_buy_one_day_early",
@@ -15,7 +15,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
   ],
-  "seconds": 2.6
+  "seconds": 3.0
  },
  {
   "name": "buyable_misaligned",
@@ -24,7 +24,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
   ],
-  "seconds": 2.5
+  "seconds": 3.1
  },
  {
   "name": "blocked_not_excluded",
@@ -33,14 +33,14 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
   ],
-  "seconds": 2.6
+  "seconds": 2.9
  },
  {
   "name": "gap_minus_one",
   "desc": "验证段与预测段的间隔少一天",
   "caught": true,
   "by": [
-   "FAILED test/ml/test_search_explain.py::test_grid_search_ledgers_every_config"
+   "FAILED test/ml/test_labels.py::test_carry_widens_minimum_gap - ValueError: 第..."
   ],
   "seconds": 3.0
  },
@@ -49,7 +49,7 @@
   "desc": "训练集与验证集重叠",
   "caught": true,
   "by": [
-   "FAILED test/ml/test_search_explain.py::test_grid_search_ledgers_every_config"
+   "FAILED test/ml/test_labels.py::test_carry_widens_minimum_gap - ValueError: 第..."
   ],
   "seconds": 2.9
  },
@@ -60,16 +60,160 @@
   "by": [
    "FAILED test/ml/test_walk.py::test_check_lookahead_rejects_tampered_fold - Fai..."
   ],
-  "seconds": 7.0
+  "seconds": 19.0
  },
  {
   "name": "shared_bins_use_all_data",
   "desc": "共享分箱边界用了全部样本（含未来）",
   "caught": true,
   "by": [
-   "FAILED test/ml/test_walk.py::test_changing_later_data_never_changes_earlier_predictions[lgbm-params1]"
+   "FAILED test/ml/test_walk.py::test_changing_later_data_never_changes_earlier_predictions[lgbm-params1-330]"
   ],
-  "seconds": 7.3
+  "seconds": 16.6
+ },
+ {
+  "name": "shared_bins_use_last_fold",
+  "desc": "共享分箱边界用了最后一折的训练集（晚于前面各折的预测期）",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_walk.py::test_changing_later_data_never_changes_earlier_predictions[lgbm-params1-330]"
+  ],
+  "seconds": 45.6
+ },
+ {
+  "name": "carry_ignores_can_sell",
+  "desc": "顺延口径不看卖出日能否卖出",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
+  ],
+  "seconds": 3.6
+ },
+ {
+  "name": "carry_span_not_widened",
+  "desc": "顺延时最小间隔没有加上顺延天数",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
+  ],
+  "seconds": 2.9
+ },
+ {
+  "name": "end_day_ignores_carry",
+  "desc": "实际卖出日记成了不顺延的那天",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
+  ],
+  "seconds": 2.8
+ },
+ {
+  "name": "lookahead_end_off_by_one",
+  "desc": "按实际卖出日的防前视检查放过等号",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_carry_label_end_to_end_lookahead"
+  ],
+  "seconds": 29.4
+ },
+ {
+  "name": "zscore_not_applied",
+  "desc": "截面标准分目标没有生效",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_zscore_target_against_daily_loop - Assert..."
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "store_key_missing_preprocess",
+  "desc": "特征库缓存键漏掉预处理定义",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_store_key_includes_preprocess - ..."
+  ],
+  "seconds": 10.1
+ },
+ {
+  "name": "ledger_only_positive_ic",
+  "desc": "账本只记 Rank IC 为正的试验",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_negative_ic_trial_is_ledgered - ..."
+  ],
+  "seconds": 4.2
+ },
+ {
+  "name": "seed_not_normalized",
+  "desc": "试验定义记 walk_forward 的 seed 而不是模型实际用的",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_seed_written_either_way_is_one_trial"
+  ],
+  "seconds": 3.8
+ },
+ {
+  "name": "custom_identity_module_path",
+  "desc": "自定义模型的身份带模块路径",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_custom_model_identity_is_source_not_module"
+  ],
+  "seconds": 3.7
+ },
+ {
+  "name": "versions_not_in_run_id",
+  "desc": "运行缓存键不含库版本",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_library_versions_in_run_key_and_ledger"
+  ],
+  "seconds": 4.3
+ },
+ {
+  "name": "failure_not_ledgered",
+  "desc": "训练失败不入账",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_failed_training_is_ledgered_without_paths"
+  ],
+  "seconds": 8.3
+ },
+ {
+  "name": "no_constant_prediction_check",
+  "desc": "常数预测不报错",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_constant_prediction_raises - Fai..."
+  ],
+  "seconds": 5.3
+ },
+ {
+  "name": "no_empty_fold_check",
+  "desc": "训练集为空不报错",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_fold_without_training_samples_raises"
+  ],
+  "seconds": 4.8
+ },
+ {
+  "name": "all_missing_feature_allowed",
+  "desc": "特征全缺失不报错",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_ledger_identity.py::test_all_missing_feature_raises - Fai..."
+  ],
+  "seconds": 7.4
+ },
+ {
+  "name": "search_end_optional",
+  "desc": "超参搜索不要求留出段",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_search_explain.py::test_search_requires_explicit_end - As..."
+  ],
+  "seconds": 7.7
  },
  {
   "name": "gram_window_one_day_late",
@@ -78,7 +222,7 @@
   "by": [
    "FAILED test/ml/test_walk.py::test_ridge_matches_naive_sklearn - AssertionError: "
   ],
-  "seconds": 7.7
+  "seconds": 20.6
  },
  {
   "name": "ridge_no_intercept",
@@ -87,7 +231,7 @@
   "by": [
    "FAILED test/ml/test_models.py::test_ridge_numpy_matches_sklearn - AssertionEr..."
   ],
-  "seconds": 2.7
+  "seconds": 9.2
  },
  {
   "name": "early_stop_lower_better",
@@ -96,16 +240,16 @@
   "by": [
    "FAILED test/ml/test_models.py::test_lgbm_early_stopping_uses_rank_ic - assert..."
   ],
-  "seconds": 3.0
+  "seconds": 8.6
  },
  {
   "name": "ledger_counts_runs_not_definitions",
   "desc": "账本按运行（含线程数）而不是按定义数试验组数",
   "caught": true,
   "by": [
-   "FAILED test/ml/test_walk.py::test_cache_and_ledger - assert 4 == 3"
+   "FAILED test/ml/test_ledger_identity.py::test_library_versions_in_run_key_and_ledger"
   ],
-  "seconds": 8.2
+  "seconds": 4.6
  },
  {
   "name": "winsor_upper_ignored",
@@ -114,7 +258,7 @@
   "by": [
    "FAILED test/ml/test_preprocess_store.py::test_preprocess_matches_daily_loop[pre0]"
   ],
-  "seconds": 3.0
+  "seconds": 5.8
  },
  {
   "name": "ic_misaligned",
@@ -123,6 +267,6 @@
   "by": [
    "FAILED test/ml/test_search_explain.py::test_permutation_importance_finds_real_feature"
   ],
-  "seconds": 4.1
+  "seconds": 7.8
  }
 ]

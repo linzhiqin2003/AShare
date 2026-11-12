@@ -29,9 +29,11 @@ ml.walk_forward(features, "ret5", data=panel, model="corr")
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.metadata
 import importlib.util
+import inspect
 import json
 import threading
 from dataclasses import dataclass, field
@@ -101,16 +103,36 @@ class Model(Protocol):
     def save(self, path) -> None: ...
 
 
+def model_identity(cls):
+    """模型类的身份（进试验定义）。本包内置的模型用类名；其他类用 qualname 加类源码的
+    哈希，不用模块路径——同一个类从 `__main__` 还是别的脚本导入都是同一组，改了类的代码
+    就是新的一组。取不到源码（交互式定义、动态生成的类）时只用 qualname，并在
+    `source` 里写明 "unavailable"。
+
+    只哈希类本身的源码：类里调用的外部函数改了不会改变身份，这种改动要自己换类名或参数。
+    """
+    if cls.__module__.startswith(__name__.rsplit(".", 1)[0] + "."):
+        return {"class": cls.__name__}
+    try:
+        source = inspect.getsource(cls)
+    except (OSError, TypeError):
+        return {"class": cls.__qualname__, "source": "unavailable"}
+    digest = hashlib.sha256(source.encode()).hexdigest()[:16]
+    return {"class": cls.__qualname__, "source": digest}
+
+
 def params_of(model):
-    """模型参数（进账本和缓存键）；没有 get_params 时用类名 + __dict__ 里的标量。"""
+    """模型参数（进账本和缓存键）：`model_identity` + get_params()；没有 get_params 时
+    用 __dict__ 里不以下划线开头的标量。"""
+    ident = model_identity(type(model))
     if hasattr(model, "get_params"):
-        return {"class": type(model).__name__, **model.get_params()}
+        return {**ident, **model.get_params()}
     simple = {
         k: v
         for k, v in vars(model).items()
         if not k.startswith("_") and isinstance(v, (int, float, str, bool, type(None)))
     }
-    return {"class": f"{type(model).__module__}.{type(model).__qualname__}", **simple}
+    return {**ident, **simple}
 
 
 # ---------------------------------------------------------------- 注册表

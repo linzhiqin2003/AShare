@@ -270,18 +270,25 @@ class WalkResult:
 
 
 def check_lookahead(result):
-    """任何一个训练（含验证）样本用到的最晚数据日期——标签结束日 = 信号日 + lag + h——
-    必须早于它所服务的预测期的第一天；特征只用信号日及以前的数据（表达式求值不看未来）。
+    """任何一个训练（含验证）样本用到的最晚数据日期必须早于它所服务的预测期的第一天；
+    特征只用信号日及以前的数据（表达式求值不看未来）。两道检查：
+    1. 最晚信号日 + span（标签最晚可能的结束日，carry 时含顺延上限）< 预测期首日；
+    2. 训练样本实际卖出日（`LabelValues.end`，carry 时是逐样本顺延后的那天）的最大值
+       < 预测期首日（`last_end_day`；旧版本缓存的结果没有这一项时跳过）。
     不满足抛 ValueError，满足返回 True。"""
     span = result.label.span
     for f in result.folds:
+        first = f["test_rows"][0]
         last = f["last_used_day"]
-        if last is None:
-            continue
-        if last + span >= f["test_rows"][0]:
+        if last is not None and last + span >= first:
             raise ValueError(
                 f"第 {f['fold']} 折：训练样本最晚信号日 {last} 的标签结束日 {last + span} "
-                f"不早于预测期首日 {f['test_rows'][0]}"
+                f"不早于预测期首日 {first}"
+            )
+        end = f.get("last_end_day")
+        if end is not None and end >= first:
+            raise ValueError(
+                f"第 {f['fold']} 折：训练样本的实际卖出日 {end} 不早于预测期首日 {first}"
             )
     check_schedule(result.schedule)
     return True
@@ -295,6 +302,8 @@ def _accepts(factory, name):
 
 
 def _model_factory(model, params, seed):
+    """(无参工厂, 实际传给模型的参数)。模型接受 seed 且 params 没给时，注入 walk_forward
+    的 seed。"""
     params = dict(params or {})
     if isinstance(model, str):
         from .models import _REGISTRY, _load_entry_points
@@ -319,6 +328,33 @@ def _hash(obj):
     return hashlib.sha256(
         json.dumps(obj, sort_keys=True, default=str).encode()
     ).hexdigest()
+
+
+@functools.cache
+def library_versions():
+    """运行结果依赖的库与代码版本：特征值的依赖（`store.dependency_versions`）加上
+    LightGBM、scikit-learn 的版本（没装记 None）。进运行编号（运行缓存键）和账本，
+    不进试验编号：升级库不算新的一组试验，但旧缓存失效。"""
+    import importlib.metadata as md
+
+    out = dict(_store.dependency_versions())
+    for name, dist in (("lightgbm", "lightgbm"), ("sklearn", "scikit-learn")):
+        try:
+            out[name] = md.version(dist)
+        except md.PackageNotFoundError:
+            out[name] = None
+    return out
+
+
+def trial_definition(model_params, given):
+    """试验定义里模型与随机种子的规范形式：(模型参数, 种子)。
+
+    种子只认实际传给模型的那个：模型参数里有 seed 就用它，否则用实际传给工厂的
+    （`given`，即 `_model_factory` 给出的参数）。所以 `walk_forward(seed=7)` 与
+    `params={"seed": 7}` 是同一个定义；模型不接受 seed 时 walk_forward 的 seed 不影响
+    结果，记为 None。"""
+    model = dict(model_params)
+    return model, model.get("seed", dict(given).get("seed"))
 
 
 def walk_forward(
@@ -411,6 +447,9 @@ def walk_forward(
         )
     factory, mparams = _model_factory(model, params, seed)
     probe = factory()
+    model_def, seed_def = trial_definition(params_of(probe), mparams)
+    for note in sched.settings.get("skipped", []):
+        log(f"跳过一折（训练期不够长）：{note}")
     definition = {
         "data_version": getattr(panel, "version", None),
         "axes": _store._axes_hash(store.dates, store.symbols),
@@ -419,14 +458,15 @@ def walk_forward(
         "preprocess": store.preprocess.describe(),
         "label": label.describe(),
         "schedule": sched.digest,
-        "model": params_of(probe),
-        "seed": seed,
+        "model": model_def,
+        "seed": seed_def,
     }
-    # 试验组按「研究定义」算：框架代码改了（修 bug、提速）不算新的一组；运行缓存则按
-    # 代码哈希和线程数区分，代码一改就重算。
+    # 试验组按「研究定义」算：框架代码改了（修 bug、提速）、库升级了都不算新的一组；运行
+    # 缓存则按代码哈希、库版本和线程数区分，任何一项变了就重算。
     code = _store.implementation_id() + ":" + _code_hash()
+    versions = library_versions()
     trial_id = _hash(definition)
-    run_id = _hash([trial_id, code, threads, fold_workers])
+    run_id = _hash([trial_id, code, versions, threads, fold_workers])
     run_dir = root / "runs" / run_id
     book = Ledger(root / "ledger.jsonl") if ledger else None
     raw_panel = values.raw
@@ -448,19 +488,49 @@ def walk_forward(
                 )
             return result
     shared = getattr(probe, "bins", None) == "shared"
-    pred_s, infos, models = fit_folds(
-        store,
-        y,
-        trainable,
-        store.gather(values.raw),
-        sched,
-        factory,
-        threads=threads,
-        fold_workers=fold_workers,
-        shared_bins=shared,
-        horizon=label.horizon,
-        log=log,
-    )
+    record = {
+        "trial_id": trial_id,
+        "run_id": run_id,
+        "tags": list(tags),
+        **definition,
+        "code": code,
+        "versions": versions,
+        "code_version": code_version(),
+        "model_name": model if isinstance(model, str) else type(model).__name__,
+        "schedule_table": sched.table(),
+        "schedule_settings": sched.settings,
+        "threads": threads,
+        "fold_workers": fold_workers,
+    }
+    try:
+        pred_s, infos, models = fit_folds(
+            store,
+            y,
+            trainable,
+            store.gather(values.raw),
+            sched,
+            factory,
+            threads=threads,
+            fold_workers=fold_workers,
+            shared_bins=shared,
+            horizon=label.horizon,
+            log=log,
+            end=store.gather(values.end) if values.end is not None else None,
+        )
+    except Exception as exc:
+        # 失败的训练同样入账（计入试验组数）。只记异常类型，不记消息：消息里可能有
+        # 本机路径或数据内容。
+        if book:
+            book.append(
+                {
+                    "event": "trial",
+                    "status": "failed",
+                    "error": type(exc).__name__,
+                    **record,
+                    "seconds": time.perf_counter() - t0,
+                }
+            )
+        raise
     pred_panel = store.scatter(pred_s)
     test_rows = np.concatenate([np.arange(*f.test) for f in sched.folds])
     metrics = panel_summary(pred_panel, raw_panel, label.horizon, q=10, rows=test_rows)
@@ -490,17 +560,8 @@ def walk_forward(
         book.append(
             {
                 "event": "trial",
-                "trial_id": trial_id,
-                "run_id": run_id,
-                "tags": list(tags),
-                **definition,
-                "code": code,
-                "code_version": code_version(),
-                "model_name": model if isinstance(model, str) else type(model).__name__,
-                "schedule_table": sched.table(),
-                "schedule_settings": sched.settings,
-                "threads": threads,
-                "fold_workers": fold_workers,
+                "status": "ok",
+                **record,
                 "metrics": {k: v for k, v in metrics.items() if k != "ic"},
                 "folds": [
                     {k: v for k, v in f.items() if k != "importance"} for f in infos
@@ -524,12 +585,15 @@ def fit_folds(
     shared_bins=False,
     horizon=1,
     log=None,
+    end=None,
 ):
     """按日程逐折训练和预测（walk_forward 的核心，也供实验直接调用）。
 
     y：样本向量形式的训练目标；trainable：可进训练集的样本；raw_s：原始未来收益（算
     每折的样本外 IC）；factory：无参可调用，返回一个新模型。返回 (样本预测向量, 各折信息,
-    各折模型)。这里不检查日程是否安全——walk_forward 只会传 `schedule()` 生成并通过
+    各折模型)。end：每个样本标签的实际结束日（行号，可省），记进各折的 `last_end_day`
+    供 `check_lookahead` 核对。某折没有可训练样本、或预测在该折全部样本上是常数（多半是
+    特征全缺失被补成 0）时报错。这里不检查日程是否安全——walk_forward 只会传 `schedule()` 生成并通过
     `check_schedule` 的日程。
     """
     log = log or (lambda *_: None)
@@ -567,6 +631,11 @@ def fit_folds(
             sv = store.samples(*fold.valid)
             valid_idx = sv.start + np.flatnonzero(trainable[sv])
         test = store.samples(*fold.test)
+        if not len(train_idx):
+            raise ValueError(
+                f"第 {fold.index} 折（预测期从 {store.dates[fold.test[0]]} 起）训练集没有"
+                "可用样本：股票池、标签或买入日可买的条件把训练期的样本全部排除了"
+            )
         m = factory()
         train_b = batch(train_idx)
         train_b.gram = lambda: gram.window(*fold.train)
@@ -579,6 +648,12 @@ def fit_folds(
         pred = np.asarray(m.predict(test_b), dtype=np.float64)
         if pred.shape != (test.stop - test.start,):
             raise ValueError("模型 predict 返回的长度与样本数不一致")
+        finite = pred[np.isfinite(pred)]
+        if len(finite) > 1 and finite.min() == finite.max():
+            raise ValueError(
+                f"第 {fold.index} 折（预测期从 {store.dates[fold.test[0]]} 起）的预测在全部"
+                "样本上是同一个常数：特征在训练期或预测期多半全缺失（预处理补成了 0）"
+            )
         test_b.release()
         used = [train_idx] + ([valid_idx] if valid_idx is not None else [])
         used = np.concatenate(used) if used else np.empty(0, np.int64)
@@ -603,6 +678,9 @@ def fit_folds(
             "n_valid": 0 if valid_idx is None else int(len(valid_idx)),
             "n_test": int(test.stop - test.start),
             "last_used_day": int(store.rows[used].max()) if len(used) else None,
+            "last_end_day": (
+                int(end[used].max()) if end is not None and len(used) else None
+            ),
             "best_iteration": getattr(m, "best_iteration", None),
             "seconds": time.perf_counter() - started,
             "importance": None if imp is None else np.asarray(imp, np.float64).tolist(),

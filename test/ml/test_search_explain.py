@@ -10,6 +10,7 @@ import ashare.ml as ml  # noqa: E402
 from .synthetic import make  # noqa: E402
 
 KW = dict(retrain=50, train_days=150, valid_days=30, start=300, threads=2)
+SEARCH_END = 400  # 搜索只用到第 400 行，之后留作最终检验
 
 
 def test_grid_search_ledgers_every_config(tmp_path):
@@ -23,6 +24,7 @@ def test_grid_search_ledgers_every_config(tmp_path):
         grid=grid,
         base={"n_estimators": 20, "min_data_in_leaf": 20},
         root=tmp_path,
+        end=SEARCH_END,
         **KW,
     )
     assert len(res.table) == 4
@@ -47,6 +49,7 @@ def test_grid_search_ledgers_every_config(tmp_path):
         grid=grid,
         base={"n_estimators": 20, "min_data_in_leaf": 20},
         root=tmp_path,
+        end=SEARCH_END,
         **KW,
     )
     assert all(r["cached"] for r in again.table) and again.n_trials_total == 4
@@ -60,6 +63,7 @@ def test_grid_search_ledgers_every_config(tmp_path):
         grid={"num_leaves": [3]},
         base={"n_estimators": 20, "min_data_in_leaf": 20},
         root=tmp_path,
+        end=SEARCH_END,
         **KW,
     )
     assert third.n_trials_total == 5
@@ -83,7 +87,17 @@ def test_random_search_reproducible():
 def test_search_requires_exactly_one_space(tmp_path):
     panel, feats, _ = make(t=300, n=10, k=1)
     with pytest.raises(ValueError):
-        ml.search(feats, data=panel, root=tmp_path)
+        ml.search(feats, data=panel, root=tmp_path, end=250)
+
+
+def test_search_requires_explicit_end(tmp_path):
+    panel, feats, _ = make(t=300, n=10, k=1)
+    grid = {"alpha": [1.0]}
+    with pytest.raises(TypeError, match="end"):
+        ml.search(feats, data=panel, model="ridge", grid=grid, root=tmp_path)
+    with pytest.raises(ValueError, match="end"):
+        ml.search(feats, data=panel, model="ridge", grid=grid, root=tmp_path, end=None)
+    assert not (tmp_path / "ledger.jsonl").exists()
 
 
 def test_permutation_importance_finds_real_feature(tmp_path):

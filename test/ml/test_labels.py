@@ -162,3 +162,98 @@ def test_synthetic_label_is_planted_return():
     planted = 0.01 * (beta[0] * feats["f0"] + beta[1] * feats["f1"])
     ok = np.isfinite(values.raw)
     np.testing.assert_allclose(np.log1p(values.raw[ok]), planted[ok], atol=1e-12)
+
+
+def _naive_carry(panel, h, lag, k, exec="close"):
+    """逐格循环：买入日 b，从 b+h 起找第一个可卖且有价的日子，最多到 b+h+k。"""
+    p = np.asarray(panel[exec]) * np.asarray(panel["adj_factor"])
+    _, can_sell = L.tradable(panel, exec)
+    t, n = p.shape
+    out, end = np.full((t, n), np.nan), np.full((t, n), -1)
+    span = lag + h + k
+    for s in range(t - span):
+        b = s + lag
+        for j in range(n):
+            a = p[b, j]
+            if not (np.isfinite(a) and a > 0):
+                continue
+            for e in range(b + h, b + h + k + 1):
+                if can_sell[e, j] and np.isfinite(p[e, j]) and p[e, j] > 0:
+                    out[s, j], end[s, j] = p[e, j] / a - 1, e
+                    break
+    return out, end
+
+
+@pytest.mark.parametrize("h,lag,k", [(1, 1, 3), (5, 1, 2), (3, 2, 1)])
+def test_sell_blocked_carry_against_daily_loop(h, lag, k):
+    panel = _panel(t=80)
+    universe = np.ones(panel.shape, bool)
+    lab = ml.label(
+        "ret1", horizon=h, lag=lag, exec="close", sell_blocked="carry", max_carry=k
+    )
+    assert lab.span == lag + h + k and lab.carry == k
+    values = L.compute(panel, lab, universe)
+    ref, end = _naive_carry(panel, h, lag, k)
+    np.testing.assert_array_equal(values.raw, ref)
+    np.testing.assert_array_equal(values.end, end)
+    _, can_sell = L.tradable(panel, "close")
+    hold = lag + h
+    t = panel.shape[0]
+    carried = np.isfinite(ref[: t - lab.span]) & ~can_sell[hold : t - lab.span + hold]
+    assert carried.any(), "用例里必须真有顺延卖出的样本"
+    assert (
+        end[: t - lab.span][carried]
+        > np.arange(t - lab.span)[:, None].repeat(panel.shape[1], 1)[carried] + hold
+    ).all()
+    # 不顺延的口径：结束日就是 t+lag+h
+    price = L.compute(panel, ml.label(lab, sell_blocked="price"), universe)
+    ok = np.isfinite(price.raw)
+    rows = np.nonzero(ok)[0]
+    np.testing.assert_array_equal(price.end[ok], rows + hold)
+    assert (price.end[~ok] == -1).all()
+
+
+def test_carry_widens_minimum_gap():
+    lab = ml.label("ret5", sell_blocked="carry", max_carry=4)
+    days = np.array(
+        [
+            f"{2010 + i // 240}{(i // 20) % 12 + 1:02d}{i % 20 + 1:02d}"
+            for i in range(900)
+        ]
+    )
+    with pytest.raises(ValueError, match="不能小于标签跨度"):
+        ml.schedule(days, lab.span, start=600, gap=1 + 5)  # 旧的 lag+h 不够
+    sched = ml.schedule(days, lab.span, start=600)
+    ml.check_schedule(sched, lab.span)
+    for f in sched.folds:
+        assert f.train[1] - 1 + lab.span < (f.valid or f.test)[0]
+
+
+def test_zscore_target_against_daily_loop():
+    panel = _panel()
+    universe = np.random.default_rng(4).random(panel.shape) < 0.8
+    raw = L.compute(panel, ml.label("ret5", exec="close"), universe).raw
+    z = L.compute(panel, ml.label("ret5", exec="close", zscore=True), universe)
+    np.testing.assert_array_equal(z.raw, raw)  # 评估仍用原始收益
+    for d in range(panel.shape[0]):
+        ok = universe[d] & np.isfinite(raw[d])
+        if ok.sum() < 2:
+            continue
+        x = raw[d][ok]
+        np.testing.assert_allclose(
+            z.target[d][ok], (x - x.mean()) / x.std(ddof=0), atol=1e-12
+        )
+    with pytest.raises(ValueError, match="只能选一个"):
+        ml.label("ret5", rank=True, zscore=True)
+
+
+def test_new_label_options_keep_existing_identity():
+    """后加的选项取默认值时定义不变，旧试验的编号不变。"""
+    base = ml.label("ret5")
+    assert "zscore" not in base.describe() and "max_carry" not in base.describe()
+    assert (
+        ml.label("ret5", max_carry=3).digest == base.digest
+    )  # 不顺延时 max_carry 无效
+    assert ml.label("ret5", zscore=True).digest != base.digest
+    carry = ml.label("ret5", sell_blocked="carry")
+    assert carry.digest != ml.label("ret5", sell_blocked="carry", max_carry=3).digest

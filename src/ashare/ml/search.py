@@ -114,14 +114,22 @@ def search(
     preprocess=None,
     tag="search",
     log=None,
+    end,
     **walk_kwargs,
 ):
     """网格（给 grid）或随机（给 space 和 n_iter）搜索模型参数。
 
     每组参数跑一次 `walk_forward`（同一特征库、同一切分），结果都进账本（带 tag）。
-    end 请设在最终检验期之前：搜索用到的日期不能再用来报告最终结果。
+    end（必填）：搜索用到的最后一个预测日。设在最终检验期之前，留出的那一段不参与任何
+    一组的评估，选定参数后只在它上面跑一次报告结果。不给 end 会报错，避免默认用到
+    全部日期、没有留出段。
     返回 `SearchResult`：table 每行有 params、ic_mean、icir、p、p_adjusted、significant。
     """
+    if end is None:
+        raise ValueError(
+            "search 必须给 end：把最后一段日期留作最终检验，搜索只用到 end 为止"
+        )
+    walk_kwargs["end"] = end
     if (grid is None) == (space is None):
         raise ValueError("给 grid（网格）或 space（随机）其中之一")
     configs = (

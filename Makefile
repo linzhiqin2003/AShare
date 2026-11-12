@@ -6,7 +6,7 @@ export PYO3_PYTHON := $(CURDIR)/.venv/bin/python
 .PHONY: dev check bench bench-pair bench-compare bench-docs spike mutate mutate-1c risk-bench risk-validate risk-mutate
 
 dev:
-	uv sync --all-packages --group dev --inexact
+	uv sync --all-packages --group dev --group ml --inexact
 	uv run --no-sync python bench/clean_extension.py
 
 check:
