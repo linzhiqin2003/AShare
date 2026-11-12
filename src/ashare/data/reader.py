@@ -134,6 +134,12 @@ class Data:
             dates[row_slice], np.array(requested), arrays, self.version, temporary
         )
 
+    def futures(self):
+        """境内期货（全部交易所）的读取入口，见 ``FuturesData``；不依赖股票面板。"""
+        from .futures_reader import FuturesData
+
+        return FuturesData(self._store.root)
+
     def calendar(self):
         self._require()
         return (

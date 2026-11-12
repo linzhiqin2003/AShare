@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 import polars as pl
 
-from .catalog import DAILY_DATASETS, DATASETS, INDEXES
+from .catalog import DAILY_DATASETS, DATASETS, FUTURES_DATASETS, INDEXES
 from .store import Store, lock
 from .sync_policy import month_final, should_refresh
 
@@ -101,6 +101,12 @@ async def sync(
     if start > end:
         raise ValueError("start 必须不晚于 end")
     selected = list(names or DAILY_DATASETS)
+    futures = set(selected) & FUTURES_DATASETS.keys()
+    if futures:
+        raise ValueError(
+            f"期货数据集 {sorted(futures)} 由 ashare.data.futures_sync 采集；"
+            "命令行用 python -m ashare.data sync-futures"
+        )
     unknown = set(selected) - DATASETS.keys()
     if unknown:
         raise ValueError(f"未知数据集 {sorted(unknown)}；可用：{sorted(DATASETS)}")

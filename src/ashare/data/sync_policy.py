@@ -27,7 +27,7 @@ def should_refresh(spec, partition, entry, days, end, *, now=None):
     kind = spec.partition
     if kind == "legacy_industry":
         return False  # 冻结的旧分类仅显式强制刷新。
-    if kind in ("static", "status", "classification", "industry"):
+    if kind in ("static", "status", "classification", "industry", "fut_exchange"):
         return True
     if kind in ("index_month", "index_month_daily"):
         return not month_final(entry)
