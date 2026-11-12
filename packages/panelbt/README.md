@@ -166,6 +166,15 @@ before row `t` trades. The result is bit-for-bit what `bt.run` returns for the
 same targets.
 
 ```python
+import numpy as np
+import panelbt as bt
+
+prices = np.array([[10.0, 20.0], [11.0, 19.0], [12.0, 21.0]])
+market = bt.Market(prices, prices, prices > 0, prices > 0)
+costs = bt.Costs(commission_rate=0, commission_min=0,
+                 fee_rate_buy=0, fee_rate_sell=0, slippage=0)
+config = bt.Config(initial_cash=1000, min_qty=0, qty_step=0)
+
 sim = bt.Simulator(market, costs, config)
 for t in range(sim.n_days):
     state = sim.state                     # cash, equity, shares, cost, entry_day, ...
@@ -181,8 +190,10 @@ result = sim.result()
 blob = sim.snapshot()                     # bytes; resume with Simulator.restore
 ```
 
-State arrays are read-only live views (copy them to keep history). `step`
-releases the GIL, so independent simulators can run in separate threads. The
+State arrays are read-only live views (copy them to keep history; numpy
+refuses to make them writeable). `step` releases the GIL, so independent
+simulators can run in separate threads; one simulator must not be stepped or
+read from two threads at once (that raises `RuntimeError`). The
 per-step cost is a few microseconds and does not grow with the number of
 securities. Fixed patterns such as stops are faster as declarative rules (below).
 
@@ -220,7 +231,8 @@ exit_result = bt.run(bars, bt.Targets.from_dense([[1.0], [np.nan], [np.nan], [np
 print([(t.day, t.reason.name, t.price) for t in exit_result.trades])
 print(exit_result.diagnostics["stop_loss"])   # rule counters sit in diagnostics
 
-# A limit target: buy only if the price trades at 9.1 or below that day.
+# A limit target: buy only if the price trades below 9.1 that day (a low that
+# only equals the limit does not fill; Rules(limit_fill="touch") allows it).
 limits = np.array([[np.nan], [np.nan], [9.1], [np.nan]])
 weights = np.array([[np.nan], [np.nan], [1.0], [np.nan]])
 limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Costs(),
@@ -230,8 +242,12 @@ limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Co
 
 After a rule exit the column cannot be reopened until a later target row
 (`cooldown=None`, default) or for `cooldown=k` rows. With `sell_lock=True`
-(default, T+1) shares bought today are not sold by a rule today; the exit
-waits for the next row. An exit that cannot trade (limit-down, suspension)
+(default for every market, A-share T+1; set False elsewhere) shares bought
+today are not sold by a rule today; the exit waits for the next row. A limit
+buy fills only when the day's low is strictly below the limit (a sell: the
+high strictly above): a low that just equals the limit is often an order
+resting at the day's extreme that never traded, and counting those days as
+fills overstates buy-the-dip strategies considerably. An exit that cannot trade (limit-down, suspension)
 retries at the next rows' `exec_price`. Without rules, results are bit-for-bit
 those of a build without the feature. Rules are not available with futures
 columns. The exact semantics are in [SPEC.md](SPEC.md).

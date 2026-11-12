@@ -88,6 +88,8 @@ def _rules(market: Market, rules: Rules | None, any_limits: bool):
         raise ValueError("both_hit: expected stop or target")
     if rules.limit_valid not in ("day", "until_next"):
         raise ValueError("limit_valid: expected day or until_next")
+    if rules.limit_fill not in ("cross", "touch"):
+        raise ValueError("limit_fill: expected cross or touch")
     for name in ("max_hold", "cooldown"):
         value = getattr(rules, name)
         if value is not None and (
@@ -116,6 +118,7 @@ def _rules(market: Market, rules: Rules | None, any_limits: bool):
         rules.dividend_adjusts_cost,
         rules.sell_lock,
         rules.limit_valid == "until_next",
+        rules.limit_fill == "touch",
     )
     return arrays, terms
 

@@ -456,6 +456,12 @@ class Rules:
     rebalance. Percentages are positive fractions: a scalar, a length-N
     vector or a T×N panel; NaN disables a cell. Requires `Market` open, high
     and low panels; not available with futures columns. See SPEC.md.
+
+    `limit_fill="cross"` (default) fills a limit buy only when the day's low
+    is strictly below the limit (a sell: the high strictly above); "touch"
+    also fills when the low (high) only equals it, which is optimistic.
+    `sell_lock=True` (A-share T+1) is the default for every market; set it to
+    False elsewhere.
     """
 
     fill_time: str
@@ -468,6 +474,7 @@ class Rules:
     dividend_adjusts_cost: bool = False
     sell_lock: bool = True
     limit_valid: str = "day"
+    limit_fill: str = "cross"
 
 
 @dataclass(frozen=True)

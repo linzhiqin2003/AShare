@@ -104,6 +104,15 @@ A 股监管担保物/负债公式与模型不同，`markets.ashare_margin` 要�
 `bt.Simulator` 用同一个内核一次推进一天，策略可以根据账户状态决定当天的目标。第 t 步给的目标是第 t 日成交后要持有的；第 t 步之前的 `sim.state` 只含第 t 日成交前已知的信息。同样的目标逐日喂进去，结果与 `bt.run` 逐位相同。
 
 ```python
+import numpy as np
+import panelbt as bt
+
+prices = np.array([[10.0, 20.0], [11.0, 19.0], [12.0, 21.0]])
+market = bt.Market(prices, prices, prices > 0, prices > 0)
+costs = bt.Costs(commission_rate=0, commission_min=0,
+                 fee_rate_buy=0, fee_rate_sell=0, slippage=0)
+config = bt.Config(initial_cash=1000, min_qty=0, qty_step=0)
+
 sim = bt.Simulator(market, costs, config)
 for t in range(sim.n_days):
     state = sim.state                     # 现金、权益、持仓、持仓成本、建仓日……
@@ -119,7 +128,7 @@ result = sim.result()
 blob = sim.snapshot()                     # 字节串，用 Simulator.restore 恢复
 ```
 
-状态数组是只读的实时视图（要保留历史就 `copy()`）。`step` 期间释放 GIL，不同的模拟可以在不同线程里推进。每一步的固定开销是几微秒，不随证券数增长。止损这类固定模式用下面的声明式规则更快。
+状态数组是只读的实时视图（要保留历史就 `copy()`；numpy 不允许把它改回可写）。`step` 期间释放 GIL，不同的模拟可以在不同线程里推进；同一个模拟不能被两个线程同时推进或读取（会抛 `RuntimeError`）。每一步的固定开销是几微秒，不随证券数增长。止损这类固定模式用下面的声明式规则更快。
 
 ## 声明式止损和限价目标
 
@@ -149,7 +158,8 @@ exit_result = bt.run(bars, bt.Targets.from_dense([[1.0], [np.nan], [np.nan], [np
 print([(t.day, t.reason.name, t.price) for t in exit_result.trades])
 print(exit_result.diagnostics["stop_loss"])   # 各规则的计数在 diagnostics 里
 
-# 限价目标：当天价格到过 9.1 或更低才买。
+# 限价目标：当天价格跌破 9.1 才买（最低价正好等于限价不算成交；
+# Rules(limit_fill="touch") 可以改成碰到就算）。
 limits = np.array([[np.nan], [np.nan], [9.1], [np.nan]])
 weights = np.array([[np.nan], [np.nan], [1.0], [np.nan]])
 limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Costs(),
@@ -157,7 +167,7 @@ limit_result = bt.run(bars, bt.Targets.from_dense(weights, limits=limits), bt.Co
                                 record_trades=True))
 ```
 
-规则平仓后，这一列要等到之后的目标行（`cooldown=None`，默认）或 `cooldown=k` 行之后才能重新开仓。`sell_lock=True`（默认，T+1）时当天买入的股份当天不会被规则卖出，平仓顺延到下一行。卖不出去（跌停、停牌）的平仓在之后各行按当天的 `exec_price` 重试。不用规则时结果与没有这项功能的版本逐位相同。期货列不能用规则。确切语义见 [SPEC.md](SPEC.md)（英文）。
+规则平仓后，这一列要等到之后的目标行（`cooldown=None`，默认）或 `cooldown=k` 行之后才能重新开仓。`sell_lock=True`（对所有市场默认开启，对应 A 股 T+1；别的市场要设为 False）时当天买入的股份当天不会被规则卖出，平仓顺延到下一行。限价买单要当天最低价严格低于限价才成交（卖单对称）：最低价正好等于限价的日子，往往是挂在当天极值上没成交的单，算成交会明显高估低吸类策略。卖不出去（跌停、停牌）的平仓在之后各行按当天的 `exec_price` 重试。不用规则时结果与没有这项功能的版本逐位相同。期货列不能用规则。确切语义见 [SPEC.md](SPEC.md)（英文）。
 
 ## 输入检查
 

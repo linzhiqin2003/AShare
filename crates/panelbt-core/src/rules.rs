@@ -24,6 +24,9 @@ pub struct Rules<'a> {
     pub div_adjust: bool,
     pub sell_lock: bool,
     pub until_next: bool,
+    /// Limit orders fill when the price only touches the limit (`low == L`
+    /// for a buy); by default the range must cross it (`low < L`).
+    pub limit_touch: bool,
 }
 
 pub const RULE_COUNTS: usize = 9;
@@ -65,7 +68,7 @@ pub struct RuleBook {
     pub entry_fresh: bool,
     pub counts: [u64; RULE_COUNTS],
     pub scratch: Vec<usize>,
-    pub plan: Vec<(usize, f64, f64, f64, bool)>,
+    pub plan: Vec<(usize, f64, f64, bool, bool)>,
 }
 
 impl RuleBook {
@@ -465,7 +468,8 @@ fn limit_orders<const CLASSIC: bool>(
     for &i in &st.held {
         equity += st.shares[i] * st.last[i];
     }
-    // Plan: (column, target quantity, raw fill price, limit, touched).
+    // Plan: (column, target quantity, raw fill price, short of target for a
+    // reason other than the account, cut to what the account affords).
     let mut plan = std::mem::take(&mut rb.plan);
     plan.clear();
     let mut keep = Vec::with_capacity(rb.limits.len());
@@ -498,16 +502,22 @@ fn limit_orders<const CLASSIC: bool>(
         let (o, h, l) = (r.open[base + i], r.high[base + i], r.low[base + i]);
         let valid = o.is_finite() && h.is_finite() && l.is_finite();
         let (touched, raw) = if target > cur {
-            (valid && l <= limit, o.min(limit))
+            (
+                valid && (l < limit || (r.limit_touch && l == limit)),
+                o.min(limit),
+            )
         } else {
-            (valid && h >= limit, o.max(limit))
+            (
+                valid && (h > limit || (r.limit_touch && h == limit)),
+                o.max(limit),
+            )
         };
         keep.push((i, w, limit));
         if !touched {
             rb.counts[LIMIT_UNFILLED] += 1;
             continue;
         }
-        plan.push((i, target, raw, limit, false));
+        plan.push((i, target, raw, false, false));
     }
     rb.limits = keep;
     // Reductions, ascending columns.
@@ -529,7 +539,7 @@ fn limit_orders<const CLASSIC: bool>(
             if q != 0.0 {
                 rb.counts[LIMIT_FILLED] += 1;
             }
-            p.4 = q != request;
+            p.3 = q != request;
         }
     }
     // Openings: short openings first, then long, by column.
@@ -551,12 +561,12 @@ fn limit_orders<const CLASSIC: bool>(
             continue;
         }
         if bankrupt {
-            p.4 = true;
+            p.3 = true;
             continue;
         }
         if rb.blocks(i, day, r) {
             rb.counts[REENTRY] += 1;
-            p.4 = true;
+            p.3 = true;
             continue;
         }
         let allowed = if opening > 0.0 {
@@ -576,6 +586,8 @@ fn limit_orders<const CLASSIC: bool>(
                 q = 0.0;
             }
         }
+        // Short of the opening for a mask, the cap, a block or an invalid quote.
+        let short = q != opening;
         if q != 0.0 {
             if CLASSIC {
                 let cost = |y: f64| {
@@ -586,6 +598,10 @@ fn limit_orders<const CLASSIC: bool>(
                     }
                 };
                 if cost(q) > st.cash {
+                    // Like an ordinary purchase: cut to what cash affords
+                    // including fees, counted as `cash_scaled`, not blocked.
+                    out.counts[3] += 1;
+                    p.4 = true;
                     let (mut lo, mut hi) = (0.0, q);
                     for _ in 0..64 {
                         let mid = (lo + hi) * 0.5;
@@ -610,6 +626,8 @@ fn limit_orders<const CLASSIC: bool>(
                     super::feasible(projected_at(a, i, y, after, raw, day, m, s), 0.0, s, day)
                 };
                 if !ok(q) {
+                    out.counts[20] += 1; // margin_scaled
+                    p.4 = true;
                     let (mut lo, mut hi) = (0.0, q.abs());
                     for _ in 0..64 {
                         let mid = (lo + hi) * 0.5;
@@ -633,20 +651,23 @@ fn limit_orders<const CLASSIC: bool>(
             }
             rb.counts[LIMIT_FILLED] += 1;
         }
-        if q != opening {
-            p.4 = true;
+        if short {
+            p.3 = true;
         }
     }
     rb.entry_fresh = r.timing != 0;
-    // Completed orders are removed; partially filled ones counted.
+    // Completed orders are removed; partially filled ones counted. An order
+    // cut only to what the account affords is complete, like an ordinary one.
     for p in &plan {
-        if p.4 {
+        if p.3 {
             rb.counts[LIMIT_BLOCKED] += 1;
         }
     }
     let done: Vec<usize> = plan
         .iter()
-        .filter(|p| (p.1 - st.shares[p.0]).abs() <= quantity_tolerance(p.1, st.shares[p.0]))
+        .filter(|p| {
+            (p.4 && !p.3) || (p.1 - st.shares[p.0]).abs() <= quantity_tolerance(p.1, st.shares[p.0])
+        })
         .map(|p| p.0)
         .collect();
     rb.limits.retain(|o| !done.contains(&o.0));

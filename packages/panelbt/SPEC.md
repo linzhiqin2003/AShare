@@ -424,12 +424,26 @@ slippage, impact and fees; adds reweight it, reductions keep it, a new or
 reversed position resets it; splits divide it; dividends do not change it),
 `entry_day` (row of entry; adds keep it; -1 when flat), `last` (valuation mark
 of held columns), `futures_basis`, `pending_cols`/`pending_targets` (carried
-blocked orders), `margin_call`, `bankrupt`. Arrays are zero-copy read-only live
-views. `result()` requires every row to be stepped. `snapshot()` returns a
-versioned binary blob; `Simulator.restore(blob, market, costs, config, kind)`
-continues bit for bit. The blob fingerprints shapes, account type, target kind,
-costs and configuration (not market panels) and is rejected on mismatch.
-`step` releases the GIL; independent simulators may advance in parallel threads.
+blocked orders), `margin_call`, `bankrupt`. `cost` and `entry_day` are kept for
+spot columns only: on futures columns they always read 0 and -1, whatever the
+position (read `shares`). Arrays are zero-copy live views over read-only
+buffers: numpy refuses to make them writeable, so the simulator state cannot
+be modified through them. `result()` requires every row to be stepped.
+
+`snapshot()` returns a binary blob (format version 2, closed by a CRC-32 of
+all preceding bytes); `Simulator.restore(blob, market, costs, config, kind)`
+checks the checksum first, then the fingerprint, and continues bit for bit.
+The fingerprint covers shapes, account type, target kind, every cost and
+configuration vector and scalar, every rule term and every cell of the rule
+percentage arrays (stop, take, trail). Market panels, including open, high
+and low, are not fingerprinted: pass the same market. Any truncated, extended
+or corrupted blob and any mismatch raise `ValueError`; a failed restore leaves
+no half-loaded simulator.
+
+Threads: `step` releases the GIL, so independent simulators may advance in
+parallel threads. One simulator must not be used from two threads at once:
+a second concurrent `step`, or reading `state` from another thread during a
+`step`, raises `RuntimeError` (the state is not damaged).
 
 ## Declarative exit rules and limit targets
 
@@ -445,14 +459,18 @@ futures columns (rejected at input).
 finite and `low <= high`). Price rules and limit targets require all three.
 `Rules(fill_time, stop_loss=None, take_profit=None, trailing_stop=None,
 max_hold=None, both_hit="stop", cooldown=None, dividend_adjusts_cost=False,
-sell_lock=True, limit_valid="day")`. Percentages are positive fractions given
+sell_lock=True, limit_valid="day", limit_fill="cross")`. Percentages are positive fractions given
 as a scalar, a length-N vector (per security) or a T×N panel (read on the
 evaluation row); NaN disables a cell. `max_hold` is a positive number of rows.
 `fill_time` is required and states where `exec_price` sits in the day:
 `"open"`, `"close"` or `"average"` (a VWAP-like price).
 `Targets(..., limits=...)` (and `from_dense(..., limits=...)`) gives a positive
 limit price per entry; NaN means an ordinary target. Limit targets need a
-`Rules` object (for `fill_time`), possibly with no exit rule.
+`Rules` object (for `fill_time`), possibly with no exit rule. `sell_lock`
+defaults to True for every market (A-share T+1); set it to False for markets
+without a same-day sale restriction. With `Market(validate=False)` the
+`low <= open <= high` checks are skipped; on rows that violate them the
+guarantee that a trigger fill lies within `[l, h]` no longer holds.
 
 **Daily order.** Pre-open phase (flow, actions, delisting) is unchanged. On a
 new target row, limit entries replace all active limit orders and are removed
@@ -540,17 +558,25 @@ reduce (all columns, ascending), then open (short openings, then long, by
 column). Sizing uses `E = cash + Σ shares × last` at the start of the limit
 step (no price from the current row) and the limit price: weight targets
 become `w × max(E, 0) × (1 − cash_buffer) / L`, rounded like ordinary targets
-(no trade band). A buy needs `l <= L` and fills at `min(o, L)`; a sell needs
-`h >= L` and fills at `max(o, L)` (gap through the limit fills at the open).
-Masks, short permission, sell lock, participation cap, re-entry blocks and
-bankruptcy apply. Cash account openings are cut to what cash affords
-(bisection then lot rounding, per order in sequence, no common scaling); margin
-account openings to what keeps initial margin and, without financing, own cash
-feasible (account at `last` marks). Partial fills keep the remainder for
-`"until_next"` orders and drop it for day orders. An order whose target is
-reached is removed. Counters: `limit_filled` (fills), `limit_unfilled` (rows
-on which an active order's price was not touched), `limit_blocked` (touched
-but not fully filled). A limit opening is fresh. Limit fills are not carry
+(no trade band). With `limit_fill="cross"` (default) a buy needs the range to
+cross the limit, `l < L`, and a sell `h > L`; a day whose low (high) only
+equals the limit does not fill, because a limit order resting at the day's
+extreme may well not have traded. `limit_fill="touch"` also fills on equality
+(optimistic). A buy fills at `min(o, L)`, a sell at `max(o, L)` (a gap through
+the limit fills at the open). Masks, short permission, sell lock,
+participation cap, re-entry blocks and bankruptcy apply. Cash account
+openings are cut to what cash affords including fees (bisection then lot
+rounding, per order in sequence, no common scaling), like an ordinary
+purchase; margin account openings to what keeps initial margin and, without
+financing, own cash feasible (account at `last` marks). Such a cut counts
+`cash_scaled` (cash account) or `margin_scaled` (margin account) and completes
+the order. A shortfall for any other reason (mask, participation cap, block,
+bankruptcy, a reduction that could not complete) keeps the remainder for
+`"until_next"` orders and drops it for day orders. An order whose target is
+reached is removed. Counters: `limit_filled` (fills: an order that reduces and
+then opens on the other side counts two), `limit_unfilled` (rows on which an
+active order's price was not reached), `limit_blocked` (reached but short of
+target for a reason other than the account). A limit opening is fresh. Limit fills are not carry
 trades and limit orders are never carried by `carry_blocked`.
 
 **Results.** With rules configured, `Result.diagnostics` additionally holds
@@ -561,6 +587,14 @@ numeric): `REBALANCE` (0) for ordinary, carried and liquidation fills,
 otherwise `STOP_LOSS` (1), `TAKE_PROFIT` (2), `TRAILING_STOP` (3), `MAX_HOLD`
 (4) or `LIMIT` (5). Without rules and limit targets every output is
 bit-for-bit what it was before rules existed: the rule code is compiled out.
+
+**Same-day cash order (approximation).** Within a row, cash released by a rule
+exit is available to that row's limit openings (the intraday phase runs exits
+before limit orders), and with `fill_time="close"`/`"average"` to the row's
+ordinary rebalance. In a real session a limit buy may fill before the stop
+that funds it, and with an average price the rebalance trades through the day
+while an exit may come late; both are mildly optimistic for cash-constrained
+accounts.
 
 ## Review clarifications
 

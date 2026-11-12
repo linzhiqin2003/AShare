@@ -18,9 +18,9 @@ DayRecord.__doc__ = "Daily metrics of one stepped row (the same fields as Result
 
 
 def _view(a: np.ndarray) -> np.ndarray:
-    v = a.view()
-    v.flags.writeable = False
-    return v
+    # A view over a read-only buffer export: numpy refuses to make it
+    # writeable again, so callers cannot modify the simulator's state.
+    return np.frombuffer(memoryview(a).toreadonly(), dtype=a.dtype).reshape(a.shape)
 
 
 @dataclass(frozen=True)

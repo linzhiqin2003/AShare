@@ -1,9 +1,9 @@
 """Mutation check for the exit-rule kernel: each mutation must fail a test.
 
 Usage: python bench/mutations_rules.py   (rebuilds once per mutation; slow).
-Every mutation edits the Rust kernel only, rebuilds, runs
-test/test_exit_rules.py (the build guard in conftest rejects a stale
-extension) and must make at least one test fail. Sources are restored and
+Every mutation edits the Rust kernel or its binding, rebuilds, runs the rule
+and stepping tests (the build guard in conftest rejects a stale extension)
+and must make at least one test fail. Sources are restored and
 rebuilt at the end. Logs and a summary go to .cache/rework/mutations-rules/.
 """
 
@@ -17,8 +17,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "crates/panelbt-core/src/lib.rs"
 RULES = ROOT / "crates/panelbt-core/src/rules.rs"
+BIND = ROOT / "packages/panelbt/src/lib.rs"
 OUT = ROOT / ".cache/rework/mutations-rules"
-TESTS = "test/test_exit_rules.py"
+TESTS = ["test/test_exit_rules.py", "test/test_exit_rules_hand.py", "test/test_step.py"]
 
 CASES = [
     (
@@ -67,8 +68,32 @@ CASES = [
     (
         "limit buy fills at the limit, not min(open, limit)",
         RULES,
-        "(valid && l <= limit, o.min(limit))",
-        "(valid && l <= limit, limit)",
+        "o.min(limit),",
+        "limit,",
+    ),
+    (
+        "limit buy fills on a touch by default",
+        RULES,
+        "(l < limit || (r.limit_touch && l == limit))",
+        "(l <= limit || (r.limit_touch && l == limit))",
+    ),
+    (
+        "account-limited limit buy not counted as cash_scaled",
+        RULES,
+        "out.counts[3] += 1;",
+        "out.counts[3] += 0;",
+    ),
+    (
+        "snapshot checksum not verified",
+        CORE,
+        "if codec::crc32(&blob[..blob.len() - 4]).to_le_bytes() != crc {",
+        "if false && codec::crc32(&blob[..blob.len() - 4]).to_le_bytes() != crc {",
+    ),
+    (
+        "rule percentage arrays left out of the snapshot fingerprint",
+        BIND,
+        "for a in self.rule_arrays.iter().skip(3) {",
+        "for a in self.rule_arrays.iter().skip(6) {",
     ),
     (
         "max_hold off by one",
@@ -101,7 +126,7 @@ def build(name):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    originals = {x: x.read_text() for x in (CORE, RULES)}
+    originals = {x: x.read_text() for x in (CORE, RULES, BIND)}
     results = []
     try:
         for index, (name, path, old, new) in enumerate(CASES, 1):
@@ -115,7 +140,7 @@ def main():
                     "run",
                     "--no-sync",
                     "pytest",
-                    TESTS,
+                    *TESTS,
                     "-q",
                     "-p",
                     "no:cacheprovider",

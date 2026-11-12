@@ -24,8 +24,8 @@ type Plan<'a> = (
     PyReadonlyArray1<'a, f64>,
 );
 /// Rule terms: (max_hold, timing, both_target, cooldown, dividend_adjusts,
-/// sell_lock, until_next).
-type RuleTerms = (i64, u8, bool, i64, bool, bool, bool);
+/// sell_lock, until_next, limit_touch).
+type RuleTerms = (i64, u8, bool, i64, bool, bool, bool, bool);
 
 /// Rules from six flattened arrays (open, high, low: T×N; stop, take, trail:
 /// empty, 1, N or T×N) and the scalar terms.
@@ -64,6 +64,7 @@ fn rules<'a>(
         div_adjust: terms.4,
         sell_lock: terms.5,
         until_next: terms.6,
+        limit_touch: terms.7,
     })
 }
 /// Length and index checks protecting every slice the kernel reads, then the
@@ -690,7 +691,7 @@ macro_rules! with_vectors {
 
 impl Simulator {
     /// Fingerprint of the inputs a snapshot must be restored against.
-    fn header(&self) -> Vec<u64> {
+    fn header(&self, py: Python<'_>) -> PyResult<Vec<u64>> {
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         let mut mix = |x: u64| {
             for b in x.to_le_bytes() {
@@ -718,20 +719,34 @@ impl Simulator {
                 u64::from(r.4),
                 u64::from(r.5),
                 u64::from(r.6),
+                u64::from(r.7),
             ] {
                 mix(x);
+            }
+            // Every rule percentage cell (stop, take, trail), with its length;
+            // the open/high/low panels are market data and not fingerprinted.
+            for a in self.rule_arrays.iter().skip(3) {
+                let a = a
+                    .bind(py)
+                    .try_readonly()
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                let a = a.as_slice()?;
+                mix(a.len() as u64);
+                for x in a {
+                    mix(x.to_bits());
+                }
             }
         } else {
             mix(u64::MAX);
         }
-        vec![
-            1,
+        Ok(vec![
+            2,
             self.t as u64,
             self.n as u64,
             u64::from(!self.kind.is_empty()),
             u64::from(self.shares_kind),
             h,
-        ]
+        ])
     }
 }
 
@@ -982,14 +997,14 @@ impl Simulator {
     }
 
     fn snapshot<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let header = self.header();
+        let header = self.header(py)?;
         let stepper = &self.stepper;
         let blob = with_vectors!(py, self.arrays, |v| stepper.encode(&header, &v));
         Ok(PyBytes::new(py, &blob))
     }
 
     fn load(&mut self, py: Python<'_>, blob: &[u8]) -> PyResult<()> {
-        let header = self.header();
+        let header = self.header(py)?;
         let mut fresh = self.stepper.clone();
         with_vectors!(py, self.arrays, |v| fresh.decode(blob, &header, v))
             .map_err(PyValueError::new_err)?;

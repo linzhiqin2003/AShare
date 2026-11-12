@@ -325,12 +325,9 @@ def test_readme_stepping_example_runs(name):
 
     text = (Path(bt.__file__).resolve().parents[2] / name).read_text()
     blocks = re.findall(r"```python\n(.*?)```", text, re.S)
-    stepping = [b for b in blocks if "bt.Simulator(" in b]
-    assert stepping
+    (block,) = [b for b in blocks if "bt.Simulator(" in b]
     ns = {}
-    exec(blocks[0], ns)  # the minimal example defines market, costs, config
-    for block in stepping:
-        exec(block, ns)
+    exec(block, ns)  # self-contained: copied alone it must run
     expected = bt.run(
         ns["market"],
         bt.Targets.from_dense([[0.5, 0.5], [np.nan, np.nan], [np.nan, np.nan]]),
@@ -342,3 +339,38 @@ def test_readme_stepping_example_runs(name):
         bt.Simulator.restore(ns["blob"], ns["market"], ns["costs"], ns["config"]).day
         == 3
     )
+
+
+def test_state_views_cannot_be_made_writeable():
+    market, target, costs, config = generators.case(3)
+    sim = step_all(market, target, costs, config, stop=2)
+    state = sim.state
+    for name in ("shares", "cost", "entry_day", "last", "futures_basis"):
+        view = getattr(state, name)
+        with pytest.raises(ValueError):
+            view.flags.writeable = True
+        with pytest.raises(ValueError):
+            view[...] = 0
+    before = sim.state.shares.copy()
+    sim.step()  # the views stay live after stepping
+    assert sim.state.shares.shape == before.shape
+
+
+def test_futures_columns_report_no_cost_or_entry_day():
+    for seed in range(40):
+        market, target, costs, config = generators_futures.case(seed)
+        is_future = np.asarray(market.futures.is_future, bool)
+        sim = bt.Simulator(market, costs, config, kind=target.kind)
+        plan = rows(target)
+        held = 0
+        for day in range(market.shape[0]):
+            sim.step(plan.get(day))
+            s = sim.state
+            f = is_future & (s.shares != 0)
+            held += int(f.sum())
+            assert np.all(s.cost[is_future] == 0) and np.all(
+                s.entry_day[is_future] == -1
+            )
+        if held:
+            return
+    pytest.fail("no futures position in the sampled cases")

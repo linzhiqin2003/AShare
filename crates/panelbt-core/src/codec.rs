@@ -134,8 +134,26 @@ tuple!(A, B, C, D);
 tuple!(A, B, C, D, E);
 tuple!(A, B, C, D, E, F, G, H, I);
 
+/// CRC-32 (IEEE 802.3, reflected, as in zlib) of `data`.
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut c = !0u32;
+    for &b in data {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = (c >> 1) ^ (0xEDB8_8320 & (c & 1).wrapping_neg());
+        }
+    }
+    !c
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn crc32_matches_zlib() {
+        assert_eq!(super::crc32(b"123456789"), 0xCBF4_3926);
+        assert_eq!(super::crc32(b""), 0);
+    }
+
     use super::*;
 
     #[test]

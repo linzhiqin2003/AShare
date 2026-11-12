@@ -82,6 +82,10 @@ def test_random_rules_match_reference():
         "limit_at_open",
         "limit_after_exit",
         "limit_carried",
+        "limit_touch_only_filled",
+        "limit_touch_only_skipped",
+        "limit_cash_scaled",
+        "limit_margin_scaled",
     ):
         assert branches[branch] > 0, (branch, branches)
 
@@ -195,15 +199,21 @@ def test_rules_only_reduce_and_fill_inside_the_day_range():
                         for (d, c), v in sorted(limits.items(), reverse=True)
                         if c == t.col and d < t.day
                     )
+                cross = config.rules.limit_fill == "cross"
                 if t.qty > 0:
                     assert raw <= limit * (1 + 1e-12), (seed, t, limit)
                     assert raw == pytest.approx(min(op[t.day, t.col], limit))
+                    # The default needs the low strictly below the limit.
+                    assert not cross or lo[t.day, t.col] < limit, (seed, t, limit)
                 else:
                     assert raw >= limit * (1 - 1e-12), (seed, t, limit)
                     assert raw == pytest.approx(max(op[t.day, t.col], limit))
+                    assert not cross or hi[t.day, t.col] > limit, (seed, t, limit)
                 checked["limit"] += 1
+                checked["limit_" + config.rules.limit_fill] += 1
             before[key] = held + t.qty
     assert checked["inside"] > 500 and checked["limit"] > 100, checked
+    assert checked["limit_cross"] > 50 and checked["limit_touch"] > 50, checked
 
 
 # ------------------------------------------------------- deterministic cases
@@ -543,3 +553,103 @@ def test_readme_rules_example_runs(name):
     assert trades[1] == (2, R.TRAILING_STOP, pytest.approx(9.0 * (1 - slip)))
     limit = [(t.day, t.reason, t.price) for t in ns["limit_result"].trades]
     assert limit == [(2, R.LIMIT, pytest.approx(9.0 * (1 + slip)))]
+
+
+def test_limit_fill_cross_is_default_and_touch_is_optional():
+    # Row 1: the low equals the buy limit (9.5) without going below it.
+    m = bars(
+        col([10, 9.8, 9.6]), col([10, 9.9, 9.7]), col([10, 9.5, 9.4]), col([10] * 3)
+    )
+    lim = np.full((3, 1), np.nan)
+    lim[1] = 9.5
+    cross = single(m, {1: [100]}, bt.Rules(fill_time="open"), limits=lim)
+    touch = single(
+        m, {1: [100]}, bt.Rules(fill_time="open", limit_fill="touch"), limits=lim
+    )
+    assert cross.trades == [] and cross.diagnostics["limit_unfilled"] == 1
+    assert [(t.day, t.reason, t.price) for t in touch.trades] == [(1, R.LIMIT, 9.5)]
+    # A sell limit at the high mirrors it.
+    m = bars(
+        col([10, 10.2, 10]), col([10, 10.5, 10]), col([10, 10.1, 10]), col([10] * 3)
+    )
+    lim = np.full((3, 1), np.nan)
+    lim[1] = 10.5
+    rows = {0: [100], 1: [0]}
+    cross = single(m, rows, bt.Rules(fill_time="open"), limits=lim)
+    touch = single(m, rows, bt.Rules(fill_time="open", limit_fill="touch"), limits=lim)
+    assert [t.reason for t in cross.trades] == [R.REBALANCE]
+    assert [(t.day, t.reason, t.price) for t in touch.trades][1:] == [
+        (1, R.LIMIT, 10.5)
+    ]
+    with pytest.raises(ValueError, match="limit_fill"):
+        single(m, rows, bt.Rules(fill_time="open", limit_fill="near"), limits=lim)
+
+
+def test_full_weight_cash_limit_buy_is_cash_scaled_not_blocked():
+    m = bars(col([10, 10, 10]), col([10, 10, 10]), col([10, 9.4, 9.5]), col([10] * 3))
+    lim = np.full((3, 1), np.nan)
+    lim[1] = 9.6
+    costs = bt.Costs(
+        commission_rate=0.001, commission_min=0, fee_rate_buy=0, slippage=0
+    )
+    r = single(
+        m,
+        {1: [1.0]},
+        bt.Rules(fill_time="open", limit_valid="until_next"),
+        kind="weights",
+        costs=costs,
+        limits=lim,
+    )
+    (t,) = r.trades
+    assert t.qty * t.price + t.commission == pytest.approx(1e5, rel=1e-12)
+    assert r.diagnostics["limit_blocked"] == 0 and r.diagnostics["cash_scaled"] == 1
+    assert r.diagnostics["limit_filled"] == 1  # complete: no remainder carried
+
+
+# --------------------------------------------------------------- snapshots
+def rules_sim(**rules):
+    market, target, costs, config = case(5, fill_time="open")
+    config = replace(config, rules=replace(config.rules, **rules))
+    sim = bt.Simulator(market, costs, config, kind=target.kind)
+    for _ in range(market.shape[0] // 2):
+        sim.step()
+    return sim, market, costs, config, target.kind
+
+
+def test_snapshot_fingerprints_every_rule_parameter():
+    t, n = case(5, fill_time="open")[0].shape
+    panel = np.full((t, n), 0.05)
+    sim, market, costs, config, kind = rules_sim(stop_loss=panel)
+    blob = sim.snapshot()
+    bt.Simulator.restore(blob, market, costs, config, kind=kind)  # same: accepted
+    other = panel.copy()
+    other[t - 1, n - 1] = 0.06  # one cell of a T×N panel
+    changes = [
+        {"stop_loss": other},
+        {"stop_loss": 0.05},
+        {"take_profit": 0.3},
+        {"trailing_stop": 0.1},
+        {"max_hold": 7},
+        {"limit_fill": "touch" if config.rules.limit_fill == "cross" else "cross"},
+        {"sell_lock": not config.rules.sell_lock},
+    ]
+    for change in changes:
+        changed = replace(config, rules=replace(config.rules, **change))
+        with pytest.raises(ValueError, match="differ"):
+            bt.Simulator.restore(blob, market, costs, changed, kind=kind)
+
+
+def test_snapshot_rejects_every_bit_flip_and_truncation():
+    sim, market, costs, config, kind = rules_sim()
+    blob = sim.snapshot()
+    rng = np.random.default_rng(0)
+    for k in range(len(blob)):
+        bad = bytearray(blob)
+        bad[k] ^= 1 << int(rng.integers(0, 8))
+        with pytest.raises(ValueError, match="snapshot"):
+            bt.Simulator.restore(bytes(bad), market, costs, config, kind=kind)
+    for k in range(len(blob)):
+        with pytest.raises(ValueError, match="snapshot"):
+            bt.Simulator.restore(blob[:k], market, costs, config, kind=kind)
+    with pytest.raises(ValueError, match="snapshot"):
+        bt.Simulator.restore(blob + b"\0", market, costs, config, kind=kind)

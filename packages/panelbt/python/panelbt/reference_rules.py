@@ -614,17 +614,32 @@ class RulesEngine(Engine):
                 float(market.low[day, i]),
             )
             valid = math.isfinite(o) and math.isfinite(h) and math.isfinite(low)
+            touch = self.rules.limit_fill == "touch"
             if target > current:
-                touched, raw = valid and low <= limit, min(o, limit)
+                touched = valid and (low < limit or (touch and low == limit))
+                raw = min(o, limit)
             else:
-                touched, raw = valid and h >= limit, max(o, limit)
+                touched = valid and (h > limit or (touch and h == limit))
+                raw = max(o, limit)
+            if valid and (low == limit if target > current else h == limit):
+                self.branches[
+                    "limit_touch_only_" + ("filled" if touched else "skipped")
+                ] += 1
             keep.append([i, w, limit])
             if not touched:
                 self.rule_counts["limit_unfilled"] += 1
                 continue
             if raw == o:
                 self.branches["limit_at_open"] += 1
-            plan.append({"col": i, "target": target, "raw": raw, "short": False})
+            plan.append(
+                {
+                    "col": i,
+                    "target": target,
+                    "raw": raw,
+                    "short": False,
+                    "scaled": False,
+                }
+            )
         self.limit_orders = keep
         for p in plan:
             i, target, raw = p["col"], p["target"], p["raw"]
@@ -683,6 +698,11 @@ class RulesEngine(Engine):
                     self.override = None
                 if not (math.isfinite(price) and price > 0):
                     q = 0.0
+            # Short of the opening for a mask, the cap, a block or a bad quote;
+            # a cut to what the account affords is counted like an ordinary
+            # purchase (cash_scaled / margin_scaled) and completes the order.
+            if q != opening:
+                p["short"] = True
             if q != 0:
                 if self.classic:
 
@@ -696,6 +716,9 @@ class RulesEngine(Engine):
                             self.override = None
 
                     if cost(q) > self.cash:
+                        self.branches["limit_cash_scaled"] += 1
+                        self.counts["cash_scaled"] += 1
+                        p["scaled"] = True
                         lo, hi = 0.0, q
                         for _ in range(64):
                             mid = (lo + hi) / 2
@@ -718,6 +741,9 @@ class RulesEngine(Engine):
                         return self.feasible((cash, long, short, 0.0), day)
 
                     if not ok(q):
+                        self.branches["limit_margin_scaled"] += 1
+                        self.coverage["margin_scaled"] += 1
+                        p["scaled"] = True
                         lo, hi = 0.0, abs(q)
                         for _ in range(64):
                             mid = (lo + hi) / 2
@@ -729,8 +755,6 @@ class RulesEngine(Engine):
             if abs(q) > 1e-9 * max(abs(target), abs(after), 1):
                 self.fill_at(i, q, day, raw, "limit")
                 self.rule_counts["limit_filled"] += 1
-            if q != opening:
-                p["short"] = True
         self.entering_fresh = self.rules.fill_time != "open"
         for p in plan:
             if p["short"]:
@@ -738,7 +762,8 @@ class RulesEngine(Engine):
         done = {
             p["col"]
             for p in plan
-            if abs(p["target"] - self.quantities[p["col"]])
+            if (p["scaled"] and not p["short"])
+            or abs(p["target"] - self.quantities[p["col"]])
             <= 1e-9 * max(abs(p["target"]), abs(self.quantities[p["col"]]), 1)
         }
         self.limit_orders = [o for o in self.limit_orders if o[0] not in done]

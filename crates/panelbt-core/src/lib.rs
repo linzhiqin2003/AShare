@@ -1635,7 +1635,8 @@ pub struct Stepper {
     pub day: usize,
 }
 
-const SNAPSHOT_MAGIC: &[u8; 8] = b"PBTSTEP1";
+/// Format version 2: a CRC-32 of everything before it closes the blob.
+const SNAPSHOT_MAGIC: &[u8; 8] = b"PBTSTEP2";
 
 impl Stepper {
     /// A placeholder with no rows; replaced by `new` before use.
@@ -1842,13 +1843,22 @@ impl Stepper {
             b.counts,
         )
             .put(&mut w);
+        let crc = codec::crc32(&w);
+        w.extend_from_slice(&crc.to_le_bytes());
         w
     }
     /// Restore a snapshot into `self` and `v`; the header must match exactly.
     pub fn decode(&mut self, blob: &[u8], header: &[u64], v: Vectors<'_>) -> Result<(), String> {
-        let mut r = blob
+        let body = blob
             .strip_prefix(SNAPSHOT_MAGIC.as_slice())
-            .ok_or("snapshot: not a panelbt simulator snapshot")?;
+            .ok_or("snapshot: not a panelbt simulator snapshot (or an older format)")?;
+        if body.len() < 4 {
+            return Err("snapshot: truncated".into());
+        }
+        let (mut r, crc) = body.split_at(body.len() - 4);
+        if codec::crc32(&blob[..blob.len() - 4]).to_le_bytes() != crc {
+            return Err("snapshot: checksum mismatch (corrupted or truncated)".into());
+        }
         if Vec::<u64>::take(&mut r)? != header {
             return Err("snapshot: market shape, account type or settings differ".into());
         }

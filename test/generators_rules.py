@@ -100,6 +100,11 @@ def case(seed: int, *, margin=None, fill_time=None):
                 )
                 pick = rng.random(n) < 0.4
                 limits[d, pick] = ref[pick] * rng.uniform(0.94, 1.06, pick.sum())
+                # Limits exactly at the day's low or high: touch versus cross.
+                edge = (
+                    (rng.random(n) < 0.2) & np.isfinite(low[d]) & np.isfinite(high[d])
+                )
+                limits[d, edge] = np.where(rng.random(n) < 0.5, low[d], high[d])[edge]
     limits[~np.isfinite(limits)] = np.nan
     use_limits = rng.random() < 0.5
     kind = "shares" if seed % 7 == 0 else "weights"
@@ -117,6 +122,7 @@ def case(seed: int, *, margin=None, fill_time=None):
         dividend_adjusts_cost=bool(rng.random() < 0.3),
         sell_lock=bool(rng.random() < 0.7),
         limit_valid=str(rng.choice(["day", "until_next"])),
+        limit_fill=str(rng.choice(["cross", "touch"])),
     )
     kinds = rng.integers(0, 3, n)
     costs = bt.Costs(

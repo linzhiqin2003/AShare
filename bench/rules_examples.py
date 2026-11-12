@@ -20,7 +20,7 @@ import argparse
 import json
 import os
 import statistics
-import sys
+import subprocess
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -29,15 +29,26 @@ import numpy as np
 import panelbt as bt
 from panelbt.metrics import summarize
 
+import ashare.data
+from ashare.backtest import market_from_panel
+
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "bench/e2e"))
 
-from common import default_data  # noqa: E402
-from stage_backtest import config as ashare_config  # noqa: E402
-from stage_backtest import costs as ashare_costs  # noqa: E402
-from stage_backtest import market_inputs, panel_fields  # noqa: E402
 
-import ashare.data  # noqa: E402
+def default_data():
+    """data/ of this checkout, or of the main checkout for a git worktree."""
+    if (ROOT / "data/cn/panel/current.json").exists():
+        return ROOT / "data"
+    common = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+    ).stdout.strip()
+    return Path(common).parent / "data"
+
 
 REPEAT = 5
 
@@ -112,15 +123,17 @@ def index_timing(data):
 
 def stock_selection(data):
     start = time.perf_counter()
-    fields = panel_fields(data) + ["adj_factor", "member_csi300"]
-    panel = data.panel(fields)
+    # Open-price execution with A-share masks, lots and fees from ashare.backtest;
+    # the rules also need the day's open, high and low.
+    bm = market_from_panel(
+        data, fields=("open", "high", "low", "adj_factor", "member_csi300")
+    )
+    panel = bm.panel
     load_s = time.perf_counter() - start
-    t, n = panel.shape
-    inputs = market_inputs(panel)
-    open_ = np.asarray(panel["open"], dtype=float)
-    market = bt.Market(
-        **inputs,
-        open=open_,
+    t, n = bm.shape
+    market = replace(
+        bm.market,
+        open=np.asarray(panel["open"], dtype=float),
         high=np.asarray(panel["high"], dtype=float),
         low=np.asarray(panel["low"], dtype=float),
     )
@@ -138,11 +151,11 @@ def stock_selection(data):
         row[top] = 1.0 / 30
         weights[d + 1] = row
     targets = bt.Targets.from_dense(weights)
-    costs = ashare_costs(panel.dates)
-    base = replace(ashare_config(panel.symbols), initial_cash=1e7, record_trades=True)
+    costs = bm.costs()
+    base = bm.config(initial_cash=1e7, record_trades=True)
     rules = bt.Rules(fill_time="open", stop_loss=0.10)
     out = {"rows": t, "securities": n, "panel_load_s": round(load_s, 2)}
-    out["first"], out["last"] = str(panel.dates[0]), str(panel.dates[-1])
+    out["first"], out["last"] = str(bm.dates[0]), str(bm.dates[-1])
     for name, config in (
         ("no_rules", base),
         ("stop_10pct", replace(base, rules=rules)),
