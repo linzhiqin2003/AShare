@@ -27,3 +27,4 @@
   - `ASHARE.costs` 的费率表补到 2005-01-24（印花税和过户费每次调整，依据见 `docs/ASHARE_FEES.md`，2015 年以前的过户费标「未核实」并取保守值），全历史回测不用再手填；新增 `FeeSchedule.components`，覆盖一种过户费写法时同方向另一种清零。改动前能用的写法结果逐位不变。
   - `ashare.risk.from_panel(data, start=...)` 把面板接到风险模型（字段改名、行业重编号），行业因子用申万一级名称（`industry_银行`，新增 `FundamentalConfig.industry_names`，不给名字时缓存键不变）；`PortfolioProblem` 的 `industry_factors`、`style_factors` 可按因子名给；导出 `ashare.risk.STYLE_NAMES`。
   - `bench/e2e` 改用这些入口，真实面板上与旧手写做法逐位相同（`bench/e2e/usability_equivalence.py`）。`DESIGN.md` 3、4.3、4.4、6.1、6.3、6.4 同步，组合优化的选型改成实际的「直接调 Clarabel，cvxpy 只作后备和参考」。
+- 回测报告的文本版与补充内容：`print(ts)` 打印一屏摘要，`ts.text(sections, fmt="text"|"markdown"|"json", lang, start, end)` 按小节取，`save_json` / `load` 与命令行 `python -m ashare.report show|html`；自选区间按页面「切换区间」的公式重算（与页面 JS 对拍）；`warnings` 小节写出看图才看得出的问题。数据层新增对比指数（`benchmarks=`）、胜率、个股贡献、收益分布与尾部、集中度，以及多策略对比 `ashare.report.compare`；原有键和数值逐位不变，页面不嵌入新内容（HTML 逐字节不变），新内容的页面版式先出设计稿。

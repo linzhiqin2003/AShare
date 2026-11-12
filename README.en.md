@@ -142,7 +142,7 @@ ashare.report.tearsheet(result, market, targets, dates, symbols,
                         benchmark_kind="price").save("report.html")
 ```
 
-Metric definitions are in [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md) (Chinese).
+For terminals and AI agents, `print(ts)` prints a one-screen plain-text summary; after `ts.save_json("report.json")`, `python -m ashare.report show report.json --section yearly --lang en` shows any section with JSON-key headers. Metric definitions are in [docs/REPORT_NOTES.md](docs/REPORT_NOTES.md) (Chinese).
 
 Targets execute on the row they are given: the engine never shifts signals. Aligning signal dates with execution dates is done once, in `ashare` (`ashare.backtest.execution_targets`).
 
