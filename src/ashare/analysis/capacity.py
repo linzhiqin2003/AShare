@@ -213,6 +213,9 @@ class Simulation:
     final_equity: float
     years: float
     blocked: int
+    overdrawn: int = (
+        0  # 买单同比例缩小后，最低佣金等固定费用仍让现金透支的天数（诊断用）
+    )
 
 
 def _fills(q, side, day, i, m, costs, k, e):
@@ -267,154 +270,274 @@ def simulate(
     cash_buffer=0.0,
     carry=True,
 ):
-    """解析模拟的数值核心：按股数记账的现金账户，规则与 panelbt 相同，只是
-    不做整手取整、不设成交量占比上限。
+    """单个规模的解析模拟（`simulate_many` 只给一个规模）。"""
+    return simulate_many(
+        rebalance_days,
+        target_rows,
+        market,
+        costs,
+        impact_k,
+        impact_exponent,
+        [aum],
+        cash_buffer,
+        carry,
+    )[0]
+
+
+def simulate_many(
+    rebalance_days,
+    target_rows,
+    market,
+    costs,
+    impact_k,
+    impact_exponent,
+    sizes,
+    cash_buffer=0.0,
+    carry=True,
+):
+    """解析模拟的数值核心，一次算多个资金规模：按股数记账的现金账户，规则与 panelbt
+    相同，只是不做整手取整、不设成交量占比上限。
 
     - 目标股数 = 目标权重 × 开盘估值的权益 × (1 − cash_buffer) / 成交价；先卖后买。
     - 买单总花费超过现金时所有买单同比例缩小（panelbt 的比例缩放）。
     - 不能买卖（掩码、无成交价、无成交量）的证券挂起，之后每天用原目标与当日权益重试，
       直到下一次调仓（panelbt 的 carry_blocked）。
     - 送转、派现、退市按面板事件处理；只在有成交的日子结算，日子之间用累计量一次补上。
+
+    各规模的账户互不影响，只是逐日一起推进（数组多一个规模维），所以算几十个规模与算
+    一个规模的耗时相近。某个规模在某天没有挂单而别的规模有时，它也会在这天结算一次
+    公司行为，结果与单独模拟只差浮点舍入。返回与 sizes 同序的 `Simulation` 列表。
     """
     m = market if isinstance(market, MarketArrays) else MarketArrays.from_market(market)
     t_len, n = m.exec_price.shape
-    q = np.zeros(n)
-    cash = float(aum)
-    last = 0  # q 对应的送转基准日（q 是第 last 日送转之后的股数）
+    sizes = np.asarray(sizes, dtype=float).ravel()
+    k_n = len(sizes)
+    q = np.zeros((k_n, n))
+    cash = sizes.copy()
+    held = np.zeros(0, dtype=np.int64)  # 至少有一个规模持仓的列（可以偏多）
+    first_delist = m.first_delist
+    state = {"last": 0}
     plan = None
-    pending = np.zeros(n, bool)
+    pending = np.zeros((k_n, n), bool)
     rebalance = {int(d): j for j, d in enumerate(rebalance_days)}
-    out_day, out_eq, out_open, out_cost, out_turn = [], [], [], [], []
-    parts, notionals = [], []
-    blocked = 0
+    days = sorted(set(int(d) for d in rebalance_days))
+    # 逐个成交日记录所有规模的值（rec_rows 标出当天有成交的规模），最后按规模拆开。
+    rec_day, rec_rows, rec_eq, rec_open, rec_cost, rec_turn = [], [], [], [], [], []
+    fill_size, fill_part, fill_notional = [], [], []
+    blocked = np.zeros(k_n, dtype=np.int64)
+    overdrawn = np.zeros(k_n, dtype=np.int64)  # 买单缩小后固定费用仍超过现金的天数
 
     def settle(day):
-        nonlocal q, cash, last
-        held = np.flatnonzero(q)
+        nonlocal held
+        last = state["last"]
         if len(held) and day > last:
-            base = q[held] / m.split_cum[last, held]
-            gone = (m.first_delist[held] > last) & (m.first_delist[held] <= day)
-            stop = np.where(gone, m.first_delist[held], day)
+            base = q[:, held] / m.split_cum[last, held]
+            fd = first_delist[held]
+            gone = (fd > last) & (fd <= day)
+            stop = np.where(gone, fd, day)
             div = m.div_cum[stop, held] - m.div_cum[last, held]
             # 退市日的派现在变现之前：取到退市日（含）为止。
-            cash += float((base * div).sum())
+            cash[:] += (base * div).sum(axis=1)
             if gone.any():
                 g = held[gone]
-                d = m.first_delist[g]
-                shares = base[gone] * m.split_cum[d, g]
+                d = first_delist[g]
+                shares = base[:, gone] * m.split_cum[d, g]
                 # panelbt：按退市日的估值价（最近有效收盘价逐次除权）全额变现。
                 price = np.array(
                     [m.carried(int(x), int(c)) for x, c in zip(d, g, strict=True)]
                 )
-                cash += float((shares * price).sum())
-                q[g] = 0.0
+                proceeds = np.where(shares != 0, shares * price, 0.0)
+                cash[:] += proceeds.sum(axis=1)
+                q[:, g] = 0.0
             keep = held[~gone]
-            q[keep] = base[~gone] * m.split_cum[day, keep]
-        last = day
+            q[:, keep] = base[:, ~gone] * m.split_cum[day, keep]
+            held = keep
+        state["last"] = day
 
-    days = sorted(set(int(d) for d in rebalance_days))
+    def valued(day, prices):
+        """持仓按 prices（第 day 日的价格行，只取 held 列）估值。"""
+        if not len(held):
+            return cash.copy()
+        return cash + np.nansum(q[:, held] * prices, axis=1)
+
     queue = list(days)
     visited = set()
-    while queue:
-        day = queue.pop(0)
-        if day in visited or day >= t_len:
-            continue
-        visited.add(day)
-        # 成本率的分母取前一日收盘的权益（与 panelbt 收益和报告模块的口径相同）。
-        if day > 0:
-            settle(day - 1)
-        previous = cash + float(np.nansum(q * m.close_cf[day - 1])) if day > 0 else cash
-        settle(day)
-        if day in rebalance:
-            plan = target_rows[rebalance[day]]
-            # 新调仓行清掉挂单，所有列都按新目标处理（不在计划里的目标为 0）。
-            names = np.flatnonzero((plan != 0) | (q != 0))
-        else:
-            names = np.flatnonzero(pending)
-        if plan is None or not len(names):
-            continue
-        p = m.exec_price[day]
-        mark = np.where(np.isfinite(p), p, m.carried(day))
-        value = cash + float(np.nansum(q * mark))
-        alive = m.first_delist[names] > day
-        names = names[alive]
-        good_mark = np.isfinite(mark[names]) & (mark[names] > 0)
-        target = np.where(
-            good_mark,
-            plan[names]
-            * max(value, 0.0)
-            * (1 - cash_buffer)
-            / np.where(good_mark, mark[names], 1.0),
-            0.0,
-        )
-        delta = target - q[names]
-        quote_ok = (
-            np.isfinite(p[names])
-            & (p[names] > 0)
-            & np.isfinite(m.volume[day, names])
-            & (m.volume[day, names] > 0)
-        )
-        sell = (delta < 0) & m.can_sell[day, names] & quote_ok
-        buy = (delta > 0) & m.can_buy[day, names] & quote_ok
-        stuck = (delta != 0) & ~sell & ~buy
-        blocked += int(stuck.sum())
-        new_pending = np.zeros(n, bool)
-        new_pending[names[stuck]] = True
-        rows = []
-        if sell.any():
-            i = names[sell]
-            f = _fills(-delta[sell], -1.0, day, i, m, costs, impact_k, impact_exponent)
-            cash += float((f["amount"] - f["commission"] - f["tax"] - f["fee"]).sum())
-            q[i] += delta[sell]
-            rows.append(f)
-        if buy.any():
-            i = names[buy]
-            want = delta[buy]
-            f = _fills(want, 1.0, day, i, m, costs, impact_k, impact_exponent)
-            spend = float((f["amount"] + f["commission"] + f["tax"] + f["fee"]).sum())
-            if spend > cash:
-                want = want * (max(cash, 0.0) / spend)
-                f = _fills(want, 1.0, day, i, m, costs, impact_k, impact_exponent)
-                spend = float(
-                    (f["amount"] + f["commission"] + f["tax"] + f["fee"]).sum()
+    upcoming_index = 0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        while queue:
+            day = queue.pop(0)
+            if day in visited or day >= t_len:
+                continue
+            visited.add(day)
+            # 成本率的分母取前一日收盘的权益（与 panelbt 收益和报告模块的口径相同）。
+            if day > 0:
+                settle(day - 1)
+                previous = valued(day, m.close_cf[day - 1, held])
+            else:
+                previous = cash.copy()
+            settle(day)
+            if day in rebalance:
+                plan = target_rows[rebalance[day]]
+                # 新调仓行清掉挂单，所有列都按新目标处理（不在计划里的目标为 0）。
+                names = np.union1d(np.flatnonzero(plan != 0), held)
+                active = np.ones((k_n, len(names)), bool)
+            else:
+                names = np.flatnonzero(pending.any(axis=0))
+                active = pending[:, names]
+            if plan is None or not len(names):
+                continue
+            p_row = m.exec_price[day]
+            p_held = p_row[held]
+            mark_held = np.where(np.isfinite(p_held), p_held, m.carried(day, held))
+            value = valued(day, mark_held)
+            alive = first_delist[names] > day
+            names, active = names[alive], active[:, alive]
+            p = p_row[names]
+            mark = np.where(np.isfinite(p), p, m.carried(day, names))
+            good_mark = np.isfinite(mark) & (mark > 0)
+            scale = np.maximum(value, 0.0)[:, None] * (1 - cash_buffer)
+            target = np.where(
+                good_mark,
+                plan[names] * scale / np.where(good_mark, mark, 1.0),
+                0.0,
+            )
+            delta = np.where(active, target - q[:, names], 0.0)
+            vol = m.volume[day, names]
+            quote_ok = np.isfinite(p) & (p > 0) & np.isfinite(vol) & (vol > 0)
+            sell = (delta < 0) & (m.can_sell[day, names] & quote_ok)
+            buy = (delta > 0) & (m.can_buy[day, names] & quote_ok)
+            stuck = (delta != 0) & ~sell & ~buy
+            blocked += stuck.sum(axis=1)
+            sold = bought = None
+            if sell.any():
+                f = _fills(
+                    np.where(sell, -delta, 0.0),
+                    -1.0,
+                    day,
+                    names,
+                    m,
+                    costs,
+                    impact_k,
+                    impact_exponent,
                 )
-            cash -= spend
-            q[i] += want
-            rows.append(f)
-        pending = new_pending if carry else np.zeros(n, bool)
-        if pending.any():
-            nxt = day + 1
-            upcoming = min((d for d in days if d > day), default=t_len)
-            if nxt < upcoming:
-                queue.insert(0, nxt)
-        if rows:
-            item = np.array([sum(float(r[c].sum()) for r in rows) for c in COST_ITEMS])
-            traded = sum(float(r["amount"].sum()) for r in rows)
-            out_day.append(day)
-            out_eq.append(previous)
-            out_open.append(value)
-            out_cost.append(item)
-            out_turn.append(
-                traded / 2 / value if value > 0 else 0.0
-            )  # panelbt：交易前权益
-            parts.extend(r["participation"] for r in rows)
-            notionals.extend(r["notional"] for r in rows)
-    settle(t_len - 1)
-    final = cash + float(np.nansum(q * m.close_cf[-1]))
+                sold = {c: np.where(sell, v, 0.0) for c, v in f.items()}
+                cash[:] += (
+                    sold["amount"] - sold["commission"] - sold["tax"] - sold["fee"]
+                ).sum(axis=1)
+                q[:, names] += np.where(sell, delta, 0.0)
+            if buy.any():
+                want = np.where(buy, delta, 0.0)
+                f = _fills(want, 1.0, day, names, m, costs, impact_k, impact_exponent)
+                bought = {c: np.where(buy, v, 0.0) for c, v in f.items()}
+                spend = (
+                    bought["amount"]
+                    + bought["commission"]
+                    + bought["tax"]
+                    + bought["fee"]
+                ).sum(axis=1)
+                over = spend > cash
+                if over.any():
+                    ratio = np.where(
+                        over & (spend > 0), np.maximum(cash, 0.0) / spend, 1.0
+                    )
+                    want = want * ratio[:, None]
+                    f = _fills(
+                        want, 1.0, day, names, m, costs, impact_k, impact_exponent
+                    )
+                    bought = {c: np.where(buy, v, 0.0) for c, v in f.items()}
+                    spend = (
+                        bought["amount"]
+                        + bought["commission"]
+                        + bought["tax"]
+                        + bought["fee"]
+                    ).sum(axis=1)
+                    # 同比例缩小后仍超过现金：最低佣金这类固定费用不随股数缩小，现金会出现
+                    # 小额透支（panelbt 会少买一点）。只计数；透支到权益 ≤ 0 才算打穿。
+                    overdrawn += spend > np.maximum(cash, 0.0) * (1 + 1e-12) + 1e-9
+                cash[:] -= spend
+                q[:, names] += want
+            traded_names = names[(sell | buy).any(axis=0)]
+            if len(traded_names):
+                held = np.union1d(held, traded_names)
+            if carry:
+                pending = np.zeros((k_n, n), bool)
+                pending[:, names] = stuck
+            if pending.any():
+                nxt = day + 1
+                while upcoming_index < len(days) and days[upcoming_index] <= day:
+                    upcoming_index += 1
+                upcoming = days[upcoming_index] if upcoming_index < len(days) else t_len
+                if nxt < upcoming:
+                    queue.insert(0, nxt)
+            traded_rows = sell.any(axis=1) | buy.any(axis=1)
+            if traded_rows.any():
+                parts = [
+                    (x, mk) for x, mk in ((sold, sell), (bought, buy)) if x is not None
+                ]
+                item = np.zeros((k_n, len(COST_ITEMS)))
+                amount = np.zeros(k_n)
+                for x, _ in parts:
+                    item += np.column_stack([x[c].sum(axis=1) for c in COST_ITEMS])
+                    amount += x["amount"].sum(axis=1)
+                rec_day.append(day)
+                rec_rows.append(traded_rows)
+                rec_eq.append(previous)
+                rec_open.append(value.copy())
+                rec_cost.append(item)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    rec_turn.append(np.where(value > 0, amount / 2 / value, 0.0))
+                for x, mk in parts:
+                    rows_i, cols_i = np.nonzero(mk)
+                    fill_size.append(rows_i)
+                    fill_part.append(x["participation"][rows_i, cols_i])
+                    fill_notional.append(x["notional"][rows_i, cols_i])
+        settle(t_len - 1)
+        final = valued(t_len - 1, m.close_cf[-1, held])
     first = days[0] if days else 0
-    return Simulation(
-        float(aum),
-        np.asarray(out_day, dtype=np.int64),
-        np.asarray(out_eq),
-        np.asarray(out_open),
-        np.asarray(out_cost).reshape(-1, len(COST_ITEMS)),
-        np.asarray(out_turn),
-        np.concatenate(parts) if parts else np.empty(0),
-        np.concatenate(notionals) if notionals else np.empty(0),
-        float(final),
-        (t_len - first) / 252.0,
-        blocked,
-    )
+    years = (t_len - first) / 252.0
+    if rec_day:
+        day_arr = np.asarray(rec_day, dtype=np.int64)
+        mask = np.array(rec_rows)  # 成交日数 × 规模
+        eq, opn = np.array(rec_eq), np.array(rec_open)
+        cost, turn = np.array(rec_cost), np.array(rec_turn)
+    if fill_size:
+        who = np.concatenate(fill_size)
+        order = np.argsort(who, kind="stable")  # 稳定排序保留日内与日间的先后
+        part_all = np.concatenate(fill_part)[order]
+        notional_all = np.concatenate(fill_notional)[order]
+        bounds = np.searchsorted(who[order], np.arange(k_n + 1))
+    result = []
+    for s in range(k_n):
+        if rec_day:
+            rows_s = mask[:, s]
+            sim_days, sim_eq, sim_open = day_arr[rows_s], eq[rows_s, s], opn[rows_s, s]
+            sim_cost, sim_turn = cost[rows_s, s], turn[rows_s, s]
+        else:
+            sim_days = np.empty(0, dtype=np.int64)
+            sim_eq = sim_open = sim_turn = np.empty(0)
+            sim_cost = np.empty((0, len(COST_ITEMS)))
+        if fill_size:
+            lo, hi = bounds[s], bounds[s + 1]
+            sim_part, sim_notional = part_all[lo:hi], notional_all[lo:hi]
+        else:
+            sim_part = sim_notional = np.empty(0)
+        result.append(
+            Simulation(
+                float(sizes[s]),
+                sim_days,
+                sim_eq,
+                sim_open,
+                sim_cost.reshape(-1, len(COST_ITEMS)),
+                sim_turn,
+                sim_part,
+                sim_notional,
+                float(final[s]),
+                years,
+                int(blocked[s]),
+                int(overdrawn[s]),
+            )
+        )
+    return result
 
 
 @dataclass
@@ -476,6 +599,8 @@ def capacity(
     config=None,
     threads=0,
     search=(1e4, 1e13),
+    rtol=1e-6,
+    points=15,
 ):
     """一行估计容量与成本。
 
@@ -554,34 +679,41 @@ def capacity(
         gross_annual - bench_annual if gross_excess is None else float(gross_excess)
     )
 
-    memo = {}
+    cache = {}
+    batches = []  # 每批实际模拟的规模个数
 
-    def simulated(size):
-        if size not in memo:
-            memo[size] = run(size)
-        return memo[size]
+    def evaluate(sizes):
+        """一组规模的模拟（一次 `simulate_many` 批量算完没算过的规模）。"""
+        sizes = [float(x) for x in sizes]
+        need = [x for x in dict.fromkeys(sizes) if x not in cache]
+        if need:
+            batches.append(len(need))
+            got = simulate_many(days, rows, arrays, costs, k, impact_exponent, need)
+            cache.update(zip(need, got, strict=True))
+        return [cache[x] for x in sizes]
 
-    def summary(size):
-        return _summary(simulated(size), participation_cap)
-
-    def cost_total(size):
+    def cost_of(sim):
         # 资金太小时最低佣金能把账户打穿（权益 ≤ 0），成本率失去意义：记为不可行。
-        sim = simulated(size)
-        if sim.final_equity <= 0 or (len(sim.equity) and sim.equity.min() <= 0):
+        if _wiped(sim):
             return float("inf")
-        return float(summary(size)[0].sum())
+        return float(_summary(sim, participation_cap)[0].sum())
 
-    def breach(size):
-        return summary(size)[3]
+    def breach_of(sim):
+        return _summary(sim, participation_cap)[3]
 
     aum = np.asarray(sorted(float(a) for a in np.atleast_1d(aum)))
-    rows_out, sims = [], []
-    for size in aum:
-        sim = run(size)
-        sims.append(sim)
+    grid = _grid(search)
+    evaluate([*aum, *grid])  # 表里的规模和搜索网格一次算完
+    sims = evaluate(aum)
+    rows_out = []
+    for size, sim in zip(aum, sims, strict=True):
         annual, pct, top, over, turnover = _summary(sim, participation_cap)
+        wiped = _wiped(sim)
+        if wiped:
+            # 账户被打穿：成本率和扣成本后超额没有意义，记 NaN，并在 wiped_out 列标出。
+            annual = np.full(len(COST_ITEMS), np.nan)
         net_final = sim.final_equity / size
-        net_annual = net_final ** (1 / years) - 1 if net_final > 0 else -1.0
+        net_annual = net_final ** (1 / years) - 1 if net_final > 0 else np.nan
         rows_out.append(
             [
                 *pct,
@@ -593,6 +725,7 @@ def capacity(
                 excess,
                 excess - annual.sum(),
                 net_annual - bench_annual,
+                float(wiped),
             ]
         )
     columns = (
@@ -600,13 +733,13 @@ def capacity(
         + ("participation_max", "over_cap_share")
         + tuple(f"cost_{c}" for c in COST_ITEMS)
         + ("cost_total", "annual_turnover", "gross_excess", "net_excess")
-        + ("net_excess_path",)
+        + ("net_excess_path", "wiped_out")
     )
     table = Table(aum, columns, np.array(rows_out), "capacity", "aum")
-    by_cost = _cost_capacity(
-        cost_total, cost_fraction * excess if excess > 0 else np.nan, search
+    threshold = cost_fraction * excess if excess > 0 else np.nan
+    by_cost, by_part = _capacities(
+        evaluate, grid, cost_of, threshold, breach_of, breach_share, rtol, points
     )
-    by_part = _first_above(breach, breach_share, search)
     liquidation = _liquidation(days, rows, panel, aum, participation_cap, adv_window)
     rerun_table = None
     if rerun:
@@ -655,6 +788,10 @@ def capacity(
             "periods_per_year": 252,
             "turnover": "two_sided",
             "blocked_attempts": int(sims[0].blocked) if sims else 0,
+            "rtol": rtol,
+            "points": points,
+            # 解析模拟的批数与每批规模数（表与网格一批，之后每轮多分法一批）。
+            "simulation_batches": list(batches),
         },
     )
 
@@ -667,21 +804,48 @@ def _grid(search, per_decade=5):
     return np.logspace(np.log10(lo), np.log10(hi), count)
 
 
-def _bisect(fn, a, b, steps=30):
-    """fn(a) < 0 ≤ fn(b)（对数刻度）时找交点；a > b 也可以（往小规模方向找）。"""
-    la, lb = np.log(a), np.log(b)
-    for _ in range(steps):
-        m = 0.5 * (la + lb)
-        if fn(np.exp(m)) >= 0:
-            lb = m
-        else:
-            la = m
-    return float(np.exp(lb))
+def _wiped(sim):
+    """最低佣金等固定费用把账户打穿：某个成交日前的权益或期末权益 ≤ 0。"""
+    return not sim.final_equity > 0 or (len(sim.equity) > 0 and sim.equity.min() <= 0)
 
 
-def _cost_capacity(cost_at, threshold, search):
-    """成本容量：上升段交点 `by_cost` 与下降段交点 `min_viable_aum`，各带状态。"""
-    out = {
+def _multisect(evaluate, brackets, rtol, points):
+    """成批的多分法：每个区间 (ok, over) 满足 fn(ok) < 0 ≤ fn(over)。
+
+    每一轮在所有未收敛区间里各取 points 个对数等距的内点，一次 `evaluate` 批量算完，
+    再把每个区间缩到「第一个越过的点」与它前一个点之间；|ln(over / ok)| ≤ ln(1 + rtol)
+    时收敛，返回 over（已知越过门槛的最小规模一侧）。ok 可以大于 over（往小规模方向找）。
+    """
+    state = [dict(b) for b in brackets]
+    tol = np.log1p(rtol)
+    while True:
+        live = [b for b in state if abs(np.log(b["over"] / b["ok"])) > tol]
+        if not live:
+            break
+        cands = [
+            np.exp(np.linspace(np.log(b["ok"]), np.log(b["over"]), points + 2)[1:-1])
+            for b in live
+        ]
+        sims = evaluate(np.concatenate(cands))
+        at = 0
+        for b, xs in zip(live, cands, strict=True):
+            values = [b["fn"](sim) for sim in sims[at : at + len(xs)]]
+            at += len(xs)
+            hit = next((j for j, v in enumerate(values) if v >= 0), None)
+            if hit is None:
+                b["ok"] = float(xs[-1])
+            else:
+                b["over"] = float(xs[hit])
+                if hit > 0:
+                    b["ok"] = float(xs[hit - 1])
+    return [b["over"] for b in state]
+
+
+def _capacities(
+    evaluate, grid, cost_of, threshold, breach_of, breach_share, rtol, points
+):
+    """两种容量：网格上定位交点所在的格子，再把三个交点的多分法合在同几批里算。"""
+    by_cost = {
         "by_cost": np.nan,
         "by_cost_status": "no_gross_excess",
         "min_viable_aum": np.nan,
@@ -689,49 +853,64 @@ def _cost_capacity(cost_at, threshold, search):
         "min_cost_aum": np.nan,
         "min_cost": np.nan,
     }
-    if not np.isfinite(threshold) or threshold <= 0:
-        return out
-    grid = _grid(search)
-    costs = np.array([cost_at(g) for g in grid])
-    m = int(np.argmin(costs))
-    out["min_cost_aum"], out["min_cost"] = float(grid[m]), float(costs[m])
-    gap = costs - threshold
+    by_part = {"value": np.nan, "status": "below_search_floor"}
+    sims = evaluate(grid)
+    brackets = []
+    if np.isfinite(threshold) and threshold > 0:
+        costs = np.array([cost_of(sim) for sim in sims])
+        m = int(np.argmin(costs))
+        by_cost["min_cost_aum"], by_cost["min_cost"] = float(grid[m]), float(costs[m])
+        gap = costs - threshold
 
-    def fn(size):
-        return cost_at(size) - threshold
+        def fn(sim):
+            return cost_of(sim) - threshold
 
-    if gap[m] >= 0:
-        out["by_cost_status"] = out["min_viable_status"] = "never_viable"
-        return out
-    up = next((i for i in range(m + 1, len(grid)) if gap[i] >= 0), None)
-    if up is None:
-        out["by_cost"], out["by_cost_status"] = float("inf"), "beyond_search_range"
-    else:
-        out["by_cost"] = _bisect(fn, grid[up - 1], grid[up])
-        out["by_cost_status"] = "found"
-    down = next((i for i in range(m - 1, -1, -1) if gap[i] >= 0), None)
-    if down is None:
-        out["min_viable_status"] = "below_search_floor"
-    else:
-        out["min_viable_aum"] = _bisect(fn, grid[down + 1], grid[down])
-        out["min_viable_status"] = "found"
-    return out
+        if gap[m] >= 0:
+            by_cost["by_cost_status"] = by_cost["min_viable_status"] = "never_viable"
+        else:
+            up = next((i for i in range(m + 1, len(grid)) if gap[i] >= 0), None)
+            if up is None:
+                by_cost["by_cost"] = float("inf")
+                by_cost["by_cost_status"] = "beyond_search_range"
+            else:
+                brackets.append(
+                    {"key": "by_cost", "fn": fn, "ok": grid[up - 1], "over": grid[up]}
+                )
+            down = next((i for i in range(m - 1, -1, -1) if gap[i] >= 0), None)
+            if down is None:
+                by_cost["min_viable_status"] = "below_search_floor"
+            else:
+                brackets.append(
+                    {
+                        "key": "min_viable_aum",
+                        "fn": fn,
+                        "ok": grid[down + 1],
+                        "over": grid[down],
+                    }
+                )
 
-
-def _first_above(value_at, threshold, search):
-    """单调上升的 value_at 第一次超过 threshold 的规模，带状态。"""
-    grid = _grid(search)
-
-    def fn(size):
+    def crossed(sim):
         # 严格大于记为越过（breach_share=0 表示「出现任何超限成交」）。
-        return 1.0 if value_at(size) > threshold else -1.0
+        return 1.0 if breach_of(sim) > breach_share else -1.0
 
-    if fn(grid[0]) >= 0:
-        return {"value": np.nan, "status": "below_search_floor"}
-    idx = next((i for i in range(1, len(grid)) if fn(grid[i]) >= 0), None)
-    if idx is None:
-        return {"value": float("inf"), "status": "beyond_search_range"}
-    return {"value": _bisect(fn, grid[idx - 1], grid[idx]), "status": "found"}
+    flags = np.array([crossed(sim) for sim in sims])
+    if flags[0] < 0:
+        idx = next((i for i in range(1, len(grid)) if flags[i] >= 0), None)
+        if idx is None:
+            by_part = {"value": float("inf"), "status": "beyond_search_range"}
+        else:
+            brackets.append(
+                {"key": "part", "fn": crossed, "ok": grid[idx - 1], "over": grid[idx]}
+            )
+    for b, value in zip(
+        brackets, _multisect(evaluate, brackets, rtol, points), strict=True
+    ):
+        if b["key"] == "part":
+            by_part = {"value": value, "status": "found"}
+        else:
+            by_cost[b["key"]] = value
+            by_cost[b["key"].replace("_aum", "") + "_status"] = "found"
+    return by_cost, by_part
 
 
 def _liquidation(days, rows, panel, aum, cap, window):

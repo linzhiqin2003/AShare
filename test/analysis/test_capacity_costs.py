@@ -320,3 +320,81 @@ def test_capacity_treats_wiped_out_small_accounts_as_not_viable():
     assert c["min_cost"] > 0
     assert c["min_cost_aum"] > 1e5
     assert c["min_viable_status"] == "found" and c["min_viable_aum"] > 1e3
+
+
+def test_wiped_out_rows_in_table_are_nan_and_flagged():
+    """用户给的规模里有被最低佣金打穿的点（权益变负）：成本率与扣成本后超额为 NaN，
+    wiped_out 列为 1。"""
+    panel, dense = _u_curve_case()
+    cap = an.capacity(dense, panel, aum=[300.0, 3000.0, 1e6], gross_excess=0.03)
+    tab = cap.table
+    assert cap.simulations[0].final_equity < 0
+    # 3000 元：最低佣金让现金有几天小额透支，但权益始终为正，不算打穿。
+    assert cap.simulations[1].overdrawn > 0 and cap.simulations[1].equity.min() > 0
+    assert list(tab["wiped_out"]) == [1.0, 0.0, 0.0]
+    for col in ("cost_total", "cost_commission", "net_excess", "net_excess_path"):
+        assert math.isnan(tab[col][0]), col
+        assert np.isfinite(tab[col][1:]).all(), col
+    assert json.dumps(cap.to_dict(), allow_nan=False)
+
+
+def test_simulate_many_matches_one_size_at_a_time():
+    """一批规模一起推进，与逐个单独模拟的结果相同（只差浮点舍入）。"""
+    panel = _event_panel()
+    t, n = len(panel.dates), len(panel.symbols)
+    dense = _plan(t, n)
+    m = MarketArrays.from_panel(panel)
+    k = an.impact_coefficients(panel)
+    costs = ashare_costs(panel.dates)
+    days, rows = _dense_targets(dense, (t, n))
+    # 只拦卖或只拦买的格子：不同规模对同一只股票的方向可能相反（大规模冲击大、少买了
+    # 流动性差的股票，下次调仓要补买；小规模则要卖），挂单要按规模各记各的。
+    rng = np.random.default_rng(7)
+    m.can_sell = m.can_sell & (rng.uniform(size=m.can_sell.shape) > 0.15)
+    m.can_buy = m.can_buy & (rng.uniform(size=m.can_buy.shape) > 0.15)
+    sizes = [3e3, 3e5, 1e8, 2e9, 5e10]
+    many = an.simulate_many(days, rows, m, costs, k, 0.5, sizes)
+    for size, sim in zip(sizes, many, strict=True):
+        one = an.simulate(days, rows, m, costs, k, 0.5, size)
+        np.testing.assert_array_equal(sim.days, one.days)
+        np.testing.assert_allclose(sim.costs, one.costs, rtol=1e-12, atol=1e-9)
+        np.testing.assert_allclose(sim.equity, one.equity, rtol=1e-12)
+        np.testing.assert_allclose(sim.participation, one.participation, rtol=1e-12)
+        np.testing.assert_allclose(sim.notional, one.notional, rtol=1e-12)
+        assert math.isclose(sim.final_equity, one.final_equity, rel_tol=1e-12)
+        assert sim.blocked == one.blocked
+
+
+def test_capacity_crossings_within_declared_tolerance():
+    """多分法收敛到 rtol：交点再往可行一侧挪 rtol，就落回门槛以内。"""
+    panel, dense = _u_curve_case()
+    rtol = 1e-6
+    cap = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03, rtol=rtol)
+    c = cap.capacity
+    up, down = c["by_cost"], c["min_viable_aum"]
+    # 批数：表与网格一批，多分法每轮把区间缩小 16 倍，0.2 个十倍缩到 1e-6 要 5 轮。
+    batches = cap.assumptions["simulation_batches"]
+    assert len(batches) <= 6 and batches[0] <= 1 + 46
+    assert max(batches[1:]) <= 3 * 15
+    probe = an.capacity(
+        dense,
+        panel,
+        aum=[up * (1 - rtol), up, down, down * (1 + rtol)],
+        gross_excess=0.03,
+    ).table["cost_total"]
+    # 表按规模排序：down, down·(1+rtol), up·(1−rtol), up。
+    assert probe[0] >= 0.015 > probe[1]
+    assert probe[2] < 0.015 <= probe[3]
+    # 与很细的二分（rtol 1e-12）相比，差别在 rtol 以内。
+    fine = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03, rtol=1e-12)
+    for key in ("by_cost", "min_viable_aum", "by_participation"):
+        assert math.isclose(c[key], fine.capacity[key], rel_tol=2 * rtol), key
+
+
+def test_grid_does_not_miss_cost_minimum():
+    """每十倍 5 个点的网格找到的最低成本，与每十倍 40 个点的网格相差不到 2%。"""
+    panel, dense = _u_curve_case()
+    coarse = an.capacity(dense, panel, aum=[1e6], gross_excess=0.03).capacity
+    sizes = np.logspace(4, 9, 201)
+    fine = an.capacity(dense, panel, aum=sizes, gross_excess=0.03).table["cost_total"]
+    assert coarse["min_cost"] <= np.nanmin(fine) * 1.02

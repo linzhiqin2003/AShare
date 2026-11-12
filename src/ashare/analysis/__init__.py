@@ -38,6 +38,7 @@ from .capacity import (
     capacity,
     impact_coefficients,
     simulate,
+    simulate_many,
     volatility,
 )
 from .costs import cost_breakdown
@@ -45,6 +46,7 @@ from .history import FactorHistory, factor_groups, held_columns
 from .inputs import (
     LazyPanel,
     benchmark_held,
+    cash_returns,
     held_from_weights,
     reference_close,
     reference_prices,
@@ -76,6 +78,7 @@ __all__ = [
     "brinson",
     "brinson_effects",
     "capacity",
+    "cash_returns",
     "cost_breakdown",
     "cumulative_active",
     "decompose",
@@ -92,6 +95,7 @@ __all__ = [
     "risk_series",
     "risk_source",
     "simulate",
+    "simulate_many",
     "total_returns",
     "volatility",
 ]

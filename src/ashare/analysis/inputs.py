@@ -123,6 +123,32 @@ def reference_close(panel):
     )
 
 
+def cash_returns(panel):
+    """panelbt 现金口径的个股日收益：`(估值价_t × 送转_t + 每股派现_t) ÷ 估值价_{t-1} − 1`。
+
+    与 `total_returns`（复权因子口径，相当于把分红再投资到这只股票）只在派现、送转日
+    （以及数据层按复权因子合成的公司行为日）不同。持仓按这个口径算出的收益与 panelbt 的
+    净值逐日一致；归因仍用复权因子口径，两者之差单列在诊断 `dividend_convention` 里。
+    """
+    close = field(panel, "close")
+    price = np.where(np.isfinite(close), close, reference_close(panel))
+    t, n = close.shape
+    try:
+        div = np.nan_to_num(field(panel, "cash_dividend"))
+    except KeyError:
+        div = np.zeros((t, n))
+    try:
+        split = field(panel, "split")
+        split = np.where(np.isfinite(split) & (split > 0), split, 1.0)
+    except KeyError:
+        split = np.ones((t, n))
+    r = np.full((t, n), np.nan)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r[1:] = (price[1:] * split[1:] + div[1:]) / price[:-1] - 1
+    r[1:][~(price[:-1] > 0)] = np.nan
+    return r
+
+
 def held_from_weights(weights):
     """收盘后权重 `weights[t]` → 第 t 日持有的权重 `held[t] = weights[t-1]`。"""
     w = np.asarray(weights, dtype=float)

@@ -507,3 +507,35 @@ def test_index_fields_match_data_catalog():
     from ashare.data.catalog import INDEXES
 
     assert INDEX_FIELDS == {code: f"weight_{name}" for name, code in INDEXES.items()}
+
+
+def test_dividend_convention_explains_quiet_day_trading():
+    """派现日：复权因子口径与 panelbt 现金口径之差单列在诊断里，没有成交的日子交易项等于它。"""
+    panel = _suspended_actions_panel()
+    f = panel.fields
+    # 正常交易日的派现（第 4 只第 55 日，每股 0.3），当天价格照常涨跌。
+    ref = f["close"][54, 4]
+    f["cash_dividend"][55, 4] = 0.3
+    f["close"][55:, 4] -= 0.3
+    f["open"][55:, 4] -= 0.3
+    f["adj_factor"][55:, 4] *= ref / (ref - 0.3)
+    t, n = len(panel.dates), len(panel.symbols)
+    dense = np.full((t, n), np.nan)
+    for day in (1, 31, 61, 91):
+        dense[day] = 0.95 / n
+    config = panelbt.Config(initial_cash=1e7, min_qty=0, qty_step=0, record_trades=True)
+    plan = panelbt.Targets.from_dense(dense)
+    result = panelbt.run(_market(panel), plan, panelbt.Costs(), config)
+    rep = an.attribute(result, panel, random_history(panel), benchmark="weight_bench")
+    gap = rep.diagnostics["dividend_convention"]
+    trading = rep.daily["trading"]
+    rows = {d: i for i, d in enumerate(rep.daily.index)}
+    assert abs(gap[rows[panel.dates[55]]]) > 1e-7  # 派现日确实有口径差
+    position = {d: j for j, d in enumerate(panel.dates)}
+    trade = set(np.flatnonzero(~np.all(np.isnan(dense), axis=1)))
+    quiet = [i for i, d in enumerate(rep.daily.index) if position[d] not in trade]
+    assert np.abs(trading[quiet] - gap[quiet]).max() < 1e-15
+    # 直接给权重：没有交易项，口径差记 0。
+    w = an.result_weights(result, panel)[0]
+    plain = an.attribute(w, panel, random_history(panel), benchmark="weight_bench")
+    assert np.all(plain.diagnostics["dividend_convention"] == 0)

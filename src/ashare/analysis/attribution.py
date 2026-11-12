@@ -29,6 +29,7 @@ from .adapters import risk_source
 from .history import FactorHistory
 from .inputs import (
     benchmark_held,
+    cash_returns,
     held_from_weights,
     result_weights,
     total_returns,
@@ -299,6 +300,13 @@ def attribute(
     for key in out:
         out[key] = out[key][1:]
     days = dates[window[1:]]
+    # 分红口径差：持仓按 panelbt 现金口径的收益减复权因子口径的收益（逐日）。没有成交的
+    # 日子里交易项恰好等于它；直接给权重时没有交易项，记 0。
+    if info is None:
+        out["dividend_convention"] = np.zeros(len(days))
+    else:
+        gap = np.nan_to_num(cash_returns(panel)) - np.nan_to_num(returns)
+        out["dividend_convention"] = (held[window] * gap[window]).sum(axis=1)[1:]
     mean_uncovered = float(out["uncovered"].mean())
     if mean_uncovered > max_uncovered:
         warnings.warn(
@@ -392,6 +400,9 @@ def _report(out, days, history, method, n_extra):
         # 停牌持仓在特质项里的部分 Σ a·(0 − B·f)：停牌日收益为 0，因子项照算，差额落在
         # 特质项（逐日，单利）。分解本身不改，只把这部分单列出来。
         "suspended_specific": out["suspended_specific"],
+        # 分红口径差：交易项里来自「复权因子口径（分红再投资）与引擎现金口径」的部分，
+        # 没有成交的日子交易项恰好等于它（逐日，单利）。
+        "dividend_convention": out["dividend_convention"],
     }
     return Attribution(
         daily=Table(days, names, detail, "daily", "date"),
