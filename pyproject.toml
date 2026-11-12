@@ -2,7 +2,7 @@
 name = "ashare"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = ["panelbt", "panelops"]
+dependencies = ["panelbt", "panelops", "httpx>=0.28.1", "polars>=1.35", "pyarrow>=21"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
@@ -16,6 +16,7 @@ panelbt = { workspace = true }
 panelops = { workspace = true }
 
 [dependency-groups]
+data-verify = ["baostock>=0.8.9"]
 dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0"]
 
 [tool.pytest.ini_options]

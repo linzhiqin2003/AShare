@@ -1,0 +1,5 @@
+{
+  "code": 40203,
+  "msg": "抱歉，您访问接口(trade_cal)频率超限(500次/分钟)，具体频次详情：https://tushare.pro/document/1?doc_id=108。",
+  "provenance": "用户于 2026-11-12 实测提供；本轮不重复压测限额"
+}
