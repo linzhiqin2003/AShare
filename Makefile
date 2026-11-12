@@ -62,3 +62,11 @@ panelops-crosscheck:
 
 panelops-mutate:
 	uv run --no-sync python bench/panelops/mutations.py
+
+.PHONY: perf-profile perf-compare
+
+perf-profile:
+	uv run --no-sync python bench/e2e/run.py $(PERF_ARGS)
+
+perf-compare:
+	uv run --no-sync python bench/e2e/compare.py $(PERF_OLD) $(PERF_NEW)
