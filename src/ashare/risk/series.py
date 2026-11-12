@@ -1,7 +1,10 @@
 """按日期前缀构建快照；缓存同时保存后续估计需要的状态。"""
 
+import ctypes
 import hashlib
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
@@ -26,6 +29,44 @@ from .window import ResidualWindow
 CACHE_SCHEMA = 3
 
 
+class _Precomputed:
+    """按日给出已经顺序算好的滚动描述子，供各线程并行使用。"""
+
+    def __init__(self, values):
+        self.values = values
+
+    def at(self, day):
+        return self.values[day]
+
+
+def default_threads():
+    """ASHARE_RISK_THREADS，否则取性能核数（Apple 芯片的能效核不计），再否则取 CPU 数。"""
+    value = os.environ.get("ASHARE_RISK_THREADS")
+    if value:
+        if not value.isdigit() or int(value) < 1:
+            raise ValueError("ASHARE_RISK_THREADS: 必须为正整数")
+        return int(value)
+    try:
+        libc = ctypes.CDLL(None)
+        count = ctypes.c_int(0)
+        size = ctypes.c_size_t(ctypes.sizeof(count))
+        if (
+            libc.sysctlbyname(
+                b"hw.perflevel0.physicalcpu",
+                ctypes.byref(count),
+                ctypes.byref(size),
+                None,
+                0,
+            )
+            == 0
+            and count.value > 0
+        ):
+            return count.value
+    except (OSError, AttributeError):
+        pass
+    return os.cpu_count() or 1
+
+
 def _digest(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, default=str).encode()
@@ -44,14 +85,21 @@ def model_series(
     kind="fundamental",
     statistical_options=None,
     batch_size=64,
+    threads=None,
 ):
     """逐日迭代。start 前的缓存状态仍参与估计；追加不会重算已缓存快照。
 
     version 表示数据修订版本；新增日期可以保持该版本。每个键还包含输入
     前缀摘要，历史改写即便未更新 version 也不会命中旧缓存。
+
+    threads：一批日期的风格暴露并行计算的线程数（结果与 1 个线程逐位相同）；
+    None 取环境变量 ASHARE_RISK_THREADS，没有则取性能核数。
     """
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("batch_size: 必须为正整数")
+    threads = default_threads() if threads is None else threads
+    if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:
+        raise ValueError("threads: 必须为正整数")
     c = FundamentalConfig() if config is None else config
     end = len(source.dates) if end is None else end
     if not 0 <= start <= end <= len(source.dates) or kind not in (
@@ -92,7 +140,7 @@ def model_series(
     )
     rolling = RollingDescriptors(source, returns, c, listing_ages)
 
-    def exposure_for(day):
+    def exposure_for(day, descriptors=None):
         return exposures_at(
             source,
             returns,
@@ -101,8 +149,19 @@ def model_series(
             external,
             external_names,
             listing_ages=listing_ages,
-            rolling=rolling,
+            rolling=rolling if descriptors is None else descriptors,
         )
+
+    pool = []
+
+    def exposure_batch(days):
+        """滚动描述子按日顺序递推（有状态），其余各天独立，交给线程池。"""
+        descriptors = _Precomputed({day: rolling.at(day) for day in days})
+        if threads == 1 or len(days) < 2:
+            return [exposure_for(day, descriptors) for day in days]
+        if not pool:
+            pool.append(ThreadPoolExecutor(threads, thread_name_prefix="risk-exposure"))
+        return list(pool[0].map(lambda day: exposure_for(day, descriptors), days))
 
     def statistical_for(day):
         options = dict(statistical_options or {})
@@ -131,12 +190,14 @@ def model_series(
             params,
             returns,
             rolling,
-            exposure_for,
+            exposure_batch,
             statistical_for,
             cached_exposure,
             batch_size,
         )
     finally:
+        for executor in pool:
+            executor.shutdown()
         # 后台写入在生成器结束（含提前关闭）前落盘；写失败在这里抛出。
         if cache:
             cache.flush()
@@ -153,7 +214,7 @@ def _iterate(
     params,
     returns,
     rolling,
-    exposure_for,
+    exposure_batch,
     statistical_for,
     cached_exposure,
     batch_size,
@@ -203,8 +264,8 @@ def _iterate(
                     if checkpoint is not None and int(checkpoint["day"]) == day - 1:
                         rolling.restore(checkpoint)
                 stop = min(end, day + batch_size)
-                for future in range(day, stop):
-                    prepared[future] = exposure_for(future)
+                days = list(range(day, stop))
+                prepared.update(zip(days, exposure_batch(days), strict=True))
                 if kind == "fundamental":
                     days, designs, caps, estimates = [], [], [], []
                     for future in range(max(1, day), stop):

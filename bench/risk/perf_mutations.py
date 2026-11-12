@@ -220,6 +220,63 @@ CASES = {
             "test/risk/test_residual_window.py",
         ),
     ],
+    "P-007": [
+        (
+            "描述子不预先顺序算好，线程共用有状态的递推",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "descriptors = _Precomputed({day: rolling.at(day) for day in days})",
+                    "descriptors = rolling",
+                )
+            ],
+            "test/risk/test_parallel_exposures.py",
+        ),
+        (
+            "结果与日期错位",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "prepared.update(zip(days, exposure_batch(days), strict=True))",
+                    "prepared.update(zip(days, exposure_batch(days)[::-1], strict=True))",
+                )
+            ],
+            "test/risk/test_parallel_exposures.py",
+        ),
+        (
+            "1 个线程也走线程池",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "if threads == 1 or len(days) < 2:",
+                    "if len(days) < 2:",
+                )
+            ],
+            "test/risk/test_parallel_exposures.py",
+        ),
+        (
+            "线程数不校验",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:",
+                    "if False:",
+                )
+            ],
+            "test/risk/test_parallel_exposures.py",
+        ),
+        (
+            "忽略环境变量",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    'value = os.environ.get("ASHARE_RISK_THREADS")',
+                    "value = None",
+                )
+            ],
+            "test/risk/test_parallel_exposures.py",
+        ),
+    ],
 }
 
 
