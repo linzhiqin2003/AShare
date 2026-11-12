@@ -4,7 +4,7 @@ A research framework for China A-share equities. Backtesting, factor operators, 
 
 [中文](README.md)
 
-Every number below comes from a record in this repository and can be re-run. The machine is an Apple M5 Pro laptop that was not idle during measurement, so read ratios rather than absolute times.
+Every number below comes from a record in this repository and can be re-run. The machine is an Apple M5 Pro laptop.
 
 ## Why this one
 
@@ -30,8 +30,6 @@ Every number below comes from a record in this repository and can be re-run. The
 - Peak memory in the first scenario, including about 0.45 GB of input panels: `panelbt` 0.46 GB, bt 2.6 GB, backtrader 2.9 GB, vectorbt 6.6–8.2 GB.
 - The complete A-share rule set (price limits, suspensions, T+1, minimum commission, dividends and splits with tax, delisting, unfilled orders carried forward) runs in about 1.7 ms on the same panel, or 3.5 ms with an index-futures hedge leg. The third-party engines above cannot express that rule set, so there is no like-for-like number for it.
 
-Source: [docs/BENCHMARKS.md](docs/BENCHMARKS.md), [docs/SELECTION.md](docs/SELECTION.md), [docs/PERF_LOG.md](docs/PERF_LOG.md).
-
 ### Factor operators faster than bottleneck, single-threaded
 
 68 time-series, cross-sectional and element-wise operators on a 4,000 × 5,500 panel (window 20, 5% missing). Milliseconds, lower is better; bold marks the fastest single-threaded result and the fastest overall.
@@ -51,8 +49,6 @@ Source: [docs/BENCHMARKS.md](docs/BENCHMARKS.md), [docs/SELECTION.md](docs/SELEC
 - With default threads it beats every library's default configuration on all 68.
 - Rolling sums, means and variances are checked against an exact rational-arithmetic reference; the precision safeguards cost a few percent and are not removed for speed.
 
-Source: [docs/PANELOPS_BENCHMARKS.md](docs/PANELOPS_BENCHMARKS.md).
-
 ### A whole research run in about a minute
 
 ![End-to-end research run before and after the optimisation round](docs/assets/research-run.en.svg)
@@ -71,8 +67,6 @@ The round changed 13 things, one commit each, and none of them was allowed to ch
 - The incremental specific-risk update is the one change with a tolerance: 1e-12 relative to the from-scratch computation, measured at 1.5e-14 and checked against a 50-digit reference.
 - Solving independent periods in parallel reaches equally optimal but not bitwise-equal weights, so it is opt-in and the default stays serial. That is the only difference between the last two rows' results.
 - One attempt brought no measurable gain and was withdrawn; it is recorded next to the ones that worked.
-
-Source: [docs/PERF_LOG.md](docs/PERF_LOG.md), per-item records in [docs/perf_log.d/](docs/perf_log.d/).
 
 ### Where it is not faster
 
