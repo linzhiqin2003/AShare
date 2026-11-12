@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
@@ -24,9 +26,55 @@ class PanelSource(Protocol):
     def __getitem__(self, field: str) -> np.ndarray: ...
 
 
+# 缓存文件校验：按 8 MiB 分块并行算 SHA-256，再对「格式标记 + 文件长度 + 各块摘要」
+# 算一次 SHA-256。hashlib 对大缓冲区释放 GIL，块之间真正并行；强度仍是 SHA-256，
+# 任何一个字节变化都会改变某个块的摘要。
+CACHE_FORMAT = 2
+_CHUNK = 8 << 20
+_POOL_LOCK = threading.Lock()
+_POOL = None
+
+
+def _hash_pool():
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is None:
+            _POOL = ThreadPoolExecutor(
+                max_workers=min(10, os.cpu_count() or 1),
+                thread_name_prefix="factor-cache-hash",
+            )
+        return _POOL
+
+
+def _chunk_digest(fd, start, length):
+    # 用 preadv 读进自有缓冲区：刚写完的文件第一次 mmap 要逐页建映射，实测慢 7 倍。
+    buffer = bytearray(length)
+    view = memoryview(buffer)
+    done = 0
+    while done < length:
+        count = os.preadv(fd, [view[done:]], start + done)
+        if count == 0:
+            raise EOFError("缓存文件在校验中变短")
+        done += count
+    return hashlib.sha256(buffer).digest()
+
+
 def _checksum(path):
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        size = os.fstat(fd).st_size
+        parts = list(
+            _hash_pool().map(
+                lambda start: _chunk_digest(fd, start, min(_CHUNK, size - start)),
+                range(0, size, _CHUNK),
+            )
+        )
+    finally:
+        os.close(fd)
+    total = hashlib.sha256(f"ashare-factor-cache:{CACHE_FORMAT}:{size}:".encode())
+    for part in parts:
+        total.update(part)
+    return total.hexdigest()
 
 
 def _implementation_id():
@@ -222,7 +270,14 @@ class Evaluator:
             return None
         try:
             metadata = json.loads(path.with_suffix(".json").read_text())
-            if metadata["sha256"] != _checksum(path):
+            # 先比格式、键和长度（不读数据），再做完整的分块 SHA-256。
+            if (
+                metadata["format"] != CACHE_FORMAT
+                or metadata["key"] != path.stem
+                or metadata["bytes"] != path.stat().st_size
+            ):
+                raise ValueError("缓存元数据不符")
+            if metadata["tree_sha256"] != _checksum(path):
                 raise ValueError("缓存校验和不符")
             result = np.load(path, mmap_mode="r", allow_pickle=False)
             if (
@@ -257,7 +312,15 @@ class Evaluator:
             )
             temporary.append(Path(name))
             with os.fdopen(fd, "w") as output:
-                json.dump({"sha256": checksum}, output)
+                json.dump(
+                    {
+                        "format": CACHE_FORMAT,
+                        "key": path.stem,
+                        "bytes": temporary[0].stat().st_size,
+                        "tree_sha256": checksum,
+                    },
+                    output,
+                )
                 output.flush()
                 os.fsync(output.fileno())
             os.replace(temporary[0], path)
