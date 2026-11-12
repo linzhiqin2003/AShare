@@ -354,6 +354,67 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - 第一批：市值、短期反转、动量、波动率、换手率、估值（EP、BP）、股息率，以及 Alpha158 的量价部分。
 - 单因子报告：IC 与 ICIR、分组收益、**多头组扣成本后相对基准的超额**（调用 panelbt）、换手、分年度、分市值段、与已有因子的相关性。评价以多头端为准，因为做不了空。
 
+#### 6.2.1 外部因子包
+
+成套的公式型因子（公式、独立参考实现、约定文件、核对结果）不放在本仓库，写成单独的 Python 包，经入口点组 `ashare.factors` 被发现。本仓库的 `ashare.factor.formula` 只提供机制：
+
+- `dsl`：WorldQuant 式、国君式公式的翻译用语言（口径集中在这一个文件）；`qlib`：Qlib 表达式字符串到 `Expr` 的确定性转换；`ops`：用现有算子精确组合出的算子。
+- `registry_from_module(模块, 前缀, 条数, notes=..., excluded=...)`：从「一个函数一条因子」的模块构造注册表，按名字挂元数据标记 `notes`（`(标记, 编号)`），`registry.with_note(标记)` 筛选。
+- `inputs`：取数（`load_inputs`）与参考实现的输入（`reference_frames`）；`verify`：候选对独立参考实现逐格核对，支持「已知例外」（`KnownException`：只对条件成立、按正常规则不过关、候选恰为声明值的格子生效，单独计数）。
+- `plugins`：`discover()` 列出全部因子集，`load_registry(名字, **选项)` 取注册表。没装任何外部包时只有内置示例集 `example`（两条自编因子和它们的参考实现），一切功能照常。
+
+外部包的最小写法：
+
+```toml
+# 外部包的 pyproject.toml
+[project]
+name = "my_factors"
+version = "0.1"
+dependencies = ["ashare"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.entry-points."ashare.factors"]
+my_factors = "my_factors.plugin:register"
+```
+
+```python
+# my_factors/plugin.py
+from ashare.factor.formula import FactorSet, dsl as d
+from ashare.factor.library import Registry
+
+
+def build(window="7"):
+    registry = Registry()
+    registry.register(
+        "my_range", d.ts_mean(d.high - d.low, int(window)), "mean(high - low, window)",
+        notes=[("自编", "M-1")],
+    )
+    return registry
+
+
+def register(hub):
+    hub.add(FactorSet("mine", build, reference="my_factors.reference", options=("window",)))
+```
+
+```python
+# my_factors/reference.py：独立参考实现（pandas），选项以字符串原样传入
+def my_range(frames, window="7"):
+    return (frames["high"] - frames["low"]).rolling(int(window)).mean()
+
+
+REFERENCES = {"my_range": my_range}
+```
+
+装进同一个环境（`uv pip install -e 路径`）后：`load_registry("mine", window="9")` 取注册表，`python -m ashare.factor.formula.verify mine --option window=9` 核对。约定：
+
+- `register(hub)` 只有一个参数；入口点导入失败、`register` 报错、两个包登记同名因子集，都会直接报错并指明入口点，不静默跳过。
+- `FactorSet` 的 `build(**选项)` 返回 `Registry`，只接受 `options` 里声明的选项（命令行传进来的值是字符串）；`reference` 是参考实现模块（`REFERENCES = {名字: 函数}` 或 `compute_many(frames, names, **选项)`），选项同样传给它；参考实现只有时序运算时可以给 `chunk`（按证券分块并行）；`exceptions = {因子名: (KnownException, ...)}`。
+- 参考实现要独立：照约定文件自己写 pandas，不调用 `ashare.factor` 的表达式和 `panelops`。
+- 外部包的测试可以用 `ashare.factor.formula.testing.synthetic_source` 造合成面板。
+
 ### 6.3 合成、组合与研究纪律
 
 - 滚动训练：按时间切分，训练集和测试集之间留隔离期；LightGBM；各折并行。
