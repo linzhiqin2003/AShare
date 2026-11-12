@@ -341,7 +341,12 @@ ds.version                                       # 进因子缓存和试验账�
 # 外部包的 pyproject.toml
 [project]
 name = "my_factors"
+version = "0.1"
 dependencies = ["ashare"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project.entry-points."ashare.factors"]
 my_factors = "my_factors.plugin:register"

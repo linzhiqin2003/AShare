@@ -71,7 +71,7 @@ class Factor:
     name: str
     expression: Expr
     description: str
-    notes: tuple = ()  # 原文问题的标记，元素为 (标记, 疑点编号)，见 docs/factors/CONVENTIONS.md
+    notes: tuple = ()  # 元数据标记，元素为 (标记, 编号)；编号指向登记它的外部因子包的约定文件
 
     @property
     def fields(self):
@@ -89,9 +89,15 @@ class Registry:
             raise ValueError(f"因子重名：{name}")
         if not isinstance(name, str) or not name or not isinstance(expression, Expr):
             raise ValueError("需要非空名称和 Expr 表达式")
-        if isinstance(notes, str) or any(isinstance(n, str) for n in notes):
+        if notes is None or isinstance(notes, str):
+            raise ValueError("notes 须是 (标记, 编号) 的序列")
+        notes = tuple(notes)  # 先落成元组：生成器只能遍历一次
+        if any(isinstance(n, str) for n in notes):
             raise ValueError("notes 的每一项须是 (标记, 编号) 两个非空字符串")
-        notes = tuple(tuple(n) for n in notes)
+        try:
+            notes = tuple(tuple(n) for n in notes)
+        except TypeError:
+            raise ValueError("notes 的每一项须是 (标记, 编号) 两个非空字符串") from None
         if any(
             len(n) != 2 or not all(isinstance(v, str) and v for v in n) for n in notes
         ):

@@ -9,19 +9,19 @@ from . import dsl as d
 from .plugins import FactorSet
 
 
-def example_range_mean():
-    """mean((high - low) / (0.5 * open + 0.5 * close), 9)"""
-    return d.ts_mean((d.high - d.low) / (0.5 * d.open + 0.5 * d.close), 9)
+def example_spread_mean():
+    """mean((vwap - open) / (high + low), 6)"""
+    return d.ts_mean((d.vwap - d.open) / (d.high + d.low), 6)
 
 
-def example_volume_turn():
-    """rank(delta(log(volume), 3)) * sign(delta(close, 3))"""
-    return d.rank(d.delta(d.log(d.volume), 3)) * d.sign(d.delta(d.close, 3))
+def example_amount_peak():
+    """rank(ts_max(amount, 4)) * sign(vwap - open)"""
+    return d.rank(d.ts_max(d.amount, 4)) * d.sign(d.vwap - d.open)
 
 
 def build():
     registry = Registry()
-    for function in (example_range_mean, example_volume_turn):
+    for function in (example_spread_mean, example_amount_peak):
         registry.register(
             function.__name__, function(), function.__doc__, [("示例", "EX-1")]
         )

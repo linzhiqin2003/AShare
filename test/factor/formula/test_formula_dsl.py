@@ -34,7 +34,7 @@ nan = np.nan
 
 
 def test_days_are_floored_and_validated():
-    assert d.days(8.22237) == 8 and d.days(1.06157) == 1 and d.days(5) == 5
+    assert d.days(6.5371) == 6 and d.days(1.2849) == 1 and d.days(5) == 5
     assert d.ts_sum(X, 4.9) == d.ts_sum(X, 4)
     with pytest.raises(TypeError):
         d.days("5")

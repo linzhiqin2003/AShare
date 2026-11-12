@@ -124,8 +124,8 @@ def test_exception_condition_is_evaluated_with_candidates():
     from ashare.factor.formula.known_exceptions import KnownException
 
     source = synthetic_source(seed=2)
-    candidate = d.where(d.gt(d.volume, 0), d.close * 0, d.close)
-    rule = KnownException("X-2", d.gt(d.volume, 0), 0.0, "测试")
+    candidate = d.where(d.gt(d.volume, 2e5), d.close * 0, d.close)
+    rule = KnownException("X-2", d.gt(d.volume, 2e5), 0.0, "测试")
     rows = v.verify(
         {"x_close": candidate},
         __name__,
@@ -162,8 +162,8 @@ def test_cli_runs_example_set(tmp_path, monkeypatch):
     assert code == 0
     assert result["summary"] == {"一致": 2}
     assert {r["name"] for r in result["factors"]} == {
-        "example_range_mean",
-        "example_volume_turn",
+        "example_spread_mean",
+        "example_amount_peak",
     }
     with pytest.raises(SystemExit):
         v.main(["no_such_set", "--workers", "0"])
@@ -172,3 +172,123 @@ def test_cli_runs_example_set(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         v.main(["example", "--option", "argmax=position", "--workers", "0"])
     assert "example" in plugins.discover()
+
+
+# ---- 空转通过的几种情形必须报出来 ------------------------------------------------
+
+
+def test_no_comparable_cells_is_not_a_pass():
+    nan = np.full((3, 2), np.nan)
+    stats = v.compare(nan, nan)
+    assert stats["comparable_cells"] == 0 and stats["mask_mismatch"] == 0
+    assert v.verdict(stats) == v.NO_CELLS == "无可比格"
+    assert v.summary([stats]) == {"无可比格": 1}
+    ok = np.array([[1.0, np.nan]])
+    assert v.compare(ok, ok)["comparable_cells"] == 1
+    # 带例外也不会把「无可比格」说成一致。
+    stats["exception_cells"] = 3
+    assert v.verdict(stats) == "无可比格" and v.category(stats) == "无可比格"
+
+
+def _all_nan(frames):
+    return frames["close"] * np.nan
+
+
+REFERENCES["x_all_nan"] = _all_nan
+
+
+def test_all_nan_on_both_sides_fails_end_to_end(monkeypatch, tmp_path):
+    from ashare.factor.formula import dsl as d
+    from ashare.factor.library import Registry
+
+    source = synthetic_source(seed=1)
+    rows = v.verify(
+        {"x_all_nan": d.close / 0}, __name__, source, keep=50, log=lambda _: None
+    )
+    assert rows[0]["verdict"] == "无可比格"
+
+    def build():
+        registry = Registry()
+        registry.register("x_all_nan", d.close / 0)
+        return registry
+
+    fake = plugins.FactorSet("fake_nan", build, reference=__name__)
+    monkeypatch.setattr(plugins, "factor_set", lambda name: fake)
+    monkeypatch.setattr(v, "load_inputs", lambda **_: source)
+    assert v.main(["fake_nan", "--days", "50", "--workers", "0"]) == 1
+
+
+def test_zero_factors_is_an_error(monkeypatch):
+    from ashare.factor.library import Registry
+
+    source = synthetic_source(seed=1)
+    with pytest.raises(ValueError, match="没有要核对的因子"):
+        v.verify({}, __name__, source, keep=50, log=lambda _: None)
+    empty = plugins.FactorSet("empty", Registry, reference=__name__)
+    monkeypatch.setattr(plugins, "factor_set", lambda name: empty)
+    monkeypatch.setattr(v, "load_inputs", lambda **_: source)
+    with pytest.raises(SystemExit) as exit_info:
+        v.main(["empty", "--workers", "0"])
+    assert exit_info.value.code not in (0, None)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        lambda f: f["close"].to_numpy()[:, :1],  # 列向量
+        lambda f: f["close"].to_numpy()[0],  # 行向量
+        lambda f: np.array([[1.0]]),  # 标量面板
+        lambda f: 1.0,
+        lambda f: f["close"].to_numpy()[:-1],
+    ],
+)
+def test_compute_many_shapes_are_checked(monkeypatch, bad):
+    import sys
+    import types
+
+    from ashare.factor.formula import dsl as d
+
+    module = types.ModuleType("fake_compute_many")
+    module.compute_many = lambda frames, names: {n: bad(frames) for n in names}
+    monkeypatch.setitem(sys.modules, "fake_compute_many", module)
+    source = synthetic_source(seed=1)
+    with pytest.raises(ValueError, match="形状"):
+        v.verify(
+            {"x": d.close}, "fake_compute_many", source, keep=50, log=lambda _: None
+        )
+    # 按证券分块的路径同样检查（广播曾让列向量铺满整张面板）。
+    with pytest.raises(ValueError, match="形状"):
+        v.verify(
+            {"x": d.close},
+            "fake_compute_many",
+            source,
+            keep=50,
+            chunk=5,
+            log=lambda _: None,
+        )
+
+
+def test_compute_many_names_are_checked(monkeypatch):
+    import sys
+    import types
+
+    from ashare.factor.formula import dsl as d
+
+    source = synthetic_source(seed=1)
+    module = types.ModuleType("fake_names")
+    monkeypatch.setitem(sys.modules, "fake_names", module)
+    module.compute_many = lambda frames, names: {}
+    with pytest.raises(ValueError, match="缺"):
+        v.verify({"x": d.close}, "fake_names", source, keep=50, log=lambda _: None)
+    module.compute_many = lambda frames, names: {
+        "x": frames["close"].to_numpy(),
+        "y": frames["close"].to_numpy(),
+    }
+    with pytest.raises(ValueError, match="多"):
+        v.verify({"x": d.close}, "fake_names", source, keep=50, log=lambda _: None)
+    module.compute_many = lambda frames, names: [frames["close"].to_numpy()]
+    with pytest.raises(TypeError):
+        v.verify({"x": d.close}, "fake_names", source, keep=50, log=lambda _: None)
+    module.compute_many = lambda frames, names: {"x": frames["close"].to_numpy()}
+    rows = v.verify({"x": d.close}, "fake_names", source, keep=50, log=lambda _: None)
+    assert rows[0]["verdict"] == "一致"

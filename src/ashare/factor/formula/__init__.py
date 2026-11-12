@@ -14,6 +14,7 @@ from .inputs import PublicSource, load_inputs, reference_frames
 from .known_exceptions import KnownException
 from .plugins import (
     ENTRY_POINT_GROUP,
+    FactorPluginError,
     FactorSet,
     Hub,
     discover,
@@ -24,6 +25,7 @@ from .registry import registry_from_module
 
 __all__ = [
     "ENTRY_POINT_GROUP",
+    "FactorPluginError",
     "FactorSet",
     "Hub",
     "KnownException",

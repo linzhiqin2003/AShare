@@ -11,7 +11,9 @@
 - 一致：NaN 掩码逐格相同，且 ``max |a−b|/(1+|b|) ≤ 1e-12``；
 - 仅浮点差：掩码相同，且 ``≤ 1e-6``；
 - 每天的截面秩相关只报告最小值，不参与判定（浮点差会拆开并列，截面小时秩相关会明显下降）；
-- 不一致：其余。
+- 不一致：其余；
+- 无可比格：掩码相同、但两边都有限的格子一个也没有（例如两边全 NaN），不能说明一致，
+  与「不一致」一样算未通过；零个因子时直接报错。
 
 因子集登记的「已知例外」（``known_exceptions``）只对满足明确条件、按正常规则不过关、
 且候选恰为声明值的格子生效：这些格子从统计里拿掉、单独计数，结论写成
@@ -36,6 +38,8 @@ from . import plugins
 from .inputs import PublicSource, load_inputs, reference_frames
 
 EXACT = 1e-12
+NO_CELLS = "无可比格"
+FAILING = ("不一致", NO_CELLS)
 FLOAT = 1e-6
 
 
@@ -102,6 +106,7 @@ def compare(candidate, reference, dates=None, symbols=None, exceptions=()):
         "cells": int(a.size),
         "valid_cells": int(fa.sum()),
         "reference_valid_cells": int(fb.sum()),
+        "comparable_cells": int(both.sum()),
         "mask_mismatch": int((fa != fb).sum()),
         "candidate_only": int((fa & ~fb).sum()),
         "reference_only": int((fb & ~fa).sum()),
@@ -144,6 +149,8 @@ def base_verdict(stats):
     """按 CONVENTIONS 第 6 节的阈值给结论（不含例外说明）。"""
     if stats["mask_mismatch"]:
         return "不一致"
+    if not stats["comparable_cells"]:
+        return NO_CELLS
     if stats["max_err"] <= EXACT:
         return "一致"
     if stats["max_err"] <= FLOAT:
@@ -155,7 +162,7 @@ def verdict(stats):
     """结论；用到已知例外时写成「一致（已知例外 N 格）」这一类。"""
     base = base_verdict(stats)
     n = stats.get("exception_cells", 0)
-    if base == "不一致" or not n:
+    if base in FAILING or not n:
         return base
     return f"{base}（已知例外 {n} 格）"
 
@@ -163,7 +170,7 @@ def verdict(stats):
 def category(row):
     """汇总用的类别：一致、一致（含已知例外）、仅浮点差、仅浮点差（含已知例外）、不一致。"""
     base = base_verdict(row)
-    if base != "不一致" and row.get("exception_cells", 0):
+    if base not in FAILING and row.get("exception_cells", 0):
         return f"{base}（含已知例外）"
     return base
 
@@ -199,14 +206,25 @@ def _compute_many(module, frames, names, options=None):
     没有选项时不传。
     """
     options = options or {}
+    shape = frames["close"].shape
     if hasattr(module, "compute_many"):
-        return module.compute_many(frames, names, **options)
+        raw = module.compute_many(frames, names, **options)
+        if not isinstance(raw, dict):
+            raise TypeError("compute_many 须返回 {名字: 面板} 字典")
+        missing, extra = set(names) - set(raw), set(raw) - set(names)
+        if missing or extra:
+            raise ValueError(
+                f"compute_many 返回的名字不对：缺 {sorted(missing)}，多 {sorted(extra)}"
+            )
+    else:
+        raw = {name: module.REFERENCES[name](frames, **options) for name in names}
     out = {}
     for name in names:
-        result = module.REFERENCES[name](frames, **options)
-        values = np.asarray(result, dtype=float)
-        if values.shape != frames["close"].shape:
-            raise ValueError(f"{name} 的参考结果形状 {values.shape} 与输入不同")
+        values = np.asarray(raw[name], dtype=float)
+        if values.shape != shape:  # 不许广播：列向量、行向量、标量都算错
+            raise ValueError(
+                f"{name} 的参考结果形状 {values.shape} 与输入 {shape} 不同"
+            )
         out[name] = values
     return out
 
@@ -290,6 +308,8 @@ def verify(
     """
     exceptions = {k: v for k, v in (exceptions or {}).items() if k in candidates}
     names = list(candidates)
+    if not names:
+        raise ValueError("没有要核对的因子")
     dates, symbols = source.dates[-keep:], source.symbols
     evaluator = Evaluator()
     rows = []
@@ -399,6 +419,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     candidates, formulas, module, chunk, exceptions = _candidates(args)
+    if not candidates:
+        raise SystemExit(f"因子集 {args.set} 里没有可核对的因子")
     load_kwargs = dict(
         root=args.root,
         days=args.days,
@@ -453,11 +475,13 @@ def main(argv=None):
             print(
                 f"  不一致 {row['name']}：掩码不同 {row['mask_mismatch']}，max_err {row['max_err']:.3g}"
             )
+        elif row["verdict"] == NO_CELLS:
+            print(f"  {NO_CELLS} {row['name']}：两边都有限的格子为 0")
     if args.out:
         with open(args.out, "w") as handle:
             json.dump(result, handle, ensure_ascii=False, indent=1)
         print(f"写入 {args.out}")
-    return 0 if "不一致" not in counts else 1
+    return 1 if any(k in counts for k in FAILING) else 0
 
 
 if __name__ == "__main__":

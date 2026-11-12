@@ -3,6 +3,8 @@
 只认这些写法：字段 ``$open $high $low $close $vwap $volume``，数字，``+ - * /``，
 比较 ``> <``，一元负号，以及下面 ``FUNCTIONS`` 里的函数。遇到别的写法直接报错，不猜。
 语义照 Qlib 源码（``qlib/data/ops.py`` 与 ``rolling.pyx``，main 分支的 ``Rank``）。
+与 Qlib 的一处差别：``Greater/Less`` 的第一个参数必须是序列（``Greater(0, $close)`` 报错，
+要写成 ``Greater($close, 0)``）；Qlib 两种顺序都接受。
 
     >>> to_expr("Mean($high, 7)/Std($close, 13)")   # doctest: +SKIP
 

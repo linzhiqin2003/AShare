@@ -6,7 +6,7 @@
     from ashare.factor.formula import dsl as d
 
     def my_factor_001():
-        return -1 * d.correlation(d.rank(d.high), d.rank(d.amount), 7)
+        return d.decay_linear(d.ts_max(d.amount, 6) / d.vwap, 4) - d.scale(d.low)
 
 约定：带天数的参数都先向下取整（D-15）；滚动窗口必须满（D-09，``min_periods = 天数``）。
 """
@@ -361,8 +361,9 @@ def indneutralize(x, level):
     return call("cs_group_demean", x, industry(level))
 
 
-# ---- 国君的派生变量（研报定义表） --------------------------------------------------
+# ---- 常用技术指标构件 -----------------------------------------------------------
 
+# 动态买卖气指标（ADTM）的两个分量：开盘价比前一天高时的上涨动力、比前一天低时的下跌动力。
 dtm = where(
     le(open, delay(open, 1)),
     0,
@@ -373,9 +374,11 @@ dbm = where(
     0,
     maximum(open - low, open - delay(open, 1)),
 )
+# 真实波幅（True Range）：当天高低差与高、低价各自到前一天收盘价距离中的最大者。
 tr = maximum(
     maximum(high - low, abs(high - delay(close, 1))),
     abs(low - delay(close, 1)),
 )
+# 动向指标（DMI）的两个分量：最高价的上移、最低价的下移。
 hd = high - delay(high, 1)
 ld = delay(low, 1) - low

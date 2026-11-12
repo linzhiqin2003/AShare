@@ -195,4 +195,4 @@ uv run --no-sync python bench/panelops/report.py --input bench/panelops/results/
 | 整数并列 | ts_idxmax | 88.3 | 87.1 | 15.3 | 12.4 | 430.7 |
 | 整数并列 | ts_argmax | 95.9 | 92.7 | 12.5 | 14.5 | — |
 
-`earliest` 与 `latest` 在噪声范围内持平，单线程比 NumPy 快约 4.9 倍；默认 `latest` 的单线程数字与冻结基线（ts_idxmax 92.52、ts_argmax 77.79 ms，不同负载）同一量级，没有退步。没有重跑冻结 JSON。
+`earliest` 与 `latest` 在噪声范围内持平，单线程比 NumPy 快约 4.9 倍；默认 `latest` 与改动前是否同速**没有在同负载下比较过**：冻结基线（ts_idxmax 92.52、ts_argmax 77.79 ms）是在另一负载下测的，与本表相差最多 17%，在这种负载差别下不能下结论；默认路径的算术与改动前相同（逐位一致由测试守住），速度要在空闲时用 `bench/panelops/ties.py` 与旧构建交替重测。没有重跑冻结 JSON。

@@ -29,9 +29,20 @@ def test_register_validates_notes_and_filters_by_tag():
     registry.register("b", field("x"))
     assert registry["a"].notes == (("两读", "D-13"),) and registry["b"].notes == ()
     assert [f.name for f in registry.with_note("两读")] == ["a"]
-    for bad in [("两读",), "两读", [("两读", "")], [("两读", 3)], [("a", "b", "c")]]:
+    for bad in [
+        ("两读",),
+        "两读",
+        None,
+        [("两读", "")],
+        [("两读", 3)],
+        [("a", "b", "c")],
+        [3],
+    ]:
         with pytest.raises(ValueError):
             Registry().register("c", field("x"), "", bad)
+    # 生成器只能遍历一次：标记不许被静默丢掉。
+    gen = registry.register("g", field("x"), "", (n for n in [("照抄", "X-1")]))
+    assert gen.notes == (("照抄", "X-1"),)
 
 
 def _fake_module():
@@ -111,6 +122,14 @@ def register_broken(hub):
     raise RuntimeError("坏了")
 
 
+def register_not_a_set(hub):
+    hub.add("toy")
+
+
+def register_bad_name(hub):
+    hub.add(FactorSet("not a name", _build))
+
+
 def _entry_point(name, target):
     return metadata.EntryPoint(
         name=name, value=f"{__name__}:{target}", group=plugins.ENTRY_POINT_GROUP
@@ -125,10 +144,21 @@ def test_discover_with_entry_points():
     assert toy.registry(scale="2")["toy_close"].expression == d.close * 2.0
     with pytest.raises(ValueError, match="不认识选项"):
         toy.registry(window="3")
-    with pytest.raises(ValueError, match="重名"):
+    with pytest.raises(plugins.FactorPluginError, match="ashare.factors:twice.*重名"):
         discover(entry_points=[_entry_point("twice", "register_twice")])
-    with pytest.raises(RuntimeError, match="坏了"):
+    with pytest.raises(
+        plugins.FactorPluginError, match="ashare.factors:broken.*坏了"
+    ) as info:
         discover(entry_points=[_entry_point("broken", "register_broken")])
+    assert isinstance(info.value.__cause__, RuntimeError)
+    with pytest.raises(
+        plugins.FactorPluginError, match="ashare.factors:not_a_set.*FactorSet"
+    ):
+        discover(entry_points=[_entry_point("not_a_set", "register_not_a_set")])
+    with pytest.raises(
+        plugins.FactorPluginError, match="ashare.factors:bad_name.*标识符"
+    ):
+        discover(entry_points=[_entry_point("bad_name", "register_bad_name")])
     with pytest.raises(ImportError, match="missing"):
         discover(entry_points=[_entry_point("missing", "no_such_function")])
     with pytest.raises(TypeError):
@@ -148,7 +178,7 @@ def test_hub_rejects_bad_sets():
 
 def test_builtin_example_set_without_external_packages():
     registry = load_registry("example")
-    assert registry.names() == ("example_range_mean", "example_volume_turn")
+    assert registry.names() == ("example_spread_mean", "example_amount_peak")
     assert all(f.notes == (("示例", "EX-1"),) for f in registry)
     with pytest.raises(KeyError):
         load_registry("no_such_set")
@@ -160,3 +190,22 @@ def test_reference_frames_returns_match_dsl():
     frames = reference_frames(source)
     got = Evaluator().evaluate(d.returns, source)
     np.testing.assert_array_equal(frames["returns"].to_numpy(), got)
+
+
+def test_indneutralize_through_public_source():
+    """数据层的行业编码是 uint32：经 PublicSource 求 industry_l1 和行业中性化，与 pandas 对拍。"""
+    source = synthetic_source(seed=5)
+    assert np.asarray(source.arrays["industry"]).dtype == np.uint32
+    groups = source["industry_l1"]
+    assert groups.dtype == np.int64 and (groups == -1).any()
+    got = Evaluator().evaluate(d.indneutralize(d.close, "sector"), source)
+    frames = reference_frames(source)
+    close, industry = frames["close"], frames["industry"]
+    expected = np.full(close.shape, np.nan)
+    for t in range(close.shape[0]):
+        row = close.iloc[t]
+        ok = row.notna() & industry.iloc[t].notna()
+        means = row[ok].groupby(industry.iloc[t][ok]).transform("mean")
+        expected[t, np.flatnonzero(ok.to_numpy())] = (row[ok] - means).to_numpy()
+    np.testing.assert_allclose(got, expected, rtol=0, atol=1e-12)
+    assert np.isnan(got[np.isnan(expected)]).all()

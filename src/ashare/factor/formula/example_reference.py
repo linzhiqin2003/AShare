@@ -7,21 +7,19 @@ def _finite(frame):
     return frame.where(np.isfinite(frame))
 
 
-def example_range_mean(frames):
+def example_spread_mean(frames):
     ratio = _finite(
-        (frames["high"] - frames["low"])
-        / (0.5 * frames["open"] + 0.5 * frames["close"])
+        (frames["vwap"] - frames["open"]) / (frames["high"] + frames["low"])
     )
-    return ratio.rolling(9).mean()
+    return ratio.rolling(6).mean()
 
 
-def example_volume_turn(frames):
-    change = _finite(np.log(frames["volume"])).diff(3)
-    direction = np.sign(frames["close"].diff(3))
-    return change.rank(axis=1, pct=True) * direction
+def example_amount_peak(frames):
+    peak = frames["amount"].rolling(4).max()
+    return peak.rank(axis=1, pct=True) * np.sign(frames["vwap"] - frames["open"])
 
 
 REFERENCES = {
-    "example_range_mean": example_range_mean,
-    "example_volume_turn": example_volume_turn,
+    "example_spread_mean": example_spread_mean,
+    "example_amount_peak": example_amount_peak,
 }

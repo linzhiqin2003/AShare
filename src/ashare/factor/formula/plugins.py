@@ -22,6 +22,10 @@ from ..library import Registry
 ENTRY_POINT_GROUP = "ashare.factors"
 
 
+class FactorPluginError(RuntimeError):
+    """外部因子包的 ``register(hub)`` 出错（含 ``hub.add`` 拒收）；消息里带入口点。"""
+
+
 @dataclass(frozen=True)
 class FactorSet:
     """一套可以构造注册表、可以被核对工具核对的因子。
@@ -110,7 +114,12 @@ def discover(*, refresh=False, entry_points=None):
             raise ImportError(f"无法加载外部因子包入口点 {hub._origin}") from error
         if not callable(register) or len(inspect.signature(register).parameters) != 1:
             raise TypeError(f"入口点 {hub._origin} 须是一个参数的函数 register(hub)")
-        register(hub)
+        try:
+            register(hub)
+        except Exception as error:
+            raise FactorPluginError(
+                f"外部因子包入口点 {hub._origin} 注册失败：{type(error).__name__}: {error}"
+            ) from error
     sets = hub.sets
     if entry_points is None:
         _CACHE["sets"] = sets

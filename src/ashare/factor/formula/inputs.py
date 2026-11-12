@@ -51,8 +51,9 @@ class PublicSource:
         if name == "benchmark_close":
             return _required(self.benchmark_close, name)
         if name == "industry_l1":
-            codes = np.asarray(self.arrays["industry"])
-            return np.where(codes > 0, codes, -1).astype(np.int64)
+            # 数据层的行业编码是 uint32：先转 int64 再放 −1（uint32 里放不下负数）。
+            codes = np.asarray(self.arrays["industry"]).astype(np.int64)
+            return np.where(codes > 0, codes, -1)
         return self.arrays[name]
 
     @property
