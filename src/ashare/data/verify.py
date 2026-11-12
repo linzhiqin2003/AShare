@@ -197,7 +197,7 @@ def verify(store, *, output=None):
                 check["checked"],
                 check["examples"],
                 failed=check["failed"],
-                note="事件隐含比/相邻交易日因子比误差不超过构建容差；有事件必须有因子变化",
+                note="独立核对：事件隐含比/相邻交易日因子比误差不超过构建容差（来源5按摊薄比例k核对且k在[k_min,1)）；有事件必须有因子变化；来源与事件一致",
             )
         yearly[year] = part.checks
         audit.merge(part)

@@ -11,11 +11,20 @@ def alias_context(store):
         old, new, before, after = (
             alias[k] for k in ("old", "new", "old_last", "switch")
         )
+        covered = [
+            store.manifest().get(f"daily/{day}", {}).get("status") == "complete"
+            for day in (before, after)
+        ]
+        if not all(covered):
+            # 原始库不覆盖接缝时，库里至多只有一边的代码，不需要因子基准。
+            continue
         quotes = store.read("daily", before, after)
         a = quotes.filter((pl.col("ts_code") == old) & (pl.col("trade_date") == before))
         b = quotes.filter((pl.col("ts_code") == new) & (pl.col("trade_date") == after))
         if not len(a) or not len(b):
-            continue
+            raise ValueError(
+                f"换码 {old}→{new} 接缝 {before}/{after} 缺行情，不能确定因子基准；请核对 catalog.SYMBOL_ALIASES 的日期"
+            )
         if abs(a["close"][0] - b["pre_close"][0]) > 0.011:
             raise ValueError(f"换码 {old}→{new} 接缝参考价不连续，不能自动拼接")
         events = store.read("dividend", after, after)

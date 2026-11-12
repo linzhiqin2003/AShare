@@ -46,6 +46,12 @@ def main():
     panel.add_argument("--strict", action="store_true", help="缺指数月份时拒绝构建")
     panel.add_argument("--action-tolerance", type=float, default=0.005)
     panel.add_argument(
+        "--action-k-min",
+        type=float,
+        default=0.85,
+        help="差异化分红摊薄比例 k 的下限，进入版本哈希",
+    )
+    panel.add_argument(
         "--allow-unreconciled",
         action="store_true",
         help="显式允许公司行为对账失败，默认拒绝",
@@ -98,6 +104,7 @@ def main():
             keep=args.keep,
             strict=args.strict,
             action_tolerance=args.action_tolerance,
+            action_k_min=args.action_k_min,
             allow_unreconciled=args.allow_unreconciled,
         )
         result = {

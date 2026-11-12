@@ -45,6 +45,9 @@ def reuse_prefix(store, dates, securities, inputs, old_path, old, code):
                                     )
         elif name == "index_weight":
             month = part.rsplit("_", 1)[-1]
+            # 只有「代码_年月」能定位受影响的日期；其他布局整体重建。
+            if len(month) != 6 or not month.isdigit():
+                return 0
             prefix = min(prefix, int(np.searchsorted(dates, month + "01")))
         elif name == "index_member":
             return 0
@@ -62,7 +65,10 @@ def reuse_prefix(store, dates, securities, inputs, old_path, old, code):
                 for c in ("ts_code", "l1_code", "in_date", "out_date")
                 if c in before.columns
             ]
-            a, b = before.select(columns).unique(), after.select(columns).unique()
+            # 整列为空的分区会被存成 Null 类型；统一按字符串比较。
+            text = [pl.col(c).cast(pl.String) for c in columns]
+            a = before.select(text).unique()
+            b = after.select(text).unique()
             changed = pl.concat(
                 [
                     a.join(b, on=columns, how="anti", nulls_equal=True),

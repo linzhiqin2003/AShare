@@ -505,13 +505,20 @@ SYMBOL_ALIASES = (
         "switch": "20250217",
     },
 )
-ACTION_RULE = "收盘后因子对账；候选顺序为去重全部、仅现金、仅送转、逐条；容差默认0.5%；无匹配时cash=0、split=因子比，含缩股；等效参考价再投资，不代表实际分配股数"
+ACTION_RULE = (
+    "收盘后因子对账；候选顺序为去重全部、仅现金、仅送转、逐条、差异化摊薄；容差默认0.5%。"
+    "差异化分红（回购专户不参与分配）在公告值按同一比例k∈[0.85,1)摊薄后与因子比一致时记持有人实得的公告值（来源5），"
+    "按复权因子算的收益比按事件算的低(1-k)×分配比例。"
+    "无匹配时cash=0、split=因子比，含缩股（来源3）：等效参考价再投资，不扣红利税、没有现金流、持股可为非整数，不代表实际分配股数。"
+    "派现小于最小报价单位、交易所不除权时按无事件处理，持有人实得的小额现金不计。"
+    "按事件记账（除权日开盘调整持仓）不受收盘后裁决影响；当作当日盘前信号使用即前视"
+)
 FIELDS["split"] = replace(FIELDS["split"], known_at=ACTION_RULE)
 FIELDS["cash_dividend"] = replace(FIELDS["cash_dividend"], known_at=ACTION_RULE)
 FIELDS["industry"] = replace(
     FIELDS["industry"],
     dtype="uint32",
-    known_at="0缺失；行业代码为整数，须结合industry_source区分当时分类与历史回填",
+    known_at="0缺失；行业代码为整数，须结合industry_source区分当时分类与历史回填；回填后同一天可能混有SW2014与SW2021两套编码，计数见metadata.diagnostics.industry_mixing",
 )
 FIELDS["listing_age"] = replace(
     FIELDS["listing_age"], dtype="uint16", known_at="盘前；上市当日为1，非上市为0"
@@ -544,7 +551,7 @@ add(
     "",
     "来源枚举",
     dtype="uint8",
-    known_at="收盘后；0无事件，1分红表原样，2经济去重/候选裁决/日期对齐后，3因子合成，4分红表事件被否决；规则见split",
+    known_at="收盘后；0无事件，1分红表原样，2经济去重/候选裁决/日期对齐后，3因子合成，4分红表事件被否决，5差异化分红（公告值，参考价按摊薄比例k，分布见metadata.diagnostics.actions.diluted）；规则见split",
 )
 add(
     "industry_source",

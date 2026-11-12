@@ -198,3 +198,26 @@ def stitched_industry(store, dates, symbols):
         sources[:cut] = np.where(np.isfinite(current[:cut]), 3, 0)
     caveat = "0缺失，1 SW2014当时口径，2 SW2021当时口径，3历史回填/重述；2014-02-21前均为重述；缺口用SW2021回填带后见之明，严格研究仅用来源1/2；纳入剔除两端均含"
     return output, sources, caveat
+
+
+def industry_mixing(values, sources, listed, dates):
+    """回填格与当天当时口径并存时，统计编码不在当天来源1编码集合内的格数。"""
+    cut = int(np.searchsorted(dates, "20210802"))
+    start = int(np.searchsorted(dates, "20140221"))
+    values = np.asarray(values[:cut])
+    sources = np.asarray(sources[:cut])
+    listed = np.asarray(listed[:cut])
+    codes, inverse = np.unique(values, return_inverse=True)
+    inverse = inverse.reshape(values.shape)
+    rows = np.broadcast_to(np.arange(cut)[:, None], values.shape)
+    present = np.zeros((cut, len(codes)), bool)
+    current = listed & (sources == 1)
+    present[rows[current], inverse[current]] = True
+    restated = listed & (sources == 3)
+    foreign = restated & ~present[rows, inverse] & present.any(axis=1)[:, None]
+    return dict(
+        restated_with_current=int((restated & present.any(axis=1)[:, None]).sum()),
+        foreign_code_cells=int(foreign.sum()),
+        restated_before_20140221=int(restated[:start].sum()),
+        note="2014-02-21至2021-07-30回填格中编码不在当天SW2014编码集合的格数；同一天混用两套编码，行业中性化时会形成小组",
+    )
