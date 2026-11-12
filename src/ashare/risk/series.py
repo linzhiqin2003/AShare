@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .cache import ModelCache
+from .cache import ModelCache, report_failure
 from .data import FIELDS, adjusted_returns
 from .engine import cross_section_batch
 from .fundamental import (
@@ -39,32 +39,72 @@ class _Precomputed:
         return self.values[day]
 
 
+MAX_DEFAULT_THREADS = 8
+MAX_THREADS = 256
+
+
 def default_threads():
-    """ASHARE_RISK_THREADS，否则取性能核数（Apple 芯片的能效核不计），再否则取 CPU 数。"""
+    """ASHARE_RISK_THREADS，否则取性能核数（Apple 芯片的能效核不计）或 CPU 数，最多 8。
+
+    上限的理由：暴露计算里有一部分持 GIL，P-007 实测超过性能核数后反而变慢；
+    其中的 `np.linalg.lstsq` 走 BLAS/LAPACK，库自己可能再开线程（OpenBLAS、MKL 的
+    OMP/OPENBLAS_NUM_THREADS），总线程数约为两者之积。服务器上要开更多线程时，
+    同时把 BLAS 线程设成 1。环境变量为空串时按未设置处理。
+    """
     value = os.environ.get("ASHARE_RISK_THREADS")
     if value:
-        if not value.isdigit() or int(value) < 1:
-            raise ValueError("ASHARE_RISK_THREADS: 必须为正整数")
+        if (
+            not (value.isascii() and value.isdigit())
+            or not 1 <= int(value) <= MAX_THREADS
+        ):
+            raise ValueError(f"ASHARE_RISK_THREADS: 必须为 1–{MAX_THREADS} 的整数")
         return int(value)
+    count = None
     try:
         libc = ctypes.CDLL(None)
-        count = ctypes.c_int(0)
-        size = ctypes.c_size_t(ctypes.sizeof(count))
+        found = ctypes.c_int(0)
+        size = ctypes.c_size_t(ctypes.sizeof(found))
         if (
             libc.sysctlbyname(
                 b"hw.perflevel0.physicalcpu",
-                ctypes.byref(count),
+                ctypes.byref(found),
                 ctypes.byref(size),
                 None,
                 0,
             )
             == 0
-            and count.value > 0
+            and found.value > 0
         ):
-            return count.value
+            count = found.value
     except (OSError, AttributeError):
         pass
-    return os.cpu_count() or 1
+    return max(1, min(count or os.cpu_count() or 1, MAX_DEFAULT_THREADS))
+
+
+class _ExposurePool:
+    """暴露计算的线程池，按需创建。
+
+    fork 出的子进程里继承来的线程池没有工作线程（提交的任务永远不会执行），它的锁也可能
+    停在父进程的状态，所以子进程不碰它，另起一个；关闭时也只关本进程建的。
+    """
+
+    def __init__(self, threads):
+        self.threads = threads
+        self.pool = None
+        self.pid = None
+
+    def map(self, fn, items):
+        if self.pool is None or self.pid != os.getpid():
+            self.pool = ThreadPoolExecutor(
+                self.threads, thread_name_prefix="risk-exposure"
+            )
+            self.pid = os.getpid()
+        return list(self.pool.map(fn, items))
+
+    def shutdown(self):
+        pool, self.pool = self.pool, None
+        if pool is not None and self.pid == os.getpid():
+            pool.shutdown()
 
 
 def _row_parts(source, external, day):
@@ -91,7 +131,8 @@ def _row_digests(source, external, days, threads):
                 h.update(part)
             out[i] = np.frombuffer(h.digest(), np.uint8)
 
-    chunks = [range(i, min(i + 256, len(days))) for i in range(0, len(days), 256)]
+    step = 256
+    chunks = [range(i, min(i + step, len(days))) for i in range(0, len(days), step)]
     if threads == 1 or len(chunks) < 2:
         for chunk in chunks:
             run(chunk)
@@ -137,15 +178,18 @@ def _plan(cache, keys, start, end, history):
     """决定从哪天开始逐日处理，并预读需要的缓存状态。
 
     第一个未命中的日期 d 之前的日子不必重算；它们的状态只在 d 的估计窗口
-    （最近 history 天）里用到，所以只读 [d − history, d) 这一段，不再逐个打开全部历史文件。
-    全部命中时只读要交给调用方的 [start, end)。预读中途发现快照损坏或被换掉，
-    就把 d 提前到那一天再来一遍。
+    （最近 history 天）里用到，所以只预读 [d − history, d) 这一段，不再逐个打开全部历史文件。
+    交给调用方的日子永远是 [start, end)：start 早于窗口时，[start, d − history) 这些日子
+    在主循环里照常带模型读出、交出（这一段的读取是必须付的）。全部命中时只读 [start, end)。
+    预读中途发现快照损坏或被换掉，就把 d 提前到那一天再来一遍。
+    返回 (主循环起点, d, 预读的状态)。
     """
     if not cache:
         return 0, 0, {}
     miss = next((d for d in range(end) if cache.entries.get(d) != keys[d]), end)
     while True:
-        first = max(0, miss - history) if miss < end else max(0, min(start, end))
+        window = max(0, miss - history) if miss < end else start
+        first = min(start, window)
         preloaded = {}
         # start 之后的日子在主循环里带模型读（逐个交给调用方，不一次全读进内存）。
         for day in range(first, min(miss, start)):
@@ -185,14 +229,29 @@ def model_series(
     version 表示数据修订版本；新增日期可以保持该版本。每个键还包含输入
     前缀摘要，历史改写即便未更新 version 也不会命中旧缓存。
 
-    threads：一批日期的风格暴露并行计算的线程数（结果与 1 个线程逐位相同）；
-    None 取环境变量 ASHARE_RISK_THREADS，没有则取性能核数。
+    交出的日子是 [start, end)，与缓存命中多少无关。
+
+    threads：一批日期的风格暴露并行计算、以及逐日输入摘要的线程数（结果与 1 个线程逐位相同）；
+    None 取环境变量 ASHARE_RISK_THREADS，没有则取性能核数（最多 8，见 `default_threads`）。
+    threads > 1 时 source 会被多个线程同时读取（`source[field][day]`），自定义的惰性加载
+    数据源须能并发读；不能时传 threads=1。
+
+    缓存写入在后台线程里进行；生成器结束（耗尽或显式 close()）前全部落盘，写失败在那里抛出。
+    生成器没耗尽就被丢掉（break 后被回收）时异常无法传给调用方：错误写到 stderr，
+    缓存对象保持失败状态，之后对它的 save/load/flush 都会抛出。
+
+    多进程：子进程要跑本函数请用 spawn，或在父进程做任何计算之前 fork。fork 后线程池和
+    缓存写线程会在子进程里重建，但 `portopt` 用的 rayon 全局线程池不能跨 fork 使用。
     """
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("batch_size: 必须为正整数")
     threads = default_threads() if threads is None else threads
-    if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:
-        raise ValueError("threads: 必须为正整数")
+    if (
+        not isinstance(threads, int)
+        or isinstance(threads, bool)
+        or not 1 <= threads <= MAX_THREADS
+    ):
+        raise ValueError(f"threads: 必须为 1–{MAX_THREADS} 的整数")
     c = FundamentalConfig() if config is None else config
     end = len(source.dates) if end is None else end
     if not 0 <= start <= end <= len(source.dates) or kind not in (
@@ -245,16 +304,14 @@ def model_series(
             rolling=rolling if descriptors is None else descriptors,
         )
 
-    pool = []
+    pool = _ExposurePool(threads)
 
     def exposure_batch(days):
         """滚动描述子按日顺序递推（有状态），其余各天独立，交给线程池。"""
         descriptors = _Precomputed({day: rolling.at(day) for day in days})
         if threads == 1 or len(days) < 2:
             return [exposure_for(day, descriptors) for day in days]
-        if not pool:
-            pool.append(ThreadPoolExecutor(threads, thread_name_prefix="risk-exposure"))
-        return list(pool[0].map(lambda day: exposure_for(day, descriptors), days))
+        return pool.map(lambda day: exposure_for(day, descriptors), days)
 
     def statistical_for(day):
         options = dict(statistical_options or {})
@@ -271,6 +328,7 @@ def model_series(
             return statistical_for(day).B
         return exposure_for(day)[0]
 
+    closing = failed = False
     try:
         prefixes = _prefix_chain(source, external, end, cache, threads)
         yield from _iterate(
@@ -290,12 +348,24 @@ def model_series(
             cached_exposure,
             batch_size,
         )
+    except GeneratorExit:
+        closing = True
+        raise
+    except BaseException:
+        failed = True
+        raise
     finally:
-        for executor in pool:
-            executor.shutdown()
+        pool.shutdown()
         # 后台写入在生成器结束（含提前关闭）前落盘；写失败在这里抛出。
         if cache:
-            cache.flush()
+            try:
+                cache.flush()
+            except RuntimeError as error:
+                if not failed:
+                    if closing:
+                        # 被回收关闭时异常只会被解释器忽略：先写到 stderr。
+                        report_failure(cache, error, "生成器关闭时")
+                    raise
 
 
 def _iterate(
@@ -346,9 +416,10 @@ def _iterate(
                 if cache
                 else None
             )
-        if cached is None and first > 0 and day < miss:
+        if cached is None and day < miss:
             # 预计会命中的快照读失败（损坏或被换掉）：这一天要重算，但它的估计窗口
-            # 可能早于已读的范围。已经交出的日子不再交出，从这一天起重新计划。
+            # 可能早于已读的范围，前一天也可能只预读了部分字段。已经交出的日子不再交出，
+            # 从这一天起重新计划。
             yield from _iterate(
                 prefixes,
                 source,

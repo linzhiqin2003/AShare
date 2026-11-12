@@ -132,6 +132,24 @@ def run(args):
         if hasattr(cache, "flush"):
             cache.flush()
         timings["seconds"] = time.perf_counter() - start
+    elif args.scenario == "segments":
+        # 路径无关：按 --steps 分段追加（每段新的 ModelCache），最后从第 0 天整段读出，
+        # 逐日摘要与一次全量重建（rebuild --digests）比。
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        steps = [int(x) for x in args.steps.split(",")] + [t]
+        start = time.perf_counter()
+        for end in steps:
+            cache = ModelCache(cache_dir)
+            for _ in model_series(
+                source, config=config, cache=cache, start=max(0, end - 1), end=end
+            ):
+                pass
+            cache.flush()
+        cache = ModelCache(cache_dir)
+        days, last = collect(model_series(source, config=config, cache=cache))
+        cache.flush()
+        timings["seconds"] = time.perf_counter() - start
+        timings["steps"] = steps
     elif args.scenario == "tolerance":
         # P-006：同一进程里逐日并排跑「分块累加」和「从头算」，记录三个方差相对
         # 从头算的最大误差、改用从头算的列数，以及最终 D 的最大相对差。
@@ -273,6 +291,7 @@ def main():
     r.add_argument("--threads", type=int)
     r.add_argument("--work")
     r.add_argument("--digests", action="store_true")
+    r.add_argument("--steps", help="segments 场景的分段终点，逗号分隔")
     r.add_argument("--out", required=True)
     p = sub.add_parser("pair")
     p.add_argument("--days", type=int)

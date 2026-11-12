@@ -9,11 +9,14 @@
 import argparse
 import hashlib
 import json
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# 改动前的源码先备份到这里；进程被杀没来得及还原时，下次启动先从备份还原。
+BACKUP = ROOT / ".cache/perf_mutations"
 
 CASES = {
     "P-004": [
@@ -33,7 +36,7 @@ CASES = {
             [
                 (
                     "src/ashare/risk/cache.py",
-                    "_UNREADABLE = (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile)",
+                    "_UNREADABLE = (\n    OSError,\n    ValueError,\n    KeyError,\n    EOFError,\n    zipfile.BadZipFile,\n    zlib.error,\n    NotImplementedError,\n    RuntimeError,\n)",
                     "_UNREADABLE = (KeyError,)",
                 )
             ],
@@ -145,7 +148,7 @@ CASES = {
             [
                 (
                     "src/ashare/risk/specific.py",
-                    "                self.count -= np.isfinite(self.rows[slot])",
+                    "                self.count -= np.isfinite(leaving)",
                     "                pass",
                 )
             ],
@@ -259,8 +262,8 @@ CASES = {
             [
                 (
                     "src/ashare/risk/series.py",
-                    "if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:",
-                    "if False:",
+                    "    if (\n        not isinstance(threads, int)\n        or isinstance(threads, bool)\n        or not 1 <= threads <= MAX_THREADS\n    ):",
+                    "    if False:",
                 )
             ],
             "test/risk/test_parallel_exposures.py",
@@ -305,8 +308,8 @@ CASES = {
             [
                 (
                     "src/ashare/risk/series.py",
-                    "first = max(0, miss - history) if miss < end else max(0, min(start, end))",
-                    "first = 0",
+                    "        first = min(start, window)",
+                    "        first = 0",
                 )
             ],
             "test/risk/test_prefix_index.py",
@@ -327,7 +330,7 @@ CASES = {
             [
                 (
                     "src/ashare/risk/series.py",
-                    "if cached is None and first > 0 and day < miss:",
+                    "if cached is None and day < miss:",
                     "if False:",
                 )
             ],
@@ -343,6 +346,250 @@ CASES = {
                 )
             ],
             "test/risk/test_prefix_index.py",
+        ),
+    ],
+    "复核修补": [
+        (
+            "写队列不设上限",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "queue.Queue(maxsize=_QUEUE_LIMIT)",
+                    "queue.Queue(maxsize=0)",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "读前不等待自己的写入",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "        if path in self._pending:\n            self.flush()",
+                    "        if False:\n            self.flush()",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "出错后仍继续执行排队的写",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "                if self.error is None:\n                    job()",
+                    "                job()",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "阈值闸带宽缩到 1e-15",
+            [
+                (
+                    "src/ashare/risk/specific.py",
+                    "THRESHOLD_GUARD = 1e-9",
+                    "THRESHOLD_GUARD = 1e-15",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "线程池不关闭",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "        if pool is not None and self.pid == os.getpid():\n            pool.shutdown()",
+                    "        if False:\n            pool.shutdown()",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "逐日摘要分段差一天",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "range(i, min(i + step, len(days)))",
+                    "range(i, min(i + step - 1, len(days)))",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "部分命中仍从窗口起点交出（P0-1 原样）",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "        first = min(start, window)",
+                    "        first = window",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "只在主循环起点 > 0 时重新计划",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "if cached is None and day < miss:",
+                    "if cached is None and first > 0 and day < miss:",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "fork 后沿用继承的写线程",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "if writer is not None and not writer.owned():",
+                    "if False:",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "fork 后沿用继承的线程池",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "if self.pool is None or self.pid != os.getpid():",
+                    "if self.pool is None:",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "写失败后 load 照常读",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    '            raise ValueError(f"fields: 需要 {STATE_FIELDS} 的非空子集")\n        self._check()',
+                    '            raise ValueError(f"fields: 需要 {STATE_FIELDS} 的非空子集")',
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "生成器被回收时不报 stderr",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    '                        report_failure(cache, error, "生成器关闭时")',
+                    "                        pass",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "解释器退出时不报 stderr",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    '            report_failure(cache, error, "解释器退出时")',
+                    "            pass",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "每个实例登记一次 atexit",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "            _LIVE.add(self)",
+                    "            _LIVE.add(self)\n            atexit.register(lambda: None)",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "证券表不核对 SHA-256",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "            if stored is None or stored[1] != symbols_sha:",
+                    "            if stored is None:",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "证券表坏了删掉完好的快照",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "                return None\n            symbols = stored[0]",
+                    "                self._discard(day, path)\n                return None\n            symbols = stored[0]",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "fields 不核对字段名",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "            or not set(fields) <= set(STATE_FIELDS)\n",
+                    "",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "zipfile 的其他异常不当未命中",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "    zlib.error,\n    NotImplementedError,\n    RuntimeError,\n",
+                    "",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "默认线程数不设上限",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "    return max(1, min(count or os.cpu_count() or 1, MAX_DEFAULT_THREADS))",
+                    "    return max(1, count or os.cpu_count() or 1)",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "环境变量接受非 ASCII 数字",
+            [
+                (
+                    "src/ashare/risk/series.py",
+                    "not (value.isascii() and value.isdigit())",
+                    "not value.isdigit()",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "残留临时文件不清理",
+            [
+                (
+                    "src/ashare/risk/cache.py",
+                    "                        path.unlink()",
+                    "                        pass",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
+        ),
+        (
+            "specific_incremental 不校验类型",
+            [
+                (
+                    "src/ashare/risk/fundamental.py",
+                    "        if not isinstance(self.specific_incremental, bool) or isinstance(",
+                    "        if False and isinstance(",
+                )
+            ],
+            "test/risk/test_review_fixes.py",
         ),
     ],
 }
@@ -381,7 +628,25 @@ def pytest(target):
     return proc.returncode, proc.stdout.strip().splitlines()[-1:]
 
 
+def _restore_backups():
+    for saved in sorted(BACKUP.rglob("*")) if BACKUP.is_dir() else []:
+        if saved.is_file():
+            target = ROOT / saved.relative_to(BACKUP)
+            target.write_bytes(saved.read_bytes())
+            saved.unlink()
+            print(json.dumps({"restored_from_backup": str(target.relative_to(ROOT))}))
+
+
+def _backup(file):
+    saved = BACKUP / file.relative_to(ROOT)
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_bytes(file.read_bytes())
+
+
 def main():
+    _restore_backups()
+    # SIGTERM 也走 finally 还原源码。
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     parser = argparse.ArgumentParser()
     parser.add_argument("--only")
     args = parser.parse_args()
@@ -402,6 +667,8 @@ def main():
             try:
                 for path, old, new in edits:
                     file = ROOT / path
+                    if file not in originals:
+                        _backup(file)
                     text = originals.setdefault(file, file.read_text())
                     current = file.read_text()
                     assert current.count(old) == 1, (label, old)
@@ -416,6 +683,7 @@ def main():
             finally:
                 for file, text in originals.items():
                     file.write_text(text)
+                    (BACKUP / file.relative_to(ROOT)).unlink(missing_ok=True)
                 if native_edit:
                     rebuild()
             caught = code != 0

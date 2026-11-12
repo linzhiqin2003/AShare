@@ -1,4 +1,4 @@
-"""缓存格式 4（P-004）：后台写入、证券表只存一次、键核对与损坏自愈、旧格式失效。"""
+"""缓存格式 4/5（P-004，复核后修补升到 5）：后台写入、证券表只存一次、键核对与损坏自愈、旧格式失效。"""
 
 import json
 import subprocess
@@ -36,7 +36,7 @@ def test_symbols_stored_once_and_snapshot_carries_its_key(tmp_path):
     stored = np.load(tmp_path / ".symbols.npy", allow_pickle=False)
     assert tuple(stored.tolist()) == tuple(p.symbols)
     marker = json.loads((tmp_path / ".generation.json").read_text())
-    assert marker["format"] == cache_module.FORMAT == 4
+    assert marker["format"] == cache_module.FORMAT == 5
     cache = ModelCache(tmp_path)
     assert cache.stats()["bytes"] >= (tmp_path / ".symbols.npy").stat().st_size
     assert cache.clear() > 0 and not (tmp_path / ".symbols.npy").exists()

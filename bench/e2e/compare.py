@@ -33,6 +33,19 @@ def cases(report):
     return out
 
 
+def summary_note(p, q):
+    """摘要是多项字典时逐项比，写出哪几项不同（如风险阶段的「B、F 相同，只有 D 不同」）。"""
+    if p == q:
+        return "逐位相同"
+    if isinstance(p, dict) and isinstance(q, dict):
+        if set(p) != set(q):
+            return "摘要项不同（另一轮的摘要格式不同）"
+        same = [k for k in p if p[k] == q[k]]
+        differ = [k for k in p if p[k] != q[k]]
+        return f"{'/'.join(same) or '无'} 相同；{'/'.join(differ)} 不同"
+    return "结果不同"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("old", nargs="?", type=Path, default=BASELINE)
@@ -68,9 +81,7 @@ def main():
         if x.get("scale") != y.get("scale"):
             note.append("规模不同")
         if x.get("summary") is not None or y.get("summary") is not None:
-            note.append(
-                "逐位相同" if x.get("summary") == y.get("summary") else "结果不同"
-            )
+            note.append(summary_note(x.get("summary"), y.get("summary")))
         values = []
         for field in ("wall_min", "wall_median"):
             p, q = x.get(field), y.get(field)

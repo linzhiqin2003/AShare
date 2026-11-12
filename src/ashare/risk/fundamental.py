@@ -74,6 +74,12 @@ class FundamentalConfig:
             or self.specific_reanchor_days < 1
         ):
             raise ValueError("样本窗口过短")
+        if not isinstance(self.specific_incremental, bool) or isinstance(
+            self.specific_reanchor_days, bool
+        ):
+            raise ValueError(
+                "specific_incremental 须为 bool，specific_reanchor_days 须为整数"
+            )
         for name in (
             "beta_half_life",
             "momentum_half_life",

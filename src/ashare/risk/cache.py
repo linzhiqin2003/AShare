@@ -1,8 +1,17 @@
 """一代、无损、按需重建暴露的日模型缓存。
 
-格式 4：每日快照用 level 1 deflate 在后台线程里写（`np.load` 可读），证券表每代只存一次（`.symbols.npy`），
-快照里存自己的键；写入交给一个后台线程，读取、清理和生成器结束前都会等它落盘，
-写失败在下一次调用时抛出。旧格式目录在 `prepare` 时整体判为未命中并清空。
+格式 5：每日快照用 level 1 deflate 在后台线程里写（`np.load` 可读），证券表每代只存一次（`.symbols.npy`），
+快照里存自己的键和所配证券表的 SHA-256；旧格式目录在 `prepare` 时整体判为未命中并清空。
+
+什么时候算落盘（P-004 起写入是异步的）：
+- `save` 返回只表示已登记、已排队；同一对象的 `load` 会先等自己排队中的写入。
+- `flush()`、`close()`、`with ModelCache(...)` 退出、`model_series` 生成器结束（耗尽或显式 `close()`）
+  返回时，此前所有 `save` 都已落盘；有写失败就在这里抛 `RuntimeError("风险模型缓存写入失败")`，原异常在 `__cause__`。
+- 另一个进程要读刚写的目录，先在写的一方 `flush()`。
+- 写失败之后：排队中的写入一律不再执行；该对象之后的 `save`/`load`/`flush`/`clear`/`stats` 都抛同一个错误
+  （换一个新的 `ModelCache` 对象才能继续用这个目录）。生成器被垃圾回收关闭、解释器退出这类无法向调用方抛出的场合，
+  错误写到 stderr，对象同样保持失败状态。
+- fork 出的子进程不接手父进程排队中的写入（那些由父进程自己写完）；子进程里的写入由子进程新起的写线程负责。
 """
 
 import argparse
@@ -12,9 +21,12 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
+import time
 import weakref
 import zipfile
+import zlib
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,7 +34,7 @@ import numpy as np
 
 from .model import RiskModel
 
-FORMAT = 4
+FORMAT = 5
 STATE_FIELDS = ("f", "residual", "base_f", "base_d", "bias", "estimation", "cap")
 _HIDDEN = (
     ".latest.npy",
@@ -33,24 +45,55 @@ _HIDDEN = (
     ".prefix-index",
 )
 # 读快照时这些异常都意味着文件不完整或不是本缓存写的：当作未命中，重算后覆盖。
-_UNREADABLE = (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile)
+# zlib.error（压缩流损坏）、NotImplementedError（压缩方法字段损坏）、RuntimeError（加密标志位损坏）
+# 都来自 zipfile；捕获它们的 try 块里只有读文件和解码，不含本模块的逻辑。
+_UNREADABLE = (
+    OSError,
+    ValueError,
+    KeyError,
+    EOFError,
+    zipfile.BadZipFile,
+    zlib.error,
+    NotImplementedError,
+    RuntimeError,
+)
+_QUEUE_LIMIT = 64  # 排队的快照上限：每份约 0.3 MB（全市场），写不过来时 save 等待
+_STALE_TEMPORARY = (
+    600.0  # 秒；进程被杀留下的临时文件超过这个年龄才清理（别的进程可能正在写）
+)
+_LIVE = weakref.WeakSet()  # 本进程里起过写线程的缓存对象，解释器退出时统一等待
 
 
 def _snapshot(path):
     return re.fullmatch(r"(?:[0-9]{6,}-)?[a-f0-9]{64}\.npz", path.name) is not None
 
 
+def _temporary(path):
+    return re.fullmatch(r"\.[a-f0-9]{32}\.tmp", path.name) is not None
+
+
 def _owned(path):
-    return path.is_file() and (_snapshot(path) or path.name in _HIDDEN)
+    return path.is_file() and (
+        _snapshot(path) or path.name in _HIDDEN or _temporary(path)
+    )
+
+
+def _symbols_digest(symbols):
+    return hashlib.sha256(
+        json.dumps(list(symbols), ensure_ascii=False).encode()
+    ).hexdigest()
 
 
 class _Writer:
-    """单个后台线程按提交顺序写文件；异常保存下来，由调用方线程抛出。"""
+    """单个后台线程按提交顺序写文件；第一次失败后不再执行排队中的写入，异常交回调用方线程。"""
 
     def __init__(self):
-        self.jobs = queue.Queue(maxsize=64)
+        self.pid = os.getpid()
+        self.jobs = queue.Queue(maxsize=_QUEUE_LIMIT)
         self.error = None
-        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread = threading.Thread(
+            target=self._run, name="risk-cache-writer", daemon=True
+        )
         self.thread.start()
 
     def _run(self):
@@ -66,22 +109,14 @@ class _Writer:
             finally:
                 self.jobs.task_done()
 
-    def submit(self, job):
-        self.raise_error()
-        self.jobs.put(job)
-
-    def flush(self):
-        self.jobs.join()
-        self.raise_error()
-
-    def raise_error(self):
-        if self.error is not None:
-            error, self.error = self.error, None
-            raise RuntimeError("风险模型缓存写入失败") from error
+    def owned(self):
+        """fork 出的子进程里，继承来的写线程并不存在，队列的锁也可能停在父进程的状态。"""
+        return self.pid == os.getpid()
 
     def close(self):
-        self.jobs.put(None)
-        self.thread.join()
+        if self.owned() and self.thread.is_alive():
+            self.jobs.put(None)
+            self.thread.join()
 
 
 def _savez(stream, arrays, level=1):
@@ -109,7 +144,11 @@ def _write_atomic(directory, path, write):
 
 
 class ModelCache:
-    """历史保存 F/D 和递推状态，B 只保留最新一天；历史 B 由调用方按需重建。"""
+    """历史保存 F/D 和递推状态，B 只保留最新一天；历史 B 由调用方按需重建。
+
+    写入在后台线程里进行，落盘时点和写失败的规则见模块说明；也可以当上下文管理器用，
+    退出时 `close()`（等待落盘，有写失败就抛出）。
+    """
 
     def __init__(self, directory):
         self.directory = Path(directory)
@@ -129,29 +168,62 @@ class ModelCache:
             except (ValueError, KeyError, AttributeError):
                 self.generation = None
         self._symbols = None
+        self._symbols_sha = None
         self._writer = None
         self._pending = set()
+        self._failure = None
+        self._raised = False  # 写失败是否已经抛给过调用方
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
     # 后台写入 -------------------------------------------------------------
 
+    def _check(self):
+        """写失败后对象保持失败状态：之后的 save/load/flush 都抛同一个错误。"""
+        writer = self._writer
+        if writer is not None and not writer.owned():
+            # fork 出的子进程：父进程排队中的写入归父进程，这里丢掉继承来的写线程和待写集合。
+            self._writer, self._pending = None, set()
+        elif writer is not None and writer.error is not None and self._failure is None:
+            self._failure = writer.error
+        if self._failure is not None:
+            self._raised = True
+            raise RuntimeError("风险模型缓存写入失败") from self._failure
+
     def _submit(self, path, job):
+        self._check()
         if self._writer is None:
             self._writer = _Writer()
             weakref.finalize(self, self._writer.close)
-            atexit.register(_flush_quietly, weakref.ref(self))
+            _LIVE.add(self)
         self._pending.add(path)
 
         def run():
             job()
             self._pending.discard(path)
 
-        self._writer.submit(run)
+        self._writer.jobs.put(run)
 
     def flush(self):
-        """等待后台写入全部落盘；有写失败则抛出 RuntimeError。"""
+        """等待后台写入全部落盘；有写失败（包括以前发生过的）则抛出 RuntimeError。"""
+        self._check()
         if self._writer is not None:
-            self._writer.flush()
+            self._writer.jobs.join()
+            self._check()
             self._pending.clear()
+
+    def close(self):
+        """等待落盘并停掉写线程；之后再 save 会重新起一个。"""
+        try:
+            self.flush()
+        finally:
+            writer, self._writer = self._writer, None
+            if writer is not None:
+                writer.close()
 
     def _wait_for(self, path):
         if path in self._pending:
@@ -177,6 +249,18 @@ class ModelCache:
             )
         if symbols is not None:
             self._symbol_table(symbols)
+        self._remove_stale_temporaries()
+
+    def _remove_stale_temporaries(self):
+        """进程被杀时 `_write_atomic` 来不及删的临时文件；太新的可能是别的进程正在写，留着。"""
+        now = time.time()
+        for path in self.directory.iterdir():
+            if _temporary(path):
+                try:
+                    if now - path.stat().st_mtime > _STALE_TEMPORARY:
+                        path.unlink()
+                except FileNotFoundError:
+                    pass
 
     def clear(self):
         """删除本目录内缓存文件；不递归删除调用方的其他目录。"""
@@ -189,7 +273,7 @@ class ModelCache:
                     path.unlink()
         self.entries.clear()
         self.generation = None
-        self._symbols = None
+        self._symbols = self._symbols_sha = None
         return removed
 
     def stats(self):
@@ -209,14 +293,19 @@ class ModelCache:
 
     # 证券表 ---------------------------------------------------------------
 
+    def _read_symbols(self):
+        """读证券表；读不出时为 None（不当作快照损坏）。"""
+        try:
+            return tuple(
+                np.load(self.directory / ".symbols.npy", allow_pickle=False).tolist()
+            )
+        except (*_UNREADABLE, FileNotFoundError):
+            return None
+
     def _symbol_table(self, symbols):
-        """每代只写一次；内容不同（证券顺序变了）时整体重写。"""
+        """每代只写一次；内容不同（证券顺序变了或文件被改坏）时整体重写。"""
         if self._symbols is None:
-            path = self.directory / ".symbols.npy"
-            try:
-                self._symbols = tuple(np.load(path, allow_pickle=False).tolist())
-            except _UNREADABLE:
-                self._symbols = None
+            self._symbols = self._read_symbols()
         if self._symbols != tuple(symbols):
             self._symbols = tuple(symbols)
             array = np.asarray(self._symbols)
@@ -225,13 +314,17 @@ class ModelCache:
                 self.directory / ".symbols.npy",
                 lambda stream: np.save(stream, array, allow_pickle=False),
             )
+        self._symbols_sha = _symbols_digest(self._symbols)
 
     def _stored_symbols(self):
+        """证券表和它的 SHA-256；读不出时为 None。"""
         if self._symbols is None:
-            self._symbols = tuple(
-                np.load(self.directory / ".symbols.npy", allow_pickle=False).tolist()
-            )
-        return self._symbols
+            self._symbols = self._read_symbols()
+            if self._symbols is None:
+                return None
+        if self._symbols_sha is None:
+            self._symbols_sha = _symbols_digest(self._symbols)
+        return self._symbols, self._symbols_sha
 
     # 读写 -----------------------------------------------------------------
 
@@ -243,7 +336,19 @@ class ModelCache:
     def load(
         self, key, *, day=None, with_model=True, exposure_loader=None, fields=None
     ):
-        """fields：只读这些状态字段（默认全部）；只读历史窗口的日子用得上。"""
+        """fields：只读这些状态字段（默认全部）；只读历史窗口的日子用得上。
+
+        参数错误（fields 不是 STATE_FIELDS 的非空子集）在读任何文件之前报 ValueError，不动缓存。
+        快照损坏、被换掉或与证券表对不上时返回 None（未命中）；证券表本身坏了不删快照。
+        """
+        if fields is not None and (
+            isinstance(fields, str)
+            or not fields
+            or not all(isinstance(name, str) for name in fields)
+            or not set(fields) <= set(STATE_FIELDS)
+        ):
+            raise ValueError(f"fields: 需要 {STATE_FIELDS} 的非空子集")
+        self._check()
         if day is None:
             day = next((i for i, value in self.entries.items() if value == key), None)
         if day is None:
@@ -274,13 +379,18 @@ class ModelCache:
                     meta = json.loads(str(data["meta"]))
                     factors = tuple(data["factors"].tolist())
                     covariance, specific = data["F"], data["D"]
-                    symbols = self._stored_symbols()
+                    symbols_sha = str(data["symbols_sha"])
         except _UNREADABLE:
             # 截断、损坏或被换成别的快照：当作未命中，由调用方重算后覆盖。
             self._discard(day, path)
             return None
         model = None
         if with_model:
+            stored = self._stored_symbols()
+            if stored is None or stored[1] != symbols_sha:
+                # 证券表读不出或被改过：只判未命中；快照本身完好，不删（下次 prepare 会重写证券表）。
+                return None
+            symbols = stored[0]
             latest = self._latest(key)
             if latest is not None:
                 b = latest["B"]
@@ -302,11 +412,16 @@ class ModelCache:
         return model, state
 
     def save(self, key, model, state, *, day, latest=True, checkpoint=None):
-        """登记后交给后台线程写；数组先复制，调用方之后改动不影响落盘内容。"""
+        """登记后交给后台线程写；数组先复制，调用方之后改动不影响落盘内容。
+
+        返回时只保证已排队（队列满时等待）；何时算落盘见模块说明。
+        """
+        self._check()
         self._symbol_table(model.symbols)
         path = self.directory / f"{day:06d}-{key}.npz"
         arrays = {
             "key": np.asarray(key),
+            "symbols_sha": np.asarray(self._symbols_sha),
             "factors": np.asarray(model.factors),
             "F": np.array(model.F),
             "D": np.array(model.D),
@@ -361,6 +476,7 @@ class ModelCache:
 
     def load_index(self):
         """逐日输入摘要和前缀链摘要（各 T×32 字节）；没有、损坏或校验和不符时为 None。"""
+        self._check()
         path = self.directory / ".prefix-index"
         self._wait_for(path)
         try:
@@ -413,13 +529,28 @@ class ModelCache:
         return values or None
 
 
-def _flush_quietly(reference):
-    cache = reference()
-    if cache is not None:
+def report_failure(cache, error, where):
+    """无法向调用方抛出时（生成器被回收、解释器退出）把写失败写到 stderr。"""
+    sys.stderr.write(
+        f"ashare.risk: {where}：风险模型缓存写入失败（{cache.directory}）："
+        f"{error.__cause__!r}；排队中的写入没有执行，这个缓存对象之后的 save/load/flush 都会抛出\n"
+    )
+    sys.stderr.flush()
+
+
+@atexit.register
+def _flush_all():
+    """解释器退出前等本进程所有缓存对象落盘（只登记一次，不随实例数增长）。"""
+    for cache in list(_LIVE):
+        writer = cache._writer
+        if writer is None or not writer.owned():
+            continue
+        if cache._raised:
+            continue  # 调用方已经收到过这个错误
         try:
             cache.flush()
         except RuntimeError as error:
-            print(f"risk model cache: {error} ({error.__cause__!r})")
+            report_failure(cache, error, "解释器退出时")
 
 
 def main():
