@@ -2,7 +2,7 @@
 name = "ashare"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = ["panelbt", "panelops"]
+dependencies = ["panelbt", "panelops", "scipy>=1.14", "cvxpy>=1.6", "clarabel>=0.11", "osqp>=1.0", "portopt"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
@@ -14,9 +14,11 @@ members = ["packages/*"]
 [tool.uv.sources]
 panelbt = { workspace = true }
 panelops = { workspace = true }
+portopt = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0"]
+dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0", {include-group = "risk-reference"}]
+risk-reference = ["scikit-learn>=1.6", "threadpoolctl>=3.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
