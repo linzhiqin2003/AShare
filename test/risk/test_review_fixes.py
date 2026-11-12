@@ -313,11 +313,27 @@ def test_generator_collected_after_break_reports_and_poisons_the_cache(
     tmp_path, monkeypatch, capsys
 ):
     p, c = source(40, 40), config()
-    _failing_writes(monkeypatch, after=10)
+    # 第 11 次起的写入先停在闸门上，break 之前才放行：写失败一定发生在生成器被关闭的
+    # 那次 flush 里，而不是在循环中途被下一次 save 抛出（后台线程快慢不影响结果）。
+    calls, gate, failed = [], threading.Event(), threading.Event()
+    original = cache_module._write_atomic
+
+    def write(directory, path, job):
+        if path.suffix == ".npz" and path.name[0].isdigit():
+            calls.append(path.name)
+            if len(calls) > 10:
+                assert gate.wait(30), "闸门没有打开"
+                failed.set()
+                raise OSError("disk full")
+        return original(directory, path, job)
+
+    monkeypatch.setattr(cache_module, "_write_atomic", write)
     cache = ModelCache(tmp_path)
     for i, _ in enumerate(model_series(p, config=c, cache=cache)):
         if i == 20:
+            gate.set()
             break  # 生成器在这里被回收关闭，异常无法交给调用方
+    assert failed.is_set()  # 写失败确实发生过，而且是在 break 之后
     assert "生成器关闭时" in capsys.readouterr().err
     with pytest.raises(RuntimeError, match="写入失败"):
         cache.flush()

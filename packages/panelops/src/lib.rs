@@ -55,6 +55,10 @@ fn actual_threads(threads: usize) -> PyResult<usize> {
     Ok(pool(threads)?.current_num_threads())
 }
 #[pyfunction]
+#[pyo3(signature = (
+    x, y, mask, op, window, min_periods, ddof, q, normalize, alpha, periods, threads, layout,
+    earliest = false
+))]
 #[allow(clippy::too_many_arguments)]
 fn ts<'py>(
     py: Python<'py>,
@@ -71,6 +75,7 @@ fn ts<'py>(
     periods: usize,
     threads: usize,
     layout: usize,
+    earliest: bool,
 ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
     if panelops_core::TimeOp::parse(op).is_none()
         || window == 0
@@ -123,6 +128,7 @@ fn ts<'py>(
         normalize,
         alpha,
         periods,
+        earliest,
     };
     let pool = pool(threads)?;
     let output = py.detach(|| pool.install(|| panelops_core::ts(pan, op, options, layout)));
