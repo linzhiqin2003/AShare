@@ -20,10 +20,15 @@ def cell(row):
     return f"{row['median_ms']:.2f} / {row['incremental_mib']:.1f}"
 
 
+def label(row):
+    """Operator name, with the balanced 0/1 condition tier listed separately."""
+    return row["op"] + ("（条件一半真）" if row.get("condition") == "half" else "")
+
+
 def selections(rows):
     by = defaultdict(list)
     for row in rows:
-        by[row["op"]].append(row)
+        by[label(row)].append(row)
     result = {}
     for op, values in by.items():
         # The single-thread merge criterion excludes pandas, which remains a reference.
@@ -62,7 +67,7 @@ def render(report):
     lines = [
         "# panelops 第二轮基准",
         "",
-        "代表配置为 T=4000、N=5500、W=20、缺失 5%，min_periods=10；截面与逐元素算子没有窗口，滞后算子使用 20 行，因子自相关/分组换手使用 1 行。输入为固定种子的正态分布；逻辑和 where 条件为各约一半的 0/1，缺失保留；power 的负底非整数指数按定义域置缺失。每项独立进程，预热后三次取中位数。单元格为 **毫秒 / 输出之外增量 RSS MiB**。",
+        "代表配置为 T=4000、N=5500、W=20、缺失 5%，min_periods=10；截面与逐元素算子没有窗口，滞后算子使用 20 行，因子自相关/分组换手使用 1 行。输入为固定种子的正态分布；逻辑和 where 条件为各约一半的 0/1，缺失保留；ts_sumif 的条件和 ts_count 的输入另测一档各约一半的 0/1（标「条件一半真」），正态那一档几乎全为真，测不出条件分支的代价；power 的负底非整数指数按定义域置缺失。每项独立进程，预热后三次取中位数。单元格为 **毫秒 / 输出之外增量 RSS MiB**。",
         "",
         f"机器：{report['machine']}；CPU 可用数 {report['cpus']}；Python {report['python']}；版本：{report['versions']}。",
         "",
@@ -193,6 +198,22 @@ def render(report):
             )
     lines += [
         "",
+        "## sum/mean/std/var/sumif 与 bottleneck：精度保障的代价",
+        "",
+        "第二轮复核时这五项单线程慢于 bottleneck（sum 1.27、mean 1.39、std 1.40、var 1.48、sumif 条件一半真 2.52 倍），差距基本等于精度保障的开销。本轮把有效性、条件、并列运行长度和输出门限从数据相关分支改为位选择（逐位结果不变），同一时段 A/B（4000×5500、W=20、5% 缺失、单线程、负载 14）：sum 80.0→63.8 ms、mean 86.6→66.5、std 105.9→75.3、var 106.9→73.6、sumif（条件一半真）239.6→80.7；bottleneck 同轮 sum 62.9–64.4、std 76.5–78.5。单进程交替 7 轮（负载 13.4）：sum 76.3 对 76.3、mean 79.9 对 78.3、std 89.0 对 92.0、var 89.8 对 96.7、sumif 94.1–97.6 对 113.6（三种条件分布）。补偿求和、事件重建、误差界全部保留，所以单线程现在与 bottleneck 持平，而不是靠去掉保障追平；上表的冻结值来自另一批测量，负载不同，以表为准。默认线程下五项都在 12–17 ms。",
+        "",
+        "换来的精度（`test/panelops/test_exact_reference.py` 的对抗语料 620×19，W=2/5/20/60/250，与精确有理数比较，超过 rtol=atol=2e-10 即计数）：",
+        "",
+        "| 算子 | 有值格数 | bottleneck 超容差格数 | bottleneck 最大相对误差 | panelops 超容差格数 | panelops 最大相对误差 |",
+        "|---|---:|---:|---:|---:|---:|",
+        "| sum | 53,896 | 7,344 | 1.3e30 | 0 | 6.6e-13 |",
+        "| mean | 53,896 | 7,252 | 1.3e30 | 0 | 6.6e-13 |",
+        "| std | 53,165 | 12,808 | 3.4e11 | 0 | 1.3e-12 |",
+        "| var | 53,165 | 11,733 | 1.2e23 | 0 | 2.6e-12 |",
+        "| sumif（组合写法） | 53,707 | 7,271 | 2.5e30 | 0 | 1.2e-12 |",
+        "",
+        "1e30 级来自 [2^200, 2^100, 1, -2^200, -2^100] 循环列；去掉这一列后 bottleneck 仍有 sum 5,428、mean 5,336、std 12,687、var 11,612、sumif 6,418 格超容差，最大相对误差 6e6（sum）到 1.2e23（var）。`1e6` 连续 200 行后转为 `0.1` 的列，在全是 0.1 的窗口上 bottleneck 的 std 给 0.0141，panelops 给 0。bottleneck 不允许作为运行依赖，这里只作速度和精度的参照。",
+        "",
         "## 线程实测",
         "",
         "| 实现 | 观测参与线程数（各算子/三次采样并集） | 配置线程池 |",
@@ -273,7 +294,7 @@ def render(report):
         "uv run --no-sync python bench/panelops/report.py --input bench/panelops/results/baseline.json",
         "```",
         "",
-        "结果写入被忽略的 `.cache/panelops/`；比较以 op/method/shape/window/missing 精确匹配，超过 10% 的回退列入 comparison JSON。冻结文件不保存每次计时采样和本机绝对路径。",
+        "结果写入被忽略的 `.cache/panelops/`；比较以 op/method/shape/window/missing/condition 精确匹配，超过 10% 的回退列入 comparison JSON。冻结文件不保存每次计时采样和本机绝对路径。",
     ]
     return "\n".join(lines) + "\n", decisions
 
@@ -297,6 +318,7 @@ def main():
                     tuple(row["shape"]),
                     row["window"],
                     row["missing"],
+                    row.get("condition"),
                 )
                 merged[key] = row
         from additional_baselines import ELEMENTS
@@ -314,7 +336,8 @@ def main():
             *ELEMENTS,
         ]
         report["measurements"] = sorted(
-            merged.values(), key=lambda r: (order.index(r["op"]), r["method"])
+            merged.values(),
+            key=lambda r: (order.index(r["op"]), r.get("condition") or "", r["method"]),
         )
     else:
         report = json.loads(a.input.read_text())

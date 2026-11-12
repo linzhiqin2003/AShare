@@ -190,7 +190,23 @@ class Expr:
         _ = self.digest, self.fields, self.lookback
 
     def canonical(self):
-        return [2, self.op, [a.canonical() for a in self.args], list(self.params)]
+        """嵌套列表形式；后序遍历显式栈，任意深度的链都不触发递归上限。"""
+        done = {}
+        stack = [self]
+        while stack:
+            node = stack[-1]
+            pending = [a for a in node.args if id(a) not in done]
+            if pending:
+                stack.extend(reversed(pending))
+                continue
+            stack.pop()
+            done[id(node)] = [
+                2,
+                node.op,
+                [done[id(a)] for a in node.args],
+                list(node.params),
+            ]
+        return done[id(self)]
 
     @cached_property
     def digest(self):
@@ -234,22 +250,35 @@ class Expr:
         return base
 
     def __str__(self):
-        p = dict(self.params)
-        if self.op == "field":
-            return p["value"] + ("[market]" if p["broadcast"] else "")
-        if self.op == "constant":
-            return repr(p["value"])
+        """显式栈逐个输出片段再一次拼接，深链不递归、不反复复制子串。"""
         infix = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
-        if self.op in infix:
-            return f"({self.args[0]} {infix[self.op]} {self.args[1]})"
-        return (
-            self.op
-            + "("
-            + ", ".join(
-                [*(str(a) for a in self.args), *(f"{k}={v!r}" for k, v in self.params)]
-            )
-            + ")"
-        )
+        parts = []
+        stack = [self]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            p = dict(item.params)
+            if item.op == "field":
+                parts.append(p["value"] + ("[market]" if p["broadcast"] else ""))
+            elif item.op == "constant":
+                parts.append(repr(p["value"]))
+            elif item.op in infix:
+                stack.extend(
+                    reversed(
+                        ["(", item.args[0], f" {infix[item.op]} ", item.args[1], ")"]
+                    )
+                )
+            else:
+                pieces = [*item.args, *(f"{k}={v!r}" for k, v in item.params)]
+                tokens = [item.op + "("]
+                for i, piece in enumerate(pieces):
+                    tokens.extend([", "] if i else [])
+                    tokens.append(piece)
+                tokens.append(")")
+                stack.extend(reversed(tokens))
+        return "".join(parts)
 
     def __add__(self, other):
         return call("add", self, other)

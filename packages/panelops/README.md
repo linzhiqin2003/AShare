@@ -92,6 +92,18 @@ make panelops-crosscheck # pandas and alphalens
 make panelops-mutate     # changes source temporarily, restores it, reruns checks
 ```
 
+**Precision versus bottleneck.** `ts_sum`, `ts_mean`, `ts_std`, `ts_var` and
+`ts_sumif` keep compensated sums, event rebuilds and error bounds. With data-dependent
+branches replaced by bit selection they now run single-threaded at bottleneck's
+speed (4000x5500, W=20, 5% missing, alternating runs on a loaded machine: sum 76.3
+vs 76.3 ms, std 89.0 vs 92.0 ms, sumif 94-98 vs 113.6 ms; 12-17 ms with default
+threads). On the adversarial corpus of `test/panelops/test_exact_reference.py`,
+compared with exact rational values, bottleneck exceeds the 2e-10 tolerance in
+7,344 (sum), 12,808 (std), 11,733 (var) and 7,271 (sumif) of about 53,000 cells,
+with relative errors up to 1e23 even without the 2^200 column; panelops exceeds it
+in none. After 200 rows of 1e6 followed by 0.1, bottleneck reports a standard
+deviation of 0.014 on windows of exact 0.1 values; panelops reports 0.
+
 <!-- BENCHMARK_SUMMARY:START -->
 ## Measured snapshot
 
@@ -99,10 +111,10 @@ make panelops-mutate     # changes source temporarily, restores it, reruns check
 
 | Operator | Fastest single baseline | Rust 1 | Rust default |
 |---|---:|---:|---:|
-| ts_mean | bottleneck: 66.09 | 80.10 | 11.74 |
-| ts_std | bottleneck: 78.95 | 99.34 | 20.25 |
-| ts_quantile | bottleneck: 612.83 | 449.84 | 62.48 |
-| cs_neutralize | numpy_1: 3395.70 | 308.20 | 46.70 |
-| rank_ic | polars_1: 1129.12 | 489.95 | 49.04 |
-| targets | numpy: 514.03 | 236.58 | 25.34 |
+| ts_mean | bottleneck: 72.34 | 66.60 | 16.82 |
+| ts_std | bottleneck: 75.91 | 80.42 | 16.06 |
+| ts_quantile | bottleneck: 612.83 | 490.54 | 51.49 |
+| cs_neutralize | numpy_1: 3395.70 | 311.76 | 45.98 |
+| rank_ic | polars_1: 1129.12 | 517.21 | 55.65 |
+| targets | numpy: 514.03 | 254.42 | 29.75 |
 <!-- BENCHMARK_SUMMARY:END -->

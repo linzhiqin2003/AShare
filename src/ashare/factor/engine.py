@@ -147,12 +147,9 @@ class Evaluator:
                     raise TypeError("行业字段必须为整数")
                 raw = np.ascontiguousarray(raw, dtype=dtype)
                 if params["broadcast"]:
-                    if (
-                        not isinstance(raw, np.ndarray)
-                        or raw.dtype != np.float64
-                        or raw.shape not in ((shape[0],), (shape[0], 1))
-                    ):
-                        raise ValueError("市场字段必须为长度 T 的 float64 序列")
+                    # 数值或布尔序列已在上面统一转换为 float64，这里只核对形状。
+                    if raw.shape not in ((shape[0],), (shape[0], 1)):
+                        raise ValueError("市场字段必须是长度 T 或 T×1 的数值序列")
                     raw = np.ascontiguousarray(
                         np.broadcast_to(raw.reshape(-1, 1), shape)
                     )

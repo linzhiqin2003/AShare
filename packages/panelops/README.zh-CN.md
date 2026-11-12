@@ -30,6 +30,8 @@ targets = po.targets(score, k=1)
 
 `make panelops-crosscheck` 运行 pandas/alphalens 核对；`make panelops-mutate` 做真实源码变异并恢复源码、重跑检查。`set_num_threads(1)` 设单线程，`set_num_threads(0)` 恢复可用 CPU 数；不同线程数逐位一致。
 
+**与 bottleneck 的精度对比。** `ts_sum`、`ts_mean`、`ts_std`、`ts_var`、`ts_sumif` 保留补偿求和、事件重建和误差界；把依赖数据的分支改为位选择后，单线程速度与 bottleneck 持平（4000×5500、W=20、缺失 5%，忙机交替测：sum 76.3 对 76.3 ms，std 89.0 对 92.0 ms，sumif 94–98 对 113.6 ms；默认线程 12–17 ms）。在 `test/panelops/test_exact_reference.py` 的对抗语料上与精确有理数比较，约 5.3 万个有值格子里 bottleneck 超出 2e-10 容差的：sum 7344、std 12808、var 11733、sumif 7271 格，去掉 2^200 那一列后相对误差仍可达 1e23；panelops 为 0。1e6 连续 200 行后转为 0.1，bottleneck 在全是 0.1 的窗口上给出 0.014 的标准差，panelops 给 0。
+
 <!-- BENCHMARK_SUMMARY:START -->
 ## 实测摘要
 
@@ -37,10 +39,10 @@ targets = po.targets(score, k=1)
 
 | Operator | Fastest single baseline | Rust 1 | Rust default |
 |---|---:|---:|---:|
-| ts_mean | bottleneck: 66.09 | 80.10 | 11.74 |
-| ts_std | bottleneck: 78.95 | 99.34 | 20.25 |
-| ts_quantile | bottleneck: 612.83 | 449.84 | 62.48 |
-| cs_neutralize | numpy_1: 3395.70 | 308.20 | 46.70 |
-| rank_ic | polars_1: 1129.12 | 489.95 | 49.04 |
-| targets | numpy: 514.03 | 236.58 | 25.34 |
+| ts_mean | bottleneck: 72.34 | 66.60 | 16.82 |
+| ts_std | bottleneck: 75.91 | 80.42 | 16.06 |
+| ts_quantile | bottleneck: 612.83 | 490.54 | 51.49 |
+| cs_neutralize | numpy_1: 3395.70 | 311.76 | 45.98 |
+| rank_ic | polars_1: 1129.12 | 517.21 | 55.65 |
+| targets | numpy: 514.03 | 254.42 | 29.75 |
 <!-- BENCHMARK_SUMMARY:END -->

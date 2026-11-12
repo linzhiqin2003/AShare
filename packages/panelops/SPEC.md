@@ -45,7 +45,17 @@ current mask always does). No operation reads future rows.
 | ts_regression_slope / ts_regression_residual(x,y) | Regress dependent x on independent y with intercept using paired observations; constant predictor or <2 pairs gives NaN; residual needs both today's values |
 
 Reference comparisons use rtol=2e-10, atol=2e-10, including finite adversarial
-inputs across large dynamic ranges. Constant windows are detected by exact
+inputs across large dynamic ranges, measured against exact rational values, with
+one exception. When one window holds observations many orders of magnitude apart
+(for example a 1e12 value beside 1e-3 values), ts_cov, ts_slope, ts_residual,
+ts_regression_slope and ts_regression_residual are limited by the conditioning of
+the window rather than by the algorithm: their absolute error is bounded by
+`2e-10*(1+|exact|) + 1e-12*M`, where M is the window's largest centered magnitude
+max|x-mean(x)| for residuals, that magnitude divided by the population standard
+deviation of the predictor for slopes, and its product with max|p-mean(p)| of the
+predictor for covariance (p is y for paired operators and the trading-row position
+otherwise). Once such a value leaves the window the plain tolerance applies again.
+Constant windows are detected by exact
 equality of observations, never by a rounded mean: standard deviation and
 variance are exactly zero; correlation, skew, kurtosis, z-score, R-squared and
 regression with a constant predictor are NaN. A constant dependent variable
@@ -67,7 +77,12 @@ Slicing off leading history can change low bits within
 tolerance. Appending or modifying future rows cannot change earlier bits.
 Linear decay subtracts the main sum and compensation separately. Very large values
 whose intermediate centered powers exceed float64 range may yield NaN/inf;
-this is not an arbitrary-precision library. Output nonfinites from arithmetic
+this is not an arbitrary-precision library. At the other end, centered squares
+underflow for magnitudes below about 1e-154 (third and fourth powers below about
+1e-103 and 1e-77): subnormal or 1e-310-scale series can give ts_zscore +/-inf and
+ts_skew, ts_kurt, ts_corr and ts_rsquare NaN, and ts_std/ts_var exactly 0, although
+the exact value is finite and nonzero.
+Rescale such data first; the tolerance above assumes normal-range squares. Output nonfinites from arithmetic
 are accepted; when used as another operator's input they become missing.
 
 ## Cross sections
@@ -133,13 +148,15 @@ any backtest package is present.
 | ts_sumif(x, condition, window=20, min_periods=None) | Sum x where finite condition is nonzero; paired validity; min_periods counts finite pairs including false conditions; an eligible all-false window returns zero |
 | ts_ffill(x, limit=None) | Last finite unmasked value; optional positive limit is the maximum age in trading rows; None is unlimited; initial gaps and masked output remain NaN |
 | ts_idxmin / ts_idxmax | One-based position in the nominal window, including missing/padded leading positions; ties choose latest; idx = window - arg, where arg is ts_argmin/ts_argmax |
-| cs_scale | Divide finite values by their absolute sum; zero absolute sum gives NaN |
-| cs_demean | Subtract the finite cross-sectional mean; constant rows become exactly zero |
+| cs_scale | Divide finite values by their absolute sum; zero absolute sum gives NaN; an absolute sum that overflows to infinity gives NaN for the whole row (both backends) |
+| cs_demean | Subtract the finite cross-sectional mean; constant rows become exactly zero; values are centered on the first finite value first, so same-sign values near 1e308 still work, but if the centered mean overflows (opposite-sign values near +/-1e308) the whole row is NaN. cs_zscore also gives a NaN row when its sum of squares overflows (both backends) |
 
 Public operators have independent signatures; irrelevant keywords are rejected.
 Layout selection is an internal implementation detail, not a public parameter.
 Window=1 product is the finite observation itself (bitwise); longer products multiply
-valid observations directly in chronological order.
+valid observations directly in chronological order, so an intermediate overflow
+(1e15 repeated, then 1e-3 values) yields +/-inf even when the exact product would be
+finite; any zero in the window still gives zero.
 
 ## Expression elementwise semantics
 
@@ -159,9 +176,13 @@ defaults are normalized before hashing. Structural Expr equality remains separat
 from the named comparison expression `eq`.
 
 A market-series leaf is declared with field(name, broadcast=True). The source
-returns a float64 vector of length T or a T-by-1 array; the evaluator broadcasts
-it over the source's N symbols and applies each security's universe mask. Regular
-field leaves still require exactly T-by-N. No time shift is introduced.
+returns a vector of length T or a T-by-1 array; the evaluator broadcasts it over
+the source's N symbols and applies each security's universe mask. Regular field
+leaves still require exactly T-by-N. In the factor layer (not in panelops itself),
+any real numeric or boolean NumPy dtype (bool, signed/unsigned integer, float16/32/64)
+is accepted for both leaf kinds and converted to float64; `dtype="int64"` group
+leaves accept integer dtypes only. panelops functions keep the strict float64
+contract above. No time shift is introduced.
 
 `panelops.build_id` is a deterministic build-time SHA-256 of native and Python
 source content. Persistent factor caches use this identity, data version, axes,

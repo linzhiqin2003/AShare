@@ -66,13 +66,20 @@ def cs(
         if op in ("zscore", "demean"):
             first = np.argmax(np.isfinite(a), axis=1)
             d = a - a[np.arange(len(a)), first, None]
-            d = d - np.nanmean(d, axis=1, keepdims=True)
+            mean = np.nanmean(d, axis=1, keepdims=True)
+            # An overflowing intermediate sum makes the whole row missing (SPEC).
+            mean[~np.isfinite(mean)] = np.nan
+            d = d - mean
             if op == "demean":
                 return d
             count = np.isfinite(d).sum(1, keepdims=True)
-            return d / np.sqrt(np.nansum(d * d, axis=1, keepdims=True) / (count - ddof))
+            squares = np.nansum(d * d, axis=1, keepdims=True)
+            squares[~np.isfinite(squares)] = np.nan
+            return d / np.sqrt(squares / (count - ddof))
         if op == "scale":
-            return a / np.nansum(np.abs(a), axis=1, keepdims=True)
+            total = np.nansum(np.abs(a), axis=1, keepdims=True)
+            total[~np.isfinite(total)] = np.nan
+            return a / total
         if op == "winsor_quantile":
             limits = np.nanquantile(a, [lower, upper], axis=1)
             return np.clip(a, limits[0, :, None], limits[1, :, None])

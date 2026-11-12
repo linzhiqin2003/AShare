@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = ROOT / ".cache/panelops/latest.json"
+CONDITIONAL = {"ts_sumif", "ts_count"}
 
 
 def cpu_threads():
@@ -208,9 +209,20 @@ def worker(config):
         for i in range(0, t, 16):
             view = a[i : i + 16]
             view[rng.random(view.shape) < config["missing"]] = np.nan
-    if config["op"] in {"and_", "or_", "not_", "where"}:
+    conditions = {
+        "and_": (x, y),
+        "or_": (x, y),
+        "not_": (x,),
+        "where": (x,),
+        "ts_sumif": (y,),
+        "ts_count": (x,),
+    }
+    if (
+        config["op"] in {"and_", "or_", "not_", "where"}
+        or config.get("condition") == "half"
+    ):
         # Logical conditions exercise both branches; Gaussian nonzero values would all be true.
-        for panel in (x, y) if config["op"] in {"and_", "or_"} else (x,):
+        for panel in conditions[config["op"]]:
             for i in range(0, t, 16):
                 view = panel[i : i + 16]
                 view[view < 0] = 0.0
@@ -334,7 +346,14 @@ def main():
         report = json.loads(a.output.read_text())
 
     def key(c):
-        return (c["op"], c["method"], tuple(c["shape"]), c["window"], c["missing"])
+        return (
+            c["op"],
+            c["method"],
+            tuple(c["shape"]),
+            c["window"],
+            c["missing"],
+            c.get("condition"),
+        )
 
     if a.replace:
         report["measurements"] = [
@@ -359,8 +378,12 @@ def main():
                     for method in methods(op):
                         if a.methods and method not in a.methods:
                             continue
-                        configs.append(
-                            dict(
+                        # Conditional reductions also run with a balanced 0/1 condition:
+                        # Gaussian conditions are almost all true and hide branch costs.
+                        for condition in (
+                            [None, "half"] if op in CONDITIONAL else [None]
+                        ):
+                            config = dict(
                                 op=op,
                                 method=method,
                                 shape=list(shape),
@@ -368,7 +391,9 @@ def main():
                                 missing=missing,
                                 repeat=a.repeat,
                             )
-                        )
+                            if condition:
+                                config["condition"] = condition
+                            configs.append(config)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     for i, c in enumerate(configs):
         if key(c) in seen:

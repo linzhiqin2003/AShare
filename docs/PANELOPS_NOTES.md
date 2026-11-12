@@ -363,3 +363,148 @@ test/test_rules.py ..........                                            [100%]
 | `test/panelops/test_streaming.py` | 6678 |
 
 新增文件共 42 个，642,594 字节；其中 bench/panelops 未忽略文件 321,851 字节。
+
+## 第二轮复核后的返工
+
+依据第二轮复核报告（3 条必修、9 条建议）。开始时 build_id `1ca347f6…`，`make check` 324 通过。逐位快照脚本（2425 组：对抗面板有无掩码、随机 5% 缺失、平衡 0/1 条件、无缺失面板；全部时序算子 × W=1/2/5/20/60/250 × min_periods 1/⌈W/2⌉/W，加 ddof=0 与全部截面算子）在修改前后各跑一次比较哈希，脚本与输出不入库。
+
+### 必修 1：sumif 条件分支
+
+- 复现（4000×5500，W=20，min_periods=10，5% 缺失，单线程，5 轮交替取中位数，负载 13）：条件全真 117 ms、一半真 239 ms、正态 118 ms；bottleneck 组合写法 99 ms。
+- 修改：`time.rs` 的 sum/mean/count/sumif 共用 `summand`，有效性和条件都用位选择（保留原值位模式或给 +0.0），不再有依赖数据的分支。四处（周期重建、滑出、进入、事件重建）都走同一函数。逐位快照 2425 组与修改前全部一致。
+- 修改后（同配置，负载 9.9）：sumif 全真 79 ms、一半真 80 ms、正态 80 ms；bottleneck 92 ms。顺带 sum 从 78 降到 61 ms、mean 到 62 ms（缺失 5% 的有效性分支原来也有误预测代价），与 bottleneck（62 ms）持平。
+- 其他算子的同类分支（2000×2000 单线程探测：正态 5% 缺失 / 50% 随机缺失 / 一半与上一值相等的整数 / 一半真条件，`branch_probe1`）：
+  - std/var/zscore：运行长度计数 `if last == x` 在并列多时误预测（std 正态 17.6 ms，并列 31.0 ms）；滑入/滑出的有效性也是分支。改为 `advance_run` 位选择和 `keep_bits`，并列与正态都降到约 12.5–13 ms。另试过把「样本不足」的提前 `continue` 改成位选择，配对 A/B 交替（4 轮）显示正态输入反而慢 30%（13.6→17.7 ms），已撤回；50% 随机缺失这种输入在真实面板上不会出现（缺失按停牌、上市前成段出现）。
+  - min/max/arg*/idx*：前缀、后缀和合并三处的「有效且更优」改为位选择，输出门限也是。A/B（负载 24）：min 正态 31.0→15.6 ms、50% 缺失 61.4→39.9 ms；argmax 22.5→15.7 ms。
+  - ema/ffill：有效性分支改为位选择；50% 缺失 16.3→4.9 ms，正态不变。
+  - sum/mean/count/sumif 的输出门限（样本数是否达到 min_periods）也改为位选择：50% 缺失 17.5→10.2 ms。
+  - 不处理的：配对矩与回归（corr/cov/slope 等）每格工作量大，50% 缺失只慢 5% 左右；rank 环形缓冲与 product 的分支是算法本身的比较；decay_linear 在整数并列输入上慢 3 倍不是分支问题，而是窗口和恰好为 0 时触发事件重建（见建议 6）。
+  - 以上每一步都用逐位快照核对 2425 组结果与修改前一致。
+
+### 必修 2：sum/mean/sumif 事件重建的精确参考
+
+- 新增 `test/panelops/test_exact_reference.py`：每个有限浮点数是 2 的幂分之一的整数，按列取公共指数后用 Python 大整数前缀和得到每个窗口的精确幂和，统计量由精确整数一次舍入得到（开方的取精确平方舍入一次后再开方）。不调用内核和 `reference.py`。抽 400 个格子与逐窗口 `Fraction` 直接计算核对 3649 个值，全部在 1–4 ulp 内（`exact_sanity.py`）。
+- 后来为建议 6 加了两列台阶序列（见下），共 19 列。覆盖 16 个算子：sum、mean、sumif、decay_linear（同一事件+浮点展开机制），以及 std、var、zscore、corr、cov、skew、kurt、slope、residual、regression_slope、regression_residual、rsquare（矩守卫与直接两遍兜底）。语料 620×19，含 1e12 尖峰、1e15 接 1e-3、四档水平跳变、`[2^200, 2^100, 1, -2^200, -2^100]` 循环、1e6 转 0.1、1e8/1e-8 混合、近常数、整数并列，3% 掩码，W=2/5/20/60/250。缺失位置要求逐格一致。
+- 容差：除下面五个算子外一律 SPEC 的 rtol=atol=2e-10。cov、slope、residual、regression_slope、regression_residual 在专门构造的大动态范围列（尖峰、尖峰转常数、多量级循环、1e8/1e-8 混合）里、且窗口内仍有 ≥1e6 的值时，允许另加 `1e-12 × M`（M 为窗口内的中心化量级，定义见 SPEC）；尖峰滑出窗口后回到原容差，同一测试守住。
+- 运行 2.7 秒。变异：M02（事件阈值 1e-11→1e-3）被 `test_exact_reference_adversarial_windows[sum]` 抓到。
+
+### 必修 3：偏度、峰度的独立对照
+
+- 新增 `test/panelops/test_independent.py`，期望值全部不经过 `reference.py`：
+  - 1, 2, 4, 8 的手算分数：m2=115/16、m3=405/32、m4=25141/256，有偏偏度 0.6568077344996993（40 位十进制核对）、有偏峰度 −14534/13225；同时写出无偏（pandas/Excel 的调整 Fisher-Pearson）定义的值，断言结果与有偏定义一致、与无偏定义相差 0.1 以上；平移、取负、2 的幂缩放下不变；中间有缺失时跳过而不是补零。
+  - 80×4 整数并列加缺失的滚动窗口，逐窗口用 `Fraction` 算偏度、峰度。
+- 「只与自家参考对拍」的清单（修改前）：时序的 delay、delta、min、max、rank、quantile、argmin/argmax、idxmin/idxmax、product、ema、median、mad、count、ffill，以及第一轮内核层面的偏度、峰度和 sum 一族（必修 2 已由精确参考覆盖）；截面全部 8 个；评估 6 个（ic、rank_ic、factor_autocorr、group_returns、group_turnover、targets）只有零散的手算小例子，主体与 `reference.py` 对拍；逐元素 20 个与 `reference.elementwise`（标量规格）对拍。其中已有手算小例子的：idx*、ffill、count、sumif、mad、rsquare、cs_rank 并列、ic 对齐、targets 指针。
+- 补上的独立对照（同一文件）：时序 16 个按 SPEC 原文逐格写的 Python 循环（W=1/3/7/50，min_periods 三档，rank 两种归一、quantile 三个 q、ffill 有无 limit）；截面 rank/zscore/demean/scale/winsor_quantile/winsor_mad/group_demean 逐行按 SPEC 计算，neutralize 用 `Fraction` 正规方程精确求解加权残差；评估 6 个按 SPEC 原文实现；逐元素 20 个各给 1–3 个字面值（含定义域外、溢出、缺失、掩码）。
+- 联合变异（内核与 `reference.py` 同时改）：J02 峰度去 −3、J05 count 改数全部、J06 EMA 默认 alpha 改 1/(W+1)、J07 rank 单值归一改 0，结果见变异表。
+
+### 建议 3、4、5、7
+
+- 3：`Expr.canonical()` 和 `__str__` 改为显式栈：canonical 后序遍历，`str` 逐个输出片段最后一次拼接（深链不反复复制子串）。`test/factor/test_rework.py` 用 3000 层链检查；另用脚本把新实现与旧递归实现（逐字复制）在 14 个内置因子、一个中性化表达式和 500 个随机表达式上逐个比较，canonical 与文本全部相同（`expr_equiv.py`）。
+- 4：`test_cache_key_tracks_evaluator_implementation` 把 `_implementation_id` 换成另一个值后必须不命中缓存、重算结果相同、缓存目录多出一份。M21 被它抓到。
+- 5：`test/panelops/test_constant_cost.py`：std/var/zscore/corr/cov/skew/kurt/slope/rsquare，2400×384、W=250、单线程，常数输入与随机输入交替各跑 5 次取最小值，常数不得超过随机的 4 倍。本机实测常数输入只有随机的 0.2–0.8 倍；修复前的悬崖是 40–60 倍。M04 被它抓到（见变异表）。
+- 7：同一份源码两次构建出的 `.so` 字节不同（链接产物含构建路径、时间等不可复现字节），但 `build_id` 只由源码决定。核对「导入的扩展是不是这份源码构建的」要看源码哈希加 `build_id`，不能看 `.so` 哈希；本轮的变异脚本和快照脚本都是这样核对的。
+
+### 必修 1 补充：修改前后（同一时段 A/B）
+
+4000×5500、W=20、min_periods=10、5% 缺失、单线程；原内核（本轮开始时的 `time.rs`）与最终内核两个 `.so` 交替换入、每次新进程跑 2 轮、共 3 次，取最小值的中位数；负载 14，同机有其他任务。
+
+| 算子 | 原 | 现 | bottleneck（同轮） |
+|---|---:|---:|---:|
+| ts_sum | 80.0 | 63.8 | 62.9 / 64.4 |
+| ts_mean | 86.6 | 66.5 | |
+| ts_std | 105.9 | 75.3 | 76.5 / 78.5 |
+| ts_var | 106.9 | 73.6 | |
+| ts_zscore | 121.5 | 91.0 | |
+| ts_sumif（条件一半真） | 239.6 | 80.7 | |
+| ts_min | 167.6 | 77.2 | |
+| ts_argmax | 115.7 | 81.8 | |
+| ts_ffill | 29.8 | 19.3 | |
+
+单进程内交替（`perf.py`，7 轮，负载 13.4）：sum 76.3 对 bottleneck 76.3；mean 79.9 对 78.3；std 89.0 对 92.0；var 89.8 对 96.7；sumif 全真/一半真/正态 96.8/94.1/97.6 对 bottleneck 组合写法 113.6。默认线程：sum 11.7、mean 13.6、std 12.8、var 12.7、sumif 14.9。
+
+### 建议 1、2：SPEC 与边界核实
+
+- SPEC 改写：其余算子在对抗输入下仍按精确值 rtol=atol=2e-10；cov、slope、residual、regression_slope、regression_residual 在窗口内量级相差悬殊时放宽为 `2e-10·(1+|精确值|) + 1e-12·M`（M 的定义写在 SPEC），尖峰滑出窗口后回到原容差。界由必修 2 的测试守住；基线下这些格子的误差是 eps×M 的 46–1370 倍（W=2 regression_slope 最大），离 1e-12·M（约 4500 倍）有三倍以上余量。
+- 实测并写入 SPEC：次正规数和 1e-310 量级序列上 zscore 为 ±inf，skew、kurt、corr、rsquare 为 NaN，std、var 为 0（复核只提了前几个，std/var 给 0 是本轮补测发现的）；product 中途溢出给 inf；cs_scale 绝对值和溢出整行 NaN；cs_demean 先以第一个有限值为锚中心化，同号的 1e308 量级能算，正负 1e308 相消使均值溢出时整行 NaN；cs_zscore 平方和溢出整行 NaN。
+- 核实时发现 NumPy 后端在这几种溢出行上与 Rust 不一致（scale 给 0、demean 给 ±inf、zscore 给 0），已在 `_numpy.py` 改为同样整行 NaN，`test_cross_section_overflow_rows_are_missing` 两个后端都测。
+- dtype：因子层两种叶子都接受布尔、整数、浮点（含 float16/32）并转 float64，`dtype="int64"` 的分组叶子只收整数；panelops 本身仍严格 float64。SPEC 已统一写明。`engine.py` 里市场叶子原来那句 dtype 检查在转换之后、永远不会触发，报错信息也写成「float64 序列」，改为只核对形状、信息改为「长度 T 或 T×1 的数值序列」。
+
+### 建议 6：在复核语料上看不出作用的守卫
+
+结论：三处都构造出了需要它们的输入，全部保留，输入已进测试；没有删除任何守卫。
+
+- M01 sum 的补偿求和：去掉补偿后，最坏误差界是 1022 次舍入 × 0.5 ulp × 峰值，而事件检查只保证峰值 < 5630×(|值|+1)，所以理论上 1.3e-9×(|值|+1) 的误差可以不触发事件。构造：W=2，值在 2843 附近，每行选尾数让「两数相加落到更粗一档网格」的平局按偶数规则向上舍入，509 行后转为 0.01、0.01。峰值 5686 低于这一行的事件门槛 5742，无补偿时 sum/sumif 误差 2.3e-10 > 容差 2.04e-10；有补偿时 2.2e-13。`test_sum_compensation_needed_between_rebuilds`。
+- M03 std 误差界计入重建以来的更新次数：二矩状态是普通加减（无补偿），误差随更新次数累积。构造：W=2，锚点 0，±A（A≈2^20）交替，每行选尾数让 s2 的加法平局向上舍入，509 行累积约 510 个半 ulp；最后一对是 ±0.0145A（均值 0）。只按 W 估界不会重建，var 相对误差 2.68e-10；按更新次数估界会重建，误差 0。`test_variance_bound_counts_updates_since_rebuild`。
+- M09 高阶矩守卫：均值相对锚点偏移 m/σ 在约 3 到 75 之间时，只有这条守卫会触发（二矩守卫在 m/σ≈37–75 才触发），峰度消去误差约 eps×(m/σ)^4。构造：每 17 或 23 行抬升 25–45 个噪声单位的台阶，加入精确参考语料（两列）。放宽到 1e-5 后 kurt 在 W=4–12 上 47–295 格超容差（最大占用 9.2），原守卫 0 格。偏度只到 0.19 占用，三次方不够敏感，由同一守卫的峰度失败抓住。
+- M04 std 常数判定 `>=` 改 `>`：不是守卫。运行长度从序列开头累计、不受窗口截断，常数窗口里 run 很快超过 count，`>` 同样成立；只有暖机阶段 run 恰好等于 count 的几行多做一次重建。实测 2400×384、W=250 常数输入在这个变异下仍是 3 ms（随机 3 ms），结果逐位相同，属于等价变异，不能拿它当性能测试的靶子。性能测试改用「整个去掉常数判定」的变异检验（见变异表 M04b/M04c）。
+- M08 cross 守卫 1e-11→1e-3：仍存活，判为在 SPEC 界内等价。二矩守卫已保证 eps·|a0·a1|/c ≤ √(eps·a0²/c · eps·a1²/c) ≤ 1.25e-12·√(vx·vy)，所以 cross 的消去误差先被 vx、vy 两条守卫限住；cross 守卫只在窗口内有尖峰时改变结果（精确参考下 slope 在 W=5 超原容差的格子从 7 增到 21），这些格子在两种构建下都在窗口尺度界 1e-12·M 之内（基线 46·eps·M，变异后 60·eps·M），与基线差距太小，不能写成稳定的测试。保留这条守卫（它给弱相关窗口提供相对精度），不删。
+- 另记：decay_linear 在整数并列输入上比正态输入慢 3 倍（2000×2000：30 → 92 ms）。原因是窗口和恰好为 0 时，`峰值·eps > |和|` 的事件条件成立，每格做一次 O(W) 重建。这不是分支问题，也不是复核列出的守卫；要改需要换事件判据并证明不丢精度，本轮没有做，列为待办。
+
+### 变异检查（本轮）
+
+做法：直接改工作区真实源码 → `uv sync` 重建 → 核对 `build_id` 变了且扩展从本工作区导入 → `pytest -x test/panelops test/factor` → 恢复字节；全部结束后核对源码哈希和 `build_id`（`e3e7c50a…`）回到对照。先跑不改动的对照（311 passed）。前两批（第二批 20 处）在中间版本上跑，最后一批 15 处在最终源码上重跑关键项。
+
+| 编号 | 变异 | 结果 | 抓到它的测试 |
+|---|---|---|---|
+| M01 | sum 滑入/滑出不做补偿 | KILLED | test_sum_compensation_needed_between_rebuilds |
+| M02 | sum 事件阈值 1e-11→1e-3 | KILLED | test_exact_reference_adversarial_windows[sum]；单独跑 [mean]、[sumif] 也各自失败 |
+| M03 | std 误差界不计更新次数 | KILLED | test_variance_bound_counts_updates_since_rebuild |
+| M04 | std 常数判定 >= 改 > | 存活（等价，见建议 6） | — |
+| M04b | 去掉 std 常数捷径 | KILLED | test_constant_input_costs_no_more_than_random[std] |
+| M04c | 去掉矩算子常数捷径 | KILLED | test_constant_input_costs_no_more_than_random[corr] |
+| M08 | cross 守卫 1e-11→1e-3 | 存活（SPEC 界内等价，见建议 6） | — |
+| M09 | 高阶矩守卫 1e-11→1e-5 | KILLED | test_exact_reference_adversarial_windows[kurt]（[skew] 单独跑存活，三次方不够敏感） |
+| M21 | 缓存键去掉求值器指纹 | KILLED | test_cache_key_tracks_evaluator_implementation |
+| J02 | 峰度去 −3，内核与参考同改 | KILLED | 精确参考 [kurt]；只跑 test_independent.py 也被手算值测试抓到 |
+| J05 | count 改数全部，内核与参考同改 | KILLED | test_cross_section_ddof_and_new_conventions（手算值） |
+| J06 | EMA 默认 alpha 1/(W+1)，api 与参考同改 | KILLED | test_order_and_recursive_operators_follow_spec_text[ema] |
+| J07 | rank 单值归一改 0，内核与参考同改 | KILLED | test_order_and_recursive_operators_follow_spec_text[rank] |
+| B01 | sumif 位选择忽略条件 | KILLED | test_cross_section_ddof_and_new_conventions |
+| B02 | sum 位选择忽略有效性 | KILLED | test_adversarial_windows[2-sum] |
+| B03 | 运行长度把每个值都当重复 | KILLED | test_adversarial_windows[2-std] |
+| B04 | 运行长度更新忽略有效性 | KILLED | test_exact_reference_adversarial_windows[std] |
+| B05 | 极值前缀并列取旧位置 | KILLED | test_adversarial_windows[2-argmax] |
+| B06 | ema/ffill 从缺失值取状态 | KILLED | test_adversarial_windows[2-ema] |
+| B07 | sum 输出门限差一 | KILLED | test_adversarial_windows[2-sum] |
+| B08 | 极值合并忽略后缀有效性 | KILLED | test_adversarial_windows[2-min] |
+
+复核人 31 处里原来存活的 9 处：M01、M02、M03、M09、M21、J02 现在都被抓到；M04、M08 判为等价并给出理由；M19（列块宽度减 1）结果与分块无关，仍属等价，已有线程/分块逐位一致测试守住不变性。B 组是本轮新写的位选择代码各自的破坏。第一轮的 114 处变异没有整批重跑。
+
+### 结果一致性、基准冻结与验证
+
+- 逐位一致：最终构建（`e3e7c50a…`）的 2425 组快照与本轮开始时（`1ca347f6…`）全部相同。明确改了行为的只有：NumPy 后端 cs_scale/cs_demean/cs_zscore 在中间量溢出（正负 1e308 相消、绝对值和或平方和溢出）的行上改为整行 NaN（与 Rust 一致）；市场叶子的报错信息。`canonical()`/`str()` 的输出与旧实现逐个相同。
+- 冻结基线 `bench/panelops/results/baseline.json` 仍只有一份：全部 68 个条目的 rust_1/rust_default 用最终构建重测；ts_sum/mean/std/var/sumif/count 的全部基线库重测，并新增 ts_sumif、ts_count「条件一半真」两档（键多了 condition 字段，旧条目视为正态档）；其余算子的非 Rust 行沿用上一次冻结。测量时负载 10–14。按验收口径 Rust 单线程最快 67/68、在 110% 内 68/68（ts_std 比 bottleneck 慢 5.9%），默认线程 68/68。基准表和两个 README 摘要由 `report.py` 重新生成，另加「精度保障的代价」一节。
+- 根目录共享文件本轮没有改动。
+
+工作区 `make dev && make check`（ruff、格式、clippy、cargo test、pytest）末尾：
+```text
+test/panelops/test_streaming.py ..........................               [ 82%]
+test/test_engine.py ................                                     [ 86%]
+test/test_inputs.py ....................................                 [ 95%]
+test/test_properties.py .....                                            [ 97%]
+test/test_random.py .                                                    [ 97%]
+test/test_rules.py ..........                                            [100%]
+
+============================= 379 passed in 34.14s =============================
+```
+
+全新目录（`rsync -a --exclude /target --exclude /.venv --exclude /.cache --exclude /data --exclude /.git --exclude '*.so'`，先确认副本里没有 `.so`）`make dev && make check` 末尾，收集 379 条，`build_id` 同为 `e3e7c50a…`：
+```text
+test/panelops/test_streaming.py ..........................               [ 82%]
+test/test_engine.py ................                                     [ 86%]
+test/test_inputs.py ....................................                 [ 95%]
+test/test_properties.py .....                                            [ 97%]
+test/test_random.py .                                                    [ 97%]
+test/test_rules.py ..........                                            [100%]
+
+============================= 379 passed in 35.19s =============================
+```
+
+| 本轮新增文件 | 字节 |
+|---|---:|
+| `test/panelops/test_exact_reference.py` | 13761 |
+| `test/panelops/test_independent.py` | 17616 |
+| `test/panelops/test_constant_cost.py` | 1696 |
+| `test/factor/test_rework.py` | 3097 |
+
+本轮修改：`crates/panelops-core/src/time.rs`、`packages/panelops/python/panelops/_numpy.py`、`packages/panelops/SPEC.md`、两个 README、`src/ashare/factor/expression.py`、`src/ashare/factor/engine.py`、`bench/panelops/run.py`、`bench/panelops/report.py`、`bench/panelops/results/baseline.json`、两份 docs。试验脚本（快照、A/B、构造、变异、精确参考核对）和日志放在工作区之外，没有入库。

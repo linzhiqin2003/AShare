@@ -279,21 +279,21 @@ fn block<const O: usize, const D: bool>(
             for (k, dest) in row.iter_mut().enumerate() {
                 *dest = f64::NAN;
                 let (x, _, ok) = values::<O, D>(pan, t, first + k);
-                if ok {
-                    state[k] = if O == FFILL || counts[k] == 0 {
-                        x
-                    } else {
-                        p.alpha * x + (1. - p.alpha) * state[k]
-                    };
-                    counts[k] += 1;
-                    last[k] = t;
-                }
-                if (D || pan.valid(t * pan.n + first + k))
-                    && counts[k] >= if O == EMA { p.min_periods } else { 1 }
-                    && (O != FFILL || p.periods == 0 || t - last[k] <= p.periods)
-                {
-                    *dest = state[k];
-                }
+                // Missing values are selected around, not branched on.
+                let next = if O == FFILL || counts[k] == 0 {
+                    x
+                } else {
+                    p.alpha * x + (1. - p.alpha) * state[k]
+                };
+                state[k] = choose(next, state[k], ok);
+                counts[k] += usize::from(ok);
+                last[k] = choose_index(t, last[k], ok);
+                *dest = or_nan(
+                    state[k],
+                    (D || pan.valid(t * pan.n + first + k))
+                        & (counts[k] >= if O == EMA { p.min_periods } else { 1 })
+                        & (O != FFILL || p.periods == 0 || t - last[k] <= p.periods),
+                );
             }
         }
         return;
@@ -841,20 +841,17 @@ fn extrema<const O: usize, const D: bool>(
                             indices[i] = usize::MAX;
                             counts[i] = 0;
                         }
-                        if ok {
-                            counts[i] += 1;
-                            // Keep the newer suffix position on a tie.
-                            if indices[i] == usize::MAX
-                                || (if maximum {
+                        counts[i] += usize::from(ok);
+                        // Keep the newer suffix position on a tie.
+                        let better = ok
+                            & ((indices[i] == usize::MAX)
+                                | if maximum {
                                     x > suffix[i]
                                 } else {
                                     x < suffix[i]
-                                })
-                            {
-                                suffix[i] = x;
-                                indices[i] = t - p.window + r;
-                            }
-                        }
+                                });
+                        suffix[i] = choose(x, suffix[i], better);
+                        indices[i] = choose_index(t - p.window + r, indices[i], better);
                     }
                 }
             }
@@ -862,44 +859,42 @@ fn extrema<const O: usize, const D: bool>(
         for (k, dest) in row.iter_mut().enumerate() {
             *dest = f64::NAN;
             let (x, _, ok) = values::<O, D>(pan, t, first + k);
-            if ok {
-                prefix_counts[k] += 1;
-                if prefix_ids[k] == usize::MAX
-                    || (if maximum {
+            // Missing values and comparisons are data dependent: select, do not branch.
+            prefix_counts[k] += usize::from(ok);
+            let better = ok
+                & ((prefix_ids[k] == usize::MAX)
+                    | if maximum {
                         x >= prefix[k]
                     } else {
                         x <= prefix[k]
-                    })
-                {
-                    prefix[k] = x;
-                    prefix_ids[k] = t;
-                }
-            }
+                    });
+            prefix[k] = choose(x, prefix[k], better);
+            prefix_ids[k] = choose_index(t, prefix_ids[k], better);
             let (mut count, mut best, mut index) = (prefix_counts[k], prefix[k], prefix_ids[k]);
             if t >= p.window && offset + 1 < p.window {
                 let i = (offset + 1) * n + k;
                 count += counts[i];
-                if indices[i] != usize::MAX
-                    && (index == usize::MAX
-                        || (if maximum {
+                let better = (indices[i] != usize::MAX)
+                    & ((index == usize::MAX)
+                        | if maximum {
                             suffix[i] > best
                         } else {
                             suffix[i] < best
-                        }))
-                {
-                    best = suffix[i];
-                    index = indices[i];
-                }
+                        });
+                best = choose(suffix[i], best, better);
+                index = choose_index(indices[i], index, better);
             }
-            if count >= p.min_periods && (D || pan.valid(t * pan.n + first + k)) {
-                *dest = if O == ARGMIN || O == ARGMAX {
-                    (t - index) as f64
+            let found = count >= p.min_periods;
+            *dest = or_nan(
+                if O == ARGMIN || O == ARGMAX {
+                    t.wrapping_sub(index) as f64
                 } else if O == IDXMIN || O == IDXMAX {
-                    (p.window - (t - index)) as f64
+                    p.window.wrapping_sub(t.wrapping_sub(index)) as f64
                 } else {
                     best
-                };
-            }
+                },
+                found & (D || pan.valid(t * pan.n + first + k)),
+            );
         }
     }
 }
@@ -1210,6 +1205,44 @@ fn add(main: &mut f64, correction: &mut f64, value: f64) {
     *main = next;
 }
 
+/// Keeps the exact bits of `x` when `keep`, otherwise `+0.0`, without a branch.
+#[inline(always)]
+fn keep_bits(x: f64, keep: bool) -> f64 {
+    f64::from_bits(x.to_bits() & u64::from(keep).wrapping_neg())
+}
+
+/// `a` when `pick`, otherwise `b`, selected without a branch.
+#[inline(always)]
+fn choose(a: f64, b: f64, pick: bool) -> f64 {
+    let m = u64::from(pick).wrapping_neg();
+    f64::from_bits((a.to_bits() & m) | (b.to_bits() & !m))
+}
+#[inline(always)]
+fn choose_index(a: usize, b: usize, pick: bool) -> usize {
+    let m = usize::from(pick).wrapping_neg();
+    (a & m) | (b & !m)
+}
+
+/// `x` when `keep`, otherwise NaN, selected without a branch.
+#[inline(always)]
+fn or_nan(x: f64, keep: bool) -> f64 {
+    let m = u64::from(keep).wrapping_neg();
+    f64::from_bits((x.to_bits() & m) | (f64::NAN.to_bits() & !m))
+}
+
+/// The window contribution and validity of one cell for sum, mean, count and sumif.
+/// Validity and the sumif condition are data dependent, so both are applied as bit
+/// selections: unpredictable conditions must not become unpredictable branches.
+#[inline(always)]
+fn summand<const O: usize, const D: bool>(pan: Panel<'_>, i: usize) -> (f64, bool) {
+    let x = pan.x[i];
+    let y = if O == SUMIF { pan.y[i] } else { 0. };
+    let ok = D || (x.is_finite() & (O != SUMIF || y.is_finite()) & pan.valid(i));
+    let v = if O == COUNT { f64::from(x != 0.) } else { x };
+    let used = if O == SUMIF { ok & (y != 0.) } else { ok };
+    (keep_bits(v, used), ok)
+}
+
 fn sum_rows<const O: usize, const D: bool>(
     pan: Panel<'_>,
     p: Options,
@@ -1226,29 +1259,8 @@ fn sum_rows<const O: usize, const D: bool>(
             counts.fill(0);
             peak.fill(0.);
             for r in (t + 1).saturating_sub(p.window)..=t {
-                let input = &pan.x[r * pan.n + first..r * pan.n + first + n];
                 for k in 0..n {
-                    let x = input[k];
-                    let y = if O == SUMIF {
-                        pan.y[r * pan.n + first + k]
-                    } else {
-                        0.
-                    };
-                    let ok = D
-                        || (x.is_finite()
-                            && (O != SUMIF || y.is_finite())
-                            && pan.valid(r * pan.n + first + k));
-                    let a = if ok {
-                        if O == COUNT {
-                            f64::from(x != 0.)
-                        } else if O == SUMIF && y == 0. {
-                            0.
-                        } else {
-                            x
-                        }
-                    } else {
-                        0.
-                    };
+                    let (a, ok) = summand::<O, D>(pan, r * pan.n + first + k);
                     add(&mut main[k], &mut correction[k], a);
                     peak[k] = peak[k].max(a.abs());
                     counts[k] += usize::from(ok);
@@ -1256,57 +1268,16 @@ fn sum_rows<const O: usize, const D: bool>(
             }
         } else {
             if t >= p.window {
-                let input =
-                    &pan.x[(t - p.window) * pan.n + first..(t - p.window) * pan.n + first + n];
+                let base = (t - p.window) * pan.n + first;
                 for k in 0..n {
-                    let x = input[k];
-                    let y = if O == SUMIF {
-                        pan.y[(t - p.window) * pan.n + first + k]
-                    } else {
-                        0.
-                    };
-                    let ok = D
-                        || (x.is_finite()
-                            && (O != SUMIF || y.is_finite())
-                            && pan.valid((t - p.window) * pan.n + first + k));
-                    let a = if ok {
-                        if O == COUNT {
-                            f64::from(x != 0.)
-                        } else if O == SUMIF && y == 0. {
-                            0.
-                        } else {
-                            x
-                        }
-                    } else {
-                        0.
-                    };
+                    let (a, ok) = summand::<O, D>(pan, base + k);
                     add(&mut main[k], &mut correction[k], -a);
                     counts[k] -= usize::from(ok);
                 }
             }
-            let input = &pan.x[t * pan.n + first..t * pan.n + first + n];
+            let base = t * pan.n + first;
             for k in 0..n {
-                let x = input[k];
-                let y = if O == SUMIF {
-                    pan.y[t * pan.n + first + k]
-                } else {
-                    0.
-                };
-                let ok = D
-                    || (x.is_finite()
-                        && (O != SUMIF || y.is_finite())
-                        && pan.valid(t * pan.n + first + k));
-                let a = if ok {
-                    if O == COUNT {
-                        f64::from(x != 0.)
-                    } else if O == SUMIF && y == 0. {
-                        0.
-                    } else {
-                        x
-                    }
-                } else {
-                    0.
-                };
+                let (a, ok) = summand::<O, D>(pan, base + k);
                 add(&mut main[k], &mut correction[k], a);
                 counts[k] += usize::from(ok);
             }
@@ -1318,27 +1289,11 @@ fn sum_rows<const O: usize, const D: bool>(
             if !value.is_finite() || 8. * f64::EPSILON * peak[k] > 1e-11 * (value.abs() + 1.) {
                 let mut contributions = Vec::with_capacity(p.window.min(t + 1));
                 counts[k] = 0;
-                peak[k] = 0.;
                 for r in (t + 1).saturating_sub(p.window)..=t {
-                    let x = pan.x[r * pan.n + first + k];
-                    let y = if O == SUMIF {
-                        pan.y[r * pan.n + first + k]
-                    } else {
-                        0.
-                    };
-                    let ok = D
-                        || (x.is_finite()
-                            && (O != SUMIF || y.is_finite())
-                            && pan.valid(r * pan.n + first + k));
+                    let (a, ok) = summand::<O, D>(pan, r * pan.n + first + k);
                     if ok {
                         counts[k] += 1;
-                        contributions.push(if O == COUNT {
-                            f64::from(x != 0.)
-                        } else if O == SUMIF && y == 0. {
-                            0.
-                        } else {
-                            x
-                        });
+                        contributions.push(a);
                     }
                 }
                 peak[k] = contributions.iter().fold(0f64, |m, x| m.max(x.abs()));
@@ -1346,15 +1301,29 @@ fn sum_rows<const O: usize, const D: bool>(
                 main[k] = value;
                 correction[k] = 0.;
             }
-            if counts[k] >= p.min_periods && (D || pan.valid(t * pan.n + first + k)) {
-                *dest = if O == MEAN {
-                    value / counts[k] as f64
-                } else {
-                    value
-                };
-            }
+            let out = if O == MEAN {
+                value / counts[k] as f64
+            } else {
+                value
+            };
+            *dest = or_nan(
+                out,
+                (counts[k] >= p.min_periods) & (D || pan.valid(t * pan.n + first + k)),
+            );
         }
     }
+}
+
+/// Length of the trailing run of equal valid values, updated without branches:
+/// ties and missing values are data dependent and must not be mispredicted branches.
+#[inline(always)]
+fn advance_run(run: usize, last: f64, x: f64, ok: bool) -> (usize, f64) {
+    let next = (run & usize::from(last == x).wrapping_neg()) + 1;
+    let keep = usize::from(ok).wrapping_neg();
+    (
+        (next & keep) | (run & !keep),
+        f64::from_bits((x.to_bits() & keep as u64) | (last.to_bits() & !(keep as u64))),
+    )
 }
 
 fn std_rows<const O: usize, const D: bool>(
@@ -1381,7 +1350,7 @@ fn std_rows<const O: usize, const D: bool>(
                     .zip(&mut peak)
                 {
                     let ok = D || x.is_finite();
-                    let d = if ok { x - o } else { 0. };
+                    let d = keep_bits(x - o, ok);
                     *s -= d;
                     *ss -= d * d;
                     *c -= usize::from(ok);
@@ -1390,8 +1359,8 @@ fn std_rows<const O: usize, const D: bool>(
             } else {
                 for k in 0..n {
                     let x = input[k];
-                    let ok = D || (x.is_finite() && pan.valid((t - p.window) * pan.n + first + k));
-                    let d = if ok { x - origin[k] } else { 0. };
+                    let ok = D || (x.is_finite() & pan.valid((t - p.window) * pan.n + first + k));
+                    let d = keep_bits(x - origin[k], ok);
                     let d2 = d * d;
                     s1[k] -= d;
                     s2[k] -= d2;
@@ -1413,30 +1382,24 @@ fn std_rows<const O: usize, const D: bool>(
                 .zip(&mut last)
             {
                 let ok = D || x.is_finite();
-                let d = if ok { x - o } else { 0. };
+                let d = keep_bits(x - o, ok);
                 *s += d;
                 *ss += d * d;
                 *c += usize::from(ok);
                 *p = p.max(d.abs());
-                if ok {
-                    *run = if *last == x { *run + 1 } else { 1 };
-                    *last = x;
-                }
+                (*run, *last) = advance_run(*run, *last, x, ok);
             }
         } else {
             for k in 0..n {
                 let x = input[k];
-                let ok = D || (x.is_finite() && pan.valid(t * pan.n + first + k));
-                let d = if ok { x - origin[k] } else { 0. };
+                let ok = D || (x.is_finite() & pan.valid(t * pan.n + first + k));
+                let d = keep_bits(x - origin[k], ok);
                 let d2 = d * d;
                 s1[k] += d;
                 s2[k] += d2;
                 count[k] += usize::from(ok);
                 peak[k] = peak[k].max(d.abs());
-                if ok {
-                    run[k] = if last[k] == x { run[k] + 1 } else { 1 };
-                    last[k] = x;
-                }
+                (run[k], last[k]) = advance_run(run[k], last[k], x, ok);
             }
         }
         for (k, dest) in row.iter_mut().enumerate() {
