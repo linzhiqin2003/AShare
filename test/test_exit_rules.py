@@ -86,6 +86,8 @@ def test_random_rules_match_reference():
         "limit_touch_only_skipped",
         "limit_cash_scaled",
         "limit_margin_scaled",
+        "limit_cut_kept",
+        "limit_cut_complete",
     ):
         assert branches[branch] > 0, (branch, branches)
 
@@ -239,9 +241,10 @@ def single(market, rows, rules, *, kind="shares", costs=ZERO, limits=None, **cfg
     for day, value in rows.items():
         w[day] = value
     targets = bt.Targets.from_dense(w, kind=kind, limits=limits)
-    config = bt.Config(
-        initial_cash=1e5, min_qty=0, qty_step=0, record_trades=True, rules=rules, **cfg
+    terms = dict(
+        initial_cash=1e5, min_qty=0, qty_step=0, record_trades=True, rules=rules
     )
+    config = bt.Config(**(terms | cfg))
     result = bt.run(market, targets, costs, config)
     assert_matches_reference(result, reference_run(market, targets, costs, config), 0)
     return result
@@ -653,3 +656,31 @@ def test_snapshot_rejects_every_bit_flip_and_truncation():
             bt.Simulator.restore(blob[:k], market, costs, config, kind=kind)
     with pytest.raises(ValueError, match="snapshot"):
         bt.Simulator.restore(blob + b"\0", market, costs, config, kind=kind)
+
+
+@pytest.mark.parametrize("fill_time", ["open", "close"])
+def test_cash_scaled_counts_a_row_once(fill_time):
+    # Row 1: a limit buy (column 0) and an ordinary buy (column 1), both cut by
+    # cash 300. Either order of execution counts the row once.
+    m = bars(
+        np.array([[10, 10], [10, 10], [10, 10]]),
+        np.array([[10, 10], [10.1, 10.1], [10, 10]]),
+        np.array([[10, 10], [9.5, 9.5], [10, 10]]),
+        np.array([[10, 10], [10, 10], [10, 10]]),
+    )
+    lim = np.full((3, 2), np.nan)
+    lim[1, 0] = 9.8
+    r = single(
+        m,
+        {1: [1000, 1000]},
+        bt.Rules(fill_time=fill_time),
+        limits=lim,
+        costs=bt.Costs(commission_min=None),
+        initial_cash=300.0,
+    )
+    # Whichever runs first spends the cash; the limit order is cut either way
+    # (to a part or to nothing) and, short by far more than a lot, is blocked.
+    first = 0 if fill_time == "close" else 1
+    assert [t.col for t in r.trades] == [first]
+    assert r.diagnostics["limit_blocked"] == 1
+    assert r.diagnostics["cash_scaled"] == 1

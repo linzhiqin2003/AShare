@@ -388,3 +388,80 @@ def test_hand_computed(case):
     assert len(rule) == sum(w[2] != R.REBALANCE for w in expected), (name, fills)
     for key, value in counters.items():
         assert kernel.diagnostics[key] == value == ref.diagnostics[key], (name, key)
+
+
+# ------------------------------------------------- limit orders cut by cash
+CUT_BARS = [FLAT, [10, 10.1, 9.5, 9.8], [9.8, 9.9, 9.5, 9.8], [9.8, 9.9, 9.5, 9.8]]
+
+
+def cut_run(
+    flow, *, valid="until_next", target=1000.0, cash=300.0, lot=0.0, kind="shares"
+):
+    m = market(CUT_BARS, "close")
+    w = np.full((4, 1), np.nan)
+    w[1, 0] = target
+    lim = np.full((4, 1), np.nan)
+    lim[1, 0] = 9.6
+    targets = bt.Targets.from_dense(w, kind=kind, limits=lim)
+    config = bt.Config(
+        initial_cash=cash,
+        min_qty=lot,
+        qty_step=lot,
+        record_trades=True,
+        cash_flow=np.asarray(flow, float),
+        rules=bt.Rules(fill_time="close", limit_valid=valid),
+    )
+    costs = bt.Costs(commission_min=None)
+    kernel = bt.run(m, targets, costs, config)
+    ref = reference.run(m, targets, costs, config)
+    assert len(kernel.trades) == len(ref.trades)
+    for a, b in zip(kernel.trades, ref.trades, strict=True):
+        assert (a.day, a.reason) == (b.day, b.reason)
+        assert (a.qty, a.price) == pytest.approx((b.qty, b.price), rel=1e-12)
+    keys = ("cash_scaled", "limit_filled", "limit_blocked", "limit_unfilled")
+    assert {k: kernel.diagnostics[k] for k in keys} == {
+        k: ref.diagnostics[k] for k in keys
+    }
+    return kernel
+
+
+PAID = 9.6 * (1 + bt.Costs().slippage)  # the limit plus default slippage
+# Cash per share bought, including the commission and transfer-fee rates.
+FEE_UNIT = PAID * (1 + FEE + bt.Costs().fee_rate_buy)
+
+
+def test_until_next_keeps_the_remainder_of_a_cash_cut():
+    # Cash 300 buys 31.2 of 1000 shares on row 1; 10000 arrives before row 2
+    # trades, and the order (still crossed on row 2) buys the rest.
+    r = cut_run([0, 0, 10000, 0])
+    first = 300 / FEE_UNIT
+    assert [(t.day, t.reason) for t in r.trades] == [(1, R.LIMIT), (2, R.LIMIT)]
+    assert r.trades[0].qty == pytest.approx(first, rel=1e-12)
+    assert r.trades[1].qty == pytest.approx(1000 - first, rel=1e-12)
+    assert r.trades[1].price == pytest.approx(PAID, rel=1e-12)
+    d = r.diagnostics
+    assert (d["cash_scaled"], d["limit_filled"], d["limit_blocked"]) == (1, 2, 1)
+
+
+def test_zero_fill_is_not_a_completed_order():
+    # No cash on row 1: nothing fills, the order stays and fills on row 2.
+    r = cut_run([-300, 0, 10000, 0])
+    assert [(t.day, t.qty) for t in r.trades] == [(2, 1000.0)]
+    assert r.diagnostics["limit_blocked"] == 1
+
+
+def test_day_order_cut_by_cash_lapses_but_shows_blocked():
+    r = cut_run([0, 0, 10000, 0], valid="day")
+    assert [t.day for t in r.trades] == [1]
+    assert r.diagnostics["limit_blocked"] == 1 and r.diagnostics["cash_scaled"] == 1
+
+
+def test_cut_by_fees_within_one_lot_completes():
+    # Lots of 100, full weight, cash 9.6 * 10400 + 1: the target is 10400
+    # shares at the limit; with slippage and fees cash affords 10300, one lot
+    # short, so the order is complete and nothing is carried to row 2.
+    r = cut_run(
+        [0, 0, 10000, 0], target=1.0, cash=9.6 * 10400 + 1, lot=100, kind="weights"
+    )
+    assert [(t.day, t.qty) for t in r.trades] == [(1, 10300.0)]
+    assert r.diagnostics["limit_blocked"] == 0 and r.diagnostics["cash_scaled"] == 1

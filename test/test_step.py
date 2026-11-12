@@ -374,3 +374,34 @@ def test_futures_columns_report_no_cost_or_entry_day():
         if held:
             return
     pytest.fail("no futures position in the sampled cases")
+
+
+@pytest.mark.parametrize("fingerprint", ["sample", "full"])
+def test_snapshot_rejects_another_market(fingerprint):
+    market, target, costs, config = generators.case(3)
+    sim = bt.Simulator(market, costs, config, kind=target.kind, fingerprint=fingerprint)
+    sim.step()
+    blob = sim.snapshot()
+    kw = dict(kind=target.kind, fingerprint=fingerprint)
+    bt.Simulator.restore(blob, market, costs, config, **kw)  # same market: accepted
+    scaled = replace(
+        market, exec_price=market.exec_price * 1.01, close=market.close * 1.01
+    )
+    one = market.close.copy()
+    one[-1, -1] = one[-1, -1] * 1.5 if np.isfinite(one[-1, -1]) else 1.0
+    for other in (scaled, replace(market, close=one)):
+        with pytest.raises(ValueError, match="differ"):
+            bt.Simulator.restore(blob, other, costs, config, **kw)
+    other = "full" if fingerprint == "sample" else "sample"
+    with pytest.raises(ValueError, match="differ"):
+        bt.Simulator.restore(
+            blob, market, costs, config, kind=target.kind, fingerprint=other
+        )
+    with pytest.raises(ValueError, match="fingerprint"):
+        bt.Simulator(market, costs, config, fingerprint="none")
+
+
+def test_old_snapshot_format_is_reported():
+    market, target, costs, config = generators.case(3)
+    with pytest.raises(ValueError, match="version 1 is no longer supported"):
+        bt.Simulator.restore(b"PBTSTEP1" + bytes(64), market, costs, config)

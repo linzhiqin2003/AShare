@@ -96,6 +96,24 @@ CASES = [
         "for a in self.rule_arrays.iter().skip(6) {",
     ),
     (
+        "an account cut completes the order whatever the shortfall",
+        RULES,
+        "q == 0.0 || (pre - q).abs() > allow + quantity_tolerance(pre, q)",
+        "false",
+    ),
+    (
+        "cash_scaled counted again for a row a limit order counted",
+        CORE,
+        "if !(T && rb.limit_scaled[0]) {",
+        "if true {",
+    ),
+    (
+        "market panels left out of the snapshot fingerprint",
+        BIND,
+        "for &b in &self.market_digest {",
+        "for &b in &self.market_digest[..0] {",
+    ),
+    (
         "max_hold off by one",
         RULES,
         "day as i64 - trk.entry[i] >= r.max_hold",

@@ -572,6 +572,8 @@ struct Simulator {
     future_mask: Vec<bool>,
     rule_arrays: Vec<Py<PyArray1<f64>>>,
     rule_terms: Option<RuleTerms>,
+    /// Digest of the market panels, computed by the Python layer.
+    market_digest: Vec<u8>,
     stepper: Stepper,
     arrays: Arrays,
 }
@@ -710,6 +712,10 @@ impl Simulator {
         for &f in &self.flags {
             mix(u64::from(f));
         }
+        mix(self.market_digest.len() as u64);
+        for &b in &self.market_digest {
+            mix(u64::from(b));
+        }
         if let Some(r) = self.rule_terms {
             for x in [
                 r.0 as u64,
@@ -768,6 +774,7 @@ impl Simulator {
         context: (bool, bool),
         validate: bool,
         rule_spec: Option<(Vec<Bound<'py, PyArray1<f64>>>, RuleTerms)>,
+        market_digest: Vec<u8>,
     ) -> PyResult<Self> {
         if floats.is_empty() {
             return Err(PyValueError::new_err("invalid internal argument lengths"));
@@ -802,6 +809,7 @@ impl Simulator {
                 .map(|(a, _)| a.iter().map(|x| x.clone().unbind()).collect())
                 .unwrap_or_default(),
             rule_terms: rule_spec.as_ref().map(|x| x.1),
+            market_digest,
             stepper: Stepper::new_empty(),
             arrays: Arrays {
                 shares: PyArray1::zeros(py, n, false).unbind(),

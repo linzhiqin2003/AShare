@@ -342,7 +342,19 @@ class RulesEngine(Engine):
             blocked_sell |= w < 0
         self.blocked(i, w, d, blocked_buy, blocked_sell)
 
+    def count_scaled(self, k):
+        # cash_scaled (0) / margin_scaled (1): once per row with ordinary purchases.
+        now = self.counts["cash_scaled"] if k == 0 else self.coverage["margin_scaled"]
+        if not self.limit_scaled[k] and now == self.row_scaled[k]:
+            if k == 0:
+                self.counts["cash_scaled"] += 1
+            else:
+                self.coverage["margin_scaled"] += 1
+        self.limit_scaled[k] = True
+
     def day(self, day):
+        self.row_scaled = (self.counts["cash_scaled"], self.coverage["margin_scaled"])
+        self.limit_scaled = [False, False]
         flow = self.cash_flow(day)
         self.corporate_actions(day)
         d = self.begin(day)
@@ -352,10 +364,16 @@ class RulesEngine(Engine):
         for i in self.command_order(d.commands):
             self.spot_column(i, d)
         if d.orders:
+            before = (self.counts["cash_scaled"], self.coverage["margin_scaled"])
             if self.classic:
                 self.cash_basket(d, d.orders)
             else:
                 self.margin_basket(d, d.orders)
+            # A row a limit order already counted is not counted again.
+            if self.limit_scaled[0]:
+                self.counts["cash_scaled"] = before[0]
+            if self.limit_scaled[1]:
+                self.coverage["margin_scaled"] = before[1]
         if self.rules.fill_time == "open" and not d.forced:
             self.intraday(day)
         long, short = self.close_spot(day)
@@ -698,11 +716,13 @@ class RulesEngine(Engine):
                     self.override = None
                 if not (math.isfinite(price) and price > 0):
                     q = 0.0
-            # Short of the opening for a mask, the cap, a block or a bad quote;
-            # a cut to what the account affords is counted like an ordinary
-            # purchase (cash_scaled / margin_scaled) and completes the order.
+            # Short of the opening for a mask, the cap, a block or a bad quote.
+            # A cut to what the account affords counts cash_scaled /
+            # margin_scaled (once per row with ordinary purchases) and
+            # completes the order only within one lot (or its own costs).
             if q != opening:
                 p["short"] = True
+            pre = q
             if q != 0:
                 if self.classic:
 
@@ -717,7 +737,7 @@ class RulesEngine(Engine):
 
                     if cost(q) > self.cash:
                         self.branches["limit_cash_scaled"] += 1
-                        self.counts["cash_scaled"] += 1
+                        self.count_scaled(0)
                         p["scaled"] = True
                         lo, hi = 0.0, q
                         for _ in range(64):
@@ -742,7 +762,7 @@ class RulesEngine(Engine):
 
                     if not ok(q):
                         self.branches["limit_margin_scaled"] += 1
-                        self.coverage["margin_scaled"] += 1
+                        self.count_scaled(1)
                         p["scaled"] = True
                         lo, hi = 0.0, abs(q)
                         for _ in range(64):
@@ -752,6 +772,21 @@ class RulesEngine(Engine):
                             else:
                                 hi = mid
                         q = math.copysign(self.opening(lo, i), q)
+            if q != pre:
+                self.override = (i, raw)
+                try:
+                    price, _, comm, tax, fee, _, _ = self.quote(pre, i, day)
+                finally:
+                    self.override = None
+                allow = max(
+                    step, (abs(pre) * abs(price - raw) + comm + tax + fee) / raw
+                )
+                tol = 1e-9 * max(abs(pre), abs(q), 1)
+                if q == 0 or abs(pre - q) > allow + tol:
+                    self.branches["limit_cut_kept"] += 1
+                    p["short"] = True
+                else:
+                    self.branches["limit_cut_complete"] += 1
             if abs(q) > 1e-9 * max(abs(target), abs(after), 1):
                 self.fill_at(i, q, day, raw, "limit")
                 self.rule_counts["limit_filled"] += 1

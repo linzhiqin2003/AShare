@@ -427,18 +427,27 @@ of held columns), `futures_basis`, `pending_cols`/`pending_targets` (carried
 blocked orders), `margin_call`, `bankrupt`. `cost` and `entry_day` are kept for
 spot columns only: on futures columns they always read 0 and -1, whatever the
 position (read `shares`). Arrays are zero-copy live views over read-only
-buffers: numpy refuses to make them writeable, so the simulator state cannot
-be modified through them. `result()` requires every row to be stepped.
+buffers: numpy refuses to make them writeable, and the state cannot be
+modified through the public interface. Writing to the simulator's memory by
+bypassing that protection (for example through the views' `.base` chain) is
+undefined behaviour. `result()` requires every row to be stepped.
 
 `snapshot()` returns a binary blob (format version 2, closed by a CRC-32 of
 all preceding bytes); `Simulator.restore(blob, market, costs, config, kind)`
 checks the checksum first, then the fingerprint, and continues bit for bit.
 The fingerprint covers shapes, account type, target kind, every cost and
 configuration vector and scalar, every rule term and every cell of the rule
-percentage arrays (stop, take, trail). Market panels, including open, high
-and low, are not fingerprinted: pass the same market. Any truncated, extended
-or corrupted blob and any mismatch raise `ValueError`; a failed restore leaves
-no half-loaded simulator.
+percentage arrays (stop, take, trail), and a digest of every market panel
+the kernel reads (prices, masks, volume, actions, open/high/low, futures
+panels). `Simulator(..., fingerprint="sample")` (default) digests each
+panel's shape, dtype, first and last rows and a fixed-stride sample of about
+64K cells, computed once at construction (about 5–7 ms on a 4000×5500
+market); a change confined to unsampled cells of a larger panel is not
+detected. `fingerprint="full"` hashes every cell (about 0.8–1.2 s on the same
+market). Restore with the choice used when the snapshot was taken. `bt.run`
+computes no digest. Any truncated, extended or corrupted blob, a blob of an
+older format and any mismatch raise `ValueError`; a failed restore leaves no
+half-loaded simulator.
 
 Threads: `step` releases the GIL, so independent simulators may advance in
 parallel threads. One simulator must not be used from two threads at once:
@@ -569,14 +578,24 @@ openings are cut to what cash affords including fees (bisection then lot
 rounding, per order in sequence, no common scaling), like an ordinary
 purchase; margin account openings to what keeps initial margin and, without
 financing, own cash feasible (account at `last` marks). Such a cut counts
-`cash_scaled` (cash account) or `margin_scaled` (margin account) and completes
-the order. A shortfall for any other reason (mask, participation cap, block,
-bankruptcy, a reduction that could not complete) keeps the remainder for
-`"until_next"` orders and drops it for day orders. An order whose target is
-reached is removed. Counters: `limit_filled` (fills: an order that reduces and
-then opens on the other side counts two), `limit_unfilled` (rows on which an
-active order's price was not reached), `limit_blocked` (reached but short of
-target for a reason other than the account). A limit opening is fresh. Limit fills are not carry
+`cash_scaled` (cash account) or `margin_scaled` (margin account). It completes
+the order only when the shortfall is at most one lot (`qty_step`), or, for
+fractional quantities, at most the quantity the order's own slippage, impact
+and fees amount to at its fill price; a zero fill never completes an order.
+Any other shortfall, from the account or from a mask, participation cap,
+block, bankruptcy or a reduction that could not complete, counts
+`limit_blocked` and keeps the remainder for `"until_next"` orders (retried on
+later rows under the same rules); day orders drop it. An order whose target
+is reached is removed. Counters: `limit_filled` (fills: an order that reduces
+and then opens on the other side counts two), `limit_unfilled` (rows on which
+an active order's price was not reached), `limit_blocked` (reached but left
+short of target beyond that allowance).
+
+`cash_scaled` counts rows: a row on which an ordinary purchase basket, a
+limit opening or both were cut to what cash affords counts once. Without
+limit orders the count is unchanged from earlier versions. For
+`margin_scaled` a limit cut likewise counts only on a row that has no margin
+scaling yet; ordinary margin baskets keep their existing counting. A limit opening is fresh. Limit fills are not carry
 trades and limit orders are never carried by `carry_blocked`.
 
 **Results.** With rules configured, `Result.diagnostics` additionally holds

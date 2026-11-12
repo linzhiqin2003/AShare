@@ -510,7 +510,7 @@ fn open_basket<const FUT: bool, const T: bool>(
     let scale = if feasible(full.0, full.1, s, day) {
         1.0
     } else {
-        if count_spot_scaling {
+        if count_spot_scaling && !(T && rb.limit_scaled[1]) {
             out.counts[20] += 1;
         }
         if FUT && orders.iter().any(|&(i, _)| is_future::<FUT>(m, i)) {
@@ -813,6 +813,10 @@ impl Core {
         // runtime switch shared by the whole row.
         let rules = if T { s.rules.as_ref() } else { None };
         if let Some(r) = rules {
+            // `cash_scaled`/`margin_scaled` count a row once whether an
+            // ordinary purchase, a limit order or both were cut.
+            rb.row_scaled = [out.counts[3], out.counts[20]];
+            rb.limit_scaled = [false, false];
             rb.entry_fresh = r.timing != 0;
             if let Some(row) = row {
                 rb.begin_row(day, row.cols, row.weights, row.limits, r);
@@ -1296,7 +1300,9 @@ impl Core {
                     .map(|&(i, q)| -movement(q, quote(q, i, day, m, s)))
                     .sum();
                 let scale = if total > free(st.cash) {
-                    out.counts[3] += 1;
+                    if !(T && rb.limit_scaled[0]) {
+                        out.counts[3] += 1;
+                    }
                     free(st.cash) / total
                 } else {
                     1.0
@@ -1849,6 +1855,11 @@ impl Stepper {
     }
     /// Restore a snapshot into `self` and `v`; the header must match exactly.
     pub fn decode(&mut self, blob: &[u8], header: &[u64], v: Vectors<'_>) -> Result<(), String> {
+        if blob.starts_with(b"PBTSTEP1") {
+            return Err(
+                "snapshot: format version 1 is no longer supported; create a new snapshot".into(),
+            );
+        }
         let body = blob
             .strip_prefix(SNAPSHOT_MAGIC.as_slice())
             .ok_or("snapshot: not a panelbt simulator snapshot (or an older format)")?;

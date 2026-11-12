@@ -69,6 +69,10 @@ pub struct RuleBook {
     pub counts: [u64; RULE_COUNTS],
     pub scratch: Vec<usize>,
     pub plan: Vec<(usize, f64, f64, bool, bool)>,
+    /// `cash_scaled`/`margin_scaled` at the start of the row, and whether a
+    /// limit order counted them this row (transient, reset every row).
+    pub row_scaled: [u64; 2],
+    pub limit_scaled: [bool; 2],
 }
 
 impl RuleBook {
@@ -588,6 +592,7 @@ fn limit_orders<const CLASSIC: bool>(
         }
         // Short of the opening for a mask, the cap, a block or an invalid quote.
         let short = q != opening;
+        let pre = q;
         if q != 0.0 {
             if CLASSIC {
                 let cost = |y: f64| {
@@ -600,7 +605,10 @@ fn limit_orders<const CLASSIC: bool>(
                 if cost(q) > st.cash {
                     // Like an ordinary purchase: cut to what cash affords
                     // including fees, counted as `cash_scaled`, not blocked.
-                    out.counts[3] += 1;
+                    if !rb.limit_scaled[0] && out.counts[3] == rb.row_scaled[0] {
+                        out.counts[3] += 1;
+                    }
+                    rb.limit_scaled[0] = true;
                     p.4 = true;
                     let (mut lo, mut hi) = (0.0, q);
                     for _ in 0..64 {
@@ -626,7 +634,10 @@ fn limit_orders<const CLASSIC: bool>(
                     super::feasible(projected_at(a, i, y, after, raw, day, m, s), 0.0, s, day)
                 };
                 if !ok(q) {
-                    out.counts[20] += 1; // margin_scaled
+                    if !rb.limit_scaled[1] && out.counts[20] == rb.row_scaled[1] {
+                        out.counts[20] += 1; // margin_scaled
+                    }
+                    rb.limit_scaled[1] = true;
                     p.4 = true;
                     let (mut lo, mut hi) = (0.0, q.abs());
                     for _ in 0..64 {
@@ -641,6 +652,16 @@ fn limit_orders<const CLASSIC: bool>(
                 }
             }
         }
+        // A cut to what the account affords completes the order only when the
+        // shortfall is at most one lot, or for fractional quantities at most
+        // the quantity the order's own costs amount to; a zero fill never.
+        let cut_short = q != pre && {
+            let x = quote_at(pre, i, day, raw, m, s);
+            let costs =
+                pre.abs() * (x.price - raw).abs() + x.fees.commission + x.fees.tax + x.fees.other;
+            let allow = step.max(costs / raw);
+            q == 0.0 || (pre - q).abs() > allow + quantity_tolerance(pre, q)
+        };
         if q.abs() > quantity_tolerance(target, after) {
             if after == 0.0 {
                 st.last[i] = past_close(m, day, i);
@@ -651,13 +672,13 @@ fn limit_orders<const CLASSIC: bool>(
             }
             rb.counts[LIMIT_FILLED] += 1;
         }
-        if short {
+        if short || cut_short {
             p.3 = true;
         }
     }
     rb.entry_fresh = r.timing != 0;
     // Completed orders are removed; partially filled ones counted. An order
-    // cut only to what the account affords is complete, like an ordinary one.
+    // cut by the account to within one lot (fees) of its size is complete.
     for p in &plan {
         if p.3 {
             rb.counts[LIMIT_BLOCKED] += 1;

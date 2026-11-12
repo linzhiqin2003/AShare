@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections import namedtuple
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,12 +24,36 @@ def _view(a: np.ndarray) -> np.ndarray:
     return np.frombuffer(memoryview(a).toreadonly(), dtype=a.dtype).reshape(a.shape)
 
 
+_SAMPLE = 65536
+
+
+def _market_digest(arrays, n: int, full: bool) -> bytes:
+    """Digest of the market panels for the snapshot fingerprint.
+
+    "sample" hashes each array's shape and dtype, its first and last rows and
+    a fixed-stride sample of about 64K cells; "full" hashes every byte.
+    """
+    h = hashlib.blake2b(digest_size=16)
+    h.update(b"full" if full else b"sample")
+    for a in arrays:
+        flat = np.ascontiguousarray(a).reshape(-1)
+        h.update(f"{np.shape(a)}{flat.dtype.str}".encode())
+        if full:
+            h.update(flat.tobytes())
+            continue
+        h.update(flat[:n].tobytes())
+        h.update(flat[-n:].tobytes())
+        h.update(flat[:: max(1, flat.size // _SAMPLE)].tobytes())
+    return h.digest()
+
+
 @dataclass(frozen=True)
 class State:
     """What is known before row `day` trades.
 
     Scalars are fixed when the state is read. The arrays are zero-copy,
-    read-only *live* views of the simulator: they change as it steps, so
+    read-only *live* views of the simulator (writing through internals that
+    bypass the read-only buffer is undefined behaviour): they change as it steps, so
     `.copy()` anything you want to keep.
 
     - `day`: the row the next `step` executes.
@@ -90,15 +115,21 @@ class Simulator:
         config: Config | None = None,
         *,
         kind: str = "weights",
+        fingerprint: str = "sample",
     ) -> None:
         if kind not in ("weights", "shares"):
             raise ValueError("kind: expected weights or shares")
+        if fingerprint not in ("sample", "full"):
+            raise ValueError("fingerprint: expected sample or full")
         config = config or Config()
         costs = costs or Costs()
         floats, masks, _, vectors, scalars, flags, first, actions, futures = _prepare(
             market, [], costs, config
         )
         margin = config.margin
+        rules = _rules(market, config.rules, False)
+        panels = [*floats, *masks, *futures[3]] + (list(rules[0][:3]) if rules else [])
+        digest = _market_digest(panels, market.shape[1], fingerprint == "full")
         self._args = (
             floats,
             masks,
@@ -111,7 +142,8 @@ class Simulator:
             kind == "shares",
             (margin.allow_short, not margin.allow_financing and not margin.allow_short),
             market.validated,
-            _rules(market, config.rules, False),
+            rules,
+            digest,
         )
         self._core = _core.Simulator(*self._args)
         self._market, self._costs, self._config, self.kind = market, costs, config, kind
@@ -213,13 +245,17 @@ class Simulator:
         config: Config | None = None,
         *,
         kind: str = "weights",
+        fingerprint: str = "sample",
     ) -> Simulator:
         """Resume from `snapshot` against the same market, costs and config.
 
-        Shapes, account type, target kind, costs and configuration are
-        fingerprinted and must match; the market panels are not, so pass the
-        same market the snapshot was taken on.
+        Shapes, account type, target kind, costs, configuration, rule
+        parameters and a digest of the market panels are fingerprinted and must
+        match. `fingerprint="sample"` (default) digests each panel's shape,
+        first and last rows and a fixed-stride sample of about 64K cells;
+        `"full"` hashes every cell (slower); use the same choice as when the
+        snapshot was taken.
         """
-        sim = cls(market, costs, config, kind=kind)
+        sim = cls(market, costs, config, kind=kind, fingerprint=fingerprint)
         sim._core.load(bytes(snapshot))
         return sim

@@ -191,7 +191,8 @@ blob = sim.snapshot()                     # bytes; resume with Simulator.restore
 ```
 
 State arrays are read-only live views (copy them to keep history; numpy
-refuses to make them writeable). `step` releases the GIL, so independent
+refuses to make them writeable, and the public interface cannot change the
+state). `step` releases the GIL, so independent
 simulators can run in separate threads; one simulator must not be stepped or
 read from two threads at once (that raises `RuntimeError`). The
 per-step cost is a few microseconds and does not grow with the number of
