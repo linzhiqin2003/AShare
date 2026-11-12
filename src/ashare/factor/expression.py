@@ -114,6 +114,9 @@ def _normalized(op, args, params):
             "weights",
         }
     }
+    if normalized.get("exact") is False:
+        # 滑动求和的 exact 默认关闭；默认值不进规范形式，已有表达式的摘要和文本不变。
+        del normalized["exact"]
     for key in ("window", "min_periods", "periods", "ddof", "limit"):
         if key in normalized and normalized[key] is not None:
             panelops.api.integer(

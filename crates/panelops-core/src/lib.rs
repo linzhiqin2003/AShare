@@ -47,6 +47,9 @@ pub struct Options {
     pub periods: usize,
     /// Extremum position operators break ties toward the oldest observation.
     pub earliest: bool,
+    /// Rolling sum, mean and sumif evaluate every window directly with a correctly
+    /// rounded sum, so each cell depends only on the window's multiset of values.
+    pub exact: bool,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -748,6 +751,7 @@ mod tests {
                     alpha: 0.5,
                     periods: 1,
                     earliest: false,
+                    exact: false,
                 };
                 let actual = simple_series(|i| values[i], values.len(), op, p);
                 for (t, &a) in actual.iter().enumerate() {
@@ -773,6 +777,7 @@ mod tests {
                 alpha: 0.5,
                 periods: 1,
                 earliest: false,
+                exact: false,
             };
             let actual = simple_series(|i| values[i], values.len(), "product", p);
             assert_eq!(actual[2], values[..3].iter().product::<f64>());
@@ -802,6 +807,7 @@ mod tests {
                         alpha: 0.5,
                         periods: 1,
                         earliest: false,
+                        exact: false,
                     };
                     let result = higher_series(|i| values[i], values.len(), op, p);
                     for (t, &actual) in result.iter().enumerate() {
