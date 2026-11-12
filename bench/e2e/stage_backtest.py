@@ -1,73 +1,36 @@
 """阶段 6：回测——真实面板行情与公司行为、完整 A 股规则；单次与 200 组批量，带检查与 validate=False。
 
-信号在收盘算出，下一交易日开盘价成交（移位在这里做，panelbt 不移位）。印花税
+信号在收盘算出，下一交易日开盘价成交（错位由 ashare.backtest.execution_targets 做，panelbt 不移位）；
+行情与整手规则走 ashare.backtest 的正式入口。印花税
 2008-09-19 之后用 panelbt 的 stamp_tax_sell，之前按卖出 0.3%/0.1% 的历史税率近似。
 """
-
-import re
 
 import numpy as np
 import panelbt
 import panelops
 from common import digest, measure
-from panelbt.markets.ashare import Board, lot_rules, stamp_tax_sell, tradability
+from panelbt.markets.ashare import lot_rules, stamp_tax_sell
 
 import ashare.data
+from ashare.backtest import boards, execution_targets, market_inputs, required_fields
 from ashare.factor import Evaluator, default_registry
 
-FIELDS = (
-    "open",
-    "close",
-    "high",
-    "low",
-    "upper_limit",
-    "lower_limit",
-    "is_suspended",
-    "has_quote",
-    "volume",
-    "split",
-    "cash_dividend",
-    "delist",
-)
 REBALANCE_EVERY = 21
 BATCH = 200
 
 
-# 数据层建面板时已算好的开盘可买、可卖掩码（P-016）；旧面板没有时现算，口径相同。
-MASKS = ("can_buy_open", "can_sell_open")
-
-
 def panel_fields(data):
-    return list(FIELDS) + [m for m in MASKS if m in data.fields()]
-
-
-def market_inputs(panel):
-    if all(m in panel._arrays for m in MASKS):
-        can_buy, can_sell = (np.asarray(panel[m]) for m in MASKS)
-        p = {name: np.asarray(panel[name]) for name in FIELDS[:2] + FIELDS[8:]}
-    else:
-        p = {name: np.asarray(panel[name]) for name in FIELDS}
-        can_buy, can_sell = tradability(
-            p["open"],
-            p["high"],
-            p["low"],
-            p["upper_limit"],
-            p["lower_limit"],
-            p["is_suspended"] | ~p["has_quote"],
-        )
-    return {
-        "exec_price": p["open"],
-        "close": p["close"],
-        "can_buy": can_buy,
-        "can_sell": can_sell,
-        "volume": p["volume"],
-        "split": np.where(np.isnan(p["split"]), 1.0, p["split"]),
-        "cash_div": np.nan_to_num(p["cash_dividend"]),
-        "delist": p["delist"],
-    }
+    """开盘成交需要的字段（面板有 can_buy_open/can_sell_open 时直接用）。"""
+    masks = {"can_buy_open", "can_sell_open"} <= set(data.fields())
+    return list(required_fields("open", masks=masks))
 
 
 def costs(dates):
+    """剖析固定用的近似费率（不随费率表改动，保证与历史基线可比）。
+
+    2008-09-19 前按卖出单边 0.3%/0.1% 近似，忽略买方印花税和历史过户费；
+    真实历史费率见 ashare.backtest.BacktestMarket.costs / panelbt.markets.ASHARE。
+    """
     days = np.asarray(
         [f"{d[:4]}-{d[4:6]}-{d[6:]}" for d in dates], dtype="datetime64[D]"
     )
@@ -77,39 +40,22 @@ def costs(dates):
     return panelbt.Costs(tax_sell=tax)
 
 
-def config(symbols):
-    boards = []
-    for symbol in symbols:
-        code = re.sub(r"\D", "", symbol)[:6]
-        if code.startswith(("300", "301")):
-            boards.append(Board.CHINEXT)
-        elif code.startswith(("688", "689")):
-            boards.append(Board.STAR)
-        elif code.startswith(("43", "83", "87", "88", "92")):
-            boards.append(Board.BSE)
-        else:
-            boards.append(Board.MAIN)
-    min_qty, step = lot_rules(np.array(boards))
+def config(data, symbols):
+    """整手规则按证券表的板块列（ashare.backtest.boards）。"""
+    data = ashare.data.open(data) if not hasattr(data, "securities") else data
+    min_qty, step = lot_rules(boards(data.securities(), symbols))
     return panelbt.Config(min_qty=min_qty, qty_step=step)
 
 
 def plans(score, t, validate=True, count=1):
-    """count 组：调仓相位 0..9 × 持仓比例 20 档；成交日 = 信号日 + 1。"""
+    """count 组：调仓相位 0..9 × 持仓比例 20 档；成交日由 ashare.backtest 错位一天。"""
     out = []
     fractions = np.linspace(0.02, 0.4, 20)
     for i in range(count):
         phase, fraction = i // 20 % 10, fractions[i % 20] if count > 1 else 0.1
         days = np.arange(252 + phase, t - 1, REBALANCE_EVERY, dtype=np.int64)
         sparse = panelops.targets(score, fraction=float(fraction), days=days)
-        out.append(
-            panelbt.Targets(
-                sparse.days + 1,
-                sparse.indptr,
-                sparse.cols,
-                sparse.weights,
-                validate=validate,
-            )
-        )
+        out.append(execution_targets(sparse, t=t, tail="error", validate=validate))
     return out
 
 
@@ -120,7 +66,7 @@ def run(ctx):
     t, n = panel.shape
     stats, inputs = measure(lambda: market_inputs(panel), 1)
     cases = [{"case": "adapter_inputs", "scale": {"days": t, "symbols": n}, **stats}]
-    cost, cfg = costs(panel.dates), config(panel.symbols)
+    cost, cfg = costs(panel.dates), config(data, panel.symbols)
     score = np.ascontiguousarray(
         Evaluator().evaluate(default_registry()["reversal_20"].expression, panel)
     )
