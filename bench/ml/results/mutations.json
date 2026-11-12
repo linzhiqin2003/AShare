@@ -1,0 +1,128 @@
+[
+ {
+  "name": "label_shift_one_day",
+  "desc": "标签少移一天（卖出日提前一天）",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
+  ],
+  "seconds": 2.7
+ },
+ {
+  "name": "label_buy_one_day_early",
+  "desc": "买入价早取一天（信号日当天成交）",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
+  ],
+  "seconds": 2.6
+ },
+ {
+  "name": "buyable_misaligned",
+  "desc": "可买性取信号日而不是买入日",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
+  ],
+  "seconds": 2.5
+ },
+ {
+  "name": "blocked_not_excluded",
+  "desc": "买不进的样本也进训练集",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
+  ],
+  "seconds": 2.6
+ },
+ {
+  "name": "gap_minus_one",
+  "desc": "验证段与预测段的间隔少一天",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_search_explain.py::test_grid_search_ledgers_every_config"
+  ],
+  "seconds": 3.0
+ },
+ {
+  "name": "valid_overlaps_train",
+  "desc": "训练集与验证集重叠",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_search_explain.py::test_grid_search_ledgers_every_config"
+  ],
+  "seconds": 2.9
+ },
+ {
+  "name": "check_off_by_one",
+  "desc": "防前视检查放过等号",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_walk.py::test_check_lookahead_rejects_tampered_fold - Fai..."
+  ],
+  "seconds": 7.0
+ },
+ {
+  "name": "shared_bins_use_all_data",
+  "desc": "共享分箱边界用了全部样本（含未来）",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_walk.py::test_changing_later_data_never_changes_earlier_predictions[lgbm-params1]"
+  ],
+  "seconds": 7.3
+ },
+ {
+  "name": "gram_window_one_day_late",
+  "desc": "岭回归的按日统计量多加了训练期之后的一天",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_walk.py::test_ridge_matches_naive_sklearn - AssertionError: "
+  ],
+  "seconds": 7.7
+ },
+ {
+  "name": "ridge_no_intercept",
+  "desc": "岭回归截距算错",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_models.py::test_ridge_numpy_matches_sklearn - AssertionEr..."
+  ],
+  "seconds": 2.7
+ },
+ {
+  "name": "early_stop_lower_better",
+  "desc": "提前停止把 Rank IC 当成越小越好",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_models.py::test_lgbm_early_stopping_uses_rank_ic - assert..."
+  ],
+  "seconds": 3.0
+ },
+ {
+  "name": "ledger_counts_runs_not_definitions",
+  "desc": "账本按运行（含线程数）而不是按定义数试验组数",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_walk.py::test_cache_and_ledger - assert 4 == 3"
+  ],
+  "seconds": 8.2
+ },
+ {
+  "name": "winsor_upper_ignored",
+  "desc": "去极值上界没生效",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_preprocess_store.py::test_preprocess_matches_daily_loop[pre0]"
+  ],
+  "seconds": 3.0
+ },
+ {
+  "name": "ic_misaligned",
+  "desc": "逐日 Rank IC 的预测与标签错位",
+  "caught": true,
+  "by": [
+   "FAILED test/ml/test_search_explain.py::test_permutation_importance_finds_real_feature"
+  ],
+  "seconds": 4.1
+ }
+]

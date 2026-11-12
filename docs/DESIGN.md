@@ -379,6 +379,23 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - 每次求解后都核对约束是否满足；结果与第二个求解器对拍。
 - 输出目标权重，按 `panelbt.Targets` 的稀疏布局交给回测。
 
+### 6.7 机器学习（`ashare.ml`）
+
+把「因子当特征 → 滚动训练 → 预测值当新因子」这一圈封装好；模型本身用成熟的库（树模型 LightGBM，线性模型 NumPy 正规方程 + scikit-learn），框架负责模型外面那一圈：样本对齐、间隔、滚动重训、特征库、留痕。细节与实测见 `docs/ML_NOTES.md`。
+
+- **依赖**：可选依赖组 `ml`（`lightgbm`、`scikit-learn`），只有 `import ashare.ml` 时才需要，缺了报出中文的安装方法；框架其余部分不受影响。神经网络（PyTorch）这一轮不做，以后走单独的可选组 `nn`，默认不装；`mlp`、`lstm`、`gru`、`transformer` 这几个名字预留给它，没装时用到会提示装 `nn` 组。不引入 Qlib。
+- **标签**（`Label`）：按回测的成交约定实际拿得到的未来收益。信号日 t 收盘后算特征，t+lag 行按成交价买入、再过 h 行按成交价卖出，`label[t] = P[t+lag+h]/P[t+lag] − 1`（P = 成交价 × 复权因子），与 `ashare.backtest.execution_days` 同一口径；可买可卖与 `market_from_panel` 同一口径。预设 `ret1/ret5/ret10/ret20`，可扣市场或行业均值、可截面排名化。买入日不可买的样本默认不进训练集但照样给预测值。
+- **截面预处理**（`Preprocess`）：去极值 → 行业/市值中性化 → 标准化或排名化 → 缺失值处理，全用 `panelops` 截面算子、按日在股票池内做；预处理结果存在特征库里，训练和预测读同一份。
+- **特征库**（`FeatureStore`）：只存股票池内的样本，float32，按特征列存成磁盘映射文件，样本按（信号日，证券）排序、`day_ptr` 索引，一折取一段连续样本。缓存键 = 特征表达式哈希 + 预处理 + 股票池 + 面板版本 + 代码哈希；新特征只算新列；`incremental=True` 时新日期只追加尾部（追加前重算最后几天逐位核对）。
+- **切分**（`schedule`）：滚动或扩展窗口，按月/季/半年/年或每 k 个交易日重训；训练 → 间隔 → 验证 → 间隔 → 预测。间隔 `gap` 默认等于标签跨度 `lag + h`，只能加大，保证任一训练/验证样本的标签结束日严格早于下一段第一天；`describe()` 打印日程表。
+- **防前视**：特征表达式只看信号日及以前；标签结束日 < 预测期首日由 `check_lookahead` 逐折核对；LightGBM 跨折复用的分箱边界只用第一折训练集定。测试：改动第 D 日及以后的全部数据，D 之前的预测逐位不变。
+- **模型协议**：`fit(train, valid)`、`predict(batch)`、`save(path)`、`load(path)`，可选 `feature_importance()`、`get_params()`；`Batch` 带 X（用时才读盘）、y、日、列。内置 `ridge`、`lasso`、`elasticnet`、`lgbm`、`lgbm_rank`（lambdarank，按日分组）、`ensemble`（多模型多种子，平均或按截面排名平均）。提前停止看验证集逐日 Rank IC 均值。第三方模型 `register_model("名字", 类或 "模块:属性", group=...)` 或入口点组 `ashare.ml.models` 登记后即可 `model="名字"`，不改核心代码。
+- **预测即因子**：`walk_forward(...)` 返回 `WalkResult`，`.pred` 是 T×N 面板，直接交给 `panelops.rank_ic` / `group_returns`、合成或组合构建；`to_targets(res, top=50)` 按标签持有期调仓、经 `execution_targets` 错位后交给 `panelbt.run`。
+- **留痕**：每次训练往 JSONL 账本追加一行（数据版本、特征与哈希、标签、预处理、股票池、切分日程、模型参数、种子、代码版本、各折与汇总指标、耗时）。同样的定义重跑命中运行缓存直接返回，记一条 `cache_hit`，不算新试验；`Ledger.trials()` 数不同定义的组数（定义不含框架代码版本和线程数；运行缓存按代码版本区分）。默认目录 `ASHARE_ML_DIR`，否则数据根目录下的 `ml/`（不入库）。
+- **超参搜索**：网格或随机，同一套切分评估，每组都入账；结果给 Bonferroni 折算（门槛 α / 账本累计组数）。更精细的多重检验校正留到因子挖掘那条线。
+- **解释**：各折特征重要性（及随时间变化）、验证集上按 Rank IC 的截面内置换重要性。不做 SHAP。
+- **性能**：逐日运算用 `panelops` 或 NumPy 向量化；训练线程数可配，默认核数的一半；各折可并行（`fold_workers`）。LightGBM 默认 `bins="shared"`（全部样本按第一折的分箱边界分一次，各折取子集）；`bins="per_fold"` 每折重新分箱，与最直白的写法逐位一致。
+
 ## 7. 实施步骤
 
 回测引擎、模拟盘、数据层、因子算子库、风险与组合都由 Codex 实现，每条线一个独立的工作区（`.worktrees/`）和分支，可以并行。每条线交付后由 Claude 做独立审查（读改动、跑测试、在副本里做试验和变异检查、复测基准），问题退回原会话返工，通过后由 Claude 提交并合入主干。

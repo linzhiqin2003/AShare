@@ -27,3 +27,4 @@
   - `ASHARE.costs` 的费率表补到 2005-01-24（印花税和过户费每次调整，依据见 `docs/ASHARE_FEES.md`，2015 年以前的过户费标「未核实」并取保守值），全历史回测不用再手填；新增 `FeeSchedule.components`，覆盖一种过户费写法时同方向另一种清零。改动前能用的写法结果逐位不变。
   - `ashare.risk.from_panel(data, start=...)` 把面板接到风险模型（字段改名、行业重编号），行业因子用申万一级名称（`industry_银行`，新增 `FundamentalConfig.industry_names`，不给名字时缓存键不变）；`PortfolioProblem` 的 `industry_factors`、`style_factors` 可按因子名给；导出 `ashare.risk.STYLE_NAMES`。
   - `bench/e2e` 改用这些入口，真实面板上与旧手写做法逐位相同（`bench/e2e/usability_equivalence.py`）。`DESIGN.md` 3、4.3、4.4、6.1、6.3、6.4 同步，组合优化的选型改成实际的「直接调 Clarabel，cvxpy 只作后备和参考」。
+- 新增 `ashare.ml`（DESIGN 6.7，说明与实测在 `docs/ML_NOTES.md`）：因子当特征 → 滚动训练 → 预测值当新因子。按回测成交约定的标签（与 `execution_days`、`market_from_panel` 同一口径）、`panelops` 截面预处理、只存股票池内样本的 float32 列存磁盘映射特征库、由标签跨度推出且只能加大的切分间隔、模型协议与注册表（岭回归、Lasso、ElasticNet、LightGBM 回归与排序、集成；第三方和以后 `nn` 组的模型登记名字即可用）、按逐日 Rank IC 提前停止、JSONL 试验账本与运行缓存、网格/随机搜索与 Bonferroni 折算、特征与置换重要性。可选依赖组 `ml`（LightGBM、scikit-learn），没装时 `test/ml` 跳过。
