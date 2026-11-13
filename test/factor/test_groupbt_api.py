@@ -6,6 +6,8 @@ import pytest
 from ashare.factor import groupbt
 from ashare.factor.groupbt import api
 
+EARLY = ("20140101", "20990101")
+
 
 class FakePanel:
     def __init__(self, arrays, dates, symbols):
@@ -310,12 +312,63 @@ def test_top1800_starts_in_2015():
     assert not mask[:30].any() and mask[30].sum() == 50
     assert api.universe_mask(panel, "TOP800")[5].sum() == 30
     factor = np.random.default_rng(5).normal(size=panel.shape)
-    res = groupbt.run(factor, panel, "TOP1800", n_groups=5)
+    res = groupbt.run(factor, panel, "TOP1800", n_groups=5, window=EARLY)
     first = lambda r: int(np.flatnonzero(~np.isnan(r.pnl["long_short"]))[0])  # noqa: E731
     assert first(res) == 31 and first(res.subs["TOP800"]) == 31  # 信号日 30，成交日 31
     assert res.table()["period"].to_list() == ["2015", "ALL"]  # 2014 年没有结果，不列
-    whole = groupbt.run(factor, panel, "ALL", n_groups=5)
+    whole = groupbt.run(factor, panel, "ALL", n_groups=5, window=EARLY)
     assert first(whole) == 1 and first(whole.subs["TOP800"]) == 1
     assert first(whole.subs["TOP1800"]) == 31
-    alone = groupbt.run(factor, panel, "TOP800", n_groups=5)
+    alone = groupbt.run(factor, panel, "TOP800", n_groups=5, window=EARLY)
     assert first(alone) == 1
+
+
+def test_window_hides_everything_after_the_stop_date():
+    """默认只用样本内窗口：止日及以后的因子、行情怎么改，结果都逐位不变；起日之前不产生持仓。"""
+    assert groupbt.IS == ("20160101", "20250101")
+    panel = make_panel(seed=11)
+    t = panel.shape[0]
+    dates = np.array(
+        [f"2015{12 - (i < 10):02d}{1 + i % 10:02d}" for i in range(20)]
+        + [f"2016{1 + i // 20:02d}{1 + i % 20:02d}" for i in range(t - 35)]
+        + [f"202501{1 + i:02d}" for i in range(15)]
+    )
+    assert list(dates) == sorted(dates)
+    panel = FakePanel(panel._a, dates, panel.symbols)
+    rng = np.random.default_rng(12)
+    factor = rng.normal(size=panel.shape)
+    base = groupbt.run(factor, panel, "ALL", n_groups=5, weights_portfolio=True)
+    stop = t - 15
+    assert len(base.dates) == stop and base.dates[-1] < "20250101"
+    live = np.flatnonzero(~np.isnan(base.pnl["long_short"]))
+    assert (
+        live[0] == 21 and live[-1] == stop - 2
+    )  # 首个信号日是 2016 年第一天；最后一行没有下一日价格
+    arrays = {k: v.copy() for k, v in panel._a.items()}
+    for name in ("open", "close", "adj_factor", "total_market_cap", "upper_limit"):
+        arrays[name][stop:] *= rng.uniform(0.5, 2.0, arrays[name][stop:].shape)
+    for name in ("can_buy_open", "can_sell_open", "is_suspended", "member_csi300"):
+        arrays[name][stop:] = ~arrays[name][stop:]
+    other = factor.copy()
+    other[stop:] = rng.normal(size=other[stop:].shape)
+    moved = groupbt.run(
+        other,
+        FakePanel(arrays, dates, panel.symbols),
+        "ALL",
+        n_groups=5,
+        weights_portfolio=True,
+    )
+    np.testing.assert_array_equal(base.group_pnl, moved.group_pnl)
+    for key in base.pnl:
+        np.testing.assert_array_equal(base.pnl[key], moved.pnl[key])
+        np.testing.assert_array_equal(base.turnover[key], moved.turnover[key])
+    for key in base.exposure:
+        np.testing.assert_array_equal(base.exposure[key], moved.exposure[key])
+    # 样本外要显式传窗口
+    out = groupbt.run(factor, panel, "ALL", n_groups=5, window=groupbt.VALIDATION)
+    assert (
+        out.dates[-1] >= "20250101"
+        and np.isnan(out.pnl["long_short"][: stop + 1]).all()
+    )
+    with pytest.raises(ValueError):
+        groupbt.run(factor, panel, "ALL", window=("20250101", "20160101"))

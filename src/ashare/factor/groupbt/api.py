@@ -36,6 +36,10 @@ FIELDS = (
 )
 # 中证1000 的成分数据从 2014 年 11 月才有；涉及 TOP1800 的回测统一从这一天起算。
 TOP1800_START = "20150101"
+# 回测只许用样本内窗口 [起, 止)；之后的数据是样本外（2025 年验证、2026 年起测试），默认读不到。
+IS = ("20160101", "20250101")
+VALIDATION = ("20250101", "20260101")
+TEST = ("20260101", "99991231")
 PRICE_TOL = 0.005  # 与数据层开盘口径相同
 PERIODS = 240  # 一年按 240 个交易日
 
@@ -103,6 +107,22 @@ def close_masks(panel):
         no_buy = np.isfinite(up) & (close >= up - PRICE_TOL)
         no_sell = np.isfinite(down) & (close <= down + PRICE_TOL)
     return valid & ~no_buy, valid & ~no_sell
+
+
+class _Until:
+    """面板截到第 stop 行为止的只读视图：之后的行在回测里读不到。"""
+
+    def __init__(self, panel, stop):
+        self._panel, self._stop = panel, stop
+        self.dates = np.asarray(panel.dates)[:stop]
+        self.symbols = panel.symbols
+
+    def __getitem__(self, name):
+        return self._panel[name][: self._stop]
+
+    @property
+    def shape(self):
+        return len(self.dates), len(self.symbols)
 
 
 def _shift(x):
@@ -259,12 +279,11 @@ def _one(name, alpha_all, inputs, options):
     exposure = metrics.risk_exposure(long_short["weights"], known, pool)
     # 第一个有持仓的成交日之前不计入统计。
     live = np.flatnonzero(np.abs(long_short["weights"]).sum(axis=1) > 0)
-    if live.size:
-        for series in (*pnl.values(), *turnover.values()):
-            series[: live[0]] = np.nan
     group_pnl = np.array([g["pnl"] for g in group_runs])
-    if live.size:
-        group_pnl[:, : live[0]] = np.nan
+    first = live[0] if live.size else len(group_pnl[0])
+    for series in (*pnl.values(), *turnover.values(), *group_pnl):
+        series[:first] = np.nan
+        series[-1:] = np.nan  # 最后一行没有下一日的价格，盈亏未知
     return GroupBacktest(
         universe=name,
         trade_at=options["trade_at"],
@@ -292,6 +311,7 @@ def run(
     by="year",
     weights_portfolio=False,
     sub_universes=True,
+    window=IS,
 ):
     """分组回测。`factor` 是在全市场上算好的 (T, N) 因子矩阵，行列与 `panel` 对齐，值越大越做多。
 
@@ -303,6 +323,10 @@ def run(
     - vector_neut：一个或一组 (T, N) 风险向量，依次做截面正交。
     - weights_portfolio：另算一个直接按全池归一化权重持仓的多空组合。
     - sub_universes：用大池时把嵌套的小池各跑一遍，放在结果的 `subs` 里。
+
+    - window：`(起, 止)`，YYYYMMDD，含起不含止，默认样本内 `IS`（2016-01-01 至 2025-01-01）。
+      止日及以后的行情、因子一概不读；起日之前的数据只用来算滚动窗口，不产生持仓。
+      样本外窗口 `VALIDATION`、`TEST` 要显式传入才会用到。
 
     `panel` 需要 `FIELDS` 里的字段（`ashare.data.open().panel(FIELDS)`）。分不出 `n_groups`
     组的交易日会抛 `GroupingError`。
@@ -316,6 +340,18 @@ def run(
     x = np.asarray(factor, dtype=np.float64)
     if x.shape != panel.shape:
         raise ValueError(f"factor 形状 {x.shape} 与面板 {panel.shape} 不一致")
+    start, stop = (str(d) for d in window)
+    if not start < stop:
+        raise ValueError(f"window 的起日 {start} 要早于止日 {stop}")
+    panel = _Until(panel, int(np.searchsorted(np.asarray(panel.dates), stop)))
+    x = x[: panel.shape[0]]
+    if vector_neut is not None:
+        many = isinstance(vector_neut, (list, tuple))
+        cut = [
+            np.asarray(v)[: panel.shape[0]]
+            for v in (vector_neut if many else [vector_neut])
+        ]
+        vector_neut = cut if many else cut[0]
     x = np.where(np.isfinite(x), x, np.nan)
     cap = np.asarray(panel["total_market_cap"], dtype=np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -348,7 +384,7 @@ def run(
         by=by,
         weights_portfolio=weights_portfolio,
         # 主池是 TOP1800 时，带的小池也从同一天起算，才能并排比较。
-        start=TOP1800_START if universe == "TOP1800" else None,
+        start=max(start, TOP1800_START) if universe == "TOP1800" else start,
     )
     result = _one(universe, alpha_all, inputs, options)
     if sub_universes:
