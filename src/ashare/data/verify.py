@@ -10,7 +10,6 @@ import polars as pl
 from .aliases import CanonicalStore
 from .catalog import DATASETS, FUTURES_DATASETS, INDUSTRY_CAVEAT
 from .crosscheck import fingerprint
-from .indexes import audit_index_daily
 from .panel_events import dividend_rows
 from .panel_quality import securities_table
 from .rules import SOURCES
@@ -231,7 +230,6 @@ def verify(store, *, output=None):
         ]
     extra = Audit()
     extra.add("unique_keys", total, duplicates, failed=duplicate_count)
-    audit_index_daily(raw_store, extra)
     audit.merge(extra)
     # 共用清单里的期货条目由 verify-futures 检查；这里只看股票数据集，加不加期货结果逐位不变。
     stock_keys = [

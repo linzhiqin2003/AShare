@@ -35,8 +35,7 @@ def dataset(name, partition, keys, columns, **kwargs):
     )
 
 
-# 股票池用的指数：成分、权重（面板 weight_*/member_* 字段）只覆盖这 5 个，日线按逐指数逐月分区。
-# 「可下载的指数」是另一回事：全市场指数日线在 index_daily_all，名单在 index_basic。
+# 股票池用的指数：成分、权重（面板 weight_*/member_* 字段）只覆盖这几个。
 INDEXES = {
     "csi300": "000300.SH",
     "csi500": "000905.SH",
@@ -44,8 +43,35 @@ INDEXES = {
     "csi2000": "932000.CSI",
     "csi_all": "000985.CSI",
 }
-# 研究平台基准下拉框的默认项（上证指数）；可选范围见 Data.indexes()。
+# 研究平台可选的基准：主流指数，写死的名单（用户 2026-11-13 定：基准只用主流指数）。
+# 日线与 INDEXES 走同一套逐指数逐月分区；只下日线，不下成分和权重。
+# 加一个指数：在这里加一行，运行 sync --datasets index_daily，见 docs/DATA_NOTES.md。
+BENCHMARKS = {
+    "000001.SH": "上证指数",
+    "399001.SZ": "深证成指",
+    "399006.SZ": "创业板指",
+    "000688.SH": "科创50",
+    "899050.BJ": "北证50",
+    "000016.SH": "上证50",
+    "000300.SH": "沪深300",
+    "000510.SH": "中证A500",
+    "000905.SH": "中证500",
+    "000906.SH": "中证800",
+    "000852.SH": "中证1000",
+    "932000.CSI": "中证2000",
+    "000985.CSI": "中证全指",
+    "399303.SZ": "国证2000",
+    "399330.SZ": "深证100",
+    "399673.SZ": "创业板50",
+    "000698.SH": "科创100",
+    "000922.CSI": "中证红利",
+    "000015.SH": "上证红利",
+    "000919.CSI": "300价值",
+    "000918.CSI": "300成长",
+}
 DEFAULT_BENCHMARK = "000001.SH"
+# index_daily 下载的指数：股票池指数在前（与原来同序），再加基准名单里的其余指数。
+INDEX_DAILY_CODES = tuple(dict.fromkeys([*INDEXES.values(), *BENCHMARKS]))
 DATASETS = {
     d.name: d
     for d in [
@@ -133,27 +159,6 @@ DATASETS = {
             "ts_code,trade_date",
             "ts_code,trade_date,open,high,low,close,pre_close,vol,amount",
             limit=5000,
-        ),
-        # 全市场指数按交易日一次取齐（接口不带 ts_code、只带 trade_date，每页上限 8000 行）。
-        # 与上面「股票池用的 5 个指数」分开存：那 5 个仍按逐指数逐月分区，行为不变；
-        # 读取时 index_daily 长表把两者拼起来，这里出现的那 5 个代码被略去。范围与取舍见 docs/DATA_NOTES.md。
-        dataset(
-            "index_daily_all",
-            "day",
-            "ts_code,trade_date",
-            "ts_code,trade_date,open,high,low,close,pre_close,vol,amount",
-            api="index_daily",
-            limit=8000,
-            empty_allowed=False,
-            raw_dir="index_daily_all",
-        ),
-        dataset(
-            "index_basic",
-            "static",
-            "ts_code",
-            "ts_code,name,fullname,market,publisher,index_type,category,base_date,base_point,list_date,weight_rule,desc,exp_date",
-            date="list_date",
-            known_at="当前指数主表（含已终止）；名称、类别、终止日期为现值",
         ),
         dataset(
             "index_weight",
@@ -452,21 +457,6 @@ PUBLIC_TABLES = {
         "in_date": ("effective_from", 1),
         "out_date": ("effective_through", 1),
     },
-    "index_basic": {
-        "ts_code": ("symbol", 1),
-        "name": ("name", 1),
-        "fullname": ("full_name", 1),
-        "market": ("market", 1),
-        "publisher": ("publisher", 1),
-        "index_type": ("index_type", 1),
-        "category": ("category", 1),
-        "base_date": ("base_date", 1),
-        "base_point": ("base_point", 1),
-        "list_date": ("listing_date", 1),
-        "weight_rule": ("weight_rule", 1),
-        "desc": ("description", 1),
-        "exp_date": ("expiry_date", 1),
-    },
     "index_classify": {
         "index_code": ("industry_code", 1),
         "industry_name": ("industry_name", 1),
@@ -480,7 +470,6 @@ TABLE_DATES = {
     "index_member": "effective_from",
     "fut_basic": "listing_date",
     "index_classify": None,
-    "index_basic": None,
 }
 for _name, _mapping in FINANCIAL.items():
     PUBLIC_TABLES[_name] = {
@@ -524,9 +513,6 @@ OBSERVED_FIRST_PARTITIONS = {
     "forecast": "20070331",
     "express": "20070331",
     "index_member": "801010.SI_N",
-    # 2026-11-13 实测：按同步起点下载，源里更早的指数日线（1990 年起）未下载。
-    "index_daily_all": "20070104",
-    "index_basic": "all",
 }
 
 # 本库 daily 实测旧码末个成交日与其后新码首个成交日；新码另有源重述历史。

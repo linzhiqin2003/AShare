@@ -1,63 +1,34 @@
-"""指数名单（index_basic）与全市场指数日线（index_daily_all）；全部用合成数据。"""
+"""基准指数名单（catalog.BENCHMARKS）的下载与读取；全部用合成数据。"""
 
 import asyncio
-from datetime import date
 
 import polars as pl
 import pytest
 
 import ashare.data as ad
+from ashare.data import sync as sync_module
 from ashare.data.catalog import (
-    DAILY_DATASETS,
+    BENCHMARKS,
     DATASETS,
     DEFAULT_BENCHMARK,
+    INDEX_DAILY_CODES,
     INDEXES,
-    PUBLIC_TABLES,
 )
 from ashare.data.sources.base import FetchResult
 from ashare.data.store import Store
 from ashare.data.sync import plan, sync
-from ashare.data.sync_policy import should_refresh
+from ashare.data.sync_policy import month_final
 
-DAYS = [
-    "20260105",
-    "20260106",
-    "20260107",
-    "20260108",
-    "20260109",
-    "20260112",
-    "20260113",
-    "20260114",
-]
-POOL = "000300.SH"  # 股票池指数之一，两份来源都有
-WIDE = ["000001.SH", "399006.SZ", "H00001.CSI"]
-BASIC_FIELDS = DATASETS["index_basic"].columns.split(",")
+JANUARY = ["20260105", "20260106", "20260107", "20260108", "20260109"]
+FEBRUARY = ["20260202", "20260203"]
+DAYS = JANUARY + FEBRUARY
+FETCHED = "2026-02-04T00:00:00+00:00"  # 一月已过定稿宽限期，二月是当月
+POOL = list(INDEXES.values())
+EXTRA = [c for c in BENCHMARKS if c not in POOL]
 
 
-def basic_rows():
-    rows = []
-    for code, name, full, market in (
-        ("000001.SH", "上证指数", "上海证券综合指数", "SSE"),
-        ("399006.SZ", "创业板指", "创业板指数", "SZSE"),
-        (POOL, "沪深300", "沪深300指数", "SSE"),
-        ("999999.CSI", "合成终止指数", "只在名单里的指数", "CSI"),
-    ):
-        row = dict.fromkeys(BASIC_FIELDS)
-        row.update(
-            ts_code=code,
-            name=name,
-            fullname=full,
-            market=market,
-            category="规模指数",
-            base_date="20000101",
-            base_point=1000.0,
-            list_date="20000101",
-        )
-        rows.append(row)
-    return pl.DataFrame(rows)
-
-
-def bar(code, day, close):
+def bar(code, day):
+    close = 1000.0 + INDEX_DAILY_CODES.index(code)
     return dict(
         ts_code=code,
         trade_date=day,
@@ -72,16 +43,16 @@ def bar(code, day, close):
 
 
 class FakeSource:
-    """合成接口：全市场按日返回，股票池指数按代码和月份返回，数值能分辨来源。"""
+    """合成接口：交易日历按年，指数日线按代码和月份。"""
 
-    def __init__(self):
+    def __init__(self, short=()):
         self.calls = []
+        self.short = set(short)  # 这些代码的当月只返回一天，模拟数据没发全
 
     async def fetch(self, api, params, *, fields="", page_size=None):
-        self.calls.append((api, dict(params), page_size))
+        self.calls.append((api, dict(params)))
         if api == "trade_cal":
-            year = params["start_date"][:4]
-            days = [d for d in DAYS if d.startswith(year)]
+            days = [d for d in DAYS if d.startswith(params["start_date"][:4])]
             return FetchResult(
                 pl.DataFrame(
                     dict(
@@ -91,42 +62,32 @@ class FakeSource:
                         pretrade_date=days,
                     )
                 ),
-                "2026-01-20T00:00:00+00:00",
+                FETCHED,
                 1,
             )
-        if api == "index_basic":
-            return FetchResult(basic_rows(), "2026-01-20T00:00:00+00:00", 1)
-        if api == "index_daily" and "trade_date" in params:
-            assert "ts_code" not in params
-            day = params["trade_date"]
-            rows = [bar(c, day, 100.0 + i) for i, c in enumerate(WIDE)]
-            rows[-1].update(open=None, high=None, low=None)  # 只给收盘价的指数
-            rows.append(bar(POOL, day, 9999.0))  # 全市场里的股票池指数，读取时应被略去
-            return FetchResult(pl.DataFrame(rows), "2026-01-20T00:00:00+00:00", 1)
         if api == "index_daily":
+            assert set(params) == {"ts_code", "start_date", "end_date"}
             days = [d for d in DAYS if params["start_date"] <= d <= params["end_date"]]
+            if params["ts_code"] in self.short and days and days[0] in FEBRUARY:
+                days = days[:1]
             return FetchResult(
-                pl.DataFrame([bar(params["ts_code"], d, 3000.0) for d in days]),
-                "2026-01-20T00:00:00+00:00",
-                1,
+                pl.DataFrame([bar(params["ts_code"], d) for d in days]), FETCHED, 1
             )
         raise AssertionError(f"测试未覆盖的接口 {api}")
 
 
-def run(store, source, names, **kwargs):
-    return asyncio.run(sync(source, store, DAYS[0], DAYS[-1], names, **kwargs))
+def run(store, source, **kwargs):
+    return asyncio.run(
+        sync(source, store, DAYS[0], DAYS[-1], ["index_daily"], **kwargs)
+    )
 
 
-@pytest.fixture
-def synced(tmp_path):
-    store = Store(tmp_path)
-    source = FakeSource()
-    run(store, source, ["index_basic", "index_daily", "index_daily_all"])
-    return store, source
+def index_calls(source):
+    return [p for api, p in source.calls if api == "index_daily"]
 
 
-def test_catalog_keeps_pool_indexes_separate():
-    # 股票池用的指数不变；全市场日线、名单是另外的数据集，默认每日同步都会带上。
+def test_catalog_lists():
+    # 股票池指数不变；基准名单另列，下载的是两者的并集，股票池指数排在前面。
     assert INDEXES == {
         "csi300": "000300.SH",
         "csi500": "000905.SH",
@@ -134,230 +95,179 @@ def test_catalog_keeps_pool_indexes_separate():
         "csi2000": "932000.CSI",
         "csi_all": "000985.CSI",
     }
-    assert DATASETS["index_daily"].partition == "index_month_daily"
-    assert DATASETS["index_daily_all"].partition == "day"
-    assert DATASETS["index_daily_all"].api == "index_daily"
-    assert {"index_basic", "index_daily_all"} <= set(DAILY_DATASETS)
-    assert DEFAULT_BENCHMARK == "000001.SH"
+    assert DEFAULT_BENCHMARK == "000001.SH" and DEFAULT_BENCHMARK in BENCHMARKS
+    assert list(INDEX_DAILY_CODES[: len(POOL)]) == POOL
+    assert set(INDEX_DAILY_CODES) == set(POOL) | set(BENCHMARKS)
+    assert len(INDEX_DAILY_CODES) == len(set(INDEX_DAILY_CODES))
+    assert all(name for name in BENCHMARKS.values())
 
 
-def test_plan_wide_by_day_pool_by_month(tmp_path):
+def test_plan_includes_benchmarks_weights_stay_pool(tmp_path):
     store = Store(tmp_path)
-    wide = list(plan(DATASETS["index_daily_all"], DAYS[0], DAYS[-1], DAYS, store))
-    assert wide == [(d, {"trade_date": d}) for d in DAYS]
-    pool = list(plan(DATASETS["index_daily"], DAYS[0], DAYS[-1], DAYS, store))
-    assert pool == [
-        (f"{code}_202601", dict(ts_code=code, start_date="20260101", end_date=DAYS[-1]))
-        for code in INDEXES.values()
+    daily = list(plan(DATASETS["index_daily"], DAYS[0], DAYS[-1], DAYS, store))
+    assert [p for p, _ in daily] == [
+        f"{code}_{month}"
+        for month in ("202601", "202602")
+        for code in INDEX_DAILY_CODES
     ]
-    assert list(plan(DATASETS["index_basic"], DAYS[0], DAYS[-1], DAYS, store)) == [
-        ("all", {})
-    ]
-
-
-def test_sync_requests_and_raw_layout(synced):
-    store, source = synced
-    wide_calls = [
-        c for c in source.calls if c[0] == "index_daily" and "trade_date" in c[1]
-    ]
-    assert sorted(c[1]["trade_date"] for c in wide_calls) == DAYS
-    assert {c[2] for c in wide_calls} == {8000}
-    pool_calls = [
-        c for c in source.calls if c[0] == "index_daily" and "ts_code" in c[1]
-    ]
-    assert sorted(c[1]["ts_code"] for c in pool_calls) == sorted(INDEXES.values())
-    entries = store.entries("index_daily_all")
-    assert sorted(e["partition"] for e in entries.values()) == DAYS
-    assert all(e["file"].startswith("raw/index_daily_all/") for e in entries.values())
-    assert all(
-        e["file"].startswith("raw/index_daily/")
-        for e in store.entries("index_daily").values()
+    assert daily[0][1] == dict(
+        ts_code=POOL[0], start_date="20260101", end_date="20260131"
     )
+    assert daily[-1][1] == dict(
+        ts_code=INDEX_DAILY_CODES[-1], start_date="20260201", end_date=DAYS[-1]
+    )
+    weights = list(plan(DATASETS["index_weight"], DAYS[0], DAYS[-1], DAYS, store))
+    assert {p.rsplit("_", 1)[0] for p, _ in weights} == set(POOL)
 
 
-def test_incremental_does_not_refetch_old_days(synced):
-    store, source = synced
-    source.calls.clear()
-    run(store, source, ["index_daily_all"], refresh=False)
-    assert [c for c in source.calls if c[0] == "index_daily"] == []
-    # 默认刷新只重抓最近 refresh 个交易日；更早的已完成分区不动。
-    source.calls.clear()
-    run(store, source, ["index_daily_all"])
-    again = sorted(c[1]["trade_date"] for c in source.calls if c[0] == "index_daily")
-    assert again == DAYS[-DATASETS["index_daily_all"].refresh :]
-    assert len(again) < len(DAYS)
-    spec = DATASETS["index_daily_all"]
-    entry = store.manifest()[f"index_daily_all/{DAYS[0]}"]
-    assert not should_refresh(spec, DAYS[0], entry, DAYS, DAYS[-1])
-
-
-def test_basic_public_table(synced):
-    store, _ = synced
-    table = ad.open(store.root.parent).table("index_basic").collect()
-    assert set(table.columns) == {
-        public for public, _ in PUBLIC_TABLES["index_basic"].values()
-    }
-    row = table.filter(pl.col("symbol") == "000001.SH").row(0, named=True)
-    assert row["name"] == "上证指数" and row["full_name"] == "上海证券综合指数"
-    assert row["market"] == "SSE" and row["listing_date"] == "20000101"
-    assert "ts_code" not in table.columns
-    with pytest.raises(ValueError):
-        ad.open(store.root.parent).table("index_basic", start="20260101")
-
-
-def test_union_keeps_pool_from_original_partitions(synced):
-    store, _ = synced
-    data = ad.open(store.root.parent)
-    table = data.table("index_daily").collect()
+def test_sync_downloads_every_benchmark(tmp_path):
+    store = Store(tmp_path)
+    source = FakeSource()
+    run(store, source)
+    assert sorted({p["ts_code"] for p in index_calls(source)}) == sorted(
+        INDEX_DAILY_CODES
+    )
+    table = ad.open(store.root.parent).table("index_daily").collect()
+    assert set(table["symbol"]) == set(INDEX_DAILY_CODES)
     assert table.select("symbol", "date").is_duplicated().sum() == 0
-    pool = table.filter(pl.col("symbol") == POOL)
-    assert pool["close"].to_list() == [3000.0] * len(
-        DAYS
-    )  # 来自逐月分区，不是全市场的 9999
-    assert set(table["symbol"]) == set(INDEXES.values()) | set(WIDE)
-    one = data.table("index_daily", symbols=["399006.SZ"]).sort("date").collect()
-    assert one["date"].to_list() == DAYS and one["close"].to_list() == [101.0] * len(
-        DAYS
-    )
-    assert one["volume"].to_list() == [300.0] * len(DAYS)  # 单位换算与原表相同（手→股）
-    window = data.table("index_daily", start="2026-01-06", end="20260107").collect()
-    assert sorted(set(window["date"])) == DAYS[1:3]
 
 
-def test_pool_rows_identical_with_or_without_wide(tmp_path):
-    # 原来的 5 个指数：有没有全市场日线，读出来逐位相同。
-    before_store = Store(tmp_path / "a")
-    run(before_store, FakeSource(), ["index_daily"])
-    after_store = Store(tmp_path / "b")
-    run(after_store, FakeSource(), ["index_daily", "index_daily_all", "index_basic"])
-    codes = list(INDEXES.values())
+def test_pool_rows_identical_to_pool_only_download(tmp_path, monkeypatch):
+    # 原 5 个指数：只下股票池（main 的做法）与加上基准名单后，读出来逐位相同。
+    with monkeypatch.context() as ctx:
+        ctx.setattr(sync_module, "INDEX_DAILY_CODES", tuple(POOL))
+        before = Store(tmp_path / "a")
+        run(before, FakeSource())
+    after = Store(tmp_path / "b")
+    run(after, FakeSource())
+    assert {
+        e["partition"].rsplit("_", 1)[0] for e in before.entries("index_daily").values()
+    } == set(POOL)
 
-    def pool(store):
+    def pool(store, **kwargs):
         return (
             ad.open(store.root.parent)
-            .table("index_daily", symbols=codes)
+            .table("index_daily", **kwargs)
+            .filter(pl.col("symbol").is_in(POOL))
             .collect()
             .sort("symbol", "date")
         )
 
-    assert pool(before_store).equals(pool(after_store))
+    assert pool(before).equals(pool(after))
+    assert pool(before).equals(pool(after, symbols=POOL))
+    assert pool(before, start="20260106", end="20260202").equals(
+        pool(after, start="20260106", end="20260202", symbols=POOL)
+    )
+    # 原始分区本身（内容哈希）也相同。
+    hashes = {
+        k: v["content_hash"]
+        for k, v in before.manifest().items()
+        if v["dataset"] == "index_daily"
+    }
+    assert all(after.manifest()[k]["content_hash"] == h for k, h in hashes.items())
 
 
-def test_only_wide_or_nothing(tmp_path):
+def test_symbols_open_only_their_partitions(tmp_path, monkeypatch):
     store = Store(tmp_path)
-    with pytest.raises(FileNotFoundError):
-        ad.open(store.root.parent).table("index_daily").collect()
-    run(store, FakeSource(), ["index_daily_all"])
-    table = ad.open(store.root.parent).table("index_daily").collect()
-    assert set(table["symbol"]) == set(WIDE)  # 股票池指数只认逐月分区，这里没有就不出现
-    listing = ad.open(store.root.parent).indexes()
-    assert listing["symbol"].to_list() == sorted(WIDE)
-    assert listing["name"].null_count() == len(WIDE)  # 没同步名单时简称为空
+    run(store, FakeSource())
+    opened = []
+    original = pl.scan_parquet
+
+    def spy(path, *args, **kwargs):
+        opened.append(str(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pl, "scan_parquet", spy)
+    one = (
+        ad.open(store.root.parent)
+        .table("index_daily", symbols=["399006.SZ"], start="20260201")
+        .collect()
+    )
+    assert one["date"].to_list() == FEBRUARY
+    assert len(opened) == 1 and "399006.SZ_202602" in opened[0]
+    opened.clear()
+    missing = (
+        ad.open(store.root.parent).table("index_daily", symbols=["X.SH"]).collect()
+    )
+    assert missing.height == 0 and "close" in missing.columns
 
 
-def test_local_indexes_listing_and_search(synced):
-    store, _ = synced
+def test_incremental_refreshes_only_current_month(tmp_path):
+    store = Store(tmp_path)
+    run(store, FakeSource())
+    source = FakeSource()
+    run(store, source, refresh=False)
+    assert index_calls(source) == []
+    source = FakeSource()
+    run(store, source)
+    # 一月已定稿不重下；二月是当月，每个指数重抓一次。
+    again = index_calls(source)
+    assert sorted(p["ts_code"] for p in again) == sorted(INDEX_DAILY_CODES)
+    assert {p["start_date"] for p in again} == {"20260201"}
+
+
+def test_short_current_month_is_not_finalized(tmp_path):
+    # 新增指数的当月分区行数偏少：照逐月分区规则不定稿，下次同步重抓补齐。
+    store = Store(tmp_path)
+    code = EXTRA[0]
+    run(store, FakeSource(short=[code]))
+    entry = store.manifest()[f"index_daily/{code}_202602"]
+    assert entry["rows"] == 1 and entry["finalized"] is False
+    assert not month_final(entry)
+    assert store.manifest()[f"index_daily/{code}_202601"]["finalized"] is True
+    source = FakeSource()
+    run(store, source)
+    assert f"{code}" in {p["ts_code"] for p in index_calls(source)}
+    assert store.manifest()[f"index_daily/{code}_202602"]["rows"] == len(FEBRUARY)
+
+
+def test_indexes_lists_only_benchmarks_and_searches(tmp_path):
+    store = Store(tmp_path)
+    run(store, FakeSource())
+    # 名单外的指数即使本地有日线也不列。
+    store.write(
+        "index_daily",
+        "999999.SH_202601",
+        {},
+        FetchResult(
+            pl.DataFrame([bar(POOL[0], JANUARY[0]) | {"ts_code": "999999.SH"}]),
+            FETCHED,
+            1,
+        ),
+    )
     data = ad.open(store.root.parent)
     listing = data.indexes()
-    assert listing.columns == [
-        "symbol",
-        "name",
-        "full_name",
-        "market",
-        "category",
-        "first_date",
-        "last_date",
-        "has_open",
-    ]
-    assert listing.filter(~pl.col("has_open"))["symbol"].to_list() == ["H00001.CSI"]
-    # 只列有日线的：名单里有、本地没日线的 999999.CSI 不出现。
-    assert listing["symbol"].to_list() == sorted(set(INDEXES.values()) | set(WIDE))
-    first = listing.filter(pl.col("symbol") == "000001.SH").row(0, named=True)
-    assert (first["name"], first["first_date"], first["last_date"]) == (
-        "上证指数",
+    assert listing.columns == ["symbol", "name", "first_date", "last_date"]
+    assert listing["symbol"].to_list() == sorted(BENCHMARKS)
+    row = listing.filter(pl.col("symbol") == DEFAULT_BENCHMARK).row(0, named=True)
+    assert (row["name"], row["first_date"], row["last_date"]) == (
+        BENCHMARKS[DEFAULT_BENCHMARK],
         DAYS[0],
         DAYS[-1],
     )
-    assert data.indexes("创业")["symbol"].to_list() == ["399006.SZ"]
-    assert data.indexes("h00001")["symbol"].to_list() == ["H00001.CSI"]
-    assert data.indexes("上海证券综合")["symbol"].to_list() == ["000001.SH"]
+    assert data.indexes("创业板指")["symbol"].to_list() == ["399006.SZ"]
+    assert data.indexes("399006")["symbol"].to_list() == ["399006.SZ"]
+    assert data.indexes("bj")["symbol"].to_list() == ["899050.BJ"]
+    assert set(data.indexes("红利")["symbol"]) == {"000922.CSI", "000015.SH"}
+    assert data.indexes("999999").height == 0
     assert data.indexes("不存在").height == 0
-    assert DEFAULT_BENCHMARK in listing["symbol"].to_list()
 
 
-def test_empty_wide_partition_is_suspect(tmp_path):
-    store = Store(tmp_path)
-    empty = FetchResult(
-        pl.DataFrame(schema={c: pl.String for c in ("ts_code", "trade_date")}),
-        date(2026, 1, 20).isoformat(),
-        1,
-    )
-    entry = store.write("index_daily_all", DAYS[0], {"trade_date": DAYS[0]}, empty)
-    assert entry["status"] == "suspect"
+def test_indexes_skips_benchmarks_without_local_data(tmp_path, monkeypatch):
+    with monkeypatch.context() as ctx:
+        ctx.setattr(sync_module, "INDEX_DAILY_CODES", tuple(POOL))
+        store = Store(tmp_path)
+        run(store, FakeSource())
+    assert sorted(ad.open(store.root.parent).indexes()["symbol"]) == sorted(POOL)
+    empty = ad.open(Store(tmp_path / "none").root.parent).indexes()
+    assert empty.height == 0 and empty.columns == [
+        "symbol",
+        "name",
+        "first_date",
+        "last_date",
+    ]
 
 
-def test_audit_reports_overlap_values_and_names(synced):
-    from ashare.data.indexes import audit_index_daily
-    from ashare.data.verify_tables import Audit
-
-    store, _ = synced
-    audit = Audit()
-    audit_index_daily(store, audit)
-    checks = audit.checks
-    # 合成的全市场分区里股票池指数故意写成另一个数，逐日都应报出差异。
-    assert checks["index_daily_pool_overlap"]["checked"] == len(DAYS)
-    assert checks["index_daily_pool_overlap"]["failed"] == len(DAYS)
-    assert checks["index_daily_all_values"]["checked"] == len(DAYS) * (len(WIDE) + 1)
-    assert checks["index_daily_all_values"]["failed"] == 0
-    assert checks["index_basic_covers_daily"]["failed"] == 1
-    assert checks["index_basic_covers_daily"]["examples"] == [{"ts_code": "H00001.CSI"}]
-
-
-def test_audit_overlap_passes_when_values_match(tmp_path):
-    from ashare.data.indexes import audit_index_daily
-    from ashare.data.verify_tables import Audit
-
-    class Same(FakeSource):
-        async def fetch(self, api, params, **kwargs):
-            out = await super().fetch(api, params, **kwargs)
-            if api == "index_daily" and "trade_date" in params:
-                table = out.table.with_columns(
-                    pl.when(pl.col("ts_code") == POOL)
-                    .then(3000.0)
-                    .otherwise(pl.col(c))
-                    .alias(c)
-                    for c in ("open", "close", "pre_close")
-                ).with_columns(
-                    pl.when(pl.col("ts_code") == POOL)
-                    .then(pl.col("close") + d)
-                    .otherwise(pl.col(c))
-                    .alias(c)
-                    for c, d in (("high", 1), ("low", -1))
-                )
-                out = FetchResult(table, out.fetched_at, out.calls)
-            return out
-
-    store = Store(tmp_path)
-    run(store, Same(), ["index_daily", "index_daily_all"])
-    audit = Audit()
-    audit_index_daily(store, audit)
-    assert audit.checks["index_daily_pool_overlap"]["checked"] == len(DAYS)
-    assert audit.checks["index_daily_pool_overlap"]["failed"] == 0
-    assert "index_basic_covers_daily" not in audit.checks
-
-
-def test_date_window_prunes_wide_partitions(synced, monkeypatch):
-    # 全市场日线有上万个按日分区，带日期读取时只打开窗口内的分区。
-    store, _ = synced
-    seen = []
-    original = Store.scan
-
-    def spy(self, name, start=None, end=None):
-        seen.append((name, start, end))
-        return original(self, name, start, end)
-
-    monkeypatch.setattr(Store, "scan", spy)
-    ad.open(store.root.parent).table(
-        "index_daily", start="2026-01-06", end="2026-01-07"
-    ).collect()
-    assert ("index_daily_all", "20260106", "20260107") in seen
+@pytest.mark.parametrize("code", ["000001.SH", "399001.SZ", "000688.SH", "000922.CSI"])
+def test_required_benchmarks_present(code):
+    assert code in BENCHMARKS
