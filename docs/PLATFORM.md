@@ -1,0 +1,390 @@
+# 本地研究平台（第一期）
+
+## 安装与启动
+
+要求 Python 3.13、uv、Rust stable；前端构建需要 Node 22.12+ 和 npm。框架与平台单向依赖，
+`import ashare` 不会加载 FastAPI、Uvicorn 或平台。`platform` 是可选依赖；开发依赖组也包含它。
+
+```sh
+export CARGO_HOME="$PWD/.cache/cargo-home"
+export UV_PYTHON_INSTALL_DIR="$PWD/.cache/uv-python"
+export MPLCONFIGDIR="$PWD/.cache/mpl"
+export npm_config_cache="$PWD/.cache/npm"
+export GIT_OPTIONAL_LOCKS=0
+timeout 900s make dev
+timeout 300s make web
+# DATA_ROOT 指向已经构建的只读行情库。
+export ASHARE_DATA_DIR="$DATA_ROOT"
+export ASHARE_PLATFORM_DIR="$PWD/.cache/platform"
+timeout 3600s .venv/bin/python -m ashare.platform --port 8765
+```
+
+浏览器打开 `http://127.0.0.1:8765`。激活虚拟环境后也可以直接运行
+`python -m ashare.platform`；默认端口 8765。只绑定 127.0.0.1，不提供外网绑定开关。
+没有前端构建产物时只输出一行 `make web` 提示，不启动服务、不报栈。
+只安装 Python 平台依赖可以使用 `uv sync --extra platform`。
+
+`make web-dev` 启动 127.0.0.1:5173 的 Vite 开发服务，`/api` 代理到 8765。
+开发代理保留 Host，使浏览器 Origin 与服务收到的 Host 一致。`make web-check` 运行
+vue-tsc 和 Vitest；`make check` 运行 Python/Rust 检查，不依赖 Node。
+字体（IBM Plex Sans、IBM Plex Mono、Noto Sans SC）和 Lucide 图标随前端构建，无 CDN。
+`static/`、Node 依赖和 `.cache/` 均在根 `.gitignore` 中按根路径忽略。
+
+第一期只有研究台、因子库。没有回测、模拟盘、数据、设置页入口；没有大盘或板块行情。
+顶栏日期来自数据清单所引用的当前面板日期，而不是时钟或硬编码日期。
+
+## 表达式与参数扫描
+
+```python
+# 示例公式，公开的通用低波信号
+vol = ts_std(returns, [20, 60])
+alpha = -vol
+```
+
+设置中中性化选择行业、市值 + 行业，得到 2 × 2 = 4 个变体。
+每个函数参数位置可以用列表表达候选值；不同列表与设置中的多选项做笛卡儿积。
+同一次赋值的候选在后续引用中保持一致，不会每引用一次就重新展开。
+回测设置在 API 中均可使用列表；界面中性化为多选，其余设置为单选。基准不参与扫描。
+前端先请求 `/api/validate` 显示运行组数，真正提交时后端再校验一次，最多 8 组。
+
+支持数字、名称、四则运算、一元负号、单个比较（<、<=、>、>=、==、!=）、函数调用、
+括号、注释、单名称赋值。最后一条赋值或表达式是信号。纯数字运算有相同的数值上限，
+因此也支持 `n = 10 + 10` 后将 `n` 用作窗口。窗口参数沿用 DSL 的向下取整规则。
+不支持字符串、属性、下标、关键字参数、lambda、推导式、import、dunder 名字或动态调用。
+不使用 Python `eval` / `exec`；所有 AST 节点先完整校验，再逐节点构造既有 DSL。
+
+资源上限：输入 16000 字节、AST 512 个节点、深度 32、每个列表 1–8 项、
+数字绝对值 ≤ 10^9、单窗口 ≤ 2520、累计回看 ≤ 10000 行；HTTP 正文 ≤ 32768 字节。
+错误返回行、UTF-8 字节列和一句中文原因，CodeMirror 转成 UTF-16 位置画波浪线。
+
+字段优先采用 DSL 口径：价格乘复权因子、成交量除以复权因子，`returns` 是
+`close / previous_close - 1` 且上市首日为空；`cap` 是总市值。其他字段保持框架原名及单位。
+登记因子来自 `default_registry()` 与入口点组 `ashare.factors`，使用现有插件发现协议。
+字段与因子重名时，字段保持原义，因子使用 `factor_` 前缀（如 `factor_dividend_yield`）。
+插件是本机安装的可信 Python 代码；用户表达式无法导入插件或执行任意代码。
+
+补全内容由 `/api/completions` 提供。算子带签名和中文说明、字段带说明、登记因子显示
+库内最佳样本内 Sharpe（同时按名称和表达式身份匹配，无试验值时不显示占位）。登记因子排最前，
+算子右侧显示签名，字段右侧显示中文名，已输入前缀加粗。弹窗只有候选列表，函数说明在编辑器下方。
+停止输入 600 ms 后才请求语法校验，继续输入会清除上一条编辑错误。
+
+### 算子与别名表
+
+| 编辑器名称 | DSL 构造器 | 签名 | 口径 |
+|---|---|---|---|
+| `ts_std` | `dsl.stddev` | `ts_std(x, window)` | 滚动标准差，分母 n−1 |
+| `ts_mean` | `dsl.ts_mean` | `ts_mean(x, window)` | 滚动均值，窗口必须满 |
+| `ts_sum` | `dsl.ts_sum` | `ts_sum(x, window)` | 滚动求和，窗口必须满 |
+| `ts_min` | `dsl.ts_min` | `ts_min(x, window)` | 滚动最小值 |
+| `ts_max` | `dsl.ts_max` | `ts_max(x, window)` | 滚动最大值 |
+| `ts_rank` | `dsl.ts_rank` | `ts_rank(x, window)` | 当天值在窗口内的百分位 |
+| `ts_delay` | `dsl.delay` | `ts_delay(x, window)` | 向过去移位指定交易日 |
+| `ts_delta` | `dsl.delta` | `ts_delta(x, window)` | 与指定交易日前的差值 |
+| `ts_corr` | `dsl.correlation` | `ts_corr(x, y, window)` | 滚动 Pearson 相关系数 |
+| `ts_cov` | `dsl.covariance` | `ts_cov(x, y, window)` | 滚动样本协方差 |
+| `ts_decay_linear` | `dsl.decay_linear` | `ts_decay_linear(x, window)` | 线性衰减加权平均 |
+| `ts_argmax` | `dsl.ts_argmax` | `ts_argmax(x, window)` | 窗口最大值距今天数 |
+| `ts_argmin` | `dsl.ts_argmin` | `ts_argmin(x, window)` | 窗口最小值距今天数 |
+| `ts_product` | `dsl.ts_product` | `ts_product(x, window)` | 滚动乘积 |
+| `ts_count` | `dsl.ts_count` | `ts_count(condition, window)` | 条件成立的天数 |
+| `ts_sumif` | `dsl.ts_sumif` | `ts_sumif(x, condition, window)` | 条件成立时滚动求和 |
+| `rank` | `dsl.rank` | `rank(x)` | 截面百分位，平均秩除以有效数 |
+| `scale` | `dsl.scale` | `scale(x, a=1)` | 按截面绝对值之和归一化 |
+| `log` | `dsl.log` | `log(x)` | 自然对数，非正数为空 |
+| `abs` | `dsl.abs` | `abs(x)` | 绝对值 |
+| `sign` | `dsl.sign` | `sign(x)` | 数值符号 |
+| `sqrt` | `dsl.sqrt` | `sqrt(x)` | 平方根 |
+| `power` | `dsl.power` | `power(x, y)` | 实数幂 |
+| `signed_power` | `dsl.signed_power` | `signed_power(x, a)` | 保留符号的幂 |
+| `max` | `dsl.maximum` | `max(x, y)` | 逐元素取大 |
+| `min` | `dsl.minimum` | `min(x, y)` | 逐元素取小 |
+| `where` | `dsl.where` | `where(condition, if_true, if_false)` | 按条件选择数值 |
+| `adv` | `dsl.adv` | `adv(window)` | 滚动平均成交额，单位元 |
+
+## 运行模型与窗口纪律
+
+浏览器生成并保存稳定的 tab ID，`POST /api/tabs` 带 ID 时幂等恢复。tab 数量不限；
+空 tab 不启动进程。第一次运行才创建 spawn 协调进程，后续运行复用它和按需加载的只读 mmap 字段；
+空闲 60 秒后回收（`ASHARE_PLATFORM_IDLE_SECONDS`），有任务等待时提前回收其他空闲进程。
+同一个 tab 仍不能重复提交；不同 tab 可以并行，超过预算的任务排队，取消排队任务不会启动进程。
+
+默认工作进程预算为 `min(4, max(1, cpu // 2))`，`ASHARE_PLATFORM_WORKERS=1..32` 可调，
+预算包含 tab 协调进程和变体子进程，不包括 HTTP 主进程及 Python 自身的资源跟踪器。
+`ASHARE_PLATFORM_EXECUTOR=processes|threads` 切换执行方式，默认 `processes`。
+`ASHARE_PLATFORM_VARIANTS=1..8` 控制每 tab 并发数，默认 2；子进程模式需要 1 个协调进程加至少
+2 个计算进程，预算不足时在协调进程内串行。线程模式每个 tab 只占 1 个进程预算。
+
+同次运行按 DSL 表达式摘要去重求值：例如两个窗口 × 四个中性化，八组只求值两次。
+求值面板截到验证期末（不含 TEST），生成的信号文件放在结果目录 `work/<job>/`，子进程
+以只读 mmap 共享；完成、取消或失败后清理。回测仍分别调用 `groupbt.run` 跑 IS、VALIDATION，
+验证强制 `sub_universes=False`。IS 使用同一信号的历史前缀和截到 IS 末的面板。
+滚动标准差、滚动均值、截面 rank、delay 和组合表达式有 uint64 位模式测试，证明与分别求值一致。
+没有改变 `src/ashare/factor/groupbt/`。
+
+只加载表达式及 groupbt 实际需要的字段。因果求值保留预热历史，避免截短历史改变滚动累加位模式。
+API 不接受 window / start / end / TEST 等字段，也没有解锁 TEST 的路由。数据句柄固定版本，
+底层更新后重启服务可刷新指数目录；工作进程回收后下一次运行重新取得数据句柄。
+
+### 执行方式与前后测量
+
+同机合成数据，约十年交易日 × 120 个证券，8 变体；算子内线程数固定为 1。
+`concurrency.py` 的旧版/新版使用相同窗口列表，差异为旧版两个窗口分别求值、新版共享因果前缀。
+这些短任务测量有系统调度噪声，不能把微小差异当作收益承诺。
+
+| 直接执行方式 | 改前 s | 改后 s | 改后峰值 RSS |
+|---|---:|---:|---:|
+| 串行 | 7.62 | 8.07 | 233.3 MiB |
+| 2 线程 | 8.87 | 9.72 | 295.5 MiB |
+| 2 子进程 | 4.75 | 4.43 | 每进程最大 232.7 MiB |
+
+`models.py` 测量实际调度器：两个表达式 × 四种中性化、8 变体，包含启动、共享文件、
+IPC、SQLite 和 NPZ 落盘，两个模式的样本内原始多空收益逐位相同：
+
+| 模式 | 冷运行总 s | 热运行总 s | 热运行求值 s | 协调进程峰值 | 子进程峰值之和 |
+|---|---:|---:|---:|---:|---:|
+| 2 线程 | 9.90 | 9.50 | 0.028 | 295.8 MiB | — |
+| 2 子进程 | 5.63 | 5.09 | 0.028 | 90.2 MiB | 437.2 MiB |
+
+子进程的总耗时降低约 43%–46%，代价是更多中间数组内存；上表峰值之和是各进程峰值相加，
+并非同步采样的系统峰值。当前 groupbt 仍持有 GIL，默认选子进程；框架释放 GIL 后可切换线程重新测量。
+共享求值减少重复运算，并不消除框架的逐日组合计算；没有声称真实大面板的内存瓶颈已经解决。
+
+进度按每个变体的求值、信号就绪、IS、验证、落盘完成上报，不伪造逐日百分比；tab 显示这些阶段
+加权得到的百分比和转圈。SSE 事件有 SQLite 序号，可用 `Last-Event-ID` / `after` 续传。
+取消终止该 tab 的独立进程组，包含子进程；已完成变体保留，未完成部分标 cancelled。
+服务重启把未完成任务标 interrupted。取消后的新运行重新加载面板。
+
+## 基准指数
+
+每个 tab 独立选择基准，默认 `000001.SH`，与数据层的 `DEFAULT_BENCHMARK` 约定一致。
+新版通过公开 `Data.indexes()` 获取 `catalog.BENCHMARKS` 中本地有日线的指数及中文简称；
+平台不直接依赖数据层内部模块，不修改数据分支，也不放宽分层测试。兼容接口返回的 DataFrame、
+LazyFrame 或记录列表；只向前端发送 symbol、name，不发送控件用不到的日期范围。
+当前 main 没有该方法时，从公开 `Data.table("index_daily")` 读取研究窗口结束前有日线的代码；
+现有五个主流指数及上证指数使用固定中文简称，未知代码显示代码。已移除指数名单长表依赖。
+默认指数缺失时选排序后的目录第一项，控件显示“替代默认”。保留按名称或代码搜索，约 22 项名单不再分页。
+合成截图数据使用现有五个指数代码及中文名，价格全部由固定随机种子生成，默认缺失回退场景仍保留。
+
+基准只影响显示和相对指标，**不参与条目身份，不传入 groupbt**。运行记录单独保存当次选择；
+切换基准即可重绘，不需要重跑多空。指数按成交时点 open/close 计算下一交易日同价位的收益，
+与 groupbt 的持有区间对齐，研究期最后一个无法取得下一日价格的值为空，不读取 TEST 价格。
+灰色虚线使用同一累加/复利函数，时间窗变化后从窗内起点重新累计。
+
+“相对基准”使用多头第 1 组日收益减指数日收益，只保留双方有值的交易日：
+年化超额 = 平均日超额 × 240；信息比率 IR = 平均日超额 / 日超额样本标准差 × √240。
+至少需要两个有效日且标准差非零才有 IR。参数组表以「年化超额」「信息比率」两列显示样本内结果，接口同时返回验证结果。
+检验表不再显示相对基准列，检验名按内容分配宽度、必要时换行，完整显示。
+这些指标不加入通过/失败门槛；TEST 价格、用户指定起止日期和任意数据路径均不在 API 中开放。
+
+## 结果库与检验
+
+目录由 `$ASHARE_PLATFORM_DIR` 决定，默认 `$ASHARE_DATA_DIR/platform/`。
+没有设置数据目录时使用当前目录的 `data/platform/`。目录仅在服务器使用，不返回浏览器。
+
+- `platform.sqlite3`：WAL 模式，`entries` 为因子条目，`jobs` 为 tab 提交，`runs` 为每个变体的试验，`events` 为续传事件。
+- `entries.family` 保存数值参数同族摘要，`t`/`margin` 用于列表；`runs.benchmark` 单独记录展示基准。旧库启动时自动补列和回填。
+- `work/<job>/` 是运行时的只读共享信号，正常结束/取消/失败时清理，不作为结果档案。
+- `series/<run-id>.npz`：每个变体运行一个文件；原始 float64 分组、多空、可选权重组合、换手、Rank IC、覆盖率、风格暴露和子池日序列，以及日期。
+- `logs/platform.log`：详细错误与耗时、字段数量、峰值 RSS；4 MiB 滚动、保留 3 份。
+
+条目身份为 `SHA256(DSL 表达式摘要 + 规范化回测设置 JSON)`，明确排除基准。注释、空格、临时变量名不改变身份；
+同表达式换配置产生新条目；同条目重跑追加试验。名字不含配置，更新一个表达式的名字会同步其所有配置。
+每次提交记录 `ashare.ledger.code_version`，每个成功变体还记录数据版本。
+已提交的不同条目数构成 Bonferroni 的 N（失败和取消的试验也计入，重跑不重复计数）。
+检验值保存为此次完成时的快照；后来新增试验不会改写过去试验的结论。重新运行会使用最新 N。
+同一批的所有变体完成后再统一比较，避免先完成的变体漏掉同批相关性。
+
+检验在后端 `analysis.py` 计算，门槛集中在 `config.py`，前端只格式化返回值：
+
+| 项目 | 算法与门槛 |
+|---|---|
+| 样本内 Sharpe | groupbt 原值，≥ 1.00 |
+| Fitness | Sharpe × sqrt(abs(年化收益) / max(日均换手, 0.125))，≥ 0.50 |
+| t 值 | Sharpe × sqrt(有效日数 / 240)，≥ Φ⁻¹(1 − 0.025/N) |
+| 验证 / 样本内 Sharpe | ≥ 0.50；分母为零或缺失时提示 |
+| TOP800 子池 Sharpe | ≥ 0.50；未运行子池时提示 |
+| 库内最大相关 | 排除同次运行及数值参数同族后，样本内多空日收益按交集日期 Pearson 相关，取绝对值最大，≤ 0.70 |
+| 日均换手 | 1%–70% |
+| 覆盖率 | 样本内末日池内有效因子数 / 池内股票数，≥ 95% |
+| 风格暴露 | 四个框架风格暴露均值中绝对值最大；0.15 为提示门槛，沿用稿子的 advisory 结果 |
+| 收益为正年份 | 样本内正收益年数 / 有效年数，≥ 60% |
+
+设计脚本按绝对值排序相关性、却直接对带符号的值做门槛比较；平台采用更保守的绝对值门槛，
+强负相关也会标为未通过。风格行显示真正最大的风格，不固定写成动量。这两点有测试守住。
+同族摘要保留算子、字段、非数值参数及表达式结构，将数值旋钮替换为占位，跨批次也排除扫描兄弟。
+这比只排除当前扫描列表更保守：结构相同但数值常量不同的表达式都排除。检验名称显示实际对照的因子名；
+无独立因子时显示提示，相关算法、绝对值门槛不变。列表里的相关矩阵仍展示可见条目之间的相关性。
+
+Rank IC 使用信号在 T+1 成交时点到 T+2 同时点的收益；分组回测仍直接调用框架，不另写一份收益算法。
+
+## 页面与接口
+
+研究草稿、tab 设置和预设保存在浏览器本地；刷新幂等恢复原 tab，重连仍在运行的任务。
+默认名取最后赋值变量或首个函数名，双击改名；重命名同时更新最近运行的表达式及其配置条目。
+`/#/library` 可直达因子库，hash 历史支持前进、后退。
+已有结果先显示，SSE 完成一个变体就补一个。图序列按 run id + 视图缓存，切 tab 不重复下载。
+收益图是手写 SVG；拖两侧手柄或整体平移窗口，使用窗内逐日收益重新计算累加/复利及对应回撤。
+主图仅画累计收益；当前选中变体的回撤以约 1/4 高度的浅色面积贴在其下方，十字线同时显示回撤。
+百分比纵轴用 1/2/2.5/5/10 × 10ⁿ 中能形成整数百分比的整齐刻度，最小步长 1%。缩略图保留完整历史、年份和验证底色；拖动按每帧一次更新。
+选择参数组驱动检验、分段、相关、风格；子池不存在时不显示子池页签。
+
+研究台三处分栏及因子库列表/抽屉边界均可拖动。比例记录为 localStorage `ashare.split.*`，
+窗口变化按比例伸缩，同时约束两侧最小尺寸；过小时按比例收紧最小尺寸以避免溢出。双击恢复默认，
+键盘方向键调整、Home 复位。设置弹层分样本、信号处理、组合与成交，Esc/外部点击关闭，底部保留运行按钮。
+错误贴在编辑器或对应控件附近，全局提示五秒后消失。
+
+因子库默认不分组，服务端搜索、过滤、表头排序、50 条分页（API 上限 200）。
+在一个 SQLite 读事务中产生总数、状态计数、页内记录和可见分组的完整筛选后计数；
+不会发送当前页看不到的分组头。分组子菜单向右展开；表达式列最多 330px，悬停显示完整文本，
+详情用只读 CodeMirror 换行显示并高亮。详情序列按运行 id 缓存。
+底部相关矩阵按可用宽度取当前页前 3–12 个已有结果的因子，按样本内共同日期计算；散点图使用当前页的 Sharpe 与换手。矩阵为浅蓝/浅暖发散色阶；抽屉参与分栏，两块分析图同步收窄。
+筛选或翻页同步更新两块图，不下载全库逐日序列。
+
+| 方法 | 路由 | 用途 |
+|---|---|---|
+| GET | `/api/meta` | 数据截至日、运行任务数、工作进程预算 |
+| GET | `/api/settings` | 支持的设置及默认值 |
+| GET | `/api/completions` | 补全候选 |
+| GET | `/api/benchmarks?search=` | 本地指数目录 |
+| POST | `/api/validate` | 解析与扫描组合数 |
+| GET / POST | `/api/tabs` | 列出现有 tab / 新建或幂等恢复 |
+| DELETE | `/api/tabs/{tab}` | 关闭并取消 |
+| POST | `/api/tabs/{tab}/name` | 表达式重命名 |
+| POST | `/api/tabs/{tab}/runs` | 提交运行 |
+| GET | `/api/jobs/{job}` | 状态、参数组和检验摘要 |
+| GET | `/api/jobs/{job}/events` | SSE 可续传进度 |
+| GET | `/api/jobs/{job}/benchmark?symbol=...` | 基准序列及第 1 组相对指标 |
+| POST | `/api/jobs/{job}/cancel` | 取消 |
+| GET | `/api/runs/{run}/series?view=returns\|groups\|ic\|subs` | 不可变绘图序列 |
+| GET | `/api/library` | 服务端筛选、排序、分页、分组计数 |
+| GET | `/api/library/{entry}` | 详情 |
+| GET | `/api/library/correlation?ids=...` | 最多 12 个可见条目的样本内相关矩阵 |
+
+所有写请求必须提供与 Host 完全一致的 HTTP Origin；命令行请求也需要此头。
+Host 仅允许 localhost 和 127.0.0.1（可带端口）；没有跨源许可、没有远端监听。
+Web 请求只传标量设置，不允许数据路径、日志路径或窗口；未知异常只给友好提示，详细栈只入后端日志。
+
+## 接口性能
+
+测量脚本 `bench/platform/http_perf.py`，数据是 1000 个已完成合成条目（复测另含 8 个取消条目）、8 变体 × 2400 日；
+分组 10 条、多空、换手、IC、覆盖和风格均合成，不包含真实行情数字。
+下表为本机 TestClient 请求，通常取 5 次中位数；spawn、取消、新建/关闭只执行一次。
+指数接口改为约 22 项名单，不分页；下表原有接口保留第二轮测量，指数目录列于表后更新。
+耗时取 `Server-Timing`，SSE 为握手至首个事件，不包括任务等待；最后一行是八次读取的客户端总耗时。
+序列读取包含一次冷读，其余命中服务器缓存。发送的数据按当前图视图选择，float32 小端按列 base64 打包，
+NPZ 计算档案保留 float64。Gzip level 6，500 字节以上启用，SSE 为避免缓冲不压缩；小响应直接发送原文。
+
+| 接口 | 原始字节 | 实际压缩后字节 | 服务端 ms |
+|---|---:|---:|---:|
+| `/api/meta` | 54 | 54 | 0.33 |
+| `/api/settings` | 574 | 298 | 0.28 |
+| `/api/completions` | 9,792 | 2,303 | 7.84 |
+| `/api/tabs` | 2 | 2 | 0.26 |
+| `/api/benchmarks`（第二轮，5 项旧目录） | 438 | 438 | 0.25 |
+| `POST /api/validate (8)` | 27 | 27 | 1.51 |
+| `POST /api/tabs` | 41 | 41 | 0.50 |
+| `POST /api/tabs/{id}/name` | 11 | 11 | 4.52 |
+| `GET /api/jobs/{id} (8)` | 48,602 | 3,065 | 6.70 |
+| `GET /api/jobs/{id}/benchmark (8 × 2400)` | 41,174 | 16,576 | 6.20 |
+| `GET /api/jobs/{id}/events (replay)` | 851 | 851 | 10.90 |
+| `GET /api/runs/{id}/series?view=returns` | 39,366 | 15,849 | 0.97 |
+| `GET /api/runs/{id}/series?view=groups` | 154,556 | 102,297 | 4.79 |
+| `GET /api/runs/{id}/series?view=ic` | 39,342 | 15,802 | 1.14 |
+| `GET /api/runs/{id}/series?view=subs` | 38,040 | 14,803 | 1.32 |
+| `GET /api/library?group=none` | 34,876 | 7,754 | 7.35 |
+| `GET /api/library?group=expression` | 40,388 | 8,674 | 4.60 |
+| `GET /api/library?group=config` | 36,062 | 8,130 | 4.54 |
+| `GET /api/library (filtered)` | 35,907 | 8,013 | 3.29 |
+| `GET /api/library/{id}` | 6,614 | 2,070 | 1.56 |
+| `GET /api/library/correlation (12)` | 1,864 | 837 | 27.41 |
+| `POST /api/tabs/{id}/runs (spawn)` | 41 | 41 | 60.08 |
+| `POST /api/jobs/{id}/cancel` | 18 | 18 | 7.64 |
+| `DELETE /api/tabs/{id}` | 11 | 11 | 0.83 |
+| `8 variants × 2400 days (returns)` | 314,928 | 126,781 | 98.56 |
+
+第三轮改用 22 项合成名单后，单独通过新版 `Data.indexes()` 兼容路径复测，预热后取 5 次中位数：
+
+| 接口 | 原始字节 | gzip 字节 | 服务端 ms |
+|---|---:|---:|---:|
+| `GET /api/benchmarks`（22 项，全名单） | 1,301 | 258 | 0.601 |
+| `GET /api/benchmarks?search=指数000`（筛选到 10 项） | 713 | 197 | 0.515 |
+
+这里的名单和日期均为合成元数据，不触碰真实行情；与第二轮不同的名单规模不能作为提速比。
+
+表达式分组初版发出了所有分组头（118408 B，gzip 45647 B）；测量后改为只发送当前页分组头，
+本轮加上独立配置列、t/Margin 和筛选计数后为 40388 B / 8674 B；仍保留每组在完整筛选集合中的计数。
+基准序列按 job + 已完成 run ID 集合 + 指数缓存，返回内容 ETag 和 `private, no-cache`，允许 304 校验；
+指数是本地数据快照，重启服务后重新读目录。
+运行序列返回 ETag 与 `private, max-age=31536000, immutable`，支持 304；服务端缓存最多 64 个视图，
+浏览器内存缓存最多 128 个视图。哈希前端静态资源也使用 immutable 缓存。
+
+### 数据增长十倍的估算（非实测）
+
+- 条目 1000 → 10000：列表仍 50 行，原始包约 34–40 KiB、gzip 约 8 KiB；筛选和计数最坏近似线性，
+  约 45–75 ms。分组头按当前页返回，传输量不随全库分组数线性增长。
+- 日期 2400 → 24000：每个收益视图约 394 KiB / gzip 159 KiB，8 变体约 3.15 MB / gzip 1.27 MB；
+  分组视图约 1.55 MB / gzip 1.02 MB。解压、序列化、网络和曲线重算按约十倍估算；缓存命中仍需压缩响应。
+- 可见相关矩阵保持最多 12 × 12，条目增至万条时响应大小基本不变；若历史长度增长十倍，
+  文件读取与日期对齐按约十倍估算，服务端约 274 ms，响应大小不变。
+- 补全注册因子数增长十倍：候选包与构建耗时近似线性；默认字段和算子不增长。
+- 基准序列与日期数近似线性：2400 → 24000 日约 412 KiB / gzip 166 KiB；8 组相对指标摘要保持固定大小。
+- 提交、取消和 tab 生命周期的响应大小基本不变。SSE 随事件数增长，8 变体上限不会变成 80。
+- 库内相关在完成时逐条读取最新 NPZ，按条目数与公共日期数近似线性；万条规模应增加持久化日收益矩阵，
+  当前实现优先保证可审计的日期对齐。没有假设 SQL 查询和大规模回测可以零成本放大。
+- 同时运行 tab / 计算进程的中间数组内存近似叠加；真实大面板可能远超合成样本，不要据 mmap 推断内存需求很小。
+- 指数名单 22 → 220：未搜索时响应条目约十倍，按当前实测上界估约 13 KiB 原文 / 2.6 KiB gzip，
+  搜索和序列化耗时近似线性；当前主流名单规模固定，不为几千项做分页。
+
+复跑测量（输出目录必须不存在，避免覆盖已有数据）：
+
+```sh
+timeout 600s .venv/bin/python -m bench.platform.concurrency
+timeout 600s .venv/bin/python -m bench.platform.models --output .cache/platform/models-new
+timeout 600s .venv/bin/python -m bench.platform.http_perf --output .cache/platform/perf-new
+timeout 1400s .venv/bin/python -m bench.platform.verify_real
+```
+
+最后一个脚本需要先启动服务，并设置真实数据的只读 `ASHARE_DATA_DIR` 和本 worktree 下的
+`ASHARE_PLATFORM_DIR`。它输出真实对照数字，仅用于私有最终报告，不要将输出加入仓库。
+
+## 验证、范围与限制
+
+第三轮 `make check`：3547 项通过、7 项原有 Databento 可选依赖跳过；Ruff、Rust 格式、clippy 和 Rust 测试通过。平台专项 82 项通过。`make web-check`（12 项）与 `make web` 实际通过。
+
+- 合成面板逐位比较 4 组 IS/验证的原始分组、多空、权重收益和换手，以及持久化后的 uint64 位模式。
+- 恶意输入、超长输入/列表、深层嵌套、超大整数、资源上限、8 组笛卡儿积、窗口路由隔离有专门测试。
+- spawn 运行、不同 tab 并行、进程复用、取消后重跑、SSE 续传、WAL 恢复、Host/Origin 与路径脱敏有 HTTP 测试。
+- 禁止导入 FastAPI/Uvicorn 的子进程仍可导入框架；未构建前端时的一行提示有测试。
+- 前端 12 项测试覆盖窗口起点重算、复利回撤、按日期对齐、基准、整数刻度、拖动尺寸约束/复位/保存、设置隔离、筛选计数更新、全不选后重选、表头排序和分组菜单。
+- 第三轮已逐张打开用户生成的六张研究台截图，确认轴刻度间距、检验名截断和相对指标拥挤。
+  因子库超时源于页面在 mouseenter 时打开子菜单、紧接的 click 又将其关闭；已改为幂等打开，
+  显示列子菜单同步修复，右侧菜单间隙保留可命中的连通区域；回归测试重现 hover → click 顺序。
+- 收益主轴下界保留数据极值及少量留白，刻度从范围内第一个整值开始，不额外画下方空的一档；
+  回撤顶边与收益图底边之间留 22 px，时间窗与年份轴位置保持稳定。
+- `bench/platform/screens.py` 默认输出 `.cache/review-r3/`，覆盖 21 张截图：1600×1000 @2x 下
+  研究台七种状态（增加中文基准名单）、因子库四种状态；1366×768 和 1920×1080 下各有四种
+  因子库状态及研究台。每完成一张就更新 `screens.json` 和 `comparisons.html`，每张均关联设计稿，
+  设计稿只通过相对路径引用，不复制。失败时额外保存 `failure.png`。
+- 浏览器脚本针对四条分栏实际按下、移动、松开鼠标，断言两侧尺寸变化、最小/最大边界、刷新恢复和
+  双击恢复默认，测量值写入 `interactions.json`。另断言主图/回撤标签至少相隔 8 px、检验名不省略、
+  无页面横向溢出、Esc、刷新 tab 数量、抽屉避让、直接路由和前进后退。
+  用户已确认沙箱无法起 Chromium，本轮未重试；浏览器交互和最终视觉验收须在沙箱外复跑。
+  已安装 Playwright 的项目环境中运行：
+
+```sh
+timeout 600s .venv/bin/python -m bench.platform.screens
+```
+
+脚本只写合成目录，并在退出时停止自己的服务。编译和单元测试不能代替外部浏览器验收；
+收到截图后仍需逐张与设计稿并排核对窄屏数字列、检验换行和弹层位置。
+
+没有实现设计稿里的延迟、截尾、缺失值处理：groupbt 无对应设置。框架支持 `vector_neut`，
+但第一期没有风险向量输入与管理界面，所以不提供正交向量控件。没有持仓视图（框架结果未公开持仓序列），
+没有对比、合成、送去回测入口，也没有后续几期页面。
+
+分组回测原有局限继续适用：无交易成本与可借券约束，指数成分为月末快照。
+本地 tab 草稿只保存在当前浏览器；结果库独立持久化。取消会清空该 tab 的 mmap 缓存；重新运行需重新加载。
+统计结论属于运行时快照，不是随库增长自动翻新的全库评级。
+
+CodeMirror 补全扩展按[官方补全文档](https://codemirror.net/examples/autocompletion/)接入；
+Vite 的输出目录按[官方构建选项](https://vite.dev/config/build-options)配置。

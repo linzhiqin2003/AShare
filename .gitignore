@@ -8,7 +8,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .hypothesis/
-.cache/
+/.cache/
 .worktrees/
 /data/
 .env
@@ -16,3 +16,5 @@ __pycache__/
 /bench/results/logs/
 
 /dist/
+/src/ashare/platform/static/
+/web/node_modules/
