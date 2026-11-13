@@ -140,6 +140,12 @@ class Data:
 
         return FuturesData(self._store.root)
 
+    def funds(self):
+        """场内基金（ETF、LOF）与可转债的读取入口，见 ``FundData``；不依赖股票面板。"""
+        from .fund_reader import FundData
+
+        return FundData(self._store.root)
+
     def calendar(self):
         self._require()
         return (
