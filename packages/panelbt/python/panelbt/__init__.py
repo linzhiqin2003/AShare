@@ -1,9 +1,11 @@
 """Panel portfolio backtesting with NumPy as the only runtime dependency."""
 
 from . import markets
+from ._numpy_compat import check_reduction_order as _check_reduction_order
 from .api import run, run_batch
 from .futures import HedgeRoundingWarning
 from .futures_book import FuturesAccount, FuturesBook
+from .group_weights import run_group_weights
 from .models import (
     Config,
     Costs,
@@ -19,6 +21,10 @@ from .models import (
     TradeReason,
 )
 from .step import DayRecord, Simulator, State
+from .weights import GroupWeightTargets, WeightResult, run_weights, run_weights_batch
+
+_check_reduction_order()
+del _check_reduction_order
 
 __all__ = [
     "Config",
@@ -30,6 +36,8 @@ __all__ = [
     "FuturesAccount",
     "FuturesBook",
     "HedgeRoundingWarning",
+    "GroupWeightTargets",
+    "WeightResult",
     "Market",
     "MarginModel",
     "Result",
@@ -42,4 +50,7 @@ __all__ = [
     "markets",
     "run",
     "run_batch",
+    "run_weights",
+    "run_weights_batch",
+    "run_group_weights",
 ]

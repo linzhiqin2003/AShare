@@ -22,6 +22,36 @@ np.testing.assert_allclose(result.nav, [1.0, 1.025, 1.125])
 `Targets.from_dense(..., kind="shares")` 直接指定股数，不按申报单位取整；仍受现金、保证金和可交易性约束。
 负目标要求 `Config(margin=MarginModel(allow_short=True, ...))`。
 
+## 纯权重记账
+
+`run_weights(target, fwd_ret, can_buy=None, can_sell=None)` 和
+`run_weights_batch(fwd_ret, targets, ..., keep_weights=True)` 是同一 Rust 引擎
+中的纯权重模式。输入目标已对齐成交日，由调用方负责信号错位。该模式没有现金、股数、
+手数、费用、分红账本或价格带来的权重漂移。每日调回目标，不能增减的股票冻结在前一日
+权重，其余按多、空两边剩余额度缩放；盈亏为持仓权重与持有期收益的点积，换手为权重
+变化绝对值之和，买卖两边都算。NaN 当零，无穷值沿用 `nan_to_num` 口径。
+
+`GroupWeightTargets(labels, long_group, short_group=-1, long_budget=1,
+short_budget=0)` 让多条组合共享分组标签，不展开每组完整目标矩阵。
+`keep_weights=False` 只保留日序列；批量模式也支持逐组合选择是否保留持仓。
+计算期间释放 GIL，调用方须保证输入不被并发修改。借用的数组视图临时设为只读，
+最后一个重叠调用结束后恢复原有标志，异常退出也恢复；这不能锁住同一内存的既有别名。
+旧 NumPy 实现保存在
+`panelbt.reference_weights`，用于逐位验证。
+
+`run_group_weights` 在同一次调用中逐日完成中性化、稳定分组、同一个权重账本的推进
+和风格暴露；必须显式传入信号与成交起始行，以及价格历史和窗口内因子、对数市值、
+行业、股票池。该入口仅返回日序列，不输出每组的完整持仓面板。截面代码静态复用
+`panelops-core`，Python 运行依赖仍只有 NumPy。归约保留 NumPy 的顺序，点积使用
+当前 NumPy 的 float64 内核；有符号零也纳入逐位对照。`run` / `run_batch` 的
+现金和股数成交模式仍采用原有记账规则。
+
+要求 NumPy >= 2.1。Rust 归约刻意复现当前 NumPy 的 float64 加法次序（八路累加、
+128 元素叶块），这属于 NumPy 内部实现，并非其兼容性承诺。导入 `panelbt` 时用
+32 条小探针与 `np.add.reduce` 逐位核对，长度覆盖 1、7、8、9、127、128、129、1000，
+包含抵消、负零和 NaN。不一致就抛 `ImportError`，说明求和次序变了、需要更新 Rust
+内核；不会静默放宽为近似一致。
+
 ## 市场规则
 
 ```python

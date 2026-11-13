@@ -26,6 +26,53 @@ An all-NaN row means no rebalance; an all-zero row closes the portfolio.
 including fractional/odd shares. Negative targets require
 `Config(margin=MarginModel(allow_short=True, ...))`.
 
+## Pure weight accounting
+
+`run_weights(target, fwd_ret, can_buy=None, can_sell=None)` and
+`run_weights_batch(fwd_ret, targets, ..., keep_weights=True)` use a separate
+accounting mode in the same Rust engine. They accept execution-day targets;
+the caller aligns signals to execution days. There is no cash, quantity, lot
+rounding, fee, dividend ledger, or price-driven weight drift. Each day the engine
+resets to the target, freezes blocked increases/decreases at the previous weight,
+and rescales free long and short positions to their remaining budgets. PnL is
+held weights dotted with holding-period returns; turnover is the sum of absolute
+weight changes (both sides). NaNs are zero and infinities follow `nan_to_num`.
+
+```python
+result = bt.run_weights(
+    np.array([[0.5, -0.5], [0.0, 0.0]]),
+    np.array([[0.02, -0.01], [0.0, 0.0]]),
+    keep_weights=False,
+)
+```
+
+`GroupWeightTargets(labels, long_group, short_group=-1, long_budget=1,
+short_budget=0)` shares integer labels across plans without expanding a dense
+target panel per group. `keep_weights` can also be a per-plan list in batch mode.
+The GIL is released during computation; concurrent callers must keep inputs
+unchanged. Borrowed array views are temporarily marked read-only and their
+original flags restored after the last overlapping call, including on errors.
+This does not lock pre-existing aliases of the same storage. The independent
+NumPy oracle lives in `panelbt.reference_weights`.
+
+`run_group_weights` additionally streams neutralization, stable grouping and
+style exposures through the same weight ledger. It requires explicit
+`signal_start` and `execution_start` indices, full raw price/adjustment history,
+and active-window factors, log market caps, industry labels and pool masks.
+It returns daily series, not dense held-weight panels. Cross-sectional kernels
+are statically shared with `panelops-core`; the Python runtime still requires
+only NumPy. NumPy-order reductions and its installed float64 dot kernel preserve
+bitwise results, including signed zero. This research mode does not approximate
+the cash/share accounting performed by `run` or `run_batch`.
+
+Requires NumPy >= 2.1. The Rust reduction deliberately reproduces NumPy's current
+float64 addition order (eight lanes, 128-element leaves). This is an internal
+NumPy detail, not a stable compatibility guarantee. Importing `panelbt` checks
+32 small probes against `np.add.reduce`, spanning lengths 1, 7, 8, 9, 127, 128,
+129 and 1000, cancellation, negative zero and NaN. A bitwise mismatch raises
+`ImportError` explaining that the summation order changed and the Rust kernel
+must be updated; it never silently falls back to approximate agreement.
+
 ## Market adapters
 
 ```python

@@ -20,6 +20,20 @@ class Board(IntEnum):
     BSE = 3
 
 
+def price_permissions(exec_price, up_limit, down_limit, suspended):
+    """Directional price limits and suspensions, without intraday range rules."""
+    p, up, down = [
+        np.asarray(x, dtype=np.float64) for x in (exec_price, up_limit, down_limit)
+    ]
+    stop = np.asarray(suspended, dtype=np.bool_)
+    if any(x.shape != p.shape for x in (up, down, stop)):
+        raise ValueError("price_permissions: all inputs must have the same shape")
+    valid = np.isfinite(p) & (p > 0) & ~stop
+    at_up = np.isfinite(up) & (p >= up - PRICE_TOL)
+    at_down = np.isfinite(down) & (p <= down + PRICE_TOL)
+    return valid & ~at_up, valid & ~at_down
+
+
 def tradability(
     exec_price: ArrayLike,
     high: ArrayLike,
@@ -35,14 +49,11 @@ def tradability(
     stop = np.asarray(suspended, dtype=np.bool_)
     if any(x.shape != p.shape for x in (h, lo, up, down, stop)):
         raise ValueError("tradability: all inputs must have the same shape")
-    valid = np.isfinite(p) & (p > 0) & ~stop
-    # A NaN limit means that direction has no price limit today.
-    at_up = np.isfinite(up) & (p >= up - PRICE_TOL)
-    at_down = np.isfinite(down) & (p <= down + PRICE_TOL)
+    buy, sell = price_permissions(p, up, down, stop)
     one_price = np.isfinite(h) & np.isfinite(lo) & (np.abs(h - lo) <= PRICE_TOL)
     locked_up = one_price & np.isfinite(up) & (h >= up - PRICE_TOL)
     locked_down = one_price & np.isfinite(down) & (lo <= down + PRICE_TOL)
-    return valid & ~at_up & ~locked_up, valid & ~at_down & ~locked_down
+    return buy & ~locked_up, sell & ~locked_down
 
 
 def stamp_tax_sell(dates: ArrayLike) -> FloatArray:

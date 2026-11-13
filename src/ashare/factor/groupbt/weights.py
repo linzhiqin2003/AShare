@@ -2,6 +2,7 @@
 
 面板一律是 (T, N) 的 float64 数组，行是交易日、列是股票，NaN 表示缺失。
 所有函数都不修改传入的数组，结果形状与输入一致。
+这些 NumPy 算子和 build_weights 供独立手算、随机参考测试使用；run 的热路径在 Rust。
 """
 
 from __future__ import annotations
@@ -148,7 +149,7 @@ def build_weights(
         for y in ys:
             x = vector_neut(x, y)
 
-    x = np.where(np.asarray(universe, dtype=bool), x, np.nan)
+    if universe is not None:
+        x = np.where(np.asarray(universe, dtype=bool), x, np.nan)
     alpha = cs_demean(x)
-    weights = decay_linear(normalize(alpha), decay)
-    return {"alpha": alpha, "weights": weights}
+    return {"alpha": alpha, "weights": decay_linear(normalize(alpha), decay)}
