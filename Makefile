@@ -7,7 +7,7 @@ export npm_config_cache := $(CURDIR)/.cache/npm
 .PHONY: dev check bench bench-pair bench-compare bench-docs spike mutate mutate-1c risk-bench risk-validate risk-mutate
 
 dev:
-	uv sync --all-packages --group dev --group ml --inexact
+	uv sync --all-packages --group dev --group ml --extra platform --inexact
 	uv run --no-sync python bench/clean_extension.py
 
 .PHONY: web web-dev web-check
