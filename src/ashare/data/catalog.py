@@ -35,6 +35,7 @@ def dataset(name, partition, keys, columns, **kwargs):
     )
 
 
+# 股票池用的指数：成分、权重（面板 weight_*/member_* 字段）只覆盖这几个。
 INDEXES = {
     "csi300": "000300.SH",
     "csi500": "000905.SH",
@@ -42,6 +43,37 @@ INDEXES = {
     "csi2000": "932000.CSI",
     "csi_all": "000985.CSI",
 }
+# 研究平台可选的基准：主流指数，写死的名单（用户 2026-11-13 定：基准只用主流指数）。
+# 日线与 INDEXES 走同一套逐指数逐月分区；只下日线，不下成分和权重。
+# 加一个指数：在这里加一行，运行 sync --datasets index_daily，见 docs/DATA_NOTES.md。
+BENCHMARKS = {
+    "000001.SH": "上证指数",
+    "399001.SZ": "深证成指",
+    "399006.SZ": "创业板指",
+    "000688.SH": "科创50",
+    "899050.BJ": "北证50",
+    "000016.SH": "上证50",
+    "000300.SH": "沪深300",
+    "000510.SH": "中证A500",
+    "000905.SH": "中证500",
+    "000906.SH": "中证800",
+    "000852.SH": "中证1000",
+    "932000.CSI": "中证2000",
+    "000985.CSI": "中证全指",
+    "399303.SZ": "国证2000",
+    "399330.SZ": "深证100",
+    "399673.SZ": "创业板50",
+    "000698.SH": "科创100",
+    "000922.CSI": "中证红利",
+    "000015.SH": "上证红利",
+    # 2016-06 至 2018-05 源里只有收盘价；基准线只用收盘价，需要开盘价的计算要避开这段。
+    "H30269.CSI": "红利低波",
+    "000919.CSI": "300价值",
+    "000918.CSI": "300成长",
+}
+DEFAULT_BENCHMARK = "000001.SH"
+# index_daily 下载的指数：股票池指数在前（与原来同序），再加基准名单里的其余指数。
+INDEX_DAILY_CODES = tuple(dict.fromkeys([*INDEXES.values(), *BENCHMARKS]))
 DATASETS = {
     d.name: d
     for d in [
@@ -368,6 +400,37 @@ DATASETS["index_member"] = dataset(
     known_at="旧版申万区间；仅用于 SW2021 切换前",
 )
 DAILY_DATASETS.append("index_member")
+
+# 公开长表里取浮点的统一字段，其余为字符串。只用于把「整列为空」（Null 类型）的原始列
+# 定成正常类型，例如窗口里只有空分区时；已有类型的列不动。
+PUBLIC_FLOAT_COLUMNS = frozenset(
+    {
+        "open",
+        "high",
+        "low",
+        "close",
+        "previous_close",
+        "volume",
+        "amount",
+        "contract_multiplier",
+        "settlement",
+        "previous_settlement",
+        "volume_contracts",
+        "open_interest_contracts",
+        "stock_dividend",
+        "cash_dividend",
+        "revenue",
+        "net_income",
+        "total_assets",
+        "total_liabilities",
+        "operating_cashflow",
+        "earnings_per_share",
+        "return_on_equity",
+        "net_income_low",
+        "net_income_high",
+    }
+)
+
 
 # 公开长表的统一字段；数值换算只在此声明。
 PUBLIC_TABLES = {

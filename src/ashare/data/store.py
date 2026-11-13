@@ -297,16 +297,20 @@ class Store:
                         self.mark(key, dict(status=status, quality_state=state))
                 previous = entry
 
-    def scan(self, name, start=None, end=None):
+    def scan(self, name, start=None, end=None, codes=None):
+        """codes 只对「代码_年月」分区（指数日线、权重）生效：只打开这些代码的分区。"""
+
         def in_range(entry):
             kind = ALL_DATASETS[name].partition
             part = entry["partition"]
             if kind in ("day", "fut_day"):
                 return (start is None or part >= start) and (end is None or part <= end)
             if kind in ("index_month", "index_month_daily") and "_" in part:
-                month = part.rsplit("_", 1)[-1]
-                return (start is None or month >= start[:6]) and (
-                    end is None or month <= end[:6]
+                code, month = part.rsplit("_", 1)
+                return (
+                    (codes is None or code in codes)
+                    and (start is None or month >= start[:6])
+                    and (end is None or month <= end[:6])
                 )
             return True
 
@@ -315,7 +319,7 @@ class Store:
             for v in self.entries(name).values()
             if v["status"] == "complete" and in_range(v)
         ]
-        if not entries and (start is not None or end is not None):
+        if not entries and (start is not None or end is not None or codes is not None):
             candidates = [
                 v for v in self.entries(name).values() if v["status"] == "complete"
             ]

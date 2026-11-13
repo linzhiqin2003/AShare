@@ -8,7 +8,14 @@ import numpy as np
 import polars as pl
 
 from .aliases import CanonicalStore
-from .catalog import FIELDS, PUBLIC_TABLES, SYMBOL_ALIASES, TABLE_DATES
+from .catalog import (
+    BENCHMARKS,
+    FIELDS,
+    PUBLIC_FLOAT_COLUMNS,
+    PUBLIC_TABLES,
+    SYMBOL_ALIASES,
+    TABLE_DATES,
+)
 from .store import Store
 from .sync import compact
 
@@ -173,17 +180,79 @@ class Data:
             pl.col("delist_date").alias("delisting_date"),
         )
 
+    def indexes(self, query=None):
+        """可选基准：``catalog.BENCHMARKS`` 里本地有日线的指数，默认见 ``DEFAULT_BENCHMARK``。
+
+        返回 DataFrame：symbol、name（中文简称）、first_date、last_date（本地日线首末日期），
+        按代码排序；query 按代码或简称做不区分大小写的子串匹配。某个指数的日线用
+        ``table("index_daily", symbols=[代码])``。
+        """
+        names = pl.DataFrame(
+            {"symbol": list(BENCHMARKS), "name": list(BENCHMARKS.values())}
+        )
+        if query:
+            needle = str(query).strip().lower()
+            names = names.filter(
+                pl.col("symbol").str.to_lowercase().str.contains(needle, literal=True)
+                | pl.col("name").str.to_lowercase().str.contains(needle, literal=True)
+            )
+        # 首末日期只读每个指数最早、最晚的非空月份分区（清单里按分区名定位），不扫全表。
+        wanted = set(names["symbol"].to_list())
+        months = {}
+        for entry in self._store.entries("index_daily").values():
+            code, _, month = entry["partition"].rpartition("_")
+            if code in wanted and entry["status"] == "complete" and entry["rows"]:
+                months.setdefault(code, []).append((month, entry["file"]))
+        rows = []
+        for code, found in months.items():
+            found.sort()
+            dates = (
+                pl.scan_parquet(
+                    [self._store.root / f for _, f in {found[0], found[-1]}]
+                )
+                .filter(pl.col("ts_code") == code)
+                .select(pl.col("trade_date").cast(pl.String))
+                .collect()["trade_date"]
+            )
+            if len(dates):
+                rows.append((code, dates.min(), dates.max()))
+        spans = pl.DataFrame(
+            rows,
+            schema={
+                "symbol": pl.String,
+                "first_date": pl.String,
+                "last_date": pl.String,
+            },
+            orient="row",
+        )
+        return names.join(spans, on="symbol", how="inner").sort("symbol")
+
     def table(self, name, start=None, end=None, symbols=None):
         if name == "symbol_aliases":
             return pl.DataFrame(SYMBOL_ALIASES).lazy()
         if name not in PUBLIC_TABLES:
             raise KeyError(f"长表 {name!r} 不存在；可用：{list(PUBLIC_TABLES)}")
-        frame = self._store.scan(name)
+        if name == "index_daily":
+            # 逐指数逐月分区：只打开所请求代码、所请求月份的分区。
+            frame = self._store.scan(
+                name,
+                compact(start) if start else None,
+                compact(end) if end else None,
+                codes=None if symbols is None else set(symbols),
+            )
+        else:
+            frame = self._store.scan(name)
         schema = frame.collect_schema()
         columns = []
         for raw, (public, scale) in PUBLIC_TABLES[name].items():
             if raw in schema:
-                expr = pl.col(raw) * scale if scale != 1 else pl.col(raw)
+                expr = pl.col(raw)
+                if schema[raw] == pl.Null:
+                    # 窗口里只有空分区时原始列是 Null 类型；定成目标类型，有值的列不动。
+                    expr = expr.cast(
+                        pl.Float64 if public in PUBLIC_FLOAT_COLUMNS else pl.String
+                    )
+                expr = expr * scale if scale != 1 else expr
                 columns.append(expr.alias(public))
         frame = frame.select(columns)
         day = TABLE_DATES.get(name, "date")

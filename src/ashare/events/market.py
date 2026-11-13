@@ -55,7 +55,7 @@ class MarketData:
 def index_returns(data, code, dates):
     """指数日收益（按收盘价），对齐到 ``dates``；缺失为 NaN。"""
     frame = (
-        data.table("index_daily")
+        data.table("index_daily", symbols=[code])
         .filter(pl.col("symbol") == code)
         .select("date", "close")
         .collect()
