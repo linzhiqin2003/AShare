@@ -3,6 +3,7 @@
 import numpy as np
 
 from . import _core
+from ._readonly import contiguous, readonly
 
 
 def run_group_weights(
@@ -50,13 +51,13 @@ def run_group_weights(
         raise ValueError("decay must be a nonnegative integer")
 
     def array(value, dtype):
-        return np.ascontiguousarray(value, dtype=dtype)
+        return contiguous(value, dtype)
 
     def prices(value):
         x = np.asarray(value)
         return array(x, x.dtype if x.dtype in (np.float32, np.float64) else np.float64)
 
-    return _core.run_group_weights(
+    args = (
         array(factor, np.float64),
         array(logcap, np.float64),
         np.empty((0, 0), np.int64)
@@ -82,3 +83,6 @@ def run_group_weights(
             bool(industry_zero_missing),
         ),
     )
+    borrowed = [*args[:3], *args[3], *args[4], *args[5:10]]
+    with readonly(borrowed):
+        return _core.run_group_weights(*args)

@@ -68,7 +68,7 @@ def synthetic(seed=1701, n=139):
     return Panel(arrays, dates, np.array([f"S{i}" for i in range(n)])), factor
 
 
-def cases():
+def cases(*, long_windows=False):
     from ashare.factor.groupbt import IS, VALIDATION
 
     keys = (
@@ -80,7 +80,7 @@ def cases():
         "sub_universes",
         "window",
     )
-    return [
+    configs = [
         dict(zip(keys, values, strict=True))
         for values in product(
             ("TOP800", "TOP1800", "ALL"),
@@ -92,6 +92,26 @@ def cases():
             (IS, VALIDATION),
         )
     ]
+    if long_windows:
+        # 193 = 3 * 64 + 1；300 行还覆盖 240 日风险历史与不完整末块。
+        configs.extend(
+            dict(
+                universe="ALL",
+                group_neutralize=mode,
+                decay=3,
+                trade_at=trade_at,
+                weights_portfolio=weighted,
+                sub_universes=True,
+                window=window,
+            )
+            for mode, trade_at, weighted, window in product(
+                (None, "industry", "cap", "cap+industry"),
+                ("open", "close"),
+                (False, True),
+                (("20150101", "20150713"), ("20150101", "20260101")),
+            )
+        )
+    return configs
 
 
 def snapshot(result):

@@ -1,6 +1,6 @@
 ### P-018 panelbt 纯权重记账与批量模拟
 
-- 提交：未提交，按任务要求保留工作区改动。
+- 提交：`4129258`。
 - 内核：`crates/panelbt-core/src/weights.rs`；Python 入口为 `panelbt.run_weights` / `run_weights_batch`，紧凑目标共享分组标签，计算期间释放 GIL（本仓库 PyO3 的名称为 `py.detach`）。
 - 原 NumPy 模拟保存在 `panelbt.reference_weights`；现金和股数记账不用于权重模式。
 - 逐位实现保留稀疏列序和 NumPy 的成对求和顺序；点积调用当前环境中 NumPy 的 float64 内核，避免自行选另一套 BLAS 导致舍入变化。仅 NumPy C API 桥接模块允许 unsafe，其余绑定仍禁止 unsafe；调用点写明数据长度、生命周期和 GIL 前提。

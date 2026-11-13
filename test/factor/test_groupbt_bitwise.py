@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from ashare.factor import groupbt
+from ashare.factor.groupbt import metrics, weights
 from bench.groupbt.common import cases, compare, snapshot, synthetic
 from bench.groupbt.oracle import groupbt as oracle
 
@@ -26,12 +27,44 @@ def test_main_oracle_sources_are_frozen():
         assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
 
 
-@pytest.mark.parametrize("options", cases())
+@pytest.mark.parametrize("options", cases(long_windows=True))
 def test_all_outputs_bitwise(panel_factor, options):
     panel, factor = panel_factor
     expected = snapshot(oracle.run(factor, panel, **options))
     actual = snapshot(groupbt.run(factor, panel, **options))
     compare(expected, actual)
+
+
+def test_matrix_crosses_multiple_work_blocks(panel_factor):
+    panel, _ = panel_factor
+    lengths = {
+        int(np.searchsorted(panel.dates, opt["window"][1]))
+        - int(np.searchsorted(panel.dates, opt["window"][0]))
+        for opt in cases(long_windows=True)[len(cases()) :]
+    }
+    assert lengths == {193, 300}
+
+
+def test_retained_numpy_helpers_match_frozen_main_without_chunking():
+    rng = np.random.default_rng(17)
+    x = rng.normal(size=(97, 139))
+    x[rng.random(x.shape) < 0.1] = np.nan
+    groups = rng.integers(-1, 6, size=x.shape)
+    universe = rng.random(x.shape) < 0.8
+    risk = {"test": rng.normal(size=x.shape)}
+    compare(
+        {"groups": oracle.weights.group_demean(x, groups)},
+        {"groups": weights.group_demean(x, groups)},
+    )
+    compare(
+        oracle.metrics.risk_exposure(x, risk, universe),
+        metrics.risk_exposure(x, risk, universe),
+    )
+    options = dict(industry=groups, group_neutralize="industry", decay=3)
+    compare(
+        oracle.weights.build_weights(x, universe, **options),
+        weights.build_weights(x, universe, **options),
+    )
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

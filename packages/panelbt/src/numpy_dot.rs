@@ -22,8 +22,8 @@ impl NumpyDot {
         // feature version before indexing. dt is NumPy's built-in native f64
         // descriptor, kept alive throughout the call under the GIL.
         let dot = unsafe {
-            if npyffi::PY_ARRAY_API.PyArray_GetNDArrayCFeatureVersion(py) < 0x00000012 {
-                return Err(PyRuntimeError::new_err("weight mode requires NumPy >= 2.0"));
+            if npyffi::PY_ARRAY_API.PyArray_GetNDArrayCFeatureVersion(py) < 0x00000013 {
+                return Err(PyRuntimeError::new_err("weight mode requires NumPy >= 2.1"));
             }
             let get: unsafe extern "C" fn(
                 *const npyffi::PyArray_Descr,

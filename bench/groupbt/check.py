@@ -43,7 +43,8 @@ def main():
         build = assert_current_build(root)
     else:
         build = None
-    configs = cases()[: args.limit]
+    all_configs = cases(long_windows=args.data == "synthetic")
+    configs = all_configs[: args.limit]
     source = root / "bench/groupbt/oracle"
     manifest = json.loads((source / "manifest.json").read_text())
     for name, digest in manifest["files"].items():
@@ -58,7 +59,7 @@ def main():
         numpy=np.__version__,
         panel=getattr(panel, "version", "synthetic-1701"),
         factor=hashlib.sha256(memoryview(factor)).hexdigest(),
-        cases=cases(),
+        cases=all_configs,
     )
     identity = json.loads(json.dumps(identity))
     metadata = folder / "identity.json"

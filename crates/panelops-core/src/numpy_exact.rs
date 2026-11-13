@@ -29,6 +29,57 @@ pub fn sum(x: &[f64]) -> f64 {
     0.0 + pair(x)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sum_preserves_numpy_tree_and_identity() {
+        // At eight lanes, (1e16 + 1) + (-1e16 + 1) rounds to zero,
+        // while the remaining four ones sum to 4. Sequential folding gives 5.
+        let eight = [1e16, 1.0, -1e16, 1.0, 1.0, 1.0, 1.0, 1.0];
+        for (values, expected) in [
+            (vec![], 0.0_f64),
+            (vec![-0.0], 0.0),
+            (vec![-0.0; 8], 0.0),
+            (eight[..7].to_vec(), 4.0),
+            (eight.to_vec(), 4.0),
+            ([eight.as_slice(), &[1.0]].concat(), 5.0),
+            (eight.repeat(16), 64.0),
+            ([eight.repeat(16), vec![1.0]].concat(), 65.0),
+        ] {
+            assert_eq!(sum(&values).to_bits(), expected.to_bits());
+        }
+        assert_eq!(sum(&[f64::NAN]).to_bits(), f64::NAN.to_bits());
+    }
+
+    #[test]
+    fn grouping_preserves_column_order_for_ties_and_missing() {
+        let mut ops = RowOps::default();
+        let row = [2.0, 2.0, 1.0, 0.0, -0.0, f64::NAN];
+        let mut labels = [-1; 6];
+        assert!(ops.groups(&row, &mut labels, 2, true, true));
+        assert_eq!(labels, [0, 0, 0, 1, 1, -1]);
+        assert!(!ops.groups(&[1.0; 6], &mut labels, 2, true, true));
+        assert_eq!(labels, [-1; 6]);
+    }
+
+    #[test]
+    fn group_scratch_reuse_and_exposure() {
+        let mut ops = RowOps::default();
+        for _ in 0..2 {
+            let mut row = [2.0, 6.0, 3.0, 7.0, 100.0];
+            ops.group_demean(&mut row, &[801001, 801001, 801002, 801002, -1]);
+            assert_eq!(&row[..4], &[-2.0, 2.0, -2.0, 2.0]);
+            assert!(row[4].is_nan());
+        }
+        assert_eq!(
+            ops.exposure(&[0.5, -0.5, 0.0], &[2.0, 6.0, 100.0], &[true, true, false]),
+            -2.0
+        );
+    }
+}
+
 /// Reusable scratch for exact, single-row NumPy-compatible operations.
 #[derive(Default)]
 pub struct RowOps {

@@ -378,6 +378,68 @@ mod tests {
     use super::*;
 
     #[test]
+    fn buy_and_sell_freeze_changes_in_weight_not_position_sign() {
+        // Covering a short is a buy; reducing a long is a sell. The reverse
+        // trades remain allowed even on the same restricted columns.
+        let market = Market {
+            rows: 2,
+            cols: 4,
+            returns: &[0.0; 8],
+            buy: &[true, true, true, true, false, true, false, true],
+            sell: &[true, true, true, true, true, false, true, false],
+        };
+        let target = [-0.25, 0.25, 0.25, -0.25, 0.0, 0.0, 0.5, -0.5];
+        let out = run_batch(&market, &[(Plan::Dense(&target), true)], |_, _| 0.0);
+        assert_eq!(out[0].weights.as_ref().unwrap(), &target[..4].repeat(2));
+        assert_eq!(out[0].turnover, [1.0, 0.0]);
+        let reverse = [-0.25, 0.25, 0.25, -0.25, -0.5, 0.5, 0.0, 0.0];
+        let out = run_batch(&market, &[(Plan::Dense(&reverse), true)], |_, _| 0.0);
+        assert_eq!(out[0].weights.as_ref().unwrap(), &reverse);
+        assert_eq!(out[0].turnover, [1.0, 1.0]);
+    }
+
+    #[test]
+    fn frozen_longs_and_shorts_consume_separate_budgets() {
+        let mut sell = [true; 12];
+        sell[6] = false;
+        let mut buy = [true; 12];
+        buy[9] = false;
+        let market = Market {
+            rows: 2,
+            cols: 6,
+            returns: &[0.125; 12],
+            buy: &buy,
+            sell: &sell,
+        };
+        let target = [
+            0.25, 0.25, 0.0, -0.125, -0.125, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, -0.25,
+        ];
+        let out = run_batch(&market, &[(Plan::Dense(&target), true)], |x, y| {
+            sum(&x.iter().zip(y).map(|(a, b)| a * b).collect::<Vec<_>>())
+        });
+        assert_eq!(
+            &out[0].weights.as_ref().unwrap()[6..],
+            &[0.25, 0.0, 0.25, -0.125, 0.0, -0.125]
+        );
+        assert_eq!(out[0].turnover, [0.75, 0.75]);
+        assert_eq!(out[0].pnl, [0.03125, 0.03125]);
+    }
+
+    #[test]
+    fn frozen_weight_can_exceed_new_budget_without_reversing_free_side() {
+        let market = Market {
+            rows: 2,
+            cols: 3,
+            returns: &[0.0; 6],
+            buy: &[],
+            sell: &[true, true, true, false, true, true],
+        };
+        let target = [0.5, 0.0, -0.5, 0.0, 0.25, -0.25];
+        let out = run_batch(&market, &[(Plan::Dense(&target), true)], |_, _| 0.0);
+        assert_eq!(&out[0].weights.as_ref().unwrap()[3..], &[0.5, 0.0, -0.25]);
+    }
+
+    #[test]
     fn freezing_reallocates_remaining_budget() {
         let market = Market {
             rows: 2,

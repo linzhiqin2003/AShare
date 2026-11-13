@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import _core
+from ._readonly import contiguous, readonly
 
 
 @dataclass(frozen=True)
@@ -43,16 +44,12 @@ def run_weights_batch(
     use NumPy ``nan_to_num`` conventions. Inputs must not be mutated during a run.
     ``keep_weights`` is a bool or one bool per plan. Empty batches are supported.
     """
-    ret = np.ascontiguousarray(fwd_ret, dtype=np.float64)
+    ret = contiguous(fwd_ret, np.float64)
     if ret.ndim != 2:
         raise ValueError("fwd_ret must be two-dimensional")
     flags = []
     for name, value in (("can_buy", can_buy), ("can_sell", can_sell)):
-        flag = (
-            np.empty((0, 0), bool)
-            if value is None
-            else np.ascontiguousarray(value, dtype=bool)
-        )
+        flag = np.empty((0, 0), bool) if value is None else contiguous(value, bool)
         if value is not None and flag.shape != ret.shape:
             raise ValueError(f"{name} must match fwd_ret")
         flags.append(flag)
@@ -78,7 +75,7 @@ def run_weights_batch(
             plans.append(
                 (
                     empty_float,
-                    np.ascontiguousarray(groups, dtype=np.int64),
+                    contiguous(groups, np.int64),
                     target.long_group,
                     target.short_group,
                     target.long_budget,
@@ -87,11 +84,14 @@ def run_weights_batch(
                 )
             )
         else:
-            dense = np.ascontiguousarray(target, dtype=np.float64)
+            dense = contiguous(target, np.float64)
             if dense.shape != ret.shape:
                 raise ValueError("targets must match fwd_ret")
             plans.append((dense, empty_int, -1, -1, 0.0, 0.0, bool(save)))
-    return [WeightResult(**r) for r in _core.run_weights_batch(ret, *flags, plans)]
+    borrowed = [ret, *flags, *(a for plan in plans for a in plan[:2])]
+    with readonly(borrowed):
+        results = _core.run_weights_batch(ret, *flags, plans)
+    return [WeightResult(**r) for r in results]
 
 
 def run_weights(target, fwd_ret, can_buy=None, can_sell=None, *, keep_weights=True):

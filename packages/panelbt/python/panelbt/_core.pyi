@@ -6,6 +6,7 @@ BUILD_MARKER: str
 SOURCE_SHA256: str
 VALIDATION_CHUNK: int
 
+def _numpy_sums(probes: list[NDArray]) -> NDArray: ...
 def run_weights_batch(
     returns: NDArray,
     buy: NDArray,

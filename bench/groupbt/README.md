@@ -10,6 +10,7 @@ python3 bench/groupbt/run.py 300 .venv/bin/python -m bench.groupbt.check compare
 python3 bench/groupbt/run.py 14400 .venv/bin/python -m bench.groupbt.check baseline --data real
 python3 bench/groupbt/run.py 3600 .venv/bin/python -m bench.groupbt.check compare --data real
 python3 bench/groupbt/run.py 2400 .venv/bin/python -m bench.groupbt.mutate
+python3 bench/groupbt/run.py 2400 .venv/bin/python -m bench.groupbt.review_mutations
 python3 bench/groupbt/run.py 7200 .venv/bin/python -m bench.groupbt.suite
 python3 bench/groupbt/run.py 3600 make check
 ```
@@ -18,7 +19,13 @@ python3 bench/groupbt/run.py 3600 make check
 `groupbt` 或新权重引擎。对照直接比较 dtype、shape、bytes，包含 NaN 位和有符号零；
 不使用容差。覆盖三个池、四种中性化、两种衰减、两种成交时点、是否算权重组合、
 是否带子池、IS/VALIDATION，共 384 种，全部收益、换手、暴露和派生表/图/文本均比较。
+合成数据另加 32 组 193 行（3×64+1）及 300 行的长窗口，共 416 种；pytest 与存盘
+对照使用同一矩阵。已有 384 组存盘须换一个新的 `--cache .cache/groupbt-review` 目录。
 测试另覆盖向量中性化、5 组、长缺价、宽截面、空窗口和失败行号。
+
+`review_mutations` 分别把工作块末端改为 `begin + block - 1`、把八路成对求和改为
+顺序累加；要求全输出逐位对照或导入自检明确失败，Rust 单测也必须失败，最后恢复
+源码与两个扩展并重新通过合成矩阵。详细日志默认保存在 `.cache/groupbt-review/`。
 
 基准按参数编号原子写入 `.cache/groupbt/{synthetic,real}`，中断后可接着存盘；
 `identity.json` 守住源文件、参数、面板版本、因子字节和 NumPy 版本。早期中断生成的

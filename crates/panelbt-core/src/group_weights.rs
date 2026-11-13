@@ -476,3 +476,92 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
     outputs[0].stages = clock.stages.map(|v| v.as_secs_f64());
     outputs
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(rows: usize, constant_factor: bool) -> Vec<Output> {
+        let factor = if constant_factor {
+            vec![1.0; rows * 4]
+        } else {
+            [4.0, 3.0, 2.0, 1.0].repeat(rows)
+        };
+        let logcap = [4.0, 3.0, 2.0, 1.0].repeat(rows);
+        let price: Vec<_> = (0..rows).flat_map(|i| [1.0 + i as f64; 4]).collect();
+        let adjustment = vec![1.0; rows * 4];
+        let universe = vec![true; rows * 4];
+        let input = Input {
+            rows,
+            cols: 4,
+            signal_start: 0,
+            execution_start: 1,
+            factor: &factor,
+            logcap: &logcap,
+            industry: Labels::I64(&[]),
+            industry_zero_missing: false,
+            vectors: vec![],
+            universes: vec![&universe, &universe],
+            price: Numbers::F64(&price),
+            close: Numbers::F64(&price),
+            adjustment: Numbers::F64(&adjustment),
+            buy: &[],
+            sell: &[],
+            groups: 2,
+            neutralize: 0,
+            decay: 3,
+            weighted: true,
+            profile: false,
+        };
+        run(&input, |x, y| {
+            crate::weights::sum(&x.iter().zip(y).map(|(a, b)| a * b).collect::<Vec<_>>())
+        })
+    }
+
+    #[test]
+    fn every_row_survives_work_block_boundaries() {
+        for t in [63, 64, 65, 128, 129, 193, 300] {
+            let out = fixture(t, false);
+            for pool in &out {
+                assert!(pool.bad_rows.is_empty());
+                assert_eq!(pool.first_live, 1);
+                for day in 1..t {
+                    let ret = if day + 1 < t {
+                        (day + 2) as f64 / (day + 1) as f64 - 1.0
+                    } else {
+                        0.0
+                    };
+                    for group in 0..2 {
+                        assert_eq!(pool.pnl[group * t + day].to_bits(), ret.to_bits());
+                        assert_eq!(
+                            pool.turnover[group * t + day],
+                            if day == 1 { 1.0 } else { 0.0 }
+                        );
+                    }
+                    // LS holdings [.25, .25, -.25, -.25] give size exposure 1.
+                    assert_eq!(pool.exposure[day], 1.0);
+                }
+            }
+            assert_eq!(out[0].pnl, out[1].pnl);
+            assert_eq!(out[0].turnover, out[1].turnover);
+        }
+    }
+
+    #[test]
+    fn last_signal_is_checked_even_without_an_execution_row() {
+        // Two distinct groups are impossible for an all-equal four-column row.
+        let out = fixture(193, true);
+        assert_eq!(out[0].bad_rows, (0..193).collect::<Vec<_>>());
+        assert_eq!(out[0].first_live, 193);
+    }
+
+    #[test]
+    fn empty_window_has_no_books_to_advance() {
+        let out = fixture(0, false);
+        assert_eq!(out.len(), 2);
+        assert!(
+            out.iter()
+                .all(|p| p.pnl.is_empty() && p.bad_rows.is_empty())
+        );
+    }
+}

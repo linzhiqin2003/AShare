@@ -40,7 +40,6 @@ FIELDS = (
 )
 # 中证1000 的成分数据从 2014 年 11 月才有；涉及 TOP1800 的回测统一从这一天起算。
 TOP1800_START = "20150101"
-PRICE_TOL = 0.005  # 与数据层开盘口径相同
 PERIODS = 240  # 一年按 240 个交易日
 
 
@@ -279,7 +278,8 @@ def run(
       样本外窗口 `VALIDATION`、`TEST` 要显式传入才会用到。
 
     `panel` 需要 `FIELDS` 里的字段（`ashare.data.open().panel(FIELDS)`）。分不出 `n_groups`
-    组的交易日会抛 `GroupingError`。
+    组的交易日会抛 `GroupingError`。调用期间不要修改任何输入（包括共享底层内存的
+    其他视图）；内核会释放 GIL。有效窗口的因子独立复制，其他传入内核的视图临时只读。
     """
     if trade_at not in ("open", "close"):
         raise ValueError("trade_at 只能是 'open' 或 'close'")
@@ -302,7 +302,7 @@ def run(
     first = int(np.searchsorted(dates, start))
     first = min(first, max(len(dates) - 1, 0))
     panel = _Until(history, len(dates), first)
-    x = x[first : len(dates)]
+    x = x[first : len(dates)].copy(order="C")
     if vector_neut is not None:
         many = isinstance(vector_neut, (list, tuple))
         cut = [
