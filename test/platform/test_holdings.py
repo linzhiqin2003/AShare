@@ -97,3 +97,35 @@ def test_http_day_query_and_window_guards(tmp_path):
             word in result.text
             for word in ("sqlite", "securities.parquet", "holdings/")
         )
+
+
+def test_holdings_archive_is_written_in_background(tmp_path, monkeypatch):
+    """save 不等持仓档案落盘；读持仓时等后台写完，不会读到半个文件。"""
+    import threading
+
+    import ashare.platform.storage as storage
+
+    root = tmp_path / "data"
+    source = write_panel(root)
+    store = Store(tmp_path / "results")
+    variant = parse("rank(close)", factors={})[0]
+    job, runs = store.begin("tab", "synthetic", [(variant, dict(DEFAULTS))], {})
+    summary, arrays = run_variant(variant.expression, source, dict(DEFAULTS))
+    release = threading.Event()
+    original = storage.write_archive
+
+    def slow(path, data):
+        assert release.wait(10)
+        original(path, data)
+
+    monkeypatch.setattr(storage, "write_archive", slow)
+    run = runs[0]["id"]
+    final = tmp_path / "results" / "holdings" / f"{run}.npz"
+    assert store.save(run, summary, arrays, 0, "synthetic")
+    assert not final.exists()  # 档案还在后台，save 已经返回
+    store.finish(job, "complete")
+    threading.Timer(0.2, release.set).start()
+    days = Holdings(store, root).read(run)["dates"]
+    assert final.exists() and days
+    assert not list(final.parent.glob("*.tmp"))
+    store.close()

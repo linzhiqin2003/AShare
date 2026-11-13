@@ -2,9 +2,13 @@
 
 import hashlib
 import json
+import logging
 import sqlite3
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as wait_futures
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -12,6 +16,8 @@ import numpy as np
 
 from .analysis import checks
 from .holdings import archive_arrays, write_archive
+
+LOG = logging.getLogger(__name__)
 
 
 def dumps(value):
@@ -24,6 +30,10 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "series").mkdir(exist_ok=True)
         (self.root / "holdings").mkdir(exist_ok=True)
+        # 持仓档案约 0.2 s/变体，只有打开持仓页才读：放到后台写，读取时等它写完。
+        self._writer = ThreadPoolExecutor(max_workers=2, thread_name_prefix="holdings")
+        self._pending = {}
+        self._pending_lock = threading.Lock()
         with self.connect() as db:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -242,7 +252,7 @@ class Store:
         summary["trial_count"] = self.trials()
         holdings = archive_arrays(arrays)
         if holdings:
-            write_archive(self.root / "holdings" / f"{run}.npz", holdings)
+            self._write_holdings_later(run, holdings)
         path = self.root / "series" / f"{run}.npz"
         temporary = path.with_suffix(".tmp")
         with temporary.open("wb") as stream:
@@ -293,6 +303,39 @@ class Store:
                 },
             )
         return True
+
+    def _write_holdings_later(self, run, holdings):
+        path = self.root / "holdings" / f"{run}.npz"
+
+        def write():
+            temporary = path.with_name(f"{run}.tmp")
+            try:
+                write_archive(temporary, holdings)
+                temporary.replace(path)
+            except Exception:
+                LOG.exception("持仓档案写入失败 run=%s", run)
+                temporary.unlink(missing_ok=True)
+            finally:
+                with self._pending_lock:
+                    self._pending.pop(run, None)
+
+        with self._pending_lock:
+            self._pending[run] = self._writer.submit(write)
+
+    def wait_holdings(self, run=None, timeout=60):
+        """等某个（或全部）后台持仓档案写完；读持仓和关闭服务前调用。"""
+        with self._pending_lock:
+            futures = (
+                list(self._pending.values())
+                if run is None
+                else [f for f in [self._pending.get(run)] if f is not None]
+            )
+        if futures:
+            wait_futures(futures, timeout=timeout)
+
+    def close(self):
+        self.wait_holdings()
+        self._writer.shutdown(wait=True)
 
     def finish(self, job, status, elapsed=None):
         if status == "complete":
