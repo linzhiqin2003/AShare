@@ -248,3 +248,15 @@ def test_cb_apply_exit_keeps_other_targets(cb):
     assert late.exit_rows.tolist() == [LAST_TRADE]
     early = cb_market(funds, ["113001.SH"], exit_days=10)
     assert early.exit_rows.tolist() == [CALL_ANN + 1]  # 不早于强赎公告可知
+
+
+def test_cb_redemption_mark_starts_after_last_trade(cb):
+    """赎回价只从最后交易日的下一行起作为估值价；最后交易日当天仍是市场收盘（否则等于提前知道赎回结果）。"""
+    funds, _, _ = cb
+    cm = cb_market(funds, ["113001.SH"])
+    raw = np.asarray(funds.panel("cb", ["close"], symbols=["113001.SH"])["close"])[:, 0]
+    close = np.asarray(cm.market.close)[:, 0]
+    assert raw[LAST_TRADE] != 100.3
+    assert close[LAST_TRADE] == raw[LAST_TRADE]
+    assert (close[: LAST_TRADE + 1] == raw[: LAST_TRADE + 1]).all()
+    assert close[LAST_TRADE + 1] == 100.3

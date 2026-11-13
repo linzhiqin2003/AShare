@@ -1,21 +1,20 @@
 {
  "source": "Tushare Pro（fund_basic / fund_daily / fund_adj / fund_div / cb_basic / cb_daily / cb_call / cb_price_chg），数据 2015-01-05 至 2026-11-12",
  "note": "每条：check 为 verify-funds 的检查项，其余字段为匹配键，reason 指向 reasons。由「空清单校验」列出全部不符后逐条归类；新数据里出现清单之外的不符，校验即失败。只写匹配键与原因，不写由价格、成交量、成交额算出的数值。",
+ "excluded_classes": {
+  "graded": "分级基金（证券表 fund_class == graded）整类不进 fund_gap / fund_factor / fund_factor_missing 的判定，不逐格登记：A 份额的定期折算、上下折不完整地反映在复权因子里，前收盘与因子对不上是常态；它们的不符只在校验报告里计数（graded_cells）。fund_market 默认也不让买，回测里不可用"
+ },
  "cause_unknown": [
   "cb_amount_low",
-  "close_20200225",
   "factor_vs_gap",
-  "graded_20201030",
   "no_trade_days",
   "one_price_bar"
  ],
  "reasons": {
   "cb_amount_low": "成交额折算的均价远低于当天最低价（原因未查明）",
-  "close_20200225": "2020-02-26 一批基金（多为深市分级基金、LOF，也有几只 ETF）：交易所前收盘与源给的 2020-02-25 收盘不同，复权因子没动，次日前收盘又与 2020-02-26 收盘一致；疑为源的 2020-02-25 收盘有误，只影响一天的估值（原因未查明）",
   "code_not_in_table": "日线里出现基金表没有的代码（161022A.SZ 是分级基金份额的特殊代码，158008.OF 是场外代码），面板不收",
   "factor_vs_gap": "复权因子的变化与交易所前收盘缺口不一致（分级基金折算、长期停牌后复牌、LOF 分红等），面板按复权因子记事件，交易所参考价对不上（原因未查明）",
   "fund_amount_x10": "成交额约为成交量×价格的十倍：源单行成交额错误",
-  "graded_20201030": "2020-10-30 几只分级基金及其母基金：前收盘与上一有行情日收盘不同，复权因子没动（分级基金当年按资管新规清理，原因未查明）",
   "no_trade_days": "两个有行情日之间隔着源里没有日线（无成交或缺行）或只有沿用价的交易日，交易所前收盘与上一有行情日收盘不同；复权因子没动、没有分红记录，不是公司行为，面板不记事件（原因未查明）",
   "one_price_bar": "日线开高低收为同一个价，成交额折算的均价却不在这个价上：价格字段是沿用值，成交量额是真实成交（源为何这样给未查明）；面板把这一天算作无行情、不能成交",
   "reits_distribution": "REITs 收益分配：交易所不调整前收盘，复权因子按分配调整；面板按复权因子记现金分配",
@@ -45,447 +44,9 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "150008.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150016.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150030.SZ",
-   "date": "20180201",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150033.SZ",
-   "date": "20190604",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150033.SZ",
-   "date": "20190624",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150039.SZ",
-   "date": "20170804",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150049.SZ",
-   "date": "20190529",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150050.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150052.SZ",
-   "date": "20201030",
-   "reason": "graded_20201030"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150059.SZ",
-   "date": "20190218",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150059.SZ",
-   "date": "20200312",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150065.SZ",
-   "date": "20200217",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150067.SZ",
-   "date": "20200218",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150093.SZ",
-   "date": "20200528",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150094.SZ",
-   "date": "20171208",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150094.SZ",
-   "date": "20190524",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150101.SZ",
-   "date": "20180201",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150104.SZ",
-   "date": "20190416",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150124.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150143.SZ",
-   "date": "20170123",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150143.SZ",
-   "date": "20171121",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150146.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150164.SZ",
-   "date": "20171106",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150165.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150174.SZ",
-   "date": "20200227",
-   "reason": "factor_vs_gap"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150174.SZ",
-   "date": "20201030",
-   "reason": "graded_20201030"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150187.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150189.SZ",
-   "date": "20181211",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150189.SZ",
-   "date": "20190618",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150189.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150195.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150199.SZ",
-   "date": "20201030",
-   "reason": "graded_20201030"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150204.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150215.SZ",
-   "date": "20170829",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150218.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150229.SZ",
-   "date": "20190221",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150236.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150238.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150241.SZ",
-   "date": "20171225",
-   "reason": "factor_vs_gap"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150244.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150247.SZ",
-   "date": "20201030",
-   "reason": "graded_20201030"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150248.SZ",
-   "date": "20201030",
-   "reason": "graded_20201030"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150258.SZ",
-   "date": "20190801",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150258.SZ",
-   "date": "20190808",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150261.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150262.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150264.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150265.SZ",
-   "date": "20171228",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150271.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150272.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150274.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150276.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150278.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150282.SZ",
-   "date": "20171229",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150284.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150288.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150294.SZ",
-   "date": "20171225",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150307.SZ",
-   "date": "20190115",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150312.SZ",
-   "date": "20170925",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150316.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150317.SZ",
-   "date": "20190812",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150322.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150324.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150326.SZ",
-   "date": "20171024",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150327.SZ",
-   "date": "20190508",
-   "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150330.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "150344.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "159645.SZ",
    "date": "20240529",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159923.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159929.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159943.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159944.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159964.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "159986.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",
@@ -495,81 +56,15 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "160324.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160512.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160518.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160607.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160615.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160641.SZ",
-   "date": "20250708",
-   "reason": "factor_vs_gap"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "160643.SZ",
    "date": "20190201",
    "reason": "no_trade_days"
   },
   {
    "check": "fund_gap",
-   "symbol": "160643.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160644.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160720.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160726.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "160910.SZ",
    "date": "20170525",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "160910.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",
@@ -585,12 +80,6 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "160922.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "160925.SZ",
    "date": "20190902",
    "reason": "no_trade_days"
@@ -603,21 +92,9 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "161035.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "161036.SZ",
    "date": "20190610",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "161219.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",
@@ -633,15 +110,9 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "161706.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "161831.SZ",
    "date": "20201030",
-   "reason": "graded_20201030"
+   "reason": "no_trade_days"
   },
   {
    "check": "fund_gap",
@@ -657,57 +128,9 @@
   },
   {
    "check": "fund_gap",
-   "symbol": "162414.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "162415.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "162719.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "163001.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
    "symbol": "163003.SZ",
    "date": "20210316",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "163503.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "163801.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "164509.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "164701.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",
@@ -720,54 +143,6 @@
    "symbol": "165528.SZ",
    "date": "20200410",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "166001.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "166011.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "166023.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "166107.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "166402.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "167001.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "167003.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "168101.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",
@@ -810,12 +185,6 @@
    "symbol": "169102.SZ",
    "date": "20190102",
    "reason": "no_trade_days"
-  },
-  {
-   "check": "fund_gap",
-   "symbol": "169104.SZ",
-   "date": "20200226",
-   "reason": "close_20200225"
   },
   {
    "check": "fund_gap",

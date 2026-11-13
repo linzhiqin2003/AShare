@@ -614,3 +614,266 @@ def test_classify_known_misnames():
     )
     got = dict(classify(securities).select("symbol", "asset_class").iter_rows())
     assert got == {k: v[2] for k, v in names.items()}
+
+
+# ---------- 七位 / 六位代码的行情不重叠、源数据整天修补、证券类别 ----------
+
+
+def test_reused_old_life_rows_with_own_factor_move_to_seven_digit():
+    """164814.SZ 的情形：旧基金（1648141.SZ）存续期内，六位代码有自己的日线和复权因子（不止 !1 那几天）。
+    这些行要归七位代码；修复前只搬 !1 当天的行，同一段行情在两列各出现一次，六位代码的上市日被拉到旧基金那年。
+    """
+    from ashare.data.fund_actions import resolve_reused
+
+    basic = pl.DataFrame(
+        dict(
+            ts_code=["164814.SZ", "1648141.SZ"],
+            name=["新LOF", "旧分级"],
+            list_date=["20200601", "20150101"],
+            delist_date=[None, "20200101"],
+        )
+    )
+    old = ["20160104", "20170103", "20180102"]
+    daily = pl.DataFrame(
+        dict(
+            symbol=["164814.SZ"] * 4 + ["1648141.SZ"],
+            date=[*old, "20200701", "20160104"],
+            close=[1.0, 2.0, 3.0, 4.0, 1.0],
+        )
+    )
+    adj = pl.DataFrame(
+        dict(
+            symbol=["164814.SZ"] * 4 + ["164814!1.SZ"],
+            date=[*old, "20200701", "20170103"],
+            adj_factor=[0.5, 0.6, 0.7, 1.0, 0.6],
+        )
+    )
+    d, a, drop, notes = resolve_reused(basic, daily, adj)
+    by = {s: sorted(x) for s, x in d.group_by("symbol").agg(pl.col("date")).iter_rows()}
+    assert by["164814.SZ"] == ["20200701"]
+    assert by["1648141.SZ"] == old
+    assert not set(by["164814.SZ"]) & set(by["1648141.SZ"])
+    factors = {
+        (r["symbol"], r["date"]): r["adj_factor"] for r in a.iter_rows(named=True)
+    }
+    assert {s for s, _ in factors} == {"164814.SZ", "1648141.SZ"}
+    assert [k for k in factors if k[0] == "164814.SZ"] == [("164814.SZ", "20200701")]
+    assert factors[("1648141.SZ", "20170103")] == 0.6
+    assert factors[("1648141.SZ", "20180102")] == 0.7
+    assert notes[0]["rule"] == "split" and notes[0]["moved_quotes"] == 3
+    assert not drop
+
+
+def copy_quotes(store, rows, source, target):
+    folder = panel_path(store)
+    symbols = json.loads((folder / "metadata.json").read_text())["symbols"]
+    a, b = symbols.index(source), symbols.index(target)
+    for name in ("open", "high", "low", "close", "volume", "amount"):
+        path = folder / f"{name}.npy"
+        x = np.load(path)
+        x[rows, b] = x[rows, a]
+        np.save(path, x)
+
+
+def test_verify_rejects_duplicate_quotes(built):
+    """硬不变量：同一段行情（连续 3 个共同有行情日逐元相同）进了两列，校验必须失败、不许例外；
+    零星一天相同只计数。"""
+    store, _, _ = built
+    known = dict(
+        reasons={"x": "说明"},
+        entries=[dict(check="fund_code_not_in_table", symbol="161022A.SZ", reason="x")],
+    )
+    report = verify_funds(store, write=False, known=known)
+    assert report["checks"]["fund_duplicate_quotes"]["verdict"] == "pass"
+    copy_quotes(store, [12], "510001.SH", "511001.SH")
+    report = verify_funds(store, write=False, known=known)
+    item = report["checks"]["fund_duplicate_quotes"]
+    assert item["verdict"] == "pass" and item["details"]["single_day_matches"] == 1
+    copy_quotes(store, [13, 14], "510001.SH", "511001.SH")
+    report = verify_funds(store, write=False, known=known)
+    item = report["checks"]["fund_duplicate_quotes"]
+    assert item["verdict"] == "fail" and report["verdict"] == "fail"
+    assert item["details"]["examples"] == [
+        dict(
+            symbols=["510001.SH", "511001.SH"],
+            same_days=3,
+            common_days=item["details"]["examples"][0]["common_days"],
+            first=DAYS[12],
+            last=DAYS[14],
+        )
+    ]
+
+
+def test_misfiled_quotes_outside_life_dropped():
+    """同一天逐元相同的两列，一列在证券表存续期外（上市前），且它存续期外的成交日全是这样的副本：
+    那几格是别的代码的行情，丢掉。存续期外本来就有自己行情的列（上市日写晚了的转型基金）偶尔巧合一天
+    不动；两列都在存续期内（货币 ETF 的巧合）不动。"""
+    from ashare.data.fund_panel import misfiled_quotes
+
+    nan = np.nan
+    dates = np.array(["20240814", "20240815", "20240820", "20250708"])
+    # 列：184801（旧，2025-07-08 退市）、160641（新，2025-07-08 上市）、
+    #     511990 / 511880（都在存续期内）、162718（上市日写晚了，之前有自己的行情）
+    price = np.array(
+        [
+            [95.0, 95.0, 100.0, 100.0, 95.0],
+            [95.1, nan, 100.0, 100.0, 1.2],
+            [95.3, 95.3, 100.0, 100.0, nan],
+            [nan, 96.0, 100.0, 100.0, 1.3],
+        ]
+    )
+    volume = np.where(np.isfinite(price), 100.0, nan)
+    volume[1, 2] = 300.0
+    arrays = {k: price.copy() for k in ("open", "high", "low", "close")}
+    arrays["volume"] = volume
+    arrays["amount"] = volume * price
+    out = misfiled_quotes(
+        arrays,
+        dates,
+        ["184801.SZ", "160641.SZ", "511990.SH", "511880.SH", "162718.SZ"],
+        ["20150930", "20250708", "20150101", "20150101", "20250101"],
+        ["20250708", None, None, None, None],
+    )
+    assert np.argwhere(out).tolist() == [[0, 1], [2, 1]]
+
+
+def test_fix_closes_backfills_from_next_pre_close():
+    """整天修补：指定交易所、指定日的收盘用下一交易日的交易所前收盘回填，最高最低扩到包含新收盘；
+    另一交易所、复权因子变了的、次日没有行情的、本来就相等的都不动。"""
+    from ashare.data.fund_panel import fix_closes
+
+    dates = np.array(["20200224", "20200225", "20200226"])
+    symbols = ["159001.SZ", "159002.SZ", "159003.SZ", "159004.SZ", "510001.SH"]
+    n = len(symbols)
+    close = np.full((3, n), 1.0)
+    close[1] = [1.00, 1.00, 1.00, 1.00, 1.00]
+    pc = np.full((3, n), 1.0)
+    pc[2] = [1.02, 1.02, 1.02, 1.00, 1.02]
+    adj = np.ones((3, n))
+    adj[2, 1] = 1.1  # 次日有除权：不修
+    close[2, 2] = np.nan  # 次日没有行情：不修
+    arrays = dict(
+        close=close,
+        previous_close=pc,
+        adj_factor=adj,
+        high=np.full((3, n), 1.01),
+        low=np.full((3, n), 0.99),
+    )
+    marked = fix_closes(arrays, dates, symbols, fixes=(("SZ", "20200225"),))
+    assert marked[1].tolist() == [True, False, False, False, False]
+    assert not marked[[0, 2]].any()
+    assert arrays["close"][1, 0] == 1.02 and arrays["high"][1, 0] == 1.02
+    assert arrays["low"][1, 0] == 0.99
+    assert (arrays["close"][1, 1:] == 1.0).all()
+
+
+def test_verify_close_correction_must_equal_next_pre_close(built):
+    store, _, _ = built
+    report = verify_funds(store, write=False, known={})
+    assert report["checks"]["fund_close_corrected"]["verdict"] == "pass"
+    tamper(store, "close_corrected", 12, "510001.SH", True)
+    tamper(store, "close", 12, "510001.SH", 123.0)
+    report = verify_funds(store, write=False, known={})
+    item = report["checks"]["fund_close_corrected"]
+    assert item["verdict"] == "fail"
+    assert item["details"]["examples"] == [dict(symbol="510001.SH", date=DAYS[12])]
+
+
+def test_fund_class_values():
+    from ashare.data.fund_panel import fund_class
+
+    cases = {
+        ("510300.SH", "华泰柏瑞沪深300ETF", "股票型"): "etf",
+        ("161005.SZ", "富国天惠LOF", "混合型"): "lof",
+        ("501018.SH", "南方原油", "其他"): "lof",
+        ("150019.SZ", "银华锐进", "股票型"): "graded",
+        ("161022.SZ", "富国创业板指数分级", "股票型"): "graded",
+        ("508000.SH", "华安张江光大REIT", "REITs"): "reits",
+        ("505888.SH", "嘉实元和", "混合型"): "other",
+    }
+    for (code, name, kind), want in cases.items():
+        assert fund_class(code, name, kind) == want, code
+
+
+def graded_source():
+    source = FakeFundTushare()
+    basic = source.tables["fund_basic"]
+    source.tables["fund_basic"] = basic.with_columns(
+        pl.when(pl.col("ts_code") == "510001.SH")
+        .then(pl.lit("测试证券分级"))
+        .otherwise(pl.col("name"))
+        .alias("name")
+    )
+    return source
+
+
+def test_graded_funds_excluded_from_market_and_verify(tmp_path, monkeypatch):
+    """分级基金：fund_market 默认不能买（告警），显式 graded=True 才放行（同样告警）；
+    校验里整类不进判定，不符只计数。"""
+    store, f = build_from(tmp_path, monkeypatch, graded_source())
+    classes = f.securities("fund").select("symbol", "fund_class").collect()
+    assert dict(classes.iter_rows())["510001.SH"] == "graded"
+    with pytest.warns(RuntimeWarning, match="分级基金不能买"):
+        fm = fund_market(f, ["510001.SH", "511001.SH"])
+    can_buy = np.asarray(fm.market.can_buy)
+    assert not can_buy[:, 0].any() and can_buy[1:, 1].any()
+    with pytest.warns(RuntimeWarning, match="包含分级基金"):
+        loose = fund_market(f, ["510001.SH", "511001.SH"], graded=True)
+    assert np.asarray(loose.market.can_buy)[1:, 0].any()
+    tamper(store, "split", SPLIT_DAY, "510001.SH", 1.0)  # 分级基金的不符：不让校验失败
+    report = verify_funds(store, write=False, known={})
+    gap = report["checks"]["fund_gap"]
+    assert gap["verdict"] == "pass"
+    assert gap["details"]["graded_cells"] >= 1 and gap["details"]["graded_symbols"] == 1
+
+
+def test_dividend_lands_on_candidate_matching_factor(tmp_path, monkeypatch):
+    """首选除息日是错的（只有一行，ex_date 写成登记日、net_ex_date 才是真除息日）：
+    应落在与复权因子对得上的候选日，而不是首选日。"""
+    source = FakeFundTushare()
+    t = source.tables
+    div = t["fund_div"]
+    wrong = div.filter(
+        (pl.col("ts_code") == "510001.SH") & (pl.col("div_proc") == "实施")
+    ).with_columns(
+        pl.lit(DAYS[DIV_DAY - 1]).alias("ex_date"),
+        pl.lit(DAYS[DIV_DAY]).alias("net_ex_date"),
+    )
+    others = div.filter(
+        ~((pl.col("ts_code") == "510001.SH") & (pl.col("div_proc") == "实施"))
+    )
+    t["fund_div"] = pl.concat([others, wrong])
+    from ashare.data.fund_actions import distributions
+
+    d = distributions(t["fund_div"]).filter(pl.col("symbol") == "510001.SH")
+    assert d["preferred"].to_list() == [DAYS[DIV_DAY - 1]]  # 首选日确实是错的
+    store, f = build_from(tmp_path, monkeypatch, source)
+    p = f.panel("fund", ["cash_dividend", "action_source"], symbols=["510001.SH"])
+    cash = np.asarray(p["cash_dividend"])[:, 0]
+    assert cash[DIV_DAY] == DIVIDEND and cash.sum() == DIVIDEND
+    assert np.asarray(p["action_source"])[DIV_DAY, 0] == 1
+    assert f.diagnostics("fund")["actions"]["moved_to_matching_date"] == 1
+
+
+def test_duplicate_check_requires_zero_seven_six_overlap(tmp_path):
+    """七位代码与对应六位代码同一天都有行情（即使数值不同）也算失败。"""
+    from ashare.data.fund_verify import check_duplicate_quotes
+
+    t = 4
+    symbols = ["502000.SH", "5020001.SH"]
+    has = np.zeros((t, 2), dtype=bool)
+    has[:3, 1] = True
+    has[2:, 0] = True
+    base = np.array([[1.0, 2.0], [1.1, 2.1], [1.2, 2.2], [1.3, 2.3]])
+    for name in ("open", "high", "low", "close"):
+        np.save(tmp_path / f"{name}.npy", base)
+    np.save(tmp_path / "volume.npy", np.full((t, 2), 100.0))
+    np.save(tmp_path / "amount.npy", base * 100)
+    np.save(tmp_path / "has_quote.npy", has)
+    meta = dict(symbols=symbols, dates=[f"2020010{k + 1}" for k in range(t)])
+    item = check_duplicate_quotes(tmp_path, meta, "基金")
+    assert item["verdict"] == "fail"
+    assert item["details"]["seven_digit_pairs"] == {"5020001.SH": 1}
+    has[2, 1] = False
+    np.save(tmp_path / "has_quote.npy", has)
+    assert check_duplicate_quotes(tmp_path, meta, "基金")["verdict"] == "pass"

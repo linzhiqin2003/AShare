@@ -56,8 +56,9 @@ r−1 收盘到 r 收盘的收益。月度调仓 = 每月第一个交易日 = `a
 | 字段 | 含义 |
 |---|---|
 | `converged` | 在**原协方差**上解到了等风险贡献 |
-| `solved_with_ridge` | 原协方差上无解，加了 ridge 才解到（此时 `converged` 为 False） |
-| `status` | `converged` / `ridge` / `max_iter`（原协方差上迭代次数用完，不加 ridge） / `unsolved` |
+| `solved_with_ridge` | 原协方差上没解到（无下界或迭代用完），加了 ridge 才解到（此时 `converged` 为 False、`status` 为 `ridge`） |
+| `status` | `converged` / `ridge` / `max_iter`（原协方差上迭代用完、加 ridge 也没解到） / `unsolved` |
+| `original_status` | 原协方差上那一次求解的结果：`converged` / `unbounded` / `max_iter` |
 | `residual`、`residual_original` | 在实际求解的矩阵、在原协方差上的残差（加了 ridge 时后者可能很大） |
 | `ridge`、`iterations` | 用到的 ridge（× 平均方差）与迭代次数 |
 
@@ -73,7 +74,8 @@ r−1 收盘到 r 收盘的收益。月度调仓 = 每月第一个交易日 = `a
 |---|---|
 | 协方差奇异，但不存在方差为 0 的长仓组合 | 直接有解，不加 ridge |
 | 存在方差为 0 的长仓组合（如两两完全对冲） | 等风险贡献无解；依次在对角线加 1e-10、1e-8、1e-6、1e-4 × 平均方差重解（小 ridge 下病态到迭代不够就换更大的），`status = "ridge"`、`converged = False` |
-| `max_iter` 太小 | `status = "max_iter"`，不加 ridge，权重是最后一步的结果（和为 1），`allocate` 发警告 |
+| 含对冲组合的近奇异矩阵（如第三只 = −(前两只之和)，对角线只有 1e-14 的余量） | 原协方差上没有严格的零方差组合，但病态到迭代用完（`original_status = "max_iter"`）；同样回退到 ridge，`status = "ridge"`、`solved_with_ridge = True`、`converged = False`，`residual_original` 照报原协方差上的残差（这个例子约 0.007） |
+| `max_iter` 太小 | 原协方差上迭代用完后也试 ridge；ridge 也解不到时交回原协方差上那次的结果，`status = "max_iter"`、`ridge = 0`，权重和为 1，`allocate` 发警告 |
 | 两只完全相同的资产 | 平分 |
 | 预算为 0 的资产 | 权重 0，其余按预算解 |
 | 窗口内价格从不变动（波动为 0） | 风险平价、倒波动把它排除（诊断 `zero_volatility`）；全部为 0 时退回等权（诊断 `fallback`） |
@@ -163,7 +165,8 @@ r−1 收盘到 r 收盘的收益。月度调仓 = 每月第一个交易日 = `a
 - 交叉验证：风险平价与坐标下降参考（12 组随机协方差）；最小方差、均值方差与 SLSQP 参考；调仓行与直白参考；协方差与手写指数加权公式。
 - 性质：各方法权重非负、有限、合计 ≤ 1（目标波动可 > 1 但 ≤ 上限）；目标波动在事后能把实现波动拉到目标附近；倒波动比例；趋势过滤方向；
   再平衡带控制下单次数；单资产、晚上市、零波动、全零、错误输入的报错；风险预算按代码对齐（前面有资产未上市时）；
-  趋势过滤用 t−1 日收盘；迭代次数不够时报 `max_iter` 不加 ridge；加了 ridge 不报 `converged`；事前波动为 0 时不加杠杆；
+  趋势过滤用 t−1 日收盘；近奇异的对冲组合原协方差上迭代用完后回退到 ridge（报 `solved_with_ridge`、照报原协方差残差）；
+  ridge 也解不到时报 `max_iter`、交回原协方差上的结果；加了 ridge 不报 `converged`；事前波动为 0 时不加杠杆；
   零波动识别与 `np.nanstd` 一致。
 - 前视：第 2 节的通用测试，对每个方法参数化。
 - 输出：`to_dict()` 只含内置类型、`to_json()` 往返；`tearsheet` 能读。
@@ -178,6 +181,7 @@ r−1 收盘到 r 收盘的收益。月度调仓 = 每月第一个交易日 = `a
 
 在 `src`、`test` 的副本里逐条改坏（先确认 `ashare.__file__` 指向副本、副本未改时目标测试全过），每条都要有测试失败。
 M2、M12、M14、M16 是这次修掉的错误的原写法，M20–M23 对应复核时存活的四处变异（补了测试），M13、M15、M17–M19、M24、M25 守住这次的新规则。
+M26–M36 是第二轮收尾加的：M26、M31 是上一轮的原写法，M32、M33 是第二轮复核时存活的两处（N1、N3，补了测试），其余守住这轮的新规则。
 
 | 编号 | 改动 | 抓住它的测试 |
 |---|---|---|
@@ -206,3 +210,14 @@ M2、M12、M14、M16 是这次修掉的错误的原写法，M20–M23 对应复�
 | M23 | fund_version 混入期货数据集 | `test_stock_and_futures_identical_with_fund_partitions` |
 | M24 | 加了 ridge 仍报 converged | `test_risk_parity_singular_covariance` |
 | M25 | 事前波动为 0 时用满杠杆 | `test_target_volatility_zero_ex_ante_uses_base` |
+| M26 | 复用代码只搬有 `!1` 因子、六位代码自己没有因子的那几天（上一轮的写法） | `test_reused_old_life_rows_with_own_factor_move_to_seven_digit` |
+| M27 | 不修补深市 2020-02-25 收盘 | `test_fix_closes_backfills_from_next_pre_close` |
+| M28 | `fund_market` 不排除分级基金 | `test_graded_funds_excluded_from_market_and_verify` |
+| M29 | 重复行情检查不判失败 | `test_verify_rejects_duplicate_quotes` |
+| M30 | 七位 / 六位代码重叠不判失败 | `test_duplicate_check_requires_zero_seven_six_overlap` |
+| M31 | 原协方差上迭代用完不回退 ridge（上一轮的写法） | `test_risk_parity_near_singular_hedge_falls_back_to_ridge` |
+| M32 | 首选除息日错时不找与因子对得上的候选日（N1） | `test_dividend_lands_on_candidate_matching_factor` |
+| M33 | 赎回价从最后交易日当天起作估值（N3，前视） | `test_cb_redemption_mark_starts_after_last_trade` |
+| M34 | 校验不排除分级基金 | `test_graded_funds_excluded_from_market_and_verify` |
+| M35 | 记错代码的行情：存续期外偶尔巧合也去掉 | `test_misfiled_quotes_outside_life_dropped` |
+| M36 | 不去掉记错代码的行情 | `test_misfiled_quotes_outside_life_dropped` |

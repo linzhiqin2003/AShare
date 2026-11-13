@@ -75,6 +75,12 @@ FUND_FIELDS = _table(
         ),
         ("is_listed", "布尔", "bool", "上市日含、退市日不含"),
         ("delist", "布尔", "bool", "退市日或其后首个交易日盘前"),
+        (
+            "close_corrected",
+            "布尔",
+            "bool",
+            "收盘价是对源数据错误的修补（用下一交易日的交易所前收盘回填），见 docs/FUND_CB_DATA.md",
+        ),
     ]
 )
 

@@ -85,12 +85,14 @@ def solve_risk_parity(sigma, budget=None, *, tol=1e-12, max_iter=100):
     - ``ridge``：用到的 ridge（× 平均方差），0 表示没加；
     - ``residual``：在实际求解的矩阵（加了 ridge 时是加过的）上，风险贡献占比与预算的最大绝对差；
     - ``residual_original``：同样的权重在原协方差上的残差（加了 ridge 时可能很大，算不出时为 None）；
-    - ``status``：``converged`` / ``ridge`` / ``max_iter`` / ``unsolved``；``iterations``。
+    - ``status``：``converged`` / ``ridge`` / ``max_iter`` / ``unsolved``；``iterations``；
+    - ``original_status``：原协方差上那一次求解的结果（``converged`` / ``unbounded`` / ``max_iter``）。
 
-    协方差奇异且存在**方差为 0 的长仓组合**时，等风险贡献的解不存在（目标无下界）。此时依次在
-    对角线加 ``ridge × 平均方差``（1e-10、1e-8、1e-6、1e-4）重解，小 ridge 下病态到迭代不够就换更大的。
-    只有原协方差上「无下界」才加 ridge；原协方差上迭代次数用完（``max_iter`` 太小）直接报 ``max_iter``。其余奇异情形（完全相同的两只资产等）
-    不需要 ridge。
+    原协方差上没解到时（目标无下界，即存在**方差为 0 的长仓组合**；或迭代次数用完，常见于含对冲组合的
+    近奇异矩阵），依次在对角线加 ``ridge × 平均方差``（1e-10、1e-8、1e-6、1e-4）重解，小 ridge 下病态到
+    迭代不够就换更大的。加 ridge 解到时 ``status`` 为 ``ridge``、``solved_with_ridge`` 为 True、
+    ``converged`` 为 False，``residual_original`` 照报原协方差上的残差。全部失败时：原协方差上是迭代用完
+    的，交回原协方差上那次的结果并报 ``max_iter``（``ridge`` 为 0）；否则报 ``unsolved``。其余奇异情形（完全相同的两只资产等）原协方差上就能解，不加 ridge。
     """
     s = np.asarray(sigma, dtype=float)
     n = s.shape[0]
@@ -115,11 +117,13 @@ def solve_risk_parity(sigma, budget=None, *, tol=1e-12, max_iter=100):
             residual=0.0,
             residual_original=0.0,
             ridge=0.0,
+            original_status="converged",
         )
     s_a, b_a = s[np.ix_(active, active)], b[active]
     scale = float(np.mean(np.diag(s_a)))
     total_iterations = 0
     solved = False
+    original_status = None
     for ridge in (0.0, 1e-10, 1e-8, 1e-6, 1e-4):
         used = s_a + ridge * scale * np.eye(len(s_a)) if ridge else s_a
         y, iterations, status = _newton(used, b_a, tol, max_iter)
@@ -132,8 +136,12 @@ def solve_risk_parity(sigma, budget=None, *, tol=1e-12, max_iter=100):
             if solved:
                 break
             status = "unbounded"  # 停在残差不达标的点上：按奇异处理
-        if status == "max_iter" and ridge == 0:
-            break  # 原协方差上只是迭代不够：不加 ridge（加了 ridge 后迭代不够就换更大的 ridge）
+        if ridge == 0:
+            # 原协方差上没解到（无下界或迭代用完）：回退到加 ridge
+            original_status, first = status, y
+    if not solved and original_status == "max_iter":
+        # 加 ridge 也没解到：交回原协方差上那次（迭代用完）的结果，不报用过 ridge
+        y, used, ridge, status = first, s_a, 0.0, "max_iter"
     weights[active] = y / y.sum()
     full = s.copy()
     full[np.ix_(active, active)] = used
@@ -152,4 +160,5 @@ def solve_risk_parity(sigma, budget=None, *, tol=1e-12, max_iter=100):
         residual=residual,
         residual_original=original if np.isfinite(original) else None,
         ridge=float(ridge),
+        original_status="converged" if solved and ridge == 0 else original_status,
     )

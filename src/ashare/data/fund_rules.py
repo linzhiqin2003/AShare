@@ -26,6 +26,8 @@ import numpy as np
 import polars as pl
 from panelbt.markets import FeeSchedule, MarketProfile
 
+from .fund_panel import fund_class
+
 TICK = 0.001
 LOT = 100.0
 
@@ -84,7 +86,7 @@ GROWTH_BOARD_FROM = {"SZ": "20200824", "SH": "20190722"}
 
 def classify(securities):
     """证券表 → 每只基金的大类（stock / bond / gold_commodity / money / cross_border / reits / other）、
-    是否 T+0、涨跌停档（0.1 或 0.2）及其生效日。返回 polars DataFrame（按 symbol 排序）。"""
+    是否 T+0、涨跌停档（0.1 或 0.2）及其生效日、证券类别 fund_class（证券表里没有就按名称推断）。返回 polars DataFrame（按 symbol 排序）。"""
     rows = []
     for r in securities.iter_rows(named=True):
         name = r.get("name") or ""
@@ -115,6 +117,7 @@ def classify(securities):
                 t0=kind in ("cross_border", "gold_commodity", "bond", "money"),
                 limit=0.2 if growth else 0.1,
                 limit_from=GROWTH_BOARD_FROM.get(exchange) if growth else None,
+                fund_class=r.get("fund_class") or fund_class(r["symbol"], name, ftype),
             )
         )
     return pl.DataFrame(
@@ -125,6 +128,7 @@ def classify(securities):
             t0=pl.Boolean,
             limit=pl.Float64,
             limit_from=pl.String,
+            fund_class=pl.String,
         ),
     ).sort("symbol")
 
@@ -206,13 +210,24 @@ FIELDS = (
 
 
 def fund_market(
-    funds, symbols=None, start=None, end=None, *, exec="open", validate=True
+    funds,
+    symbols=None,
+    start=None,
+    end=None,
+    *,
+    exec="open",
+    graded=False,
+    validate=True,
 ):
     """从基金面板建回测行情。
 
     funds：`ashare.data.open(root).funds()`。exec："open"（默认）或 "close"。
     可买：成交价有效、当天有行情、在上市期内、成交价不在涨停价及以上（一字涨停也不能买）；
     可卖同理看跌停。拆分、分红、退市直接用面板的 split、cash_dividend、delist。
+
+    分级基金（证券表 ``fund_class == "graded"``）默认不能买（graded=False，发告警列出被排除的代码）：
+    A 份额的定期折算不在复权因子里，持有者每次折算会记一笔约 −10% 的假亏损，回测结果不可用。
+    graded=True 时照常交易，同样发告警。
 
     最短例子::
 
@@ -253,6 +268,28 @@ def fund_market(
     price = np.asarray(p[exec], dtype=float)
     ok = np.asarray(p["has_quote"]) & np.asarray(p["is_listed"])
     can_buy, can_sell = tradability(price, p["high"], p["low"], up, down, ~ok)
+    flagged = [
+        s
+        for s, c in zip(p.symbols, classes["fund_class"].to_list(), strict=True)
+        if c == "graded"
+    ]
+    if flagged:
+        import warnings
+
+        if graded:
+            warnings.warn(
+                f"包含分级基金 {flagged[:10]}：定期折算不在复权因子里，回测收益不可靠",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        else:
+            can_buy = np.array(can_buy, copy=True)
+            can_buy[:, np.isin(p.symbols, flagged)] = False
+            warnings.warn(
+                f"分级基金不能买（graded=False）：{flagged[:10]}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     close = np.where(np.asarray(p["has_quote"]), p["close"], np.nan)
     market = bt.Market(
         np.where(ok, price, np.nan),

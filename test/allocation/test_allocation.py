@@ -353,10 +353,12 @@ def test_trend_filter_direction():
 
 
 def test_risk_parity_iteration_limit_is_not_ridge():
-    """迭代次数不够时报 max_iter，不加 ridge、不算收敛；allocate 发警告并计数。"""
+    """迭代次数不够、加 ridge 也解不到时报 max_iter，交回原协方差上的结果（ridge 为 0）、不算收敛；
+    allocate 发警告并计数。"""
     sigma = random_cov(np.random.default_rng(5), 6)
     w, info = solve_risk_parity(sigma, max_iter=1)
     assert info["status"] == "max_iter" and info["ridge"] == 0
+    assert info["original_status"] == "max_iter"
     assert not info["converged"] and not info["solved_with_ridge"]
     assert np.isfinite(w).all() and abs(w.sum() - 1) < 1e-12
     r = synthetic(13)
@@ -366,6 +368,26 @@ def test_risk_parity_iteration_limit_is_not_ridge():
     assert status.get("max_iter", 0) >= 1 and sum(status.values()) == len(res.rows)
     quiet = aa.allocate(r, aa.RiskParity(), rebalance=126)
     assert quiet.settings["risk_parity_status"] == {"converged": len(quiet.rows)}
+
+
+def test_risk_parity_near_singular_hedge_falls_back_to_ridge():
+    """含对冲组合的近奇异协方差（第三只 = −(前两只之和)，对角线只加 1e-14）：原协方差上迭代用完，
+    回退到 ridge 解到；报 solved_with_ridge，不算收敛，原协方差上的残差照报。"""
+    a = np.random.default_rng(0).normal(size=(500, 2))
+    x = np.column_stack([a[:, 0], a[:, 1], -(a[:, 0] + a[:, 1])])
+    sigma = np.cov(x.T) + 1e-14 * np.eye(3)
+    w, info = solve_risk_parity(sigma)
+    assert info["original_status"] == "max_iter"
+    assert info["status"] == "ridge" and info["solved_with_ridge"]
+    assert not info["converged"] and info["ridge"] > 0
+    assert info["residual"] <= 1e-8
+    expect = np.max(np.abs(risk_contributions(w, sigma) - 1 / 3))
+    assert info["residual_original"] == pytest.approx(expect, abs=1e-12)
+    assert np.isfinite(w).all() and (w > 0).all() and abs(w.sum() - 1) < 1e-12
+    # 良态矩阵不受影响：原协方差上解到，不加 ridge
+    _, ok = solve_risk_parity(random_cov(np.random.default_rng(5), 6))
+    assert ok["status"] == "converged" and ok["original_status"] == "converged"
+    assert ok["ridge"] == 0
 
 
 def test_target_volatility_zero_ex_ante_uses_base():

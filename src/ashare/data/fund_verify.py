@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -466,6 +466,13 @@ def check_fund_events(path, meta, register):
       （``fund_factor``）。
     - 两天之一没有复权因子的单列计数（``fund_factor_missing``，按代码登记）。
     与面板构建的裁决规则是两条独立的路径：这里不读分红表、不看因子比去找事件。
+
+    注意：面板以复权因子为准记事件，所以 ``fund_factor`` 按构造几乎必然 0 不符，它只防面板写坏；
+    真正检验事件对不对的是 ``fund_gap``。两条都用面板里映射过的复权因子，查不出代码映射本身的错，
+    那由 `check_duplicate_quotes` 守。
+
+    分级基金（证券表 ``fund_class == "graded"``）整类不进判定：A 份额的定期折算不在复权因子里，
+    逐条豁免没有意义；它们的不符只计数（``graded_cells``），`fund_market` 默认也不让交易。
     """
     has = _load(path, "has_quote")
     close = _load(path, "close")
@@ -475,6 +482,11 @@ def check_fund_events(path, meta, register):
     cash = _load(path, "cash_dividend")
     dates = np.array(meta["dates"])
     symbols = np.array(meta["symbols"])
+    securities = pl.read_parquet(path / "securities.parquet")
+    graded_codes = set(
+        securities.filter(pl.col("fund_class") == "graded")["symbol"].to_list()
+    )
+    graded = np.array([str(s) in graded_codes for s in symbols])
     cols, ps, ts = _quote_pairs(has)
     mark = close[ps, cols].copy()
     shares = np.ones(len(cols))
@@ -496,9 +508,12 @@ def check_fund_events(path, meta, register):
         factor = close[ts, cols] * adj[ts, cols] / (close[ps, cols] * adj[ps, cols])
         factor_dev = held / factor - 1
     has_prev = np.isfinite(prev[ts, cols])
-    gap_bad = has_prev & ~(np.abs(gap_dev) <= EVENT)
+    is_graded = graded[cols]
+    gap_all = has_prev & ~(np.abs(gap_dev) <= EVENT)
+    gap_bad = gap_all & ~is_graded
     no_factor = ~np.isfinite(factor)
-    factor_bad = ~no_factor & ~(np.abs(factor_dev) <= EVENT)
+    factor_all = ~no_factor & ~(np.abs(factor_dev) <= EVENT)
+    factor_bad = factor_all & ~is_graded
 
     def cells(mask):
         return [
@@ -514,8 +529,12 @@ def check_fund_events(path, meta, register):
         int(has_prev.sum()),
         "相邻两个有行情日之间（跨停牌）面板的拆分、分红把上一收盘推成交易所前收盘（容差 0.5%）",
         extra=dict(
-            over_two_percent=int((has_prev & (np.abs(gap_dev) > 0.02)).sum()),
+            over_two_percent=int(
+                (has_prev & ~is_graded & (np.abs(gap_dev) > 0.02)).sum()
+            ),
             pairs_across_suspension=int((span > 1).sum()),
+            graded_cells=int((gap_all & is_graded).sum()),
+            graded_symbols=int(graded.sum()),
         ),
     )
     fac = _judge(
@@ -525,13 +544,16 @@ def check_fund_events(path, meta, register):
         int((~no_factor).sum()),
         "面板事件给出的持有收益与复权因子给出的收益一致（容差 0.5%，跨停牌）",
         extra=dict(
-            over_two_percent=int((~no_factor & (np.abs(factor_dev) > 0.02)).sum()),
+            over_two_percent=int(
+                (~no_factor & ~is_graded & (np.abs(factor_dev) > 0.02)).sum()
+            ),
+            graded_cells=int((factor_all & is_graded).sum()),
             event_cells=int(events.sum()),
             split_cells=int((split != 1).sum()),
             dividend_cells=int((cash > 0).sum()),
         ),
     )
-    missing_symbols = sorted({str(s) for s in symbols[cols[no_factor]]})
+    missing_symbols = sorted({str(s) for s in symbols[cols[no_factor & ~is_graded]]})
     miss = _judge(
         [dict(symbol=s) for s in missing_symbols],
         register,
@@ -541,6 +563,98 @@ def check_fund_events(path, meta, register):
         extra=dict(cells=int(no_factor.sum())),
     )
     return gap, fac, miss
+
+
+def check_duplicate_quotes(path, meta, kind):
+    """硬不变量：同一段行情不许出现在两列里（代码复用拆错、七位 / 六位代码重复、别的代码的行情记错地方），
+    会让全市场等权之类的配置把同一只证券算两遍。
+
+    两列在同一天开高低收、成交量、成交额都逐元相同（且有成交）记一次「同日相同」。一对列有下面任一情形即失败：
+    连续 3 个共同有行情日都相同（一段）；或共同有行情日不少于 2 天且天天相同（两列的重叠就是同一段）。
+    零星的单日相同是巧合（货币 ETF 常在 100 元整成交 1 手），只计数。另：七位代码与对应六位代码的重叠
+    有行情日必须为 0。不允许例外。
+    """
+    has = _load(path, "has_quote")
+    vol = _load(path, "volume")
+    fields = [
+        _load(path, k) for k in ("open", "high", "low", "close", "volume", "amount")
+    ]
+    symbols = np.array(meta["symbols"])
+    dates = np.array(meta["dates"])
+    traded = has & (vol > 0)
+    same = defaultdict(list)
+    for i in np.flatnonzero(traded.sum(axis=1) > 1):
+        cols = np.flatnonzero(traded[i])
+        keys = np.stack([f[i, cols] for f in fields], axis=1)
+        _, inverse, counts = np.unique(
+            keys, axis=0, return_inverse=True, return_counts=True
+        )
+        for k in np.flatnonzero(counts > 1):
+            group = cols[inverse.ravel() == k]
+            for x in range(len(group)):
+                for y in range(x + 1, len(group)):
+                    same[(int(group[x]), int(group[y]))].append(int(i))
+    problems = []
+    for (a, b), rows in sorted(same.items()):
+        common = np.flatnonzero(traded[:, a] & traded[:, b])
+        position = np.searchsorted(common, rows)
+        run = longest = 1
+        for x, y in zip(position, position[1:], strict=False):
+            run = run + 1 if y == x + 1 else 1
+            longest = max(longest, run)
+        if longest >= 3 or (len(rows) >= 2 and len(rows) == len(common)):
+            problems.append(
+                dict(
+                    symbols=[str(symbols[a]), str(symbols[b])],
+                    same_days=len(rows),
+                    common_days=len(common),
+                    first=str(dates[rows[0]]),
+                    last=str(dates[rows[-1]]),
+                )
+            )
+    index = {str(s): j for j, s in enumerate(symbols)}
+    overlaps = {}
+    for s, j in index.items():
+        code, exchange = s.split(".")
+        if len(code) == 7 and f"{code[:6]}.{exchange}" in index:
+            other = index[f"{code[:6]}.{exchange}"]
+            overlaps[s] = int((has[:, j] & has[:, other]).sum())
+    bad_overlap = {k: v for k, v in overlaps.items() if v}
+    if bad_overlap:
+        problems.append(dict(seven_six_overlap=bad_overlap))
+    return _strict(
+        problems,
+        int(has.sum()),
+        f"{kind}：没有一段行情同时出现在两列里；七位与六位代码的有行情日不重叠",
+        extra=dict(
+            seven_digit_pairs=overlaps,
+            single_day_matches=sum(len(v) for v in same.values()),
+            pairs_with_matches=len(same),
+        ),
+    )
+
+
+def check_close_corrections(path, meta):
+    """修补过的收盘价（`close_corrected`）逐格等于下一交易日的交易所前收盘；只统计，不允许不符。"""
+    marked = _load(path, "close_corrected")
+    close = _load(path, "close")
+    prev = _load(path, "previous_close")
+    dates = np.array(meta["dates"])
+    rows, cols = np.nonzero(marked)
+    bad = [
+        dict(symbol=meta["symbols"][j], date=str(dates[i]))
+        for i, j in zip(rows, cols, strict=True)
+        if i + 1 >= len(dates) or close[i, j] != prev[i + 1, j]
+    ]
+    return _strict(
+        bad,
+        int(len(rows)),
+        "对源数据错误的整天修补（见 fund_panel.CLOSE_FIXES）：修补后的收盘等于次日交易所前收盘",
+        extra=dict(
+            by_date=dict(Counter(str(dates[i]) for i in rows)),
+            cells=int(len(rows)),
+        ),
+    )
 
 
 def check_fund_limits(path, meta, register):
@@ -737,6 +851,8 @@ def verify_funds(store, *, write=True, known=None):
             checks["fund_gap"] = gap
             checks["fund_factor"] = fac
             checks["fund_factor_missing"] = miss
+            checks["fund_duplicate_quotes"] = check_duplicate_quotes(path, meta, kind)
+            checks["fund_close_corrected"] = check_close_corrections(path, meta)
             checks["fund_price_limits"] = check_fund_limits(path, meta, register)
         else:
             strict, loose = check_cb_conversion(store, path, meta, register)

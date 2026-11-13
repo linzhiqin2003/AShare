@@ -8,8 +8,9 @@
    - 基金表里六位、七位两条是**同一只基金**（名称和上市日相同）或没有七位那条：全部并到六位代码，
      七位代码不建列；``!1`` 的复权因子补到六位代码没有因子的日子。
    - 是**两只基金**（如 502000.SH：2015–2020 是分级基金 5020001.SH，之后是另一只 LOF）：拆成两列。
-     旧基金用七位代码：``!1`` 的复权因子、以及六位代码在这些日子里（且六位代码自己当天没有因子）的
-     日线都归七位代码；六位代码只留新基金的部分。
+     旧基金用七位代码：``!1`` 的复权因子，以及六位代码在旧基金存续期内、新基金上市日之前的日线（或
+     六位代码当天没有自己因子的 ``!1`` 日子）都归七位代码；六位代码只留新基金的部分。源在旧段也给了
+     六位代码的复权因子时（164814.SZ），有 ``!1`` 的那天丢掉六位的，没有的归七位代码。
    - 七位代码与六位代码同一天都有日线时，留六位代码那行、丢七位那行（计数进诊断）；七位代码只在六位代码
      缺行的日子有日线时，用来补齐（2018-12 有几只就是这样补上缺的那天）。
 
@@ -63,6 +64,7 @@ def resolve_reused(basic, daily, adj):
     daily_moves = []  # (from, to, dates)
     adj_moves = []  # (from, to, dates)
     stray = []  # (symbol, dates) 丢弃的七位零星日线
+    adj_drops = []  # (symbol, dates) 丢弃的六位代码旧段复权因子
     daily_dates = {
         s: set(d) for s, d in daily.group_by("symbol").agg(pl.col("date")).iter_rows()
     }
@@ -80,8 +82,18 @@ def resolve_reused(basic, daily, adj):
             b6 is None or (b6["name"], b6["list_date"]) != (b7["name"], b7["list_date"])
         )
         if distinct:
+            own6_adj = adj_dates.get(six, set())
+
+            def old_life(d, b6=b6, b7=b7):
+                # 旧基金存续期内、且早于新基金上市日的日子
+                if b7.get("list_date") and d < b7["list_date"]:
+                    return False
+                if b7.get("delist_date") and d >= b7["delist_date"]:
+                    return False
+                return not (b6 and b6["list_date"] and d >= b6["list_date"])
+
             moved = sorted(
-                d for d in own6 & marked if d not in adj_dates.get(six, set())
+                d for d in own6 if (d in marked and d not in own6_adj) or old_life(d)
             )
             if moved:
                 daily_moves.append((six, seven, set(moved)))
@@ -95,6 +107,14 @@ def resolve_reused(basic, daily, adj):
                     {d for d in marked if d not in adj_dates.get(seven, set())},
                 )
             )
+            # 六位代码自己在旧段的复权因子：有 !1 的那天丢掉，没有的那天归旧基金。
+            old_adj = own6_adj & set(moved)
+            if old_adj & marked:
+                adj_drops.append((six, old_adj & marked))
+            if old_adj - marked:
+                adj_moves.append(
+                    (six, seven, (old_adj - marked) - adj_dates.get(seven, set()))
+                )
             notes.append(
                 dict(
                     code=six,
@@ -127,7 +147,7 @@ def resolve_reused(basic, daily, adj):
                 )
             )
     daily = _apply_moves(daily, daily_moves, stray)
-    adj = _apply_moves(adj, adj_moves, [])
+    adj = _apply_moves(adj, adj_moves, adj_drops)
     adj = adj.filter(~pl.col("symbol").str.contains("!", literal=True))
     for code, dates in stray:
         notes.append(dict(code=code, rule="stray_dropped", quotes=len(dates)))
