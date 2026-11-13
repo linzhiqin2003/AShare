@@ -2,6 +2,8 @@
 
 ## 2026-11-13（港股、美股数据）
 - 新增港股、美股原始库与面板（`docs/DESIGN.md` 6.1.3、`docs/HKUS_DATA.md`）：Tushare 权限实测；按市场分目录的原始库（日历、证券表、日线、前复权因子快照、港股通名单与南向持股、汇率）；「交易日 × 证券」面板两套（近 3 年全部证券、2010 年起 200 只样本），读取入口 `ashare.data.open(root, market="hk"|"us")`；由因子比识别拆并股和等效现金；独立校验与逐条登记的已知例外。命令 `sync-overseas`、`select-sample-overseas`、`build-overseas`、`verify-overseas`。A 股侧输出逐位不变。
+- 复核后返工：美股公司行为必须有价格印证才执行，印证不了的和最后一次成交之后的因子变化（并购、退市）不执行并逐格标记 `action_suspect`；整数比规则收紧（10 倍以上只认整数）；因子序列按天取（转板分段拼接）；只放三大交易所的普通股与存托凭证；价格不连续的列拆成 `代码#2`；美股统一为价格收益加拆并股、上市退市只用当时可知的信息；美股面板标为试验性。港股：停牌期内多次事件的等效现金参考价、大比值事件按股数调整（不扣税）、南向持股错位一天、人民币柜台指向主柜台。校验按字段定义独立核对公司行为、上市、港股通字段，坏数据不再让校验崩溃；A 股、期货子命令拒绝 `--market hk|us`。
+- 合入后 A 股面板的 `code_version` 会变一次（它哈希了本批改动过的 `catalog.py`、`store.py`），下次 `build-panel` 是一次全量重建，按面板版本缓存的结果随之失效；这是预期内的，A 股数据本身不变。
 ## 2026-11-13（境外期货的来源适配）
 - 新增 Databento、Bloomberg 两个境外期货适配器（`docs/DESIGN.md` 6.1.2、`docs/FOREIGN_FUTURES.md`），**未用真实账号验证**：取数层 `ashare.data.sources.databento`（费用闸门：先 `metadata.get_cost`，默认预算 0 只估不取）、`ashare.data.sources.bloomberg`（`//blp/refdata` 的历史、参考、分钟线请求）；换算层 `futures_foreign*` 把合约表、日线、分钟线、日历转成与境内相同的统一字段（CME / ICE 交易日归属、十年回绕、final 结算价、持仓量归属），`build_panel` 接期货面板、连续合约和 `panelbt_inputs`。可选依赖 `ashare[databento]`，默认不装；`blpapi` 不作可选依赖，需要时按文档手动安装。
 - 境外期货适配器按复核返工（仍**未用真实账号验证**）：区间第一天不再混进 start 之前几天的 K 线（开市日覆盖整个取数窗口，窗口外的时刻丢掉不顺延，start 当天也有前结算价）；费用闸门改为整份计划先估总价、会话内缓存已取的表、预算与估价必须是有限非负数、加锁；Bloomberg 的 `fieldExceptions`、历史请求的 `securityError`、`PX_SETTLE` 整列为空、合约表缺字段都报错；结算价缺失计数进诊断并默认报错；DBN v1 的数量未定义值当空；`minute` 区间外直接报错；`futures_continuous` 的 `ratio` 复权遇到非正价格报错（境内输出不变）；`pyproject.toml` 去掉 `bloomberg` 可选依赖与 Bloomberg 包索引，`uv.lock` 不再含 `blpapi`。

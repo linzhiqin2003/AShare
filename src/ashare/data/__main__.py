@@ -111,6 +111,20 @@ def main():
     export = commands.add_parser("export-manifest")
     export.add_argument("path", help="导出兼容旧清单，覆盖前请自行保留迁移前文件")
     args = parser.parse_args()
+    # 港股、美股只走 *-overseas 子命令（另可用 status、confirm-partition）：A 股和期货的子命令
+    # 不认识港美股数据集，在 <root>/hk 上跑会把 A 股数据写进港股根。
+    if args.market != "cn" and args.command not in (
+        "sync-overseas",
+        "select-sample-overseas",
+        "build-overseas",
+        "verify-overseas",
+        "status",
+        "confirm-partition",
+    ):
+        parser.error(
+            f"{args.command} 只用于 A 股（--market cn）；港股、美股请用 sync-overseas、"
+            "select-sample-overseas、build-overseas、verify-overseas"
+        )
     store = Store(args.root, args.market)
     logging.basicConfig(level=logging.INFO)
     if args.command == "sync":

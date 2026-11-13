@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 from test_hk_us_fixtures import US_DAYS, US_HOLIDAY, FakeOverseas
 
@@ -20,9 +21,23 @@ assert (
 )
 
 US_EXCEPTIONS = dict(
-    reasons={"U1": "代码复用或源重复行"},
+    reasons={"U1": "代码复用或源重复行", "U2": "同一代码几个交易所的因子序列口径不同"},
     cause_unknown=["U1"],
     entries=[
+        dict(
+            market="us",
+            check="unique_keys",
+            dataset="us_adjfactor",
+            kind="取值冲突",
+            reason="U2",
+        ),
+        dict(
+            market="us",
+            check="unique_keys",
+            dataset="us_adjfactor",
+            kind="同值重复",
+            reason="U2",
+        ),
         dict(
             market="us",
             check="unique_keys",
@@ -79,16 +94,17 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     p = us.panel(list(us.fields()))
     n = len(US_DAYS)
     assert list(p.dates) == US_DAYS and "connect_eligible" not in us.fields()
-    # AAA 4 拆 1；EEE 10 合 1；DDD 非整数比 → 分不出。
+    # 范围：优先股、第 5 位为 W 的权证、只有场外因子的证券不进面板。
+    assert {"PRF", "WRNTW", "OTCX"}.isdisjoint(p.symbols)
+    assert meta["diagnostics"]["us_scope"]["dropped_by_kind"] == 2
+    assert meta["diagnostics"]["us_scope"]["without_major_exchange_factor"] == 1
+    # AAA 4 拆 1；EEE 10 合 1；DDD 因子比 1.07（现金类）→ 美股不执行。
     assert col(p, "action_source", "AAA")[12] == 1 and col(p, "split", "AAA")[12] == 4.0
-    assert col(p, "action_source", "EEE")[18] == 1 and col(p, "split", "EEE")[
-        18
-    ] == pytest.approx(0.1)
-    assert col(p, "action_source", "DDD")[15] == 2 and col(p, "split", "DDD")[15] == 1.0
-    close = col(p, "close", "DDD")
-    assert col(p, "equivalent_cash", "DDD")[15] == pytest.approx(
-        close[14] * (1 - 1 / 1.07), rel=1e-5
-    )
+    assert col(p, "action_source", "EEE")[18] == 1
+    assert col(p, "split", "EEE")[18] == pytest.approx(0.1)
+    assert col(p, "action_source", "DDD")[15] == 5 and col(p, "split", "DDD")[15] == 1.0
+    assert not col(p, "equivalent_cash", "DDD").any()
+    assert col(p, "adj_factor", "DDD")[-1] == 1.0  # 价格收益口径
     # 美股前收不除权。
     assert col(p, "previous_close", "AAA")[12] == pytest.approx(
         col(p, "close", "AAA")[11]
@@ -98,18 +114,71 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "has_quote", "FFF")[9]
     assert meta["diagnostics"]["daily_conflicting_keys"] == 1
     assert meta["diagnostics"]["daily_merged_duplicate_rows"] == 2
-    # CCC 第 4 天后没有行情 → 推断退市。
-    assert col(p, "is_listed", "CCC").tolist() == [i <= 4 for i in range(n)]
-    assert col(p, "delist", "CCC").tolist() == [i == 5 for i in range(n)]
+    # CCC 第 4 天后没有成交：满 20 个交易日后的下一天（第 25 天）才不算上市、记退市。
+    assert col(p, "is_listed", "CCC").tolist() == [i <= 24 for i in range(n)]
+    assert col(p, "delist", "CCC").tolist() == [i == 25 for i in range(n)]
     assert not col(p, "delist", "AAA").any()
+    # MRG：最后一次成交（第 10 天）之后因子 ×80 → 不执行（7）。
+    assert col(p, "action_source", "MRG")[11] == 7
+    assert (col(p, "split", "MRG") == 1).all() and col(p, "action_suspect", "MRG")[11]
+    assert not col(p, "tradable", "MRG")[12] and col(p, "has_quote", "MRG")[12]
+    # TOP：NAS 序列到第 8 天，之后只有 ASE 序列，第 9 天 ×10 而价格不动 → 6。
+    assert col(p, "action_source", "TOP")[9] == 6
+    assert (col(p, "adj_factor", "TOP") == 1).all()
+    # ZZZ：因子 1 合 5 而价格不动 → 6。
+    assert col(p, "action_source", "ZZZ")[6] == 6 and col(p, "split", "ZZZ")[6] == 1
+    # CZO：第 8 天价格 ×80、因子只有 1.097 → 不执行（6），并从第 8 天起拆成 CZO#2。
+    assert col(p, "action_source", "CZO#2")[8] == 6
+    assert col(p, "has_quote", "CZO").tolist() == [i < 8 for i in range(n)]
+    assert col(p, "has_quote", "CZO#2").tolist() == [i >= 8 for i in range(n)]
+    assert meta["diagnostics"]["segments_split"] == 1
+    # TRF：转板，拼接处（第 15 天）不算事件；NYS 序列里的 2 拆 1 照常执行。
+    trf = col(p, "action_source", "TRF")
+    assert trf[15] == 0 and trf[20] == 1 and col(p, "split", "TRF")[20] == 2.0
+    # WMX：第 22 天前取 NYS（含派息，美股不执行），之后取 NAS，换序列那天不算事件。
+    wmx = col(p, "action_source", "WMX")
+    assert wmx[10] == 5 and (wmx[np.arange(n) != 10] == 0).all()
+    sec = us.securities().collect()
+    row = {r["symbol"]: r for r in sec.iter_rows(named=True)}
+    assert row["TRF"]["exchange"] == "NYS" and row["TRF"]["exchanges"] == "NAS,NYS"
+    assert row["WMX"]["factor_includes_cash"] == "部分"
+    assert row["AAA"]["factor_includes_cash"] == "未知"
+    assert row["DDD"]["factor_includes_cash"] == "含"
+    assert row["MRG"]["action_suspect"] and not row["AAA"]["action_suspect"]
+    assert row["TOP"]["action_suspect_dates"] == US_DAYS[9]
+    assert row["BBB"]["code_reused_in_basic"]
     assert col(p, "total_market_cap", "AAA")[0] == pytest.approx(
         col(p, "close", "AAA")[0] * 1e9
     )
-    sec = us.securities().collect()
-    assert sec.filter(sec["symbol"] == "BBB")["code_reused_in_basic"][0]
     assert us.field("close")["currency"] == "USD"
     assert us.fx("USDCNH").collect().height == 30
     assert us.fx("CNYUSD").collect()["rate"][0] == pytest.approx(0.915)
+
+
+def test_us_long_gap_split_into_segments(tmp_path, monkeypatch):
+    """GAP 第 6–20 天没有行情、复牌后价格 ×50 而因子不变：缺口长于门槛时拆成 GAP 与 GAP#2。"""
+    from ashare.data import overseas_panel as op
+
+    monkeypatch.setattr(op, "US_GAP_SPLIT", 10)
+    store, _ = make(tmp_path)
+    meta = build_overseas(store, "all")
+    us = ad.open(tmp_path / "root", market="us")
+    p = us.panel(["has_quote", "is_listed", "delist", "close"])
+    n = len(US_DAYS)
+    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 2
+    assert col(p, "has_quote", "GAP").tolist() == [i <= 5 for i in range(n)]
+    assert col(p, "has_quote", "GAP#2").tolist() == [i >= 21 for i in range(n)]
+    assert col(p, "is_listed", "GAP").tolist() == [i <= 25 for i in range(n)]
+    assert col(p, "delist", "GAP").tolist() == [i == 26 for i in range(n)]
+    assert col(p, "is_listed", "GAP#2").tolist() == [i >= 21 for i in range(n)]
+    sec = us.securities().collect()
+    assert sec.filter(pl.col("symbol") == "GAP#2")["segment"][0] == 2
+    # 缺口不够长（默认 60 个交易日）就不拆，缺口里满 20 天后也不算上市。
+    monkeypatch.setattr(op, "US_GAP_SPLIT", 60)
+    build_overseas(store, "all")
+    q = ad.open(tmp_path / "root", market="us").panel(["is_listed"])
+    assert "GAP#2" not in q.symbols
+    assert col(q, "is_listed", "GAP").all()  # 缺口 15 天，不到 20 天
 
 
 def test_us_verify(tmp_path):
@@ -123,37 +192,43 @@ def test_us_verify(tmp_path):
     }
     assert report["checks"]["unique_keys"]["verdict"] == "explained"
     assert report["known_exceptions"]["cause_unknown"] == 2
-    assert report["checks"]["factor_vs_previous_close"]["checked"] == 3
-    # 拆股日价格没有相应跳变 → fail。
-    import polars as pl
-    from test_hk_data import _rewrite
-
-    _rewrite(
-        store,
-        "us_daily",
-        US_DAYS[12],
-        lambda t: t.with_columns(
-            close=pl.when(pl.col("ts_code") == "AAA")
-            .then(pl.col("close") * 4)
-            .otherwise(pl.col("close"))
-        ),
+    # 源里因子与价格矛盾的事件只列为信息（面板必须不执行它们）。
+    info = report["checks"]["factor_vs_previous_close"]
+    assert info["verdict"] == "info"
+    assert {e["ts_code"] for e in info["examples"]} == {"TOP", "ZZZ", "CZO"}
+    # 面板被改成执行 TOP 的伪拆股 → 持有者价值、因子账目都对不上 → fail。
+    current = (
+        store.root
+        / "panel_all"
+        / json.loads((store.root / "panel_all/current.json").read_text())["version"]
     )
+    meta = json.loads((current / "metadata.json").read_text())
+    j = meta["symbols"].index("TOP")
+    for name, value in (
+        ("split", 10.0),
+        ("action_source", 1),
+        ("action_suspect", False),
+    ):
+        array = np.load(current / f"{name}.npy")
+        array[9, j] = value
+        np.save(current / f"{name}.npy", array)
     bad = verify_overseas(store, exceptions_path=path)
-    assert bad["checks"]["factor_vs_previous_close"]["verdict"] == "fail"
+    assert bad["checks"]["panel"]["verdict"] == "fail"
+    problems = {e.get("problem", "") for e in bad["checks"]["panel"]["examples"]}
+    assert any("持有者价值" in x for x in problems)
 
 
 def test_us_sample_panel(tmp_path):
     store, _ = make(tmp_path)
-    build_overseas(store, "sample")
+    meta = build_overseas(store, "sample")
     s = ad.open(tmp_path / "root", market="us", universe="sample")
-    p = s.panel(["split", "close"], start=US_DAYS[0], symbols=["AAA", "AAPL"])
+    p = s.panel(["split", "close"], start=US_DAYS[0], symbols=["AAA"])
     assert col(p, "split", "AAA")[12] == 4.0
-    assert np.isnan(col(p, "close", "AAPL")).all()  # 夹具没有锚定大票的行情
+    # 夹具没有锚定大票的行情与因子：不进面板，元数据列出。
+    assert "AAPL" in meta["diagnostics"]["sample_symbols_not_in_panel"]
 
 
 def test_dedupe_merges_same_prices_and_drops_conflicts():
-    import polars as pl
-
     from ashare.data.overseas_panel import CORE_DAILY, _dedupe
 
     frame = pl.DataFrame(
@@ -181,43 +256,57 @@ def test_dedupe_merges_same_prices_and_drops_conflicts():
     )
 
 
-def test_factor_one_series_per_symbol():
-    """同一代码两个交易所两条因子序列（口径不同）：只用最后挂牌的非场外交易所那条。"""
-    import polars as pl
-
-    from ashare.data.overseas_panel import _dedupe_factor
+def test_choose_series_rules():
+    """每天取结束日最早的那条序列，一样早取天数多的；比值只在同一序列内部算，且该序列上一行必须正好是
+    上一个取用日，否则记 1（拼接）。行的先后顺序不影响结果。"""
+    from ashare.data.overseas_panel import _choose_series
 
     rows = []
-    for day, nys, nas in (("1", 0.3269, 1 / 3), ("2", 0.9808, 1.0), ("3", 0.9808, 1.0)):
-        rows.append(
-            dict(ts_code="W", trade_date=day, cum_adjfactor=nys, exchange="NYS")
-        )
-        rows.append(
-            dict(
-                ts_code="W",
-                trade_date=day,
-                cum_adjfactor=nas,
-                exchange="NAS" if day != "1" else "NAS",
+
+    def add(code, exchange, days, values):
+        for d, v in zip(days, values, strict=True):
+            rows.append(
+                dict(
+                    ts_code=code, exchange=exchange, trade_date=str(d), cum_adjfactor=v
+                )
             )
-        )
-    rows.append(dict(ts_code="O", trade_date="1", cum_adjfactor=2.0, exchange="OTC"))
-    rows.append(
-        dict(ts_code="O", trade_date="1", cum_adjfactor=2.0000001, exchange="OTC")
-    )
-    rows.append(dict(ts_code="X", trade_date="1", cum_adjfactor=1.0, exchange="OTC"))
-    rows.append(dict(ts_code="X", trade_date="2", cum_adjfactor=3.0, exchange="ASE"))
-    frame = pl.DataFrame(rows).with_columns(pl.col("trade_date").cast(pl.String))
-    # 两个交易所天数相同：取字母序靠前的 NAS；行的先后顺序不影响结果。
-    frame = frame.sort("trade_date", "exchange", descending=[False, True])
-    other = _dedupe_factor(frame.reverse(), {}).sort("ts_code", "trade_date")
+
+    # W：NYS 到第 3 天（含分红），NAS 全程只含拆股 → 1–3 取 NYS，4–5 取 NAS；第 4 天 NAS 比值 2。
+    add("W", "NYS", [1, 2, 3], [0.49, 0.5, 0.5])
+    add("W", "NAS", [1, 2, 3, 4, 5], [0.5, 0.5, 0.5, 1.0, 1.0])
+    # Y：两条序列结束日相同，取天数多的 NAS。
+    add("Y", "NYS", [2, 3, 4], [1.0, 2.0, 2.0])
+    add("Y", "NAS", [1, 2, 3, 4], [1.0, 1.0, 1.0, 1.0])
+    # Z：转板，NAS 第 1–2 天、NYS 第 4–5 天：第 4 天拼接，不算事件。
+    add("Z", "NAS", [1, 2], [0.2, 0.2])
+    add("Z", "NYS", [4, 5], [1.0, 1.0])
+    # K：NAS 第 1、3 天（结束早），NYS 全程：第 2 天取 NYS（比值按 NYS 第 1 天），第 3 天回到 NAS，
+    #    NAS 上一行（第 1 天）不是上一个取用日（第 2 天）→ 拼接记 1，不把第 2 天的变化再算一遍。
+    add("K", "NAS", [1, 3], [0.5, 1.0])
+    add("K", "NYS", [1, 2, 3, 4, 5], [0.5, 1.0, 1.0, 1.0, 1.0])
+    # X：场外不在允许的交易所里。
+    add("X", "OTC", [1, 2], [1.0, 5.0])
+    add("X", "ASE", [2, 3], [1.0, 1.0])
+    frame = pl.DataFrame(rows)
     diag = {}
-    out = _dedupe_factor(frame, diag).sort("ts_code", "trade_date")
-    w = out.filter(pl.col("ts_code") == "W")["cum_adjfactor"].to_list()
-    assert w == pytest.approx([1 / 3, 1.0, 1.0])
-    assert out.filter(pl.col("ts_code") == "O").height == 1
-    assert out.filter(pl.col("ts_code") == "X")["trade_date"].to_list() == ["2"]
-    assert other.equals(out)
-    assert (
-        diag["factor_symbols_with_two_exchanges"] == 2
-        and diag["factor_conflicting_keys"] == 0
+    out = _choose_series(frame, ("NYS", "NAS", "ASE"), diag).sort(
+        "ts_code", "trade_date"
     )
+    shuffled = _choose_series(
+        frame.sample(fraction=1.0, shuffle=True, seed=5), ("NYS", "NAS", "ASE"), {}
+    )
+    assert shuffled.sort("ts_code", "trade_date").equals(out)
+
+    def pick(code):
+        g = out.filter(pl.col("ts_code") == code)
+        return g["exchange"].to_list(), g["ratio"].to_list()
+
+    assert pick("W") == (
+        ["NYS", "NYS", "NYS", "NAS", "NAS"],
+        pytest.approx([1, 0.5 / 0.49, 1, 2, 1]),
+    )
+    assert pick("Y") == (["NAS"] * 4, [1, 1, 1, 1])
+    assert pick("Z") == (["NAS", "NAS", "NYS", "NYS"], [1, 1, 1, 1])
+    assert pick("K") == (["NAS", "NYS", "NAS", "NYS", "NYS"], [1, 2, 1, 1, 1])
+    assert pick("X") == (["ASE", "ASE"], [1, 1])
+    assert diag["factor_series_splices"] == 2  # Z 第 4 天、K 第 3 天

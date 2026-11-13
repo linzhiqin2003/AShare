@@ -1,28 +1,28 @@
 {
- "note": "港美股校验的已知例外：只放匹配键和原因编号，不放由行情算出的数值。由 2026-11-13 开发库（港股 2023-11-13 至 2026-11-12、美股至 2026-11-11）的空清单校验逐条归类生成；按规则登记的条目（无 ts_code）覆盖一类不符，计数见校验报告。",
+ "note": "港美股校验的已知例外：只放匹配键和原因编号，不放由行情算出的数值。由 2026-11-13 开发库（港股 2023-11-13 至 2026-11-12、美股至 2026-11-11，美股只看三大交易所的普通股与存托凭证）的空清单校验逐条归类生成；按规则登记的条目（无 ts_code）覆盖一类不符，计数见校验报告。美股「因子与价格矛盾」不再登记：面板不执行这些事件，由面板检查核对。",
  "reasons": {
   "HK-CAL-TYPHOON": "2020-10-13 八号风球全日休市，源日历标为休市，但 2020-10-14 的 pretrade_date 仍写 2020-10-13",
   "HK-ROUNDED": "源 hk_daily 在 2020-07-02 至 2023-12-29 把价格四舍五入到 0.01，因子表 close_price 保留 0.001；面板收盘价改用后者",
+  "HK-ROUNDED-PRE": "源日线四舍五入期（2020-07-02 至 2023-12-29，前收比较延到 2024-01-02，它的上一日收盘在期内）内，前收与上一日收盘价只到 0.01，低价股对不上 0.5% 或一个价位的容差",
   "HK-PRE-NOT-ADJUSTED": "因子在这天有变化（除权除息），源的前收却等于上一日收盘价、没有除权；以因子为准",
-  "HK-ROUNDED-PRE": "源日线四舍五入期（2020-07-02 至 2023-12-29）内，前收与上一日收盘价只到 0.01，算出的除权比例不够精确",
   "HK-PRE-UNKNOWN": "因子比与「上一日收盘价 / 前收」相差超过 0.5%，原因未查明",
+  "HK-PRE-PLAIN": "因子没有变化，源的前收却与上一日收盘价相差超过 0.5% 和一个价位（可能源漏了一次除权，或前收有误），原因未查明",
   "HK-CODE-REUSE": "代码复用：证券表有已退市的旧公司「代码!.HK」，日线把旧公司行情也写在「代码.HK」下；面板按旧公司退市日、新公司上市日改记到旧代码",
   "HK-LIST-DATE": "首个行情日早于证券表上市日，证券表里没有同代码的旧公司；疑为由创业板转主板、或源的上市日写成了转板日，未核实",
   "US-SAME-ROWS": "同一代码同一天两行，价格量额（因子表为因子，相对差 1e-6 内）相同，只差交易所或估值字段：同一证券在两个交易所各一行，面板合并成一行",
-  "US-FACTOR-CONFLICT": "同一代码同一天两个交易所的因子不同（场外那份历史另有合股等）；面板只在恰好一行不在场外时取那一行，其余丢弃（计数见面板 diagnostics）",
-  "US-DAILY-CONFLICT": "同一代码同一天两套不同的价格量额（疑为代码复用或两个交易所各一行），原因未查明；面板整组丢弃",
-  "US-ZERO-PRICE": "源对没有成交的日子给收盘价 0、开高低价为空（多为场外证券）；面板把非正价格记为缺失",
-  "US-CENT-ROUNDED": "源 us_daily 收盘价只到分，因子表 close_price 保留 4 位小数（场外低价股、收盘价带厘位）",
+  "US-FACTOR-SERIES": "同一代码同一天几个交易所的因子不同（转板、源回填、口径不同）；面板每天只取一条序列（结束日最早的），比值只在序列内部算",
+  "US-DAILY-CONFLICT": "同一代码同一天两套不同的价格量额（疑为代码复用或两个交易所各一行），原因未查明；面板整组丢弃（这些格 has_quote 为假）",
+  "US-ZERO-PRICE": "源对没有成交的日子给收盘价 0、开高低价为空；面板把非正价格记为缺失",
+  "US-CENT-ROUNDED": "源 us_daily 收盘价只到分，因子表 close_price 保留 4 位小数",
   "US-CLOSE-OTHER": "日线收盘价与因子表 close_price 相差超过半分，原因未查明（可能是两处收盘价口径不同）",
-  "US-HOLIDAY-FACTOR": "因子表在美股休市日有行（2014-05-26 阵亡将士纪念日、2014-09-01 劳动节）；面板只取开市日，这些行丢弃",
-  "US-SPLIT-NO-MOVE": "因子在这天有拆并股量级的变化，价格却没有相应跳变（close[t]/close[t-1]×r 不在 [1/3, 3]），因子或价格有一处错，原因未查明"
+  "US-HOLIDAY-FACTOR": "因子表在美股休市日有行（2014-05-26、2014-09-01）；面板只取开市日，这些行丢弃"
  },
  "cause_unknown": [
   "HK-PRE-UNKNOWN",
+  "HK-PRE-PLAIN",
   "HK-LIST-DATE",
   "US-DAILY-CONFLICT",
-  "US-CLOSE-OTHER",
-  "US-SPLIT-NO-MOVE"
+  "US-CLOSE-OTHER"
  ],
  "entries": [
   {
@@ -42,8 +42,17 @@
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "00064.HK",
-   "trade_date": "20231212",
+   "kind": "无事件日",
+   "date_from": "20200702",
+   "date_to": "20240102",
+   "reason": "HK-ROUNDED-PRE"
+  },
+  {
+   "market": "hk",
+   "check": "factor_vs_previous_close",
+   "kind": "因子变化日",
+   "date_from": "20200702",
+   "date_to": "20240102",
    "reason": "HK-ROUNDED-PRE"
   },
   {
@@ -56,86 +65,23 @@
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "00197.HK",
-   "trade_date": "20231228",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "01104.HK",
+   "trade_date": "20260609",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "00280.HK",
-   "trade_date": "20231206",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "01140.HK",
+   "trade_date": "20260708",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "00290.HK",
-   "trade_date": "20231220",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00607.HK",
-   "trade_date": "20231204",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00629.HK",
-   "trade_date": "20231229",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00677.HK",
-   "trade_date": "20231212",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00707.HK",
-   "trade_date": "20231221",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00860.HK",
-   "trade_date": "20231214",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "00922.HK",
-   "trade_date": "20231213",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "01124.HK",
-   "trade_date": "20231215",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "01323.HK",
-   "trade_date": "20231215",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "01718.HK",
-   "trade_date": "20231122",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "01413.HK",
+   "trade_date": "20260420",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
@@ -154,30 +100,23 @@
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "01982.HK",
-   "trade_date": "20231206",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "01991.HK",
+   "trade_date": "20240223",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "02230.HK",
-   "trade_date": "20231215",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "02555.HK",
+   "trade_date": "20240628",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "03638.HK",
-   "trade_date": "20231123",
-   "reason": "HK-ROUNDED-PRE"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "03818.HK",
-   "trade_date": "20231205",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "02708.HK",
+   "trade_date": "20240125",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
@@ -189,16 +128,9 @@
   {
    "market": "hk",
    "check": "factor_vs_previous_close",
-   "ts_code": "08028.HK",
-   "trade_date": "20240102",
-   "reason": "HK-PRE-UNKNOWN"
-  },
-  {
-   "market": "hk",
-   "check": "factor_vs_previous_close",
-   "ts_code": "08473.HK",
-   "trade_date": "20231128",
-   "reason": "HK-ROUNDED-PRE"
+   "ts_code": "08223.HK",
+   "trade_date": "20240820",
+   "reason": "HK-PRE-PLAIN"
   },
   {
    "market": "hk",
@@ -273,20 +205,6 @@
   {
    "market": "us",
    "check": "unique_keys",
-   "dataset": "us_adjfactor",
-   "kind": "同值重复",
-   "reason": "US-SAME-ROWS"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_adjfactor",
-   "kind": "取值冲突",
-   "reason": "US-FACTOR-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
    "dataset": "us_daily",
    "ts_code": "VJET",
    "trade_date": "20231113",
@@ -325,15 +243,6 @@
    "check": "unique_keys",
    "dataset": "us_daily",
    "ts_code": "CMRA",
-   "trade_date": "20231117",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "CMRAW",
    "trade_date": "20231117",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -415,15 +324,6 @@
    "check": "unique_keys",
    "dataset": "us_daily",
    "ts_code": "ZIVO",
-   "trade_date": "20231127",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "ZIVOW",
    "trade_date": "20231127",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -1332,15 +1232,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "AUVIP",
-   "trade_date": "20240529",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "CNDA",
    "trade_date": "20240529",
    "kind": "取值冲突",
@@ -1368,53 +1259,8 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "PUCKU",
-   "trade_date": "20240603",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "AONC",
    "trade_date": "20240610",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "TWLV!AA",
-   "trade_date": "20240610",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "TWLVW",
-   "trade_date": "20240610",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "SWSSU",
-   "trade_date": "20240611",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "SWSSW",
-   "trade_date": "20240611",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -1449,15 +1295,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "HGASW",
-   "trade_date": "20240625",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "TCON",
    "trade_date": "20240628",
    "kind": "取值冲突",
@@ -1469,24 +1306,6 @@
    "dataset": "us_daily",
    "ts_code": "EFTR",
    "trade_date": "20240703",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "CNGLU",
-   "trade_date": "20240709",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "CNGLW",
-   "trade_date": "20240709",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -1530,15 +1349,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "OCAXU",
-   "trade_date": "20240723",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "IONM",
    "trade_date": "20240724",
    "kind": "取值冲突",
@@ -1548,34 +1358,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "OCAXW",
-   "trade_date": "20240724",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "MAQC",
-   "trade_date": "20240731",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "MAQCU",
-   "trade_date": "20240731",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "MAQCW",
    "trade_date": "20240731",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -1620,34 +1403,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "SPECW",
-   "trade_date": "20240807",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "IMAQ",
-   "trade_date": "20240808",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "IMAQU",
-   "trade_date": "20240808",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "IMAQW",
    "trade_date": "20240808",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -1674,15 +1430,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "HLEO",
-   "trade_date": "20240814",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "CAUD",
    "trade_date": "20240816",
    "kind": "取值冲突",
@@ -1694,15 +1441,6 @@
    "dataset": "us_daily",
    "ts_code": "GROM",
    "trade_date": "20240819",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GROMW",
-   "trade_date": "20240820",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -1755,15 +1493,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "IRAAU",
-   "trade_date": "20240906",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "NBST",
    "trade_date": "20240910",
    "kind": "取值冲突",
@@ -1773,52 +1502,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "NBSTU",
-   "trade_date": "20240910",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "NBSTW",
-   "trade_date": "20240910",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "VHAI",
-   "trade_date": "20240911",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "AOGO",
-   "trade_date": "20240917",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "AOGOU",
-   "trade_date": "20240917",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "AOGOW",
    "trade_date": "20240917",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -1962,33 +1646,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "AEAEU",
-   "trade_date": "20241105",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "AEAEW",
-   "trade_date": "20241105",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "FIACW",
-   "trade_date": "20241105",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "NVOS",
    "trade_date": "20241106",
    "kind": "取值冲突",
@@ -2007,15 +1664,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "XELAP",
-   "trade_date": "20241108",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "FRLA",
    "trade_date": "20241111",
    "kind": "取值冲突",
@@ -2025,52 +1673,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "INTEU",
-   "trade_date": "20241111",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "INTEW",
-   "trade_date": "20241111",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "FRLAW",
-   "trade_date": "20241112",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "MCAG",
-   "trade_date": "20241121",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "MCAGR",
-   "trade_date": "20241121",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "MCAGU",
    "trade_date": "20241121",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -2115,34 +1718,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "GLLIU",
-   "trade_date": "20241217",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "IGTA",
-   "trade_date": "20241217",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "IGTAR",
-   "trade_date": "20241217",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "IGTAW",
    "trade_date": "20241217",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -2171,33 +1747,6 @@
    "dataset": "us_daily",
    "ts_code": "OUST",
    "trade_date": "20241220",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "FLDDU",
-   "trade_date": "20241224",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "FLDDW",
-   "trade_date": "20241224",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "NVACR",
-   "trade_date": "20241227",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -2241,43 +1790,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "NMHIW",
-   "trade_date": "20250115",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "PPYA",
-   "trade_date": "20250123",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "PPYAU",
-   "trade_date": "20250123",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "PPYAW",
-   "trade_date": "20250123",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "WAVSU",
    "trade_date": "20250123",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -2313,15 +1826,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "SNAXW",
-   "trade_date": "20250206",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "ODYS",
    "trade_date": "20250210",
    "kind": "取值冲突",
@@ -2349,15 +1853,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "BYNOW",
-   "trade_date": "20250218",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "BPTH",
    "trade_date": "20250219",
    "kind": "取值冲突",
@@ -2376,53 +1871,8 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "FTIIU",
-   "trade_date": "20250227",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "CRKN",
    "trade_date": "20250305",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "AQUNR",
-   "trade_date": "20250307",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GLSTR",
-   "trade_date": "20250314",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GLSTU",
-   "trade_date": "20250314",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "BNIXR",
-   "trade_date": "20250317",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -2457,62 +1907,8 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "WINVR",
-   "trade_date": "20250321",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "WINVW",
-   "trade_date": "20250321",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "BACK",
    "trade_date": "20250326",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GDSTR",
-   "trade_date": "20250326",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GDSTU",
-   "trade_date": "20250326",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "GDSTW",
-   "trade_date": "20250327",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "HCVIU",
-   "trade_date": "20250404",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -2583,34 +1979,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "OCEAW",
-   "trade_date": "20250424",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "YOTA",
-   "trade_date": "20250428",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "YOTAU",
-   "trade_date": "20250428",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "YOTAW",
    "trade_date": "20250428",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -2655,15 +2024,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "ZCARW",
-   "trade_date": "20250508",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "HEPA",
    "trade_date": "20250513",
    "kind": "取值冲突",
@@ -2673,25 +2033,7 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "YOTAR",
-   "trade_date": "20250515",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "APCX",
-   "trade_date": "20250520",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "APCXW",
    "trade_date": "20250520",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -2871,15 +2213,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "CEROW",
-   "trade_date": "20251031",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "DHAI",
    "trade_date": "20251107",
    "kind": "取值冲突",
@@ -2943,15 +2276,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "MSPRW",
-   "trade_date": "20251222",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "GLBZ",
    "trade_date": "20251223",
    "kind": "取值冲突",
@@ -2997,15 +2321,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "BSLKW",
-   "trade_date": "20260105",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "PRPH",
    "trade_date": "20260105",
    "kind": "取值冲突",
@@ -3016,15 +2331,6 @@
    "check": "unique_keys",
    "dataset": "us_daily",
    "ts_code": "PTIX",
-   "trade_date": "20260105",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "PTIXW",
    "trade_date": "20260105",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -3114,15 +2420,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "ABPWW",
-   "trade_date": "20260223",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "ANEB",
    "trade_date": "20260302",
    "kind": "取值冲突",
@@ -3150,24 +2447,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "HLEO",
-   "trade_date": "20260317",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "HFUS",
-   "trade_date": "20260323",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "WORX",
    "trade_date": "20260414",
    "kind": "取值冲突",
@@ -3179,24 +2458,6 @@
    "dataset": "us_daily",
    "ts_code": "ILLR",
    "trade_date": "20260416",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "SOHON",
-   "trade_date": "20260421",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "SOHOO",
-   "trade_date": "20260421",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
   },
@@ -3303,15 +2564,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "VSEEW",
-   "trade_date": "20260806",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "FLZH",
    "trade_date": "20260826",
    "kind": "取值冲突",
@@ -3322,15 +2574,6 @@
    "check": "unique_keys",
    "dataset": "us_daily",
    "ts_code": "OSRH",
-   "trade_date": "20260826",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "OSRHW",
    "trade_date": "20260826",
    "kind": "取值冲突",
    "reason": "US-DAILY-CONFLICT"
@@ -3366,33 +2609,6 @@
    "market": "us",
    "check": "unique_keys",
    "dataset": "us_daily",
-   "ts_code": "QETAR",
-   "trade_date": "20261014",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "QETAU",
-   "trade_date": "20261014",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
-   "ts_code": "SDSTW",
-   "trade_date": "20261023",
-   "kind": "取值冲突",
-   "reason": "US-DAILY-CONFLICT"
-  },
-  {
-   "market": "us",
-   "check": "unique_keys",
-   "dataset": "us_daily",
    "ts_code": "HODO",
    "trade_date": "20261103",
    "kind": "取值冲突",
@@ -3418,6 +2634,20 @@
   },
   {
    "market": "us",
+   "check": "unique_keys",
+   "dataset": "us_adjfactor",
+   "kind": "同值重复",
+   "reason": "US-SAME-ROWS"
+  },
+  {
+   "market": "us",
+   "check": "unique_keys",
+   "dataset": "us_adjfactor",
+   "kind": "取值冲突",
+   "reason": "US-FACTOR-SERIES"
+  },
+  {
+   "market": "us",
    "check": "daily_ranges",
    "dataset": "us_daily",
    "rule": "价格非正",
@@ -3433,27 +2663,6 @@
    "market": "us",
    "check": "factor_price",
    "kind": "超过半分",
-   "exchange": "ASE",
-   "reason": "US-CLOSE-OTHER"
-  },
-  {
-   "market": "us",
-   "check": "factor_price",
-   "kind": "超过半分",
-   "exchange": "BTS",
-   "reason": "US-CLOSE-OTHER"
-  },
-  {
-   "market": "us",
-   "check": "factor_price",
-   "kind": "超过半分",
-   "exchange": "NAS",
-   "reason": "US-CLOSE-OTHER"
-  },
-  {
-   "market": "us",
-   "check": "factor_price",
-   "kind": "超过半分",
    "exchange": "NYS",
    "reason": "US-CLOSE-OTHER"
   },
@@ -3461,800 +2670,15 @@
    "market": "us",
    "check": "factor_price",
    "kind": "超过半分",
-   "exchange": "OTC",
+   "exchange": "NAS",
    "reason": "US-CLOSE-OTHER"
   },
   {
    "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ADTI",
-   "trade_date": "20250528",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AERA",
-   "trade_date": "20251218",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AGMRF",
-   "trade_date": "20250331",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AIMN",
-   "trade_date": "20260309",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AITX",
-   "trade_date": "20260313",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AIZZ",
-   "trade_date": "20260625",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ALPS",
-   "trade_date": "20241217",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ALPS",
-   "trade_date": "20251031",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ARBK",
-   "trade_date": "20251212",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ARLSF",
-   "trade_date": "20240726",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "AUNXF",
-   "trade_date": "20251010",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BABYF",
-   "trade_date": "20260709",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BDPT",
-   "trade_date": "20241121",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BLEG",
-   "trade_date": "20260602",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BLTH",
-   "trade_date": "20231208",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BLTH",
-   "trade_date": "20250124",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BMXC",
-   "trade_date": "20251105",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BOTX",
-   "trade_date": "20260515",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BOTY",
-   "trade_date": "20260202",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BRLL",
-   "trade_date": "20260323",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BSAI",
-   "trade_date": "20250310",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "BVAXF",
-   "trade_date": "20250911",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "CBDL",
-   "trade_date": "20240422",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "CDBMF",
-   "trade_date": "20260326",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "CWGYF",
-   "trade_date": "20231116",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "CZOO",
-   "trade_date": "20231206",
-   "exchange": "NYS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "DADA",
-   "trade_date": "20250616",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "DPLS",
-   "trade_date": "20251013",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "DTMXF",
-   "trade_date": "20250219",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "EEENF",
-   "trade_date": "20250508",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ELOX",
-   "trade_date": "20260601",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "EPIX",
-   "trade_date": "20250825",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "EUMNF",
-   "trade_date": "20250402",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "EVHO",
-   "trade_date": "20260225",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "FBRKF",
-   "trade_date": "20260717",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "FCUL",
-   "trade_date": "20240725",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "GNIS",
-   "trade_date": "20250527",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "GREH",
-   "trade_date": "20250609",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "GRLF",
-   "trade_date": "20251222",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "GROO",
-   "trade_date": "20250507",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "GTEH",
-   "trade_date": "20251121",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "HMMCF",
-   "trade_date": "20251202",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "IBO",
-   "trade_date": "20240917",
+   "check": "factor_price",
+   "kind": "超过半分",
    "exchange": "ASE",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "IDGR",
-   "trade_date": "20240103",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "IGOT",
-   "trade_date": "20240222",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "INKW",
-   "trade_date": "20260730",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "INND",
-   "trade_date": "20240822",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ITOCF",
-   "trade_date": "20241231",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "JPTE",
-   "trade_date": "20250701",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "JTAI",
-   "trade_date": "20260715",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "KUST",
-   "trade_date": "20250507",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "LEXTF",
-   "trade_date": "20250128",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "LFSWF",
-   "trade_date": "20240521",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "LGVT",
-   "trade_date": "20260702",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "LIVG",
-   "trade_date": "20251230",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "LUFFF",
-   "trade_date": "20240222",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MAUUF",
-   "trade_date": "20251223",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MIRO",
-   "trade_date": "20231211",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MMMW",
-   "trade_date": "20240726",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MRUS",
-   "trade_date": "20251229",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MVCO",
-   "trade_date": "20241224",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "MYCOF",
-   "trade_date": "20251021",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "NGCG",
-   "trade_date": "20260304",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "NGMC",
-   "trade_date": "20260209",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "NICH",
-   "trade_date": "20240610",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "NRDMF",
-   "trade_date": "20231227",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "OIBRQ",
-   "trade_date": "20240906",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "OZSC",
-   "trade_date": "20260121",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "PLRZ",
-   "trade_date": "20250527",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "PRMO",
-   "trade_date": "20250129",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RAIN!AA",
-   "trade_date": "20240125",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RAKR",
-   "trade_date": "20240926",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RBLK",
-   "trade_date": "20250822",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RDCT",
-   "trade_date": "20251216",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "REVFF",
-   "trade_date": "20240730",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "REZZF",
-   "trade_date": "20250303",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RFL.WS",
-   "trade_date": "20250509",
-   "exchange": "NYS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RGC",
-   "trade_date": "20250616",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RNAM",
-   "trade_date": "20260227",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RREE",
-   "trade_date": "20250611",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "RRUUF",
-   "trade_date": "20240215",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "SIRC",
-   "trade_date": "20240123",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "SNPW",
-   "trade_date": "20240216",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "STMH",
-   "trade_date": "20240201",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "SVTNF",
-   "trade_date": "20251020",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "TERS",
-   "trade_date": "20241030",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "TGL",
-   "trade_date": "20251205",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "TKMO",
-   "trade_date": "20260520",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "TMGI",
-   "trade_date": "20250605",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "TOPS",
-   "trade_date": "20240424",
-   "exchange": "ASE",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "VIVK",
-   "trade_date": "20251226",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "VIVK",
-   "trade_date": "20260427",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "VTECF",
-   "trade_date": "20250401",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "VWAV",
-   "trade_date": "20250317",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "VWAV",
-   "trade_date": "20250715",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "WNRS",
-   "trade_date": "20260513",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "WRDLY",
-   "trade_date": "20260416",
-   "exchange": "OTC",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ZOOZ",
-   "trade_date": "20240325",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
-  },
-  {
-   "market": "us",
-   "check": "factor_vs_previous_close",
-   "ts_code": "ZOOZ",
-   "trade_date": "20240405",
-   "exchange": "NAS",
-   "reason": "US-SPLIT-NO-MOVE"
+   "reason": "US-CLOSE-OTHER"
   },
   {
    "market": "us",

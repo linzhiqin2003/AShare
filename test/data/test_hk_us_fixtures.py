@@ -8,8 +8,10 @@
 - 00003.HK：代码复用。旧公司 00003!.HK 第 1 天退市，第 0 天的日线写在 00003.HK 下；
   新公司第 3 天上市。
 - 08001.HK：低价股，第 5 天日线收盘价被四舍五入（0.05），因子表 close_price 是 0.045。
-- 00005.HK：第 8–12 天停牌（没有日线，因子表照常有行）；第 25 天起调出港股通名单，
+- 00005.HK：第 8–12 天停牌（没有日线，因子表照常有行），停牌期内第 9 天 10 合 1、第 11 天
+  因子比 1.02（派息）：等效现金要按合股后的价位算；第 25 天起调出港股通名单，
   南向持股到第 27 天 → 第 25–28 天只能卖出（看上一交易日的持股）。
+- 00003.HK 新公司第 20 天因子比 1.37（供股类大比值，按股数调整）。
 港股通名单从第 20 天起才有（之前的分区为空）。
 
 美股
@@ -19,6 +21,17 @@
 - DDD：第 15 天因子比 1.07（非整数比，分不出现金与股数）。
 - EEE：第 18 天 10 合 1（因子比 0.1）。
 - FFF：第 9 天日线两行完全相同（保留一行）。
+- MRG：并购退市。第 10 天后没有成交，第 11 天因子 ×80（源在退市证券上把最后一天写成 1），
+  第 12 天一行成交量为 0 的陈旧日线：不执行（action_source=7）。
+- TOP：两条交易所序列。NAS 到第 8 天；ASE 全程，第 9 天因子错误 ×10、价格不动：不执行（6）。
+- ZZZ：第 6 天因子 1 合 5（0.2）而价格不动：不执行（6）。
+- TRF：转板。NAS 到第 14 天，NYS 第 15 天起，第 20 天 2 拆 1（在 NYS 序列里）：执行，拼接处不算事件。
+- WMX：两条全程重叠的序列，NYS 到第 22 天结束且第 10 天含 1.01 的派息，NAS 只含拆股：
+  第 22 天前取 NYS、之后取 NAS，因子含分红为「部分」。
+- GAP：第 6–20 天没有任何行情，第 21 天起价格 ×50 且因子不变：长缺口两侧不连续，拆成两段。
+- CZO：第 8 天价格 ×80（源漏记了合股），因子只给出 1.097 的小上调：价格不印证（6），而且价格跳出
+  [1/3, 3]：从第 8 天起拆成 CZO#2，引擎不会把这次跳变当成收益。
+- PRF（类别 PF，优先股）、WRNTW（无类别、第 5 位 W 的权证）、OTCX（只有场外因子）：不进面板。
 """
 
 from datetime import date, timedelta
@@ -61,9 +74,9 @@ def calendar(open_days):
 HK_EVENTS = {
     "00001.HK": (50.0, {10: 5.0}),
     "00002.HK": (8.0, {}),
-    "00003.HK": (12.0, {}),
+    "00003.HK": (12.0, {20: 1.37}),
     "08001.HK": (0.045, {}),
-    "00005.HK": (60.0, {}),
+    "00005.HK": (60.0, {9: 0.1, 11: 1.02}),
 }
 HK_DIVIDEND = ("00001.HK", 20, 0.5)
 US_EVENTS = {
@@ -73,6 +86,16 @@ US_EVENTS = {
     "DDD": (40.0, {15: 1.07}),
     "EEE": (0.8, {18: 0.1}),
     "FFF": (15.0, {}),
+    "MRG": (58.0, {}),
+    "TOP": (12.0, {}),
+    "ZZZ": (10.0, {}),
+    "TRF": (30.0, {20: 2.0}),
+    "WMX": (60.0, {10: 1.01}),
+    "GAP": (2.0, {}),
+    "CZO": (0.41, {}),
+    "PRF": (25.0, {}),
+    "WRNTW": (0.5, {}),
+    "OTCX": (3.0, {}),
 }
 
 
@@ -257,6 +280,22 @@ def hk_tables():
     )
 
 
+def _us_series(code, t):
+    """(交易所, 因子比修正) 列表：一个代码当天在哪些交易所序列里有因子行。"""
+    if code == "OTCX":
+        return [("OTC", 1.0)]
+    if code == "TOP":
+        return ([("NAS", 1.0)] if t <= 8 else []) + [("ASE", 10.0 if t >= 9 else 1.0)]
+    if code == "TRF":
+        return [("NAS", 1.0)] if t <= 14 else [("NYS", 1.0)]
+    if code == "WMX":
+        # NAS 序列不含第 10 天的派息（口径只含拆股）。
+        return ([("NYS", 1.0)] if t <= 22 else []) + [
+            ("NAS", 1 / 1.01 if t >= 10 else 1.0)
+        ]
+    return [("NAS", 1.0)]
+
+
 def us_tables():
     rows, factor = [], []
     n = len(US_DAYS)
@@ -268,45 +307,62 @@ def us_tables():
             backward *= r
             if code == "CCC" and t > 4:
                 continue
-            row = dict(
-                ts_code=code,
-                trade_date=day,
-                close=round(close, 4),
-                open=round(pre / r, 4),
-                high=round(max(pre / r, close) * 1.01, 4),
-                low=round(min(pre / r, close) * 0.99, 4),
-                pre_close=round(pre, 4),
-                change=None,
-                pct_change=None,
-                vol=1e5 * (t + 1),
-                amount=1e5 * (t + 1) * close,
-                vwap=close,
-                turnover_ratio=None,
-                total_mv=close * 1e9,
-                pe=None,
-                pb=None,
-            )
-            rows.append(row)
-            if code == "BBB" and t == 7:
-                rows.append({**row, "close": row["close"] * 2})
-            if code == "FFF" and t == 9:
-                rows.append(dict(row))
-            factor.append(
-                dict(
+            factor_b = backward
+            if code == "MRG" and t >= 11:
+                if t > 12:
+                    continue
+                factor_b = backward * 80
+            if code == "ZZZ" and t >= 6:
+                factor_b = backward * 0.2
+            if code == "CZO" and t >= 8:
+                factor_b = backward * 1.097
+            gap = code == "GAP" and 6 <= t <= 20
+            scale = 50.0 if code == "GAP" and t > 20 else 1.0
+            if code == "CZO" and t >= 8:
+                scale = 80.0
+            if not gap and not (code == "MRG" and t == 11):
+                row = dict(
                     ts_code=code,
                     trade_date=day,
-                    exchange="NAS",
-                    _b=backward,
-                    close_price=round(close, 4),
+                    close=round(close * scale, 4),
+                    open=round(pre / r * scale, 4),
+                    high=round(max(pre / r, close) * scale * 1.01, 4),
+                    low=round(min(pre / r, close) * scale * 0.99, 4),
+                    pre_close=round(pre * scale, 4),
+                    change=None,
+                    pct_change=None,
+                    vol=0.0 if (code == "MRG" and t == 12) else 1e5 * (t + 1),
+                    amount=1e5 * (t + 1) * close,
+                    vwap=close,
+                    turnover_ratio=None,
+                    total_mv=close * 1e9,
+                    pe=None,
+                    pb=None,
                 )
-            )
+                rows.append(row)
+                if code == "BBB" and t == 7:
+                    rows.append({**row, "close": row["close"] * 2})
+                if code == "FFF" and t == 9:
+                    rows.append(dict(row))
+            if gap:
+                continue
+            for exchange, fudge in _us_series(code, t):
+                factor.append(
+                    dict(
+                        ts_code=code,
+                        trade_date=day,
+                        exchange=exchange,
+                        _b=factor_b * fudge,
+                        close_price=round(close * scale, 4),
+                    )
+                )
     securities = pl.DataFrame(
         [
             dict(
                 ts_code=c,
                 name=c,
                 enname=c,
-                classify="EQ",
+                classify={"PRF": "PF", "WRNTW": None, "GAP": None}.get(c, "EQ"),
                 list_date="20000101",
                 delist_date=None,
             )
@@ -340,12 +396,14 @@ class FakeOverseas:
 
     def _factor(self, table, params):
         visible = table.filter(pl.col("trade_date") <= self.asof)
+        # 每条序列（代码 × 交易所）各自以最后一天为 1。
+        keys = [c for c in ("ts_code", "exchange") if c in visible.columns]
         anchor = (
             visible.sort("trade_date")
-            .group_by("ts_code")
+            .group_by(keys)
             .agg(pl.col("_b").last().alias("_anchor"))
         )
-        visible = visible.join(anchor, on="ts_code").with_columns(
+        visible = visible.join(anchor, on=keys).with_columns(
             cum_adjfactor=(pl.col("_b") / pl.col("_anchor")).round(6)
         )
         return self._slice(visible.drop("_b", "_anchor"), params)

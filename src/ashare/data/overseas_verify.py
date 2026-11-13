@@ -17,6 +17,7 @@
 import hashlib
 import json
 import math
+import re
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -70,7 +71,14 @@ EXCEPTION_KEYS = {
         "date_from",
         "date_to",
     },
-    "factor_vs_previous_close": {"ts_code", "trade_date", "exchange"},
+    "factor_vs_previous_close": {
+        "ts_code",
+        "trade_date",
+        "exchange",
+        "kind",
+        "date_from",
+        "date_to",
+    },
     "quotes_vs_listing": {"ts_code", "side"},
     "hist_vs_day": {"dataset", "ts_code", "trade_date"},
     "calendar": {"cal_date"},
@@ -78,6 +86,9 @@ EXCEPTION_KEYS = {
 }
 EXAMPLES = 20
 FACTOR_TOL = 5e-3
+US_MAJOR = ("NYS", "NAS", "ASE")
+HK_ROUNDED = ("20200702", "20231229")
+GRACE = 20
 RATIO_NOISE = 1e-5
 # 港交所价位表（2025-08-04 前的旧表，较粗的一档；只用来放宽前收取整的容差）。
 HK_TICKS = (
@@ -284,6 +295,15 @@ def verify_overseas(
     factor_parts = _complete(store, names["factor"])
     daily = _read(store, daily_parts.values())
     factor = _read(store, factor_parts.values())
+    securities = _read(store, _complete(store, names["securities"]).values())
+    scope = None
+    if market == "us" and len(factor):
+        # 美股面板只放三大交易所的普通股与存托凭证：原始库检查也只看这些代码、这些交易所的因子。
+        scope = _us_scope_codes(factor, securities)
+        daily = daily.filter(pl.col("ts_code").is_in(sorted(scope)))
+        factor = factor.filter(
+            pl.col("ts_code").is_in(sorted(scope)) & pl.col("exchange").is_in(US_MAJOR)
+        )
 
     # 4. 主键唯一（同一天同一代码多行：美股代码复用、源重复行）。
     #    kind：「同值重复」= 价格量额（因子表为因子，相对差 1e-6 内）相同、只差交易所或估值字段；
@@ -396,7 +416,7 @@ def verify_overseas(
             problems.append(dict(dataset=name, snapshots=sorted(map(str, values))))
     checks.add("factor_snapshot", sum(snaps.values()), problems, exceptions=False)
 
-    # 7. 因子表 close_price 与日线收盘价一致（同一源、同一天）。
+    # 7. 因子表 close_price 与日线收盘价一致（同一源、同一天；美股每条交易所序列分别核）。
     problems = []
     joined = pl.DataFrame()
     if len(daily) and len(factor):
@@ -405,10 +425,8 @@ def verify_overseas(
         )
         if "exchange" not in factor.columns:
             factor = factor.with_columns(pl.lit(None, pl.String).alias("exchange"))
-        f1 = (
-            _home_series(factor)
-            .unique(["ts_code", "trade_date"], keep="none")
-            .select("ts_code", "trade_date", "cum_adjfactor", "close_price", "exchange")
+        f1 = factor.unique(["ts_code", "exchange", "trade_date"], keep="none").select(
+            "ts_code", "trade_date", "cum_adjfactor", "close_price", "exchange"
         )
         joined = d1.join(f1, on=["ts_code", "trade_date"], how="inner")
         gap = (pl.col("close") - pl.col("close_price")).abs()
@@ -427,21 +445,22 @@ def verify_overseas(
             )
     checks.add("factor_price", len(joined), problems)
 
-    # 8. 因子事件与价格：港股 F[t]/F[t-1] 应等于 close[t-1]/pre_close[t]（源的前收已除权）；
-    #    美股前收不除权，检查拆并股日价格的相应跳变（close[t]/close[t-1]×r 落在 [1/3, 3]）。
+    # 8. 因子与前收（港股，每对相邻交易日都核）：源的前收已除权，F[t]/F[t−1] 应等于
+    #    close[t−1]/pre_close[t]（没有事件的日子即前收 = 上一日收盘）。允许 0.5% 或一个价位的差。
+    #    美股前收不除权，只能看价格跳变：因子与价格矛盾的事件列为信息，面板必须不执行（见 panel）。
     problems = []
     events = 0
     if len(joined):
-        series = joined.sort("ts_code", "trade_date")
+        series = joined.sort("ts_code", "exchange", "trade_date")
         codes = series["ts_code"].to_list()
+        venues = series["exchange"].to_list()
         dates = series["trade_date"].to_list()
         closes = series["close"].to_numpy()
         pres = series["pre_close"].to_numpy()
         facs = series["cum_adjfactor"].to_numpy()
-        venues = series["exchange"].to_list()
         previous_day = {days[k]: days[k - 1] for k in range(1, len(days))}
         for i in range(1, len(codes)):
-            if codes[i] != codes[i - 1]:
+            if codes[i] != codes[i - 1] or venues[i] != venues[i - 1]:
                 continue
             # 只核对相邻交易日：中间缺日线（停牌、无成交）时除权日落在缺口里，无从对照。
             if previous_day.get(dates[i]) != dates[i - 1]:
@@ -450,22 +469,27 @@ def verify_overseas(
             if not (math.isfinite(a) and math.isfinite(b) and a > 0 and b > 0):
                 continue
             r = b / a
-            if abs(r - 1) <= RATIO_NOISE:
-                continue
-            events += 1
+            moved = abs(r - 1) > RATIO_NOISE
             if market == "hk":
-                expected = closes[i - 1] / pres[i] if pres[i] else math.nan
-                # 前收按价位取整：允许 0.5% 或一个最小价位的差。
-                implied = closes[i - 1] / r
-                within = math.isfinite(expected) and (
-                    abs(expected / r - 1) <= FACTOR_TOL
+                events += 1
+                if not (pres[i] and closes[i - 1]):
+                    continue
+                implied = closes[i - 1] / (r if moved else 1.0)
+                within = (
+                    abs(implied / pres[i] - 1) <= FACTOR_TOL
                     or abs(implied - pres[i]) <= hk_tick(pres[i]) + 1e-9
                 )
                 if not within:
                     problems.append(
-                        dict(ts_code=codes[i], trade_date=dates[i], exchange=venues[i])
+                        dict(
+                            ts_code=codes[i],
+                            trade_date=dates[i],
+                            exchange=venues[i],
+                            kind="因子变化日" if moved else "无事件日",
+                        )
                     )
-            else:
+            elif moved:
+                events += 1
                 move = closes[i] / closes[i - 1] * r if closes[i - 1] else math.nan
                 if not (math.isfinite(move) and 1 / 3 <= move <= 3):
                     problems.append(
@@ -475,15 +499,20 @@ def verify_overseas(
         "factor_vs_previous_close",
         events,
         problems,
-        note="相邻两个交易日都有日线时因子变化的次数；中间缺日线的不检查",
+        info=market == "us",
+        note=(
+            "港股：相邻两个交易日都有日线的每一对（含没有事件的日子）"
+            if market == "hk"
+            else "美股：相邻交易日上因子比与价格跳变矛盾的事件（源错误）；面板不许执行它们，由 panel 检查"
+        ),
     )
 
     # 9. 大幅跳价但因子未变（可能缺拆并股、代码复用或源错误），只计信息。
     jumps = []
     if len(joined):
-        s = joined.sort("ts_code", "trade_date").with_columns(
-            prev_close=pl.col("close").shift(1).over("ts_code"),
-            prev_factor=pl.col("cum_adjfactor").shift(1).over("ts_code"),
+        s = joined.sort("ts_code", "exchange", "trade_date").with_columns(
+            prev_close=pl.col("close").shift(1).over("ts_code", "exchange"),
+            prev_factor=pl.col("cum_adjfactor").shift(1).over("ts_code", "exchange"),
         )
         jumps = (
             s.filter(
@@ -494,6 +523,8 @@ def verify_overseas(
                 )
             )
             .select("ts_code", "trade_date")
+            .unique()
+            .sort("trade_date", "ts_code")
             .to_dicts()
         )
     checks.add(
@@ -505,7 +536,6 @@ def verify_overseas(
     )
 
     # 10. 上市期与行情：港股上市日前、退市日后不应有日线；美股证券表几乎没有日期，只计信息。
-    securities = _read(store, _complete(store, names["securities"]).values())
     problems = []
     if market == "hk" and len(daily):
         span = daily.group_by("ts_code").agg(
@@ -640,8 +670,16 @@ def verify_overseas(
             )
     checks.add("hist_vs_day", checked, problems)
 
-    # 13. 面板（不允许例外）：抽查与原始库逐值一致、因子比一致、字段齐全。
-    panel_problems, panel_checked = _audit_panel(store, universe, daily, factor, names)
+    # 13. 面板（不允许例外）：抽查与原始库逐值一致；公司行为、上市、港股通字段按定义独立核对。
+    try:
+        panel_problems, panel_checked = _audit_panel(
+            store, universe, daily, factor, names, securities, days, scope
+        )
+    except Exception as error:  # 坏数据不许让校验崩溃：记为失败并出报告。
+        panel_problems = [
+            dict(problem=f"面板核对出错：{type(error).__name__}: {error}")
+        ]
+        panel_checked = 0
     checks.add("panel", panel_checked, panel_problems, exceptions=False)
 
     stale = [
@@ -674,31 +712,41 @@ def verify_overseas(
     return report
 
 
-def _home_series(factor):
-    """一只证券有几个交易所的因子序列时只留一条：非场外优先、天数多的优先、再按字母序。"""
-    if "exchange" not in factor.columns:
-        return factor
-    tally = defaultdict(lambda: defaultdict(set))
-    for code, venue, day in factor.select(
-        "ts_code", "exchange", "trade_date"
-    ).iter_rows():
-        tally[code][venue or ""].add(day)
-    home = {
-        code: min(venues, key=lambda v: (v == "OTC", -len(venues[v]), v))
-        for code, venues in tally.items()
-    }
-    return factor.filter(
-        pl.col("exchange").fill_null("")
-        == pl.col("ts_code").replace_strict(home, default="", return_dtype=pl.String)
+def _us_scope_codes(factor, securities):
+    """美股面板应有的代码（按自己的写法重写一遍面板范围的定义）：在纽交所、纳斯达克、美交所有过因子；
+    证券表任一行类别是普通股、ADR、GDR 的收；只标优先股的不收；没有类别的只收 1–5 位大写字母、
+    且不是第 5 位为 W、U、R 的代码。"""
+    major = set(
+        factor.filter(pl.col("exchange").is_in(US_MAJOR))["ts_code"].unique().to_list()
     )
+    kinds = defaultdict(set)
+    if len(securities):
+        for code, kind in securities.select("ts_code", "classify").iter_rows():
+            if kind:
+                kinds[code].add(kind)
+    out = set()
+    for code in major:
+        k = kinds.get(code, set())
+        if k & {"EQ", "ADR", "GDR"}:
+            out.add(code)
+        elif "PF" in k:
+            continue
+        elif re.fullmatch(r"[A-Z]{1,5}", code) and not (
+            len(code) == 5 and code[-1] in "WUR"
+        ):
+            out.add(code)
+    return out
 
 
-def _audit_panel(store, universe, daily, factor, names):
+def _audit_panel(store, universe, daily, factor, names, securities, days, scope):
+    """面板核对（不允许例外）。除了抽查价格成交量，公司行为、上市、港股通字段都按字段定义独立核对，
+    不调用构建代码：持有者价值不变式、因子账目、字段之间的约束、上市退市规则、名单与持股。"""
     current = store.root / f"panel_{universe}" / "current.json"
     if not current.exists():
         return [dict(problem="面板未构建")], 0
     path = current.parent / json.loads(current.read_text())["version"]
     meta = json.loads((path / "metadata.json").read_text())
+    market = meta["market"]
     problems = []
     dates = meta["dates"]
     symbols = meta["symbols"]
@@ -717,23 +765,73 @@ def _audit_panel(store, universe, daily, factor, names):
             )
     if problems:
         return problems, len(meta["fields"])
-    source_daily = daily
-    source_factor = factor
+
+    def load(name):
+        return np.asarray(np.load(path / f"{name}.npy", mmap_mode="r"))
+
+    def flag(field, problem, mask, limit=200):
+        for i, j in np.argwhere(mask)[:limit]:
+            problems.append(
+                dict(
+                    field=field,
+                    problem=problem,
+                    ts_code=symbols[j],
+                    trade_date=dates[i],
+                )
+            )
+        extra = int(mask.sum()) - limit
+        if extra > 0:
+            problems.append(dict(field=field, problem=f"{problem}（另有 {extra} 格）"))
+
+    T, N = len(dates), len(symbols)
+    source_daily, source_factor = daily, factor
     if universe == "sample":
         source_daily = _read(store, _complete(store, names["daily_hist"]).values())
         source_factor = _read(store, _complete(store, names["factor_hist"]).values())
+        if market == "us" and len(source_factor):
+            source_factor = source_factor.filter(pl.col("exchange").is_in(US_MAJOR))
+    base = [s.split("#")[0] for s in symbols]
+    open_days = set(days)
+    stray = sorted(set(dates) - open_days)
+    if stray:
+        problems.append(dict(field="dates", problem=f"面板日期不是开市日 {stray[:5]}"))
+    missing_days = [
+        d for d in days if dates[0] <= d <= dates[-1] and d not in set(dates)
+    ]
+    if missing_days:
+        problems.append(
+            dict(field="dates", problem=f"开市日不在面板里 {missing_days[:5]}")
+        )
+
+    # ---- 范围：美股每列都应在三大交易所普通股与存托凭证里；没有代码重复（拆段的用 #2 区分）。
+    if len(set(symbols)) != N:
+        problems.append(dict(field="symbols", problem="代码重复"))
+    if market == "us":
+        wanted = _us_scope_codes(source_factor, securities)
+        outside = sorted(set(base) - wanted)
+        if outside:
+            problems.append(
+                dict(field="symbols", problem=f"不在美股范围内 {outside[:10]}")
+            )
+
     lo, hi = dates[0], dates[-1]
     d = (
         source_daily.filter(pl.col("trade_date").is_between(pl.lit(lo), pl.lit(hi)))
-        .filter(pl.col("ts_code").is_in(symbols))
+        .filter(pl.col("ts_code").is_in(sorted(set(base))))
         .unique(["ts_code", "trade_date"], keep="none")
+        if len(source_daily)
+        else source_daily
     )
-    if meta["market"] == "hk":
+    f = (
+        source_factor.filter(pl.col("trade_date").is_between(pl.lit(lo), pl.lit(hi)))
+        if len(source_factor)
+        else source_factor
+    )
+    if market == "hk":
         # 港股代码复用：证券表的「代码!.HK」是已退市的旧公司，日线却记在「代码.HK」下；
         # 新公司上市日前、旧公司退市日前的行属于旧公司。
-        listing = _read(store, _complete(store, names["securities"]).values())
         owners = {}
-        rows = {r["ts_code"]: r for r in listing.iter_rows(named=True)}
+        rows = {r["ts_code"]: r for r in securities.iter_rows(named=True)}
         for code, row in rows.items():
             if "!" in code and code.replace("!", "") in rows:
                 new = rows[code.replace("!", "")]
@@ -742,7 +840,10 @@ def _audit_panel(store, universe, daily, factor, names):
                         min(new["list_date"], row["delist_date"]),
                         code,
                     )
-        if owners:
+
+        def remap(frame):
+            if not owners or not len(frame):
+                return frame
             cut = pl.col("ts_code").replace_strict(
                 {k: v[0] for k, v in owners.items()},
                 default=None,
@@ -753,13 +854,16 @@ def _audit_panel(store, universe, daily, factor, names):
                 default=None,
                 return_dtype=pl.String,
             )
-            d = d.with_columns(
+            return frame.with_columns(
                 ts_code=pl.when(cut.is_not_null() & (pl.col("trade_date") < cut))
                 .then(old)
                 .otherwise(pl.col("ts_code"))
-            ).filter(pl.col("ts_code").is_in(symbols))
+            )
+
+        d = remap(d).filter(pl.col("ts_code").is_in(symbols))
+        f = remap(f)
         # 港股收盘价：日线与因子表 close_price 相差不超过半分时以后者为准（源日线四舍五入期）。
-        precise = source_factor.select("ts_code", "trade_date", "close_price").unique(
+        precise = f.select("ts_code", "trade_date", "close_price").unique(
             ["ts_code", "trade_date"], keep="none"
         )
         d = d.join(precise, on=["ts_code", "trade_date"], how="left").with_columns(
@@ -770,17 +874,52 @@ def _audit_panel(store, universe, daily, factor, names):
             .then(pl.col("close_price"))
             .otherwise(pl.col("close"))
         )
-    # 抽 2000 行逐值核对收盘价、成交量、has_quote。
+    elif len(f) and len(d):
+        # 美股：只取有三大交易所因子的日期段。
+        cover = f.group_by("ts_code").agg(
+            pl.col("trade_date").min().alias("_lo"),
+            pl.col("trade_date").max().alias("_hi"),
+        )
+        d = d.join(cover, on="ts_code", how="left").filter(
+            pl.col("trade_date").is_between(pl.col("_lo"), pl.col("_hi"))
+        )
+
+    close = load("close")
+    volume = load("volume")
+    quote = load("has_quote")
+    tradable = load("tradable")
+    row_of = {x: i for i, x in enumerate(dates)}
+    columns = defaultdict(list)
+    for j, code in enumerate(base):
+        columns[code].append(j)
+    starts = {}
+    for js in columns.values():
+        for k, j in enumerate(js):
+            q = np.flatnonzero(quote[:, j])
+            starts[j] = 0 if k == 0 or not len(q) else int(q[0])
+
+    def column(code, i):
+        js = columns.get(code)
+        if not js:
+            return None
+        return [j for j in js if starts[j] <= i][-1]
+
+    # ---- 抽 2000 行逐值核对收盘价、成交量、has_quote（拆段的按日期找到所在的那一列）。
     rng = np.random.default_rng(20261113)
     take = d[rng.choice(len(d), size=min(2000, len(d)), replace=False)] if len(d) else d
-    row_of = {x: i for i, x in enumerate(dates)}
-    col_of = {x: j for j, x in enumerate(symbols)}
-    close = np.load(path / "close.npy", mmap_mode="r")
-    volume = np.load(path / "volume.npy", mmap_mode="r")
-    quote = np.load(path / "has_quote.npy", mmap_mode="r")
+    checked = len(take)
     for row in take.iter_rows(named=True):
-        i, j = row_of[row["trade_date"]], col_of[row["ts_code"]]
-        # 收盘价非正（源对无成交日的写法）面板记为缺失。
+        i = row_of.get(row["trade_date"])
+        j = column(row["ts_code"], i) if i is not None else None
+        if i is None or j is None:
+            problems.append(
+                dict(
+                    ts_code=row["ts_code"],
+                    trade_date=row["trade_date"],
+                    problem="原始行在面板里找不到",
+                )
+            )
+            continue
         want_close = (
             row["close"] if row["close"] is not None and row["close"] > 0 else math.nan
         )
@@ -789,68 +928,294 @@ def _audit_panel(store, universe, daily, factor, names):
             or (math.isnan(close[i, j]) and math.isnan(want_close))
         ):
             problems.append(
-                dict(
-                    ts_code=row["ts_code"], trade_date=row["trade_date"], field="close"
-                )
+                dict(ts_code=symbols[j], trade_date=row["trade_date"], field="close")
             )
         if row["vol"] is not None and volume[i, j] != row["vol"]:
             problems.append(
-                dict(
-                    ts_code=row["ts_code"], trade_date=row["trade_date"], field="volume"
-                )
+                dict(ts_code=symbols[j], trade_date=row["trade_date"], field="volume")
             )
         if bool(quote[i, j]) != math.isfinite(want_close):
             problems.append(
                 dict(
-                    ts_code=row["ts_code"],
-                    trade_date=row["trade_date"],
-                    field="has_quote",
+                    ts_code=symbols[j], trade_date=row["trade_date"], field="has_quote"
                 )
             )
-    # 因子：面板相邻两个有因子日的比值 = 原始前复权因子的比值。
-    adj = np.load(path / "adj_factor.npy", mmap_mode="r")
-    f = (
-        _home_series(source_factor)
-        .filter(pl.col("trade_date").is_in(dates))
-        .filter(pl.col("ts_code").is_in(symbols))
-        .unique(["ts_code", "trade_date"], keep="none")
-        .sort("ts_code", "trade_date")
+    flag(
+        "tradable", "不等于 has_quote 且成交量 > 0", tradable != (quote & (volume > 0))
     )
-    picked = sorted(set(f["ts_code"].unique().to_list()))
-    picked = (
-        [
-            picked[k]
-            for k in rng.choice(len(picked), size=min(300, len(picked)), replace=False)
-        ]
-        if picked
-        else []
+
+    # ---- 公司行为字段之间的约束。
+    src = load("action_source")
+    split = load("split")
+    cash = load("equivalent_cash")
+    ratio = load("action_ratio")
+    adj = load("adj_factor")
+    suspect = load("action_suspect")
+    checked += T * N
+    flag("action_source", "枚举越界", src > 7)
+    flag(
+        "action_suspect",
+        "不等于 action_source 为 6、7",
+        suspect != np.isin(src, (6, 7)),
     )
-    checked = len(take)
-    for code, group in f.filter(pl.col("ts_code").is_in(picked)).group_by("ts_code"):
-        code = code[0]
-        values = group["cum_adjfactor"].to_list()
-        when = group["trade_date"].to_list()
-        j = col_of[code]
-        for k in range(1, len(values)):
-            if not values[k - 1] or not values[k]:
-                continue
-            want = values[k] / values[k - 1]
-            got = adj[row_of[when[k]], j] / adj[row_of[when[k - 1]], j]
-            checked += 1
-            if not abs(got / want - 1) <= 1e-9:
+    shares = np.isin(src, (1, 3, 4))
+    flag("split", "非拆并股的格 split 不为 1", ~shares & (split != 1))
+    flag("equivalent_cash", "非等效现金的格不为 0", (src != 2) & (cash != 0))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        flag("equivalent_cash", "等效现金不是正数", (src == 2) & ~(cash > 0))
+        flag(
+            "split",
+            "3、4 类 split 不等于因子比",
+            np.isin(src, (3, 4)) & (split != ratio),
+        )
+        flag(
+            "split",
+            "拆并股的 split 与因子比相差超过 1%",
+            (src == 1) & ~(np.abs(np.log(split / ratio)) <= 0.01),
+        )
+        flag("action_source", "4 类因子比小于 1.10", (src == 4) & ~(ratio >= 1.10))
+        flag(
+            "action_source",
+            "2、5 类因子比不在 (1, 1.10)",
+            np.isin(src, (2, 5)) & ~((ratio > 1) & (ratio < 1.10)),
+        )
+        flag(
+            "action_source",
+            "因子比变了却没有记事件",
+            (src == 0) & np.isfinite(ratio) & (np.abs(ratio - 1) > RATIO_NOISE),
+        )
+    flag(
+        "action_source",
+        "美股出现等效现金",
+        (src == 2) if market == "us" else np.zeros_like(src, bool),
+    )
+    # 后复权因子只累乘执行了的事件。
+    step = np.where(shares, split, np.where(src == 2, ratio, 1.0))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        drift = np.abs(adj[1:] / adj[:-1] / step[1:] - 1)
+    flag(
+        "adj_factor",
+        "相邻两日之比不等于执行了的事件",
+        np.vstack([np.zeros((1, N), bool), np.isfinite(adj[:-1]) & (drift > 1e-9)]),
+    )
+
+    # ---- 持有者价值不变式：执行了事件的窗口（上一个成交日 → 下一个成交日），按引擎记账
+    #      股数 ×split、现金按当时股数计，价值倍数应在 [1/3, 3]；最后一次成交之后不许有执行的事件。
+    #      美股另核：窗口里有不执行的可疑事件、价格又跳出 [1/3, 3] 的，必须已拆成两列（不在同一列里）。
+    executed = np.isin(src, (1, 2, 3, 4))
+    opens = load("open")
+    for j in np.flatnonzero(executed.any(axis=0)):
+        trades = np.flatnonzero(tradable[:, j])
+        done = set()
+        for t in np.flatnonzero(executed[:, j]):
+            k = int(np.searchsorted(trades, t))
+            if k == len(trades):
                 problems.append(
-                    dict(ts_code=code, trade_date=when[k], field="adj_factor")
+                    dict(
+                        field="action_source",
+                        problem="最后一次成交之后执行了事件",
+                        ts_code=symbols[j],
+                        trade_date=dates[t],
+                    )
                 )
-                break
-    source = np.load(path / "action_source.npy", mmap_mode="r")
-    if int(np.max(source)) > 3:
-        problems.append(dict(field="action_source", problem="枚举越界"))
-    listed = np.load(path / "is_listed.npy", mmap_mode="r")
-    if meta["market"] == "hk":
-        outside = int((np.asarray(quote) & ~np.asarray(listed)).sum())
-        if outside != meta["diagnostics"].get("quotes_outside_listing"):
-            problems.append(
-                dict(field="is_listed", problem="上市期外行情计数与元数据不符")
+                continue
+            if k == 0 or (k, j) in done:
+                continue
+            done.add((k, j))
+            a, b = trades[k - 1], trades[k]
+            s, c = 1.0, 0.0
+            for u in range(a + 1, b + 1):
+                c += s * cash[u, j]
+                s *= split[u, j]
+            # 除权后价格取开盘或收盘（小盘股开盘价常沿用旧价），两个都超出才算不符。
+            values = [
+                (s * p + c) / close[a, j] for p in (opens[b, j], close[b, j]) if p > 0
+            ]
+            if not any(1 / 3 <= h <= 3 for h in values):
+                problems.append(
+                    dict(
+                        field="split",
+                        problem=f"持有者价值倍数 {values[-1]:.3g} 超出 [1/3, 3]",
+                        ts_code=symbols[j],
+                        trade_date=dates[t],
+                    )
+                )
+    if market == "us":
+        for j in np.flatnonzero(suspect.any(axis=0)):
+            trades = np.flatnonzero(tradable[:, j])
+            for t in np.flatnonzero(suspect[:, j]):
+                k = int(np.searchsorted(trades, t))
+                if 0 < k < len(trades):
+                    a, b = trades[k - 1], trades[k]
+                    h = (
+                        float(
+                            np.prod(
+                                np.where(
+                                    executed[a + 1 : b + 1, j],
+                                    step[a + 1 : b + 1, j],
+                                    1.0,
+                                )
+                            )
+                        )
+                        * close[b, j]
+                        / close[a, j]
+                    )
+                    if not (1 / 3 <= h <= 3):
+                        problems.append(
+                            dict(
+                                field="split",
+                                problem=f"可疑事件处价格跳变 {h:.3g} 没有拆列",
+                                ts_code=symbols[j],
+                                trade_date=dates[t],
+                            )
+                        )
+    # 港股等效现金：相邻两个交易日都有成交时，等效现金 = 上一日收盘 × (1 − 1/因子比)。源的前收是否与
+    # 因子一致由原始库检查 factor_vs_previous_close 核（那里登记了源自身的不一致）。
+    if market == "hk":
+        bad = np.zeros((T, N), bool)
+        for t, j in np.argwhere(src == 2):
+            if t == 0 or not (tradable[t, j] and tradable[t - 1, j]):
+                continue
+            want = close[t - 1, j] - close[t - 1, j] / ratio[t, j]
+            bad[t, j] = not abs(cash[t, j] - want) <= 1e-9 * close[t - 1, j]
+        flag("equivalent_cash", "不等于上一日收盘 ×(1 − 1/因子比)", bad)
+
+    # ---- 因子账目：面板记了事件的格，因子比必须是源某条序列当天的比值；港股（只有一条序列）源因子
+    #      每一次变化都必须在面板里有事件（执行或标为可疑）。
+    if len(f):
+        fx = f.select(
+            "ts_code",
+            "trade_date",
+            "cum_adjfactor",
+            *([pl.col("exchange")] if "exchange" in f.columns else []),
+        )
+        keys = ["ts_code"] + (["exchange"] if "exchange" in f.columns else [])
+        fx = (
+            fx.filter(pl.col("cum_adjfactor") > 0)
+            .unique([*keys, "trade_date"], keep="none")
+            .sort([*keys, "trade_date"])
+            .with_columns(
+                r=(pl.col("cum_adjfactor") / pl.col("cum_adjfactor").shift(1)).over(
+                    keys
+                )
+            )
+            .filter(pl.col("r").is_not_null() & ((pl.col("r") - 1).abs() > RATIO_NOISE))
+        )
+        raw = defaultdict(list)
+        for code, day, r in fx.select("ts_code", "trade_date", "r").iter_rows():
+            raw[(code, day)].append(r)
+        for t, j in np.argwhere(src > 0):
+            got = ratio[t, j]
+            options = raw.get((base[j], dates[t]), [])
+            if not any(abs(got / r - 1) <= 1e-9 for r in options):
+                problems.append(
+                    dict(
+                        field="action_ratio",
+                        problem="事件的因子比不在源的任何序列里",
+                        ts_code=symbols[j],
+                        trade_date=dates[t],
+                    )
+                )
+        if market == "hk":
+            col_of = {x: j for j, x in enumerate(symbols)}
+            for (code, day), _ in raw.items():
+                i, j = row_of.get(day), col_of.get(code)
+                if (
+                    i is not None
+                    and j is not None
+                    and src[i, j] == 0
+                    and np.isfinite(ratio[i, j])
+                    and np.isfinite(ratio[:i, j]).any()
+                ):
+                    problems.append(
+                        dict(
+                            field="action_source",
+                            problem="源因子变了而面板没有事件",
+                            ts_code=code,
+                            trade_date=day,
+                        )
+                    )
+
+    # ---- 上市与退市。
+    listed = load("is_listed")
+    delist = load("delist")
+    if market == "hk":
+        info = {
+            r["ts_code"]: r
+            for r in securities.unique("ts_code", keep="first").iter_rows(named=True)
+        }
+        want_l = np.zeros((T, N), bool)
+        want_d = np.zeros((T, N), bool)
+        darr = np.array(dates)
+        for j, code in enumerate(symbols):
+            row = info.get(code) or {}
+            if not row.get("list_date"):
+                continue
+            on = darr >= row["list_date"]
+            if row.get("delist_date"):
+                on &= darr < row["delist_date"]
+                after = np.flatnonzero(darr >= row["delist_date"])
+                if len(after):
+                    want_d[after[0], j] = True
+            want_l[:, j] = on
+    else:
+        want_l = np.zeros((T, N), bool)
+        want_d = np.zeros((T, N), bool)
+        # 最近 GRACE+1 个交易日（含当天）里有成交 ⇔ 上市；用累计成交次数之差写。
+        counts = np.vstack([np.zeros((1, N)), np.cumsum(tradable, axis=0)])
+        lag = np.maximum(np.arange(T) - GRACE, 0)
+        want_l = (counts[1:] - counts[lag]) > 0
+        for j in range(N):
+            trades = np.flatnonzero(tradable[:, j])
+            if len(trades) and trades[-1] + GRACE + 1 < T:
+                want_d[trades[-1] + GRACE + 1, j] = True
+    flag("is_listed", "与上市规则不符", listed != want_l)
+    flag("delist", "与退市规则不符", delist != want_d)
+
+    # ---- 港股通（港股）：名单、可知、持股（错位一天）、只能卖出。
+    if market == "hk":
+        parts = {}
+        for name in ("hk_connect_sh", "hk_connect_sz"):
+            parts[name] = {
+                e["partition"]: e
+                for e in _complete(store, name).values()
+                if e.get("rows")
+            }
+        known_days = set(parts["hk_connect_sh"]) & set(parts["hk_connect_sz"])
+        members = defaultdict(set)
+        for name in parts:
+            frame = _read(store, parts[name].values())
+            for code, day in (
+                frame.select("ts_code", "trade_date").iter_rows() if len(frame) else []
+            ):
+                members[day].add(code)
+        hold_frame = _read(store, _complete(store, "hk_connect_hold").values())
+        held_raw = defaultdict(set)
+        if len(hold_frame):
+            for code, day, vol in hold_frame.select(
+                "ts_code", "trade_date", "vol"
+            ).iter_rows():
+                if vol is not None and float(vol) > 0:
+                    held_raw[day].add(code)
+        k = np.array([x in known_days for x in dates])[:, None] & np.ones((1, N), bool)
+        e = np.array([[c in members[x] for c in symbols] for x in dates]) & k
+        h = np.zeros((T, N), bool)
+        for i in range(1, T):
+            h[i] = [c in held_raw[dates[i - 1]] for c in symbols]
+        flag("connect_known", "与名单分区不符", load("connect_known") != k)
+        flag("connect_eligible", "与当天名单不符", load("connect_eligible") != e)
+        flag("connect_held", "与上一交易日南向持股不符", load("connect_held") != h)
+        flag(
+            "connect_sell_only",
+            "与「可知、上一日持有、不在名单」不符",
+            load("connect_sell_only") != (k & h & ~e),
+        )
+        period = np.array([HK_ROUNDED[0] <= x <= HK_ROUNDED[1] for x in dates])[:, None]
+        with np.errstate(invalid="ignore"):
+            flag(
+                "price_rounded",
+                "与「四舍五入期、有行情、收盘价 < 0.5」不符",
+                load("price_rounded") != (period & quote & (close < 0.5)),
             )
     return problems, checked
 

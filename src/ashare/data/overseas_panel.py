@@ -9,10 +9,13 @@
 ``metadata.json``、``securities.parquet``、``calendar.parquet``，``current.json`` 指向当前代。
 版本由输入分区的内容哈希、区间、范围、样本名单和构建代码决定，同样输入重建得到同一版本。
 
-公司行为：两地都没有分红送转的事件明细接口，只有前复权累计因子（``cum_adjfactor``，最新日为 1）。
-本模块只用相邻两日的因子比 r=F[t]/F[t-1]：整数比识别为拆并股，其余记「分不出现金与股数」的
-等效调整（规则见 ``overseas_fields.ACTION_RULE``）。因子是快照，区间内所有因子分区必须来自同一次
+公司行为：两地都没有分红送转的事件明细接口，只有前复权累计因子。事件由 ``overseas_actions`` 从相邻
+因子比推出并用价格印证，印证不了的不执行、逐格标记。因子是快照，区间内所有因子分区必须来自同一次
 同步（``snapshot`` 唯一），否则拒绝构建。
+
+美股只放纽交所、纳斯达克、美交所的普通股与存托凭证（因子表 ``exchange`` 判断，含已退市的；按证券表
+类别与代码写法去掉优先股、权证、单位、权利），场外的原始分区留着但不进面板。长缺口两侧价格不连续的
+列拆成两段（后段记作 ``代码#2``）。
 """
 
 import hashlib
@@ -21,70 +24,47 @@ import shutil
 import time
 import uuid
 from datetime import UTC, datetime
-from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 
-from .overseas_fields import ACTION_RULE, describe, fields_for
-from .overseas_sync import read_sample, spec_for
+from .overseas_actions import (
+    RULE,
+    SOURCES,
+    SUSPECT,
+    classify_ratio,
+    corporate_actions,
+    segments,
+)
+from .overseas_fields import describe, fields_for
+from .overseas_sync import US_MAJOR_EXCHANGES, read_sample, spec_for
 from .store import atomic_json, lock
 from .sync import compact
 
-FORMAT_VERSION = 1
-CODE_FILES = ("overseas_fields.py", "overseas_panel.py")
-SPLIT_MIN = 1.05
-# 因子只留 6 位小数：相邻两日之比与 1 相差不到 1e-5 的视为舍入噪声，不算事件。
-RATIO_NOISE = 1e-5
-SPLIT_MAX_DEN = 10
-SPLIT_MAX_NUM = 1000
-SPLIT_REL_TOL = 2e-4
-SPLIT_ABS_TOL = 6e-5
+FORMAT_VERSION = 2
+# 版本键哈希的代码：影响面板输出的全部模块（同步模块决定数据集名、币种和样本名单的读法）。
+CODE_FILES = (
+    "overseas_actions.py",
+    "overseas_fields.py",
+    "overseas_panel.py",
+    "overseas_sync.py",
+)
 DELIST_GRACE = 20
+US_GAP_SPLIT = 60
 # 2026-11-13 实测：hk_daily 在这段日期把全部价格四舍五入到 0.01（低价股失真），之外与因子表一致。
 HK_ROUNDED = ("20200702", "20231229")
 HK_FINE_TICK_BELOW = 0.5
+US_KINDS = ("EQ", "ADR", "GDR")
 
 
 def code_version():
     here = Path(__file__).parent
     digest = hashlib.sha256()
     for name in CODE_FILES:
+        digest.update(name.encode())
         digest.update((here / name).read_bytes())
     return digest.hexdigest()[:16]
-
-
-def classify_ratio(r, previous=None, current=None):
-    """因子比 → (action_source, split)。0 无事件、1 拆并股、2 分不出、3 下调且非整数比。
-
-    ``previous``、``current`` 是两日的因子值，用来放宽源 6 位小数舍入带来的误差。
-    """
-    if not np.isfinite(r) or r <= 0:
-        return 0, 1.0
-    if abs(r - 1.0) <= RATIO_NOISE:
-        return 0, 1.0
-    tolerance = SPLIT_REL_TOL
-    if previous is not None and current is not None:
-        smallest = min(abs(previous), abs(current))
-        if smallest > 0:
-            tolerance = max(tolerance, 1e-6 / smallest)
-    big = max(r, 1 / r)
-    if r < 1:
-        # 港股合股的因子比在源里只保留 4 位小数（1/12 写成 0.0833），按绝对误差放宽。
-        tolerance = max(tolerance, SPLIT_ABS_TOL / r)
-    if big >= SPLIT_MIN:
-        fraction = Fraction(big).limit_denominator(SPLIT_MAX_DEN)
-        if (
-            fraction.numerator <= SPLIT_MAX_NUM
-            and fraction > 1
-            and abs(float(fraction) - big) / big <= tolerance
-        ):
-            value = float(fraction) if r > 1 else float(1 / fraction)
-            return 1, value
-    if r > 1:
-        return 2, 1.0
-    return 3, float(r)
 
 
 def _inputs(store, names, start, end):
@@ -134,60 +114,130 @@ def _dedupe(frame, keys, diagnostics, name, core):
     return pl.concat([single, merged.select(clean.columns)], how="vertical_relaxed")
 
 
-def _dedupe_factor(factor, diagnostics):
-    """因子表同一代码同一天多行时，每只证券只用一条因子序列。
+def _choose_series(factor, allowed, diagnostics):
+    """每只证券每天取一条因子序列，并算出当天的因子比 ``ratio``。
 
-    美股同一代码常同时有两个交易所的因子历史（转板、场外份额），两条序列的口径可以不同
-    （实测 WMT 的纽交所序列含现金分红、纳斯达克序列只含拆股），逐日混取会在两条序列之间来回跳，
-    丢掉冲突日又会让跨缺口的比值把两条序列接在一起。所以每只证券先选定一个交易所：区间内有因子
-    的天数最多的非场外（OTC）交易所（同样多取代码字母序靠前的），全是场外才用场外；只取这个交易所的行。同一交易所同一天仍有
-    多行时，相对差不超过 1e-6 的合并，其余丢弃并计数。
+    美股同一代码常有几个交易所的因子序列（转板、源回填、口径不同：实测 WMT 的纽交所序列含现金分红、
+    纳斯达克序列只含拆股）。规则：只用 ``allowed`` 里的交易所；某天有几条序列时，取结束日最早的那条
+    （转板前还挂在旧交易所，源在新交易所回填的历史不用），一样早取天数多的，再一样按交易所字母序。
+    因子比只在同一条序列内部算：r = 当天值 / 该序列上一行的值，而且该序列上一行必须正好是这只证券
+    上一个取用的日子；换序列的那天（拼接处）记 1，不算事件。同一序列同一天多行相对差不超过 1e-6 的
+    合并，其余整组丢弃并计数。港股没有交易所列，只有一条序列。
     """
     keys = ["ts_code", "trade_date"]
-    if "exchange" not in factor.columns or factor["exchange"].null_count() == len(
-        factor
-    ):
+    if "exchange" not in factor.columns:
         factor = factor.with_columns(pl.lit("").alias("exchange"))
-    factor = factor.select(*keys, "cum_adjfactor", pl.col("exchange").fill_null(""))
-    counts = (
-        factor.group_by("ts_code", "exchange")
-        .agg(pl.col("trade_date").n_unique().alias("_days"))
-        .with_columns(_otc=pl.col("exchange") == "OTC")
-        .sort(
-            ["ts_code", "_otc", "_days", "exchange"],
-            descending=[False, False, True, False],
-        )
-    )
-    primary = counts.unique("ts_code", keep="first", maintain_order=True).select(
-        "ts_code", pl.col("exchange").alias("_primary")
-    )
-    chosen = factor.join(primary, on="ts_code").filter(
-        pl.col("exchange") == pl.col("_primary")
-    )
-    diagnostics["factor_rows_other_exchange"] = len(factor) - len(chosen)
-    diagnostics["factor_symbols_with_two_exchanges"] = (
-        factor.group_by("ts_code")
-        .agg(pl.col("exchange").n_unique())
-        .filter(pl.col("exchange") > 1)
-        .height
-    )
-    groups = chosen.group_by(keys).agg(
+    factor = factor.select(
+        *keys, "cum_adjfactor", pl.col("exchange").fill_null("")
+    ).filter(pl.col("cum_adjfactor") > 0)
+    if allowed is not None:
+        factor = factor.filter(pl.col("exchange").is_in(list(allowed)))
+    series = ["ts_code", "exchange", "trade_date"]
+    groups = factor.group_by(series).agg(
         pl.len().alias("_n"),
         pl.col("cum_adjfactor").min().alias("_lo"),
         pl.col("cum_adjfactor").max().alias("_hi"),
     )
-    same = (pl.col("_n") == 1) | (
-        (pl.col("_hi") - pl.col("_lo")).abs() <= 1e-6 * pl.col("_hi").abs()
+    bad = groups.filter(
+        (pl.col("_n") > 1) & ((pl.col("_hi") - pl.col("_lo")) > 1e-6 * pl.col("_hi"))
+    ).select(series)
+    diagnostics["factor_conflicting_keys"] = len(bad)
+    diagnostics["factor_conflicting_examples"] = bad.sort(series).head(20).to_dicts()
+    factor = (
+        factor.join(bad, on=series, how="anti")
+        .group_by(series)
+        .agg(pl.col("cum_adjfactor").min())
+        .sort(series)
+        .with_columns(
+            _prev=pl.col("trade_date").shift(1).over("ts_code", "exchange"),
+            _r=(pl.col("cum_adjfactor") / pl.col("cum_adjfactor").shift(1)).over(
+                "ts_code", "exchange"
+            ),
+        )
     )
-    dropped = groups.filter(~same).select(keys)
-    diagnostics["factor_conflicting_keys"] = len(dropped)
-    diagnostics["factor_conflicting_examples"] = dropped.sort(keys).head(20).to_dicts()
-    kept = (
-        chosen.join(dropped, on=keys, how="anti")
-        .sort([*keys, "cum_adjfactor"])
+    span = factor.group_by("ts_code", "exchange").agg(
+        pl.col("trade_date").max().alias("_end"), pl.len().alias("_days")
+    )
+    chosen = (
+        factor.join(span, on=["ts_code", "exchange"])
+        .sort(
+            ["ts_code", "trade_date", "_end", "_days", "exchange"],
+            descending=[False, False, False, True, False],
+        )
         .unique(keys, keep="first", maintain_order=True)
+        .sort(keys)
+        .with_columns(_prev_used=pl.col("trade_date").shift(1).over("ts_code"))
     )
-    return kept.select(*keys, "cum_adjfactor")
+    splice = pl.col("_prev_used").is_not_null() & (
+        pl.col("_prev").is_null() | (pl.col("_prev") != pl.col("_prev_used"))
+    )
+    chosen = chosen.with_columns(
+        ratio=pl.when(pl.col("_prev_used").is_null() | splice)
+        .then(1.0)
+        .otherwise(pl.col("_r"))
+    )
+    diagnostics["factor_series_splices"] = chosen.filter(splice).height
+    diagnostics["factor_symbols_with_two_series"] = (
+        span.group_by("ts_code").len().filter(pl.col("len") > 1).height
+    )
+    return chosen.select(*keys, "cum_adjfactor", "exchange", "ratio")
+
+
+def _cash_in_factor(factor_all, chosen):
+    """美股：每只证券的因子是否含现金分红（推断）。
+
+    小上调（1 < r < 1.10）几乎只来自现金分红。用到的每条序列都有 → 含；有的有有的没有 → 部分；
+    用到的都没有、但同一代码的其他序列（含场外）有 → 不含；都没有 → 未知（不派息与源不含分红分不开）。
+    """
+    f = (
+        factor_all.select(
+            "ts_code", "trade_date", "cum_adjfactor", pl.col("exchange").fill_null("")
+        )
+        .filter(pl.col("cum_adjfactor") > 0)
+        .unique(["ts_code", "exchange", "trade_date"], keep="first")
+        .sort("ts_code", "exchange", "trade_date")
+        .with_columns(
+            _r=(pl.col("cum_adjfactor") / pl.col("cum_adjfactor").shift(1)).over(
+                "ts_code", "exchange"
+            )
+        )
+    )
+    small = (pl.col("_r") > 1 + 1e-5) & (pl.col("_r") < 1.10)
+    per = f.group_by("ts_code", "exchange").agg(small.sum().alias("_cash"))
+    used = (
+        chosen.select("ts_code", "exchange").unique().with_columns(_used=pl.lit(True))
+    )
+    per = per.join(used, on=["ts_code", "exchange"], how="left").with_columns(
+        pl.col("_used").fill_null(False)
+    )
+    agg = per.group_by("ts_code").agg(
+        (pl.col("_used") & (pl.col("_cash") > 0)).sum().alias("_uy"),
+        (pl.col("_used") & (pl.col("_cash") == 0)).sum().alias("_un"),
+        (~pl.col("_used") & (pl.col("_cash") > 0)).sum().alias("_oy"),
+    )
+    return agg.select(
+        "ts_code",
+        pl.when((pl.col("_uy") > 0) & (pl.col("_un") == 0))
+        .then(pl.lit("含"))
+        .when((pl.col("_uy") > 0) & (pl.col("_un") > 0))
+        .then(pl.lit("部分"))
+        .when(pl.col("_oy") > 0)
+        .then(pl.lit("不含"))
+        .otherwise(pl.lit("未知"))
+        .alias("factor_includes_cash"),
+    )
+
+
+def us_code_kept(code, kind):
+    """美股面板收哪些代码：证券表类别为普通股、ADR、GDR 的都收，优先股不收；没有类别的（多为已退市
+    或基金）只收 1–5 位纯字母、且不是第 5 位为 W/U/R（纳斯达克的权证、单位、权利）的代码。"""
+    if kind in US_KINDS:
+        return True
+    if kind == "PF":
+        return False
+    if not code.isascii() or not code.isalpha() or not code.isupper() or len(code) > 5:
+        return False
+    return not (len(code) == 5 and code[-1] in "WUR")
 
 
 def _reused_codes(securities):
@@ -296,54 +346,6 @@ def _scatter(frame, dates, symbols, column, dtype=np.float64, fill=np.nan):
     return out
 
 
-def actions_from_factor(factor, close):
-    """前复权因子矩阵（NaN 为缺）→ 后复权因子与逐日公司行为字段。
-
-    纯 numpy：每列沿时间找上一个有因子的格，r=F[t]/F[prev]。``close`` 用于等效现金（取上一个
-    有收盘价的格）。返回 dict：adj_factor、action_ratio、split、equivalent_cash、action_source。
-    """
-    T, N = factor.shape
-    adj = np.full((T, N), np.nan)
-    ratio = np.full((T, N), np.nan)
-    split = np.ones((T, N))
-    cash = np.zeros((T, N))
-    source = np.zeros((T, N), dtype=np.uint8)
-    for j in range(N):
-        column = factor[:, j]
-        valid = np.flatnonzero(np.isfinite(column) & (column > 0))
-        if not len(valid):
-            continue
-        base = column[valid[0]]
-        adj[valid, j] = column[valid] / base
-        ratio[valid[0], j] = 1.0
-        prices = close[:, j]
-        last_price = np.nan
-        p = 0
-        for k in range(1, len(valid)):
-            t, s = valid[k], valid[k - 1]
-            while p < t:
-                if np.isfinite(prices[p]):
-                    last_price = prices[p]
-                p += 1
-            r = column[t] / column[s]
-            ratio[t, j] = r
-            kind, value = classify_ratio(r, column[s], column[t])
-            source[t, j] = kind
-            if kind in (1, 3):
-                split[t, j] = value
-            elif kind == 2:
-                cash[t, j] = (
-                    last_price * (1 - 1 / r) if np.isfinite(last_price) else np.nan
-                )
-    return dict(
-        adj_factor=adj,
-        action_ratio=ratio,
-        split=split,
-        equivalent_cash=cash,
-        action_source=source,
-    )
-
-
 def _snapshot_check(store, names, keys):
     snapshots = {
         store.manifest()[k].get("snapshot")
@@ -430,10 +432,20 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                     start=start,
                     end=end,
                     universe=universe,
-                    sample=sample["symbols"]
-                    if (sample and universe == "sample")
+                    # 两套代次都用样本名单（all 的证券表有 in_sample 列），整份内容进版本。
+                    sample=hashlib.sha256(
+                        json.dumps(sample, sort_keys=True).encode()
+                    ).hexdigest()
+                    if sample
                     else None,
                     code=code,
+                    # 模块常量也进版本：测试或调用方改了它们不会复用按旧参数建的代次。
+                    params=[
+                        US_GAP_SPLIT,
+                        DELIST_GRACE,
+                        list(HK_ROUNDED),
+                        HK_FINE_TICK_BELOW,
+                    ],
                     format=FORMAT_VERSION,
                 ),
                 sort_keys=True,
@@ -454,6 +466,7 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             .filter(pl.col("trade_date").is_between(pl.lit(start), pl.lit(end)))
             .collect()
         )
+        _calendar_check(daily, dates, "日线")
         if universe == "sample":
             daily = daily.filter(pl.col("ts_code").is_in(sample["symbols"]))
         daily = _dedupe(
@@ -468,96 +481,169 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             .filter(pl.col("trade_date").is_between(pl.lit(start), pl.lit(end)))
             .collect()
         )
-        exchanges = (
-            factor.sort("trade_date").group_by("ts_code").agg(pl.col("exchange").last())
-            if market == "us"
-            else None
-        )
+        # 因子表在休市日偶有行（美股 2014-05-26、2014-09-01，校验已登记）：不是行情，丢弃并计数。
+        on_days = pl.col("trade_date").is_in([str(x) for x in dates])
+        diagnostics["factor_rows_on_closed_days"] = factor.filter(~on_days).height
+        factor = factor.filter(on_days)
+        exchanges = cash_info = None
         if market == "hk":
             reused = _reused_codes(store.read(m["securities"]))
             daily = _assign_reused(daily, reused, diagnostics, "daily")
             factor = _assign_reused(factor, reused, diagnostics, "factor")
             daily = _precise_close(daily, factor, diagnostics)
-        factor = _dedupe_factor(factor, diagnostics)
-        securities = _securities(store, market, daily, sample, exchanges)
+            chosen = _choose_series(factor, None, diagnostics)
+        else:
+            chosen = _choose_series(factor, US_MAJOR_EXCHANGES, diagnostics)
+            daily, chosen = _us_scope(store, m, daily, chosen, diagnostics)
+            cash_info = _cash_in_factor(
+                factor.filter(
+                    pl.col("ts_code").is_in(chosen["ts_code"].unique().implode())
+                ),
+                chosen,
+            )
+            exchanges = (
+                chosen.sort("trade_date")
+                .group_by("ts_code")
+                .agg(
+                    pl.col("exchange").last(),
+                    pl.col("exchange").unique().sort().str.join(",").alias("exchanges"),
+                )
+            )
+        del factor
         if universe == "sample":
-            symbols = np.array(sorted(sample["symbols"]))
+            present = set(daily["ts_code"].to_list()) if market == "us" else None
+            symbols = np.array(
+                sorted(c for c in sample["symbols"] if present is None or c in present)
+            )
+            diagnostics["sample_symbols_not_in_panel"] = sorted(
+                set(sample["symbols"]) - set(symbols.tolist())
+            )
         else:
             symbols = np.array(sorted(set(daily["ts_code"].to_list())))
-        diagnostics["factor_rows_outside_daily_symbols"] = factor.filter(
+        diagnostics["factor_rows_outside_daily_symbols"] = chosen.filter(
             ~pl.col("ts_code").is_in(list(symbols))
         ).height
         specs = fields_for(market)
         staging = base / f".building-{uuid.uuid4().hex}"
         staging.mkdir(parents=True)
         written = set()
-
-        def put(name, array):
-            # 逐字段落盘后释放，美股近 3 年约 2.8 万列，整体放在内存里要 6 GB。
-            np.save(
-                staging / f"{name}.npy",
-                np.ascontiguousarray(array, dtype=specs[name].dtype),
-            )
-            written.add(name)
+        shape = (len(dates), len(symbols))
 
         try:
             coords = _coordinates(daily, dates, symbols)
-            close = _fill(daily, coords, "close", (len(dates), len(symbols)))
-            volume = _fill(daily, coords, "vol", close.shape)
-            amount = _fill(daily, coords, "amount", close.shape)
+            close = _fill(daily, coords, "close", shape)
             # 源在没有成交的日子会给收盘价 0、开高低价为空（美股场外证券常见）：价格非正一律视为缺失。
             close[close <= 0] = np.nan
+            open_ = _fill(daily, coords, "open", shape)
+            open_[open_ <= 0] = np.nan
+            volume = _fill(daily, coords, "vol", shape)
+            has_quote = np.isfinite(close)
+            tradable = has_quote & (volume > 0)
+            ratio = _fill(chosen, _coordinates(chosen, dates, symbols), "ratio", shape)
+            actions = corporate_actions(market, ratio, close, open_, tradable)
+            del ratio
+            if market == "us":
+                parts = segments(
+                    close,
+                    tradable,
+                    actions["multiplier"],
+                    actions["action_suspect"],
+                    US_GAP_SPLIT,
+                )
+            else:
+                parts = [(j, 0, len(dates)) for j in range(len(symbols))]
+            colmap = np.array([p[0] for p in parts], dtype=np.int64)
+            rows = np.arange(len(dates))[:, None]
+            keep_cells = (rows >= np.array([p[1] for p in parts])) & (
+                rows < np.array([p[2] for p in parts])
+            )
+            split_any = len(parts) != len(symbols)
+            names, seen = [], {}
+            for j, _, _ in parts:
+                seen[j] = seen.get(j, 0) + 1
+                code = str(symbols[j])
+                names.append(code if seen[j] == 1 else f"{code}#{seen[j]}")
+            diagnostics["segments_split"] = len(parts) - len(symbols)
+
+            def seg(array, fill):
+                if not split_any:
+                    return array
+                out = array[:, colmap]
+                out[~keep_cells] = fill
+                return out
+
+            def put(name, array, fill=np.nan):
+                # 逐字段落盘后释放：美股近 3 年约 9000 列，所有字段一起放在内存里要几 GB。
+                np.save(
+                    staging / f"{name}.npy",
+                    np.ascontiguousarray(seg(array, fill), dtype=specs[name].dtype),
+                )
+                written.add(name)
+
+            fills = dict(
+                split=1.0, equivalent_cash=0.0, action_source=0, action_suspect=False
+            )
+            for name in (
+                "adj_factor",
+                "action_ratio",
+                "split",
+                "equivalent_cash",
+                "action_source",
+                "action_suspect",
+            ):
+                put(name, actions[name], fills.get(name, np.nan))
+            source = seg(actions["action_source"], 0)
+            del actions
+            diagnostics["actions"] = {str(k): int((source == k).sum()) for k in SOURCES}
+            put("close", close)
+            put("open", open_)
+            put("volume", volume)
+            put("has_quote", has_quote, False)
+            put("tradable", tradable, False)
+            del volume
             for name, raw in (
-                ("open", "open"),
                 ("high", "high"),
                 ("low", "low"),
                 ("previous_close", "pre_close"),
             ):
-                values = _fill(daily, coords, raw, close.shape)
+                values = _fill(daily, coords, raw, shape)
                 values[values <= 0] = np.nan
                 put(name, values)
+            amount = _fill(daily, coords, "amount", shape)
+            put("amount", amount)
             if market == "us":
-                vwap = _fill(daily, coords, "vwap", close.shape)
-                put("total_market_cap", _fill(daily, coords, "total_mv", close.shape))
+                vwap = _fill(daily, coords, "vwap", shape)
+                put("total_market_cap", _fill(daily, coords, "total_mv", shape))
             else:
+                volume = _fill(daily, coords, "vol", shape)
                 with np.errstate(divide="ignore", invalid="ignore"):
                     vwap = np.where(volume > 0, amount / volume, np.nan)
+                del volume
             vwap[vwap <= 0] = np.nan
             put("vwap", vwap)
-            del vwap
-            has_quote = np.isfinite(close)
-            put("close", close)
-            put("volume", volume)
-            put("amount", amount)
-            put("has_quote", has_quote)
-            put("tradable", has_quote & (volume > 0))
-            del volume, amount
-            factor_coords = _coordinates(factor, dates, symbols)
-            raw_factor = _fill(factor, factor_coords, "cum_adjfactor", close.shape)
-            actions = actions_from_factor(raw_factor, close)
-            del raw_factor
-            diagnostics["actions"] = {
-                str(k): int((actions["action_source"] == k).sum()) for k in range(4)
-            }
-            for name, array in actions.items():
-                put(name, array)
-            del actions
-            listed, delist = _listing(market, securities, dates, symbols, has_quote)
-            diagnostics["quotes_outside_listing"] = int((has_quote & ~listed).sum())
-            put("is_listed", listed)
-            put("delist", delist)
-            del listed, delist
+            del vwap, amount
+            final_quote = seg(has_quote, False)
+            final_trade = seg(tradable, False)
+            securities = _securities(store, market, sample, exchanges, cash_info)
+            table = _column_table(
+                names, parts, symbols, dates, final_quote, source, securities
+            )
+            if market == "hk":
+                listed, delist = _listing_hk(table, dates)
+            else:
+                listed, delist = _listing_us(final_trade)
+            diagnostics["quotes_outside_listing"] = int((final_quote & ~listed).sum())
+            np.save(staging / "is_listed.npy", listed)
+            np.save(staging / "delist.npy", delist)
+            written |= {"is_listed", "delist"}
+            del listed, delist, final_trade, source
             if market == "hk":
                 for name, array in _connect(
                     store, m, dates, symbols, diagnostics
                 ).items():
-                    put(name, array)
-                in_period = (dates >= HK_ROUNDED[0]) & (dates <= HK_ROUNDED[1])
-                put(
-                    "price_rounded",
-                    in_period[:, None] & has_quote & (close < HK_FINE_TICK_BELOW),
-                )
-            del close, has_quote
+                    put(name, array, False)
+                put("price_rounded", price_rounded(dates, has_quote, close), False)
+            del close, has_quote, open_, final_quote
             assert written == set(specs), written ^ set(specs)
             metadata = dict(
                 version=version,
@@ -570,17 +656,16 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 format=FORMAT_VERSION,
                 built_at=datetime.now(UTC).isoformat(),
                 elapsed_seconds=time.perf_counter() - started,
-                shape=[len(dates), len(symbols)],
+                shape=[len(dates), len(names)],
                 dates=[str(d) for d in dates],
-                symbols=[str(s) for s in symbols],
+                symbols=names,
                 fields=describe(market),
                 diagnostics=diagnostics,
-                action_rule=ACTION_RULE,
+                action_rule=RULE,
+                action_sources={str(k): v for k, v in SOURCES.items()},
                 sample=sample if universe == "sample" else None,
             )
-            securities.filter(pl.col("ts_code").is_in(list(symbols))).write_parquet(
-                staging / "securities.parquet"
-            )
+            table.write_parquet(staging / "securities.parquet")
             calendar_table.write_parquet(staging / "calendar.parquet")
             metadata["elapsed_seconds"] = time.perf_counter() - started
             atomic_json(staging / "metadata.json", metadata)
@@ -591,6 +676,99 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
         finally:
             if staging.exists():
                 shutil.rmtree(staging)
+
+
+def price_rounded(dates, has_quote, close):
+    """港股源日线四舍五入期内、收盘价低于 0.5 港元（最小价位小于 0.01）的格。"""
+    in_period = (dates >= HK_ROUNDED[0]) & (dates <= HK_ROUNDED[1])
+    with np.errstate(invalid="ignore"):
+        return in_period[:, None] & has_quote & (close < HK_FINE_TICK_BELOW)
+
+
+def _calendar_check(frame, dates, what):
+    """区间内的行必须落在交易日历的开市日上：日历把开市日标成休市时不许静默丢掉整天的行情。"""
+    stray = (
+        frame.select("trade_date")
+        .unique()
+        .filter(~pl.col("trade_date").is_in([str(d) for d in dates]))
+        .sort("trade_date")["trade_date"]
+        .to_list()
+    )
+    if stray:
+        raise ValueError(
+            f"{what}有 {len(stray)} 个日期不在交易日历的开市日里（{', '.join(stray[:5])}）；"
+            "日历或行情有误，拒绝构建"
+        )
+
+
+def _us_scope(store, m, daily, chosen, diagnostics):
+    """美股面板只放三大交易所的普通股与存托凭证（见 ``us_code_kept``），行情只取有三大交易所因子的日期段。"""
+    basic = store.read(m["securities"])
+    kinds = (
+        basic.sort("ts_code", "classify", nulls_last=True)
+        .group_by("ts_code", maintain_order=True)
+        .agg(pl.col("classify").drop_nulls().first().alias("kind"))
+    )
+    cover = (
+        chosen.group_by("ts_code")
+        .agg(
+            pl.col("trade_date").min().alias("_lo"),
+            pl.col("trade_date").max().alias("_hi"),
+        )
+        .join(kinds, on="ts_code", how="left")
+    )
+    kept = cover.filter(
+        pl.struct("ts_code", "kind").map_elements(
+            lambda r: us_code_kept(r["ts_code"], r["kind"]), return_dtype=pl.Boolean
+        )
+    )
+    codes = set(daily["ts_code"].unique().to_list())
+    diagnostics["us_scope"] = dict(
+        daily_codes=len(codes),
+        without_major_exchange_factor=len(codes - set(cover["ts_code"].to_list())),
+        dropped_by_kind=cover.height - kept.height,
+        kept=len(codes & set(kept["ts_code"].to_list())),
+    )
+    before = daily.height
+    daily = (
+        daily.join(kept.select("ts_code", "_lo", "_hi"), on="ts_code")
+        .filter(pl.col("trade_date").is_between(pl.col("_lo"), pl.col("_hi")))
+        .drop("_lo", "_hi")
+    )
+    diagnostics["us_scope"]["daily_rows_dropped"] = before - daily.height
+    chosen = chosen.filter(pl.col("ts_code").is_in(kept["ts_code"].implode()))
+    return daily, chosen
+
+
+def _column_table(names, parts, symbols, dates, quote, source, securities):
+    """面板每一列一行：拆段后的代码、所属证券、首末行情日、可疑公司行为的格数与日期。"""
+    rows = []
+    for k, (name, (j, _, _)) in enumerate(zip(names, parts, strict=True)):
+        q = np.flatnonzero(quote[:, k])
+        bad = np.flatnonzero(np.isin(source[:, k], SUSPECT))
+        rows.append(
+            dict(
+                symbol=name,
+                ts_code=str(symbols[j]),
+                segment=int(name.split("#")[1]) if "#" in name else 1,
+                first_quote=str(dates[q[0]]) if len(q) else None,
+                last_quote=str(dates[q[-1]]) if len(q) else None,
+                action_suspect=bool(len(bad)),
+                action_suspect_dates=",".join(str(dates[t]) for t in bad[:20]) or None,
+            )
+        )
+    table = pl.DataFrame(
+        rows,
+        schema_overrides=dict(
+            first_quote=pl.String, last_quote=pl.String, action_suspect_dates=pl.String
+        ),
+    )
+    return (
+        table.join(securities, on="ts_code", how="left")
+        .drop("ts_code")
+        .rename({"symbol": "ts_code"})
+        .select("ts_code", pl.exclude("ts_code"))
+    )
 
 
 def _collect(base, current, keep):
@@ -608,13 +786,9 @@ def _collect(base, current, keep):
         shutil.rmtree(path)
 
 
-def _securities(store, market, daily, sample, exchanges=None):
-    """统一的证券表：代码、名称、板块/类别、上市退市日、每手（港股，当前值）、币种、首末行情日。"""
+def _securities(store, market, sample, exchanges=None, cash_info=None):
+    """证券的静态信息（每只证券一行）：名称、板块或类别、上市退市日、每手（港股，当前值）、币种。"""
     m = spec_for(market)
-    quotes = daily.group_by("ts_code").agg(
-        pl.col("trade_date").min().alias("first_quote"),
-        pl.col("trade_date").max().alias("last_quote"),
-    )
     raw = store.read(m["securities"])
     if market == "hk":
         table = raw.unique("ts_code", keep="first").select(
@@ -626,15 +800,32 @@ def _securities(store, market, daily, sample, exchanges=None):
             pl.col("delist_date").alias("delisting_date"),
             pl.col("trade_unit").cast(pl.Float64).alias("board_lot_current"),
             # 人民币柜台（8xxxx.HK、名称以 R 结尾）源也写 HKD，按代码和名称改为 CNY。
-            pl.when(
-                pl.col("ts_code").str.contains(r"^8\d{4}\.HK$")
-                & pl.col("name").str.ends_with("R")
-            )
+            pl.when(_rmb_counter())
             .then(pl.lit("CNY"))
             .otherwise(pl.col("curr_type"))
             .alias("currency"),
             pl.col("curr_type").alias("currency_source"),
             "isin",
+        )
+        # 人民币柜台与港币柜台是同一家公司：primary_symbol 指向港币柜台（0 + 后四位，名称去掉末尾的
+        # R 和随之空出的连字符后相同才认：腾讯控股-R ↔ 腾讯控股、美团-WR ↔ 美团-W），其余证券指向自己。
+        # 截面研究按它去重；对不上的人民币柜台为空。
+        names = dict(zip(table["ts_code"], table["name"], strict=True))
+
+        def primary(code, name, rmb):
+            if not rmb:
+                return code
+            other = "0" + code[1:]
+            return other if names.get(other) == name[:-1].removesuffix("-") else None
+
+        table = table.with_columns(
+            pl.struct("ts_code", "name", _rmb_counter().alias("_rmb"))
+            .map_elements(
+                lambda r: primary(r["ts_code"], r["name"] or "", r["_rmb"]),
+                return_dtype=pl.String,
+            )
+            .alias("primary_symbol"),
+            pl.lit("含").alias("factor_includes_cash"),
         )
     else:
         counts = raw.group_by("ts_code").len().rename({"len": "basic_rows"})
@@ -657,11 +848,10 @@ def _securities(store, market, daily, sample, exchanges=None):
             .drop("basic_rows")
         )
         if exchanges is not None:
-            # 交易所取区间内因子表最后一次出现的值（源证券表没有交易所）。
+            # 交易所取区间内取用的因子序列最后一天的交易所；exchanges 列出用到过的全部交易所。
             table = table.join(exchanges, on="ts_code", how="full", coalesce=True)
-        else:
-            table = table.with_columns(pl.lit(None, pl.String).alias("exchange"))
-    table = table.join(quotes, on="ts_code", how="full", coalesce=True)
+        if cash_info is not None:
+            table = table.join(cash_info, on="ts_code", how="left")
     if sample is not None:
         table = table.with_columns(
             pl.col("ts_code").is_in(sample["symbols"]).alias("in_sample")
@@ -669,27 +859,49 @@ def _securities(store, market, daily, sample, exchanges=None):
     return table.sort("ts_code")
 
 
-def _listing(market, securities, dates, symbols, has_quote):
-    T, N = len(dates), len(symbols)
+def _rmb_counter():
+    return pl.col("ts_code").str.contains(r"^8\d{4}\.HK$") & pl.col(
+        "name"
+    ).str.ends_with("R")
+
+
+def _listing_hk(table, dates):
+    """港股：证券表上市日（含）至退市日（不含）；退市日（或其后首个交易日）delist 为真。"""
+    T, N = len(dates), table.height
     listed = np.zeros((T, N), dtype=bool)
     delist = np.zeros((T, N), dtype=bool)
-    info = {r["ts_code"]: r for r in securities.iter_rows(named=True)}
-    for j, code in enumerate(symbols):
-        row = info.get(code, {})
-        if market == "hk" and row.get("listing_date"):
-            lo = int(np.searchsorted(dates, row["listing_date"]))
-            out = row.get("delisting_date")
-            hi = int(np.searchsorted(dates, out)) if out else T
-            listed[lo:hi, j] = True
-            if out and hi < T:
-                delist[hi, j] = True
-        else:
-            quoted = np.flatnonzero(has_quote[:, j])
-            if not len(quoted):
-                continue
-            listed[quoted[0] : quoted[-1] + 1, j] = True
-            if T - 1 - quoted[-1] > DELIST_GRACE:
-                delist[quoted[-1] + 1, j] = True
+    for j, row in enumerate(table.iter_rows(named=True)):
+        if not row.get("listing_date"):
+            continue
+        lo = int(np.searchsorted(dates, row["listing_date"]))
+        out = row.get("delisting_date")
+        hi = int(np.searchsorted(dates, out)) if out else T
+        listed[lo:hi, j] = True
+        if out and hi < T:
+            delist[hi, j] = True
+    return listed, delist
+
+
+def _listing_us(tradable, grace=DELIST_GRACE):
+    """美股没有可靠的上市退市日，按成交推断，只用当时可知的信息：
+
+    第一次成交起为上市；连续 ``grace`` 个交易日没有成交后的下一天起不算上市（之前那 grace 天还不知道
+    停多久，仍为真），再有成交又算上市。最后一次成交后满 grace 个交易日的下一天 delist 为真（之后再
+    没有成交时；引擎按那时的最后价格了结）。
+    """
+    T, N = tradable.shape
+    listed = np.zeros((T, N), dtype=bool)
+    delist = np.zeros((T, N), dtype=bool)
+    rows = np.arange(T)
+    for j in range(N):
+        trades = np.flatnonzero(tradable[:, j])
+        if not len(trades):
+            continue
+        last = np.maximum.accumulate(np.where(tradable[:, j], rows, -1))
+        listed[:, j] = (last >= 0) & (rows - last <= grace)
+        end = trades[-1] + grace + 1
+        if end < T:
+            delist[end, j] = True
     return listed, delist
 
 
@@ -734,7 +946,7 @@ def _connect(store, m, dates, symbols, diagnostics):
         else np.zeros(shape, dtype=bool)
     )
     eligible &= known
-    # 南向持股是日终状态、次一交易日公布：判断当天能否卖出用上一交易日的持股。
+    # 南向持股是日终状态、次一交易日公布：t 日只知道 t−1 日终的持股，面板整体错位一天。
     held_before = np.zeros(shape, dtype=bool)
     held_before[1:] = held[:-1]
     diagnostics["connect"] = dict(
@@ -747,8 +959,8 @@ def _connect(store, m, dates, symbols, diagnostics):
         connect_eligible=eligible,
         connect_sell_only=known & held_before & ~eligible,
         connect_known=known,
-        connect_held=held,
+        connect_held=held_before,
     )
 
 
-__all__ = ["actions_from_factor", "build_overseas", "classify_ratio"]
+__all__ = ["build_overseas", "classify_ratio", "us_code_kept"]

@@ -7,12 +7,7 @@ A 股专有的涨跌停、ST、行业、指数权重、估值字段不提供。�
 
 from dataclasses import asdict, dataclass
 
-ACTION_RULE = (
-    "收盘后由前复权累计因子相邻两日之比 r=F[t]/F[t-1] 识别（|r−1|≤1e-5 视为源 6 位小数的舍入噪声，不算事件）：r 与 p/q（p≤1000，q≤10）的相对差在 2e-4 以内（r<1 时另放宽到绝对差 6e-5，源把合股比只留 4 位小数）且 "
-    "max(r,1/r)≥1.05 记为拆并股（action_source=1，split=p/q）；其余 r>1 记为「分不出现金与股数的调整」"
-    "（action_source=2，split=1，equivalent_cash=前收×(1−1/r)，即等效现金，含现金分红、供股、特别派息等）；"
-    "r<1 且非整数比记 action_source=3（split=r，等效股数调整，未解释）。只知道总的调整比例，分不出现金分红与拆股"
-)
+from .overseas_actions import RULE as ACTION_RULE
 
 
 @dataclass(frozen=True)
@@ -56,13 +51,27 @@ FIELDS = {
             "adj_factor",
             "倍",
             "float64",
-            "收盘后；由前复权快照换算成后复权（区间内每只证券第一个有因子的交易日为 1，只有比值有意义）；"
-            "港股含现金分红与拆并股、供股，美股实测只含拆并股（不含现金分红）",
+            "收盘后；只累乘执行了的公司行为（拆并股、按股数的调整、港股的等效现金再投资），每列第一个有因子的交易日为 1，"
+            "只有比值有意义。美股不含现金分红（价格收益加拆并股），可疑事件不计入",
         ),
         OverseasField("action_ratio", "倍", "float64", ACTION_RULE),
         OverseasField("split", "倍", "float64", ACTION_RULE),
         OverseasField("equivalent_cash", "交易币种元/股", "float64", ACTION_RULE),
-        OverseasField("action_source", "来源枚举", "uint8", ACTION_RULE),
+        OverseasField(
+            "action_source",
+            "来源枚举",
+            "uint8",
+            "0 无事件、1 拆并股、2 等效现金（港股小比值）、3 非整数下调、4 按股数（大比值）、"
+            "5 美股现金类不执行、6 价格未印证不执行、7 最后成交日之后不执行。"
+            + ACTION_RULE,
+        ),
+        OverseasField(
+            "action_suspect",
+            "布尔",
+            "bool",
+            "收盘后；因子在这天变了但没有执行（action_source 6、7）。证券表 action_suspect 按证券汇总，"
+            "回测股票池应排除这些证券的相应时段",
+        ),
         OverseasField(
             "has_quote",
             "布尔",
@@ -74,13 +83,15 @@ FIELDS = {
             "is_listed",
             "布尔",
             "bool",
-            "港股按证券表上市日（含）至退市日（不含）；美股证券表几乎没有上市退市日，按区间内首个至末个有行情的交易日（事后推断，带后见之明）",
+            "港股按证券表上市日（含）至退市日（不含）；美股按成交推断、只用当时可知的信息：第一次成交起为真，"
+            "连续 20 个交易日没有成交后的下一天起为假，再有成交又为真",
         ),
         OverseasField(
             "delist",
             "布尔",
             "bool",
-            "港股为证券表退市日或其后首个交易日；美股为末个有行情交易日之后的首个交易日、且末个行情早于区间终点 20 个交易日以上（事后推断）",
+            "港股为证券表退市日或其后首个交易日；美股为最后一次成交后满 20 个交易日的下一天（那时才可知），"
+            "且之后再没有成交（是否永久退市是事后判断，源没有退市日）",
         ),
         OverseasField(
             "connect_eligible",
@@ -107,7 +118,7 @@ FIELDS = {
             "connect_held",
             "布尔",
             "bool",
-            "收盘后；南向（港股通）在中央结算的日终持股大于 0。2017-03-17 起有，次一交易日公布",
+            "盘前；上一交易日日终南向（港股通）在中央结算的持股大于 0（源次一交易日公布，面板已错位一天）。2017-03-17 起有",
             ("hk",),
         ),
         OverseasField(

@@ -10,8 +10,16 @@
     hk.securities().collect()                                    # 证券表（含当前每手）
     hk.fx("USDHKD").collect()                                    # 汇率日线
 
-    us = ad.open("/path/to/root", market="us", universe="sample")  # 2010 年起的 200 只样本
+    us = ad.open("/path/to/root", market="us", universe="sample")  # 2010 年起的样本（只用于开发抽查）
     us.panel(["close", "split"], symbols=["AAPL"])["split"]
+
+``universe``：``"all"``（默认）是按交易日分区里出现过的全部证券（开发库为近 3 年），可以做截面研究；
+``"sample"`` 是 2010 年起的样本，**按 2026 年的市值分层抽取，绝大多数证券活到了今天，有幸存者偏差，
+不能用来得出回测结论**，只用于开发、抽查长历史上的公司行为。
+
+美股面板是**试验性**的：价格收益加拆并股（不含现金分红），只放三大交易所的普通股与存托凭证；源因子
+与价格对不上的事件不执行、记在 ``action_suspect``，证券表 ``action_suspect`` 为真的证券回测时应排除
+相应时段。正式回测还缺分红来源和退市原因，见 ``docs/HKUS_DATA.md``。
 """
 
 import json
@@ -143,7 +151,12 @@ class OverseasData:
         """汇率日线（统一字段）。
 
         - FXCM 报价（``USDHKD``、``USDCNH``）：date 为格林尼治日期，bid/ask 收盘及其中间价 ``close``；
-        - 人民币中间价（``CNYHKD``、``CNYUSD``）：``rate`` 是 1 单位外币兑人民币（源值 ÷ 100）。
+        - 人民币中间价（``CNYHKD``、``CNYUSD``）：``rate`` 是 1 单位外币兑人民币（源值 ÷ 100），
+          ``CNYHKD`` 的 rate 即 1 港元兑人民币。
+
+        ``available_at``（UTC）是这一行可以用的时刻。中间价为北京时间当天 9:15 公布；FXCM 日线按实测
+        推断在纽约 17:00 切分、按开盘的格林尼治日期标注（未核实），标为 d 的那根在 d+1 日纽约 17:00 才收，
+        对同一天的港股收盘有约 13 小时前视：研究里 FXCM 只能错位一天用，换算优先用中间价。
         """
         m = spec_for(self.market)
         if pair + ".FXCM" in m["fx_daily"]:
@@ -157,6 +170,7 @@ class OverseasData:
                 pl.col("bid_close"),
                 pl.col("ask_close"),
                 pl.col("tick_qty").alias("ticks"),
+                _at("trade_date", 1, 17, 0, "America/New_York"),
             ).sort("date")
         if pair in m["fx_midrate"]:
             frame = self._store.scan("overseas_fx_midrate").filter(
@@ -166,9 +180,19 @@ class OverseasData:
                 pl.col("trade_date").alias("date"),
                 pl.lit(pair).alias("pair"),
                 (pl.col("mid_rate") / 100).alias("rate"),
+                _at("trade_date", 0, 9, 15, "Asia/Shanghai"),
             ).sort("date")
         pairs = [p.split(".")[0] for p in m["fx_daily"]] + list(m["fx_midrate"])
         raise KeyError(f"{self.market} 没有汇率 {pair!r}；可用：{pairs}")
+
+
+def _at(column, days, hour, minute, zone):
+    """日期列 + days 天的当地 hour:minute，换成 UTC。"""
+    local = (
+        pl.col(column).str.strptime(pl.Datetime("us"), "%Y%m%d")
+        + pl.duration(days=days, hours=hour, minutes=minute)
+    ).dt.replace_time_zone(zone)
+    return local.dt.convert_time_zone("UTC").alias("available_at")
 
 
 __all__ = ["OverseasData"]
