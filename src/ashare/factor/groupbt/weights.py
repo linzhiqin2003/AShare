@@ -32,14 +32,16 @@ def group_demean(x, groups):
         raise ValueError("groups 形状必须是 (T, N) 或 (N,)")
     valid = (~np.isnan(x)) & (g >= 0)
     out = np.full(x.shape, np.nan)
-    for i in range(x.shape[0]):
-        row_valid = valid[i]
-        if not row_valid.any():
-            continue
-        gi = g[i]
-        for group in np.unique(gi[row_valid]):
-            m = row_valid & (gi == group)
-            out[i, m] = x[i, m] - x[i, m].mean()
+    if not valid.any():
+        return out
+    # 把（行，组）编成一个号，一次分组求和。
+    width = int(g[valid].max()) + 1
+    rows = np.nonzero(valid)[0]
+    key = rows * width + g[valid].astype(np.int64)
+    size = x.shape[0] * width
+    total = np.bincount(key, weights=x[valid], minlength=size)
+    count = np.bincount(key, minlength=size)
+    out[valid] = x[valid] - total[key] / count[key]
     return out
 
 
@@ -52,9 +54,7 @@ def cap_buckets(logcap, n=10):
         if cols.size == 0:
             continue
         order = cols[np.argsort(lc[i, cols], kind="stable")]
-        c = order.size
-        for r, j in enumerate(order):
-            out[i, j] = r * n // c
+        out[i, order] = np.arange(order.size) * n // order.size
     return out
 
 

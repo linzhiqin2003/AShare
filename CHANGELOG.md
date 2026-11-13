@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-13（分组回测）
+- 新增 `ashare.factor.groupbt`（`docs/GROUP_BACKTEST.md`）：全市场因子矩阵 → 股票池（`TOP800` / `TOP1800` / `ALL`，大池自动带嵌套小池）→ 中性化（行业、市值分组、`vector_neut` 截面正交）与归一化权重 → 5 或 10 组等权分组和 top − bottom 多空组合 → 分组累计盈亏图（SVG）、多空与 top 组两张按年或按季的绩效表（return、sharpe、turnover、maxdrawdown、margin）和四个风险因子的暴露。成交时点 `open` / `close`（信号日的下一个交易日），涨跌停与停牌限制（冻结的持仓占着额度，其余按剩余额度缩放）。口径参照 WorldQuant BRAIN，一年按 240 个交易日，不扣成本。与逐日逐股循环的参考实现对拍，十二处变异全部抓到。
+
 ## 2026-11-13（境外期货）
 - Databento 的 K 线只留场内发布方：ICE 数据集（`IFEU.IMPACT`）另有场外成交发布方（`publisher_id` 84，大宗、EFP），同一合约同一时段各出一根 K 线，原先一起聚合进日线和分钟线，最高、最低、收盘和电子盘成交量都会错。新增 `on_exchange_bars` 与 `ON_EXCHANGE_PUBLISHERS`（CME 1、ICE 欧洲 57），日线和分钟线都先过滤，丢掉的行数记在诊断 `off_exchange_bar_rows`；K 线没有 `publisher_id` 列、或数据集没登记场内发布方时报错。用真实的布伦特连续合约分钟线核对过（过滤后同一分钟不再有重复行）。
 

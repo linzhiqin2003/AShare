@@ -109,49 +109,49 @@ def _advance(target, prev, buy, sell):
         frozen |= violate
 
 
-def simulate(target, fwd_ret, can_buy=None, can_sell=None):
+def simulate(target, fwd_ret, can_buy=None, can_sell=None, *, keep_weights=True):
     """逐行推进持仓，返回 weights、pnl 与 turnover。
 
     target 是目标权重，fwd_ret 是持仓在持有期内的收益，两者中的 NaN 都当 0。
     can_buy/can_sell 是 (T, N) 的布尔面板，None 表示不限；只给一个时另一个
     视为全 True。权重变大需要 can_buy，变小需要 can_sell（负权重按数值大小）。
+    keep_weights=False 时不保存逐日持仓（结果里 weights 为 None），省内存和时间。
     """
-    tgt = np.array(target, dtype=np.float64, copy=True)
-    ret = np.array(fwd_ret, dtype=np.float64, copy=True)
+    tgt = np.asarray(target, dtype=np.float64)
+    ret = np.asarray(fwd_ret, dtype=np.float64)
     if tgt.ndim != 2 or ret.shape != tgt.shape:
         raise ValueError("target 与 fwd_ret 必须是同形状的二维数组")
-    tgt[np.isnan(tgt)] = 0.0
-    ret[np.isnan(ret)] = 0.0
-
-    no_buy = can_buy is None
-    no_sell = can_sell is None
-    if no_buy:
-        buy = np.ones(tgt.shape, dtype=bool)
-    else:
-        buy = np.array(can_buy, dtype=bool, copy=True)
-        if buy.shape != tgt.shape:
-            raise ValueError("can_buy 必须与 target 同形状")
-    if no_sell:
-        sell = np.ones(tgt.shape, dtype=bool)
-    else:
-        sell = np.array(can_sell, dtype=bool, copy=True)
-        if sell.shape != tgt.shape:
-            raise ValueError("can_sell 必须与 target 同形状")
-
+    for name, flags in (("can_buy", can_buy), ("can_sell", can_sell)):
+        if flags is not None and np.shape(flags) != tgt.shape:
+            raise ValueError(f"{name} 必须与 target 同形状")
     n_rows, n_cols = tgt.shape
-    held = np.zeros_like(tgt)
     pnl = np.zeros(n_rows, dtype=np.float64)
     turnover = np.zeros(n_rows, dtype=np.float64)
+    held = np.zeros(tgt.shape) if keep_weights else None
+    limited = can_buy is not None or can_sell is not None
+    buy = None if can_buy is None else np.asarray(can_buy, dtype=bool)
+    sell = None if can_sell is None else np.asarray(can_sell, dtype=bool)
     prev = np.zeros(n_cols, dtype=np.float64)
-
+    # 只在有目标或有持仓的列上推进：一个分组通常只占全部股票的一小部分。
+    live = np.zeros(0, dtype=np.int64)
     for t in range(n_rows):
-        if no_buy and no_sell:
-            cur = tgt[t]
+        row = tgt[t]
+        wanted = np.flatnonzero((row != 0.0) & ~np.isnan(row))
+        cols = np.union1d(live, wanted) if live.size else wanted
+        if cols.size == 0:
+            continue
+        before = prev[cols]
+        want = np.nan_to_num(row[cols])
+        if limited:
+            ok_buy = np.ones(cols.size, dtype=bool) if buy is None else buy[t, cols]
+            ok_sell = np.ones(cols.size, dtype=bool) if sell is None else sell[t, cols]
+            cur = _advance(want, before, ok_buy, ok_sell)
         else:
-            cur = _advance(tgt[t], prev, buy[t], sell[t])
-        held[t] = cur
-        pnl[t] = float(np.sum(cur * ret[t]))
-        turnover[t] = float(np.sum(np.abs(cur - prev)))
-        prev = cur
-
+            cur = want
+        if keep_weights:
+            held[t, cols] = cur
+        pnl[t] = float(np.dot(cur, np.nan_to_num(ret[t, cols])))
+        turnover[t] = float(np.abs(cur - before).sum())
+        prev[cols] = cur
+        live = cols[cur != 0.0]
     return {"weights": held, "pnl": pnl, "turnover": turnover}

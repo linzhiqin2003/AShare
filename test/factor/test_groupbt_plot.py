@@ -428,7 +428,7 @@ def test_downsample_limit():
         assert len(points_of(element)) <= 2000
 
 
-def test_example_file():
+def test_example_file(tmp_path):
     rng = np.random.default_rng(0)
     dates = []
     current = date(2022, 1, 3)
@@ -446,7 +446,7 @@ def test_example_file():
         title="Group PnL & <L/S>",
         extra={"benchmark": np.cumsum(rng.normal(scale=0.008, size=count))},
     )
-    path = Path("/private/tmp/gbt_plot_example.svg")
+    path = tmp_path / "example.svg"
     path.write_text(svg, encoding="utf-8")
     root = parse(path.read_text(encoding="utf-8"))
     assert root.tag == f"{NS}svg"
