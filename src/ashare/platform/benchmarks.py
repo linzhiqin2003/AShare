@@ -5,22 +5,13 @@ import threading
 from functools import lru_cache
 
 import numpy as np
-import polars as pl
 
 from ashare.factor import groupbt
 
 from .analysis import finite, packed
 
-# 与新数据目录的默认值一致；访问名单通过公开 Data.indexes，不反向依赖 catalog 内部模块。
+# 与数据目录的默认值一致；访问名单通过公开 Data.indexes，不反向依赖 catalog 内部模块。
 DEFAULT_BENCHMARK = "000001.SH"
-LEGACY_NAMES = {
-    "000001.SH": "上证指数",
-    "000300.SH": "沪深300",
-    "000905.SH": "中证500",
-    "000852.SH": "中证1000",
-    "932000.CSI": "中证2000",
-    "000985.CSI": "中证全指",
-}
 
 
 class Benchmarks:
@@ -37,32 +28,8 @@ class Benchmarks:
             import ashare.data
 
             self.data = ashare.data.open(self.root)
-        indexes = getattr(self.data, "indexes", None)
-        if callable(indexes):
-            # 新接口已经按 BENCHMARKS 与本地日线交集筛选，并提供中文名和日期范围。
-            frame = indexes()
-            if isinstance(frame, pl.LazyFrame):
-                frame = frame.collect()
-            rows = frame.to_dicts() if isinstance(frame, pl.DataFrame) else frame
-            items = [
-                {"symbol": row["symbol"], "name": row["name"] or row["symbol"]}
-                for row in rows
-            ]
-        else:
-            try:
-                daily = self.data.table("index_daily", end="20251231")
-                codes = (
-                    daily.select("symbol")
-                    .unique()
-                    .collect()
-                    .get_column("symbol")
-                    .to_list()
-                )
-            except (FileNotFoundError, KeyError):
-                codes = []
-            items = [
-                {"symbol": code, "name": LEGACY_NAMES.get(code, code)} for code in codes
-            ]
+        # 数据层负责取主流名单与本地日线的交集，平台只发送控件需要的列。
+        items = self.data.indexes().select("symbol", "name").to_dicts()
         self.items = sorted(items, key=lambda row: (row["name"], row["symbol"]))
         self.version = hashlib.sha256(str(self.data.version).encode()).hexdigest()[:16]
 

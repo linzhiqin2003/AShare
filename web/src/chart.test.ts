@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartData, curves, unpack, niceAxis, withBenchmark } from './chart'
+import { chartData, curves, unpack, niceAxis, relativeLines, withBenchmark } from './chart'
 import type { PlotPart, Run } from './types'
 
 describe('窗口重算与列式传输', () => {
@@ -27,6 +27,51 @@ describe('窗口重算与列式传输', () => {
     expect(chart.dates).toEqual(['20240101', '20240102', '20250101'])
     expect(chart.lines[1].values[0]).toBeNaN()
     expect(chart.lines[1].values[1]).toBeCloseTo(0.2)
+  })
+})
+
+describe('相对基准的展示口径', () => {
+  const returns = [.1, -.05, .03], baseline = [.04, -.02, .01]
+  it('累加逐日差，并从超额峰值计算回撤', () => {
+    const result = curves(returns, false, 0, 2, baseline)
+    for (const [i, expected] of [.06,.03,.05].entries()) expect(result.cumulative[i]).toBeCloseTo(expected, 14)
+    expect(result.drawdown[0]).toBe(0)
+    expect(result.drawdown[1]).toBeCloseTo(-.03)
+    expect(result.drawdown[2]).toBeCloseTo(-.01)
+  })
+  it('复利是两条净值的比值，不是复利逐日差', () => {
+    const result = curves(returns, true, 0, 2, baseline)
+    expect(result.cumulative[2]).toBeCloseTo(1.1 * .95 * 1.03 / (1.04 * .98 * 1.01) - 1)
+    expect(result.cumulative[2]).not.toBeCloseTo(1.06 * .97 * 1.02 - 1, 6)
+    expect(result.drawdown[1]).toBeCloseTo(.95 / .98 - 1)
+    expect(result.drawdown[2]).toBeCloseTo(.95 * 1.03 / (.98 * 1.01) - 1)
+  })
+  it.each([false,true])('移动窗口同时重置策略和基准净值（复利 %s）', compound => {
+    const sliced = curves(returns.slice(1), compound, 0, 1, baseline.slice(1))
+    expect(curves(returns, compound, 1, 2, baseline)).toEqual(sliced)
+    expect(sliced.cumulative[0]).toBeCloseTo(compound ? .95 / .98 - 1 : -.03)
+  })
+  it.each([false,true])('基准缺失日使用零收益，保持日期不跳过（复利 %s）', compound => {
+    const result = curves(returns, compound, 0, 2, [NaN,.02])
+    expect(result).toEqual(curves(returns, compound, 0, 2, [0,.02,0]))
+    expect(result.cumulative).toHaveLength(3)
+    expect(result.cumulative[0]).toBeCloseTo(.1)
+  })
+  it('基准净值归零时不生成无限收益或伪造复利回报', () => {
+    expect(curves([.1,.2], true, 0, 1, [-1,.1]).cumulative.every(Number.isNaN)).toBe(true)
+  })
+  it('多空和第 1 组可分别选择，原始数组和权重结果不变', () => {
+    const data = {dates:['20240102'],lines:[
+      {id:'ls',name:'a',color:'black',values:[.1],kind:'long_short' as const},
+      {id:'long',name:'a · 第 1 组',color:'black',values:[.2],kind:'long' as const},
+      {id:'weights',name:'a · 权重',color:'black',values:[.3],kind:'weights' as const},
+      {id:'baseline',name:'基准',color:'gray',values:[.01],benchmark:true},
+    ]}
+    const before = structuredClone(data)
+    expect(relativeLines(data,'both').lines.map(l => l.id)).toEqual(['ls','long','baseline'])
+    expect(relativeLines(data,'long').lines.map(l => l.id)).toEqual(['long','baseline'])
+    expect(relativeLines(data,'long_short').lines.map(l => l.id)).toEqual(['ls','baseline'])
+    expect(data).toEqual(before)
   })
 })
 

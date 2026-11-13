@@ -5,9 +5,9 @@ import type { ResearchTab } from '../useResearch'
 import ResultChart from './ResultChart.vue'
 import CheckTable from './CheckTable.vue'
 import SplitPane from './SplitPane.vue'
-import type { View } from '../types'
+import type { ReturnSelection, View } from '../types'
 const props = defineProps<{ tab: ResearchTab }>()
-const emit = defineEmits<{ chart: []; select: [id: string]; visible: [id: string]; view: [view: View]; compound: [value: boolean] }>()
+const emit = defineEmits<{ chart: []; select: [id: string]; visible: [id: string]; view: [view: View]; mode: [value: string]; returns: [value: ReturnSelection] }>()
 const tableView = shallowRef('parameters')
 const selected = computed(() => props.tab.job?.runs.find(r => r.id === props.tab.selected))
 const checks = computed(() => selected.value?.summary?.checks ?? [])
@@ -18,7 +18,21 @@ const views = computed(() => ([{ key: 'returns', label: '收益' }, { key: 'grou
 <template>
   <SplitPane class="research-results" storage-key="research-rows" label="调整图表高度" axis="vertical" :initial=".64" :min-first="290" :max-first="900" :min-second="225">
     <template #first>
-    <section class="panel chart-panel"><div class="panel-header"><button v-for="view in views" :key="view.key" class="panel-tab" :class="{ active: tab.view === view.key }" @click="emit('view', view.key)">{{ view.label }}</button><span v-if="tab.view === 'returns' && tab.benchmark?.symbol" class="benchmark-legend push"><i></i>{{ tab.benchmark.name }}</span><select v-if="tab.view !== 'ic'" class="push" aria-label="收益累计方式" :value="tab.compound ? 'compound' : 'sum'" @change="emit('compound', ($event.target as HTMLSelectElement).value === 'compound')"><option value="sum">累加</option><option value="compound">复利</option></select></div><ResultChart :data="tab.chart" :compound="tab.compound" :raw="tab.view === 'ic'" :selected-id="tab.selected" :drawdown-line="tab.drawdown" /></section>
+    <section class="panel chart-panel">
+      <div class="panel-header">
+        <button v-for="view in views" :key="view.key" class="panel-tab" :class="{ active: tab.view === view.key }" @click="emit('view', view.key)">{{ view.label }}</button>
+        <span v-if="tab.view === 'returns' && tab.benchmark?.symbol && !tab.relative" class="benchmark-legend push"><i></i>{{ tab.benchmark.name }}</span>
+        <select v-if="tab.view === 'returns' && tab.relative" class="curve-selection push" aria-label="超额收益曲线" :value="tab.returnSelection" @change="emit('returns', ($event.target as HTMLSelectElement).value as ReturnSelection)">
+          <option value="both">多空 + 第 1 组</option><option value="long_short">多空</option><option value="long">第 1 组</option>
+        </select>
+        <select v-if="tab.view !== 'ic'" class="push" aria-label="收益累计方式" :value="`${tab.view === 'returns' && tab.relative ? 'relative-' : ''}${tab.compound ? 'compound' : 'sum'}`" @change="emit('mode', ($event.target as HTMLSelectElement).value)">
+          <option value="sum">累加</option><option value="compound">复利</option>
+          <option v-if="tab.view === 'returns'" value="relative-sum" :disabled="!tab.benchmark?.symbol">相对基准 · 累加</option>
+          <option v-if="tab.view === 'returns'" value="relative-compound" :disabled="!tab.benchmark?.symbol">相对基准 · 复利</option>
+        </select>
+      </div>
+      <ResultChart :data="tab.chart" :compound="tab.compound" :relative="tab.view === 'returns' && tab.relative" :raw="tab.view === 'ic'" :selected-id="tab.selected" :drawdown-line="tab.drawdown" />
+    </section>
     </template><template #second><SplitPane class="results-bottom" storage-key="research-tables" label="调整参数组与检验宽度" :initial=".595" :min-first="350" :max-first="1200" :min-second="330"><template #first>
       <section class="panel"><div class="panel-header"><button v-for="[key,label] in [['parameters','参数组'],['years','分年'],['correlations','相关'],['exposure','风格暴露']]" :key="key" class="panel-tab" :class="{ active: tableView === key }" @click="tableView = key">{{ label }}</button></div>
         <div class="table-scroll">
@@ -33,5 +47,5 @@ const views = computed(() => ([{ key: 'returns', label: '收益' }, { key: 'grou
   </SplitPane>
 </template>
 <style scoped>
-.chart-panel{min-height:0}.chart-panel>.result-chart{flex:1;height:0;min-height:0}.parameters td{height:29px;font-size:11px;padding-left:3px}.parameters th{font-size:10.5px;white-space:normal;overflow-wrap:anywhere;padding-left:3px}.parameters th:first-child{width:22px}.parameters th:nth-child(2){width:22%}.parameters td.number{padding-left:3px}.parameters .relative-value{font-size:10.5px}.line-key{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}.check-count{font-size:10px;white-space:nowrap}.validation{background:var(--shade)}.benchmark-legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink3);font-weight:400;white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}.benchmark-legend i{display:inline-block;width:16px;border-top:1px dashed var(--ink3)}.benchmark-legend+select{margin-left:0!important}.checks-panel{container-type:inline-size}.checks-panel .panel-header{gap:8px}.checks-panel .panel-header>span:nth-child(2){font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@container(max-width:460px){.check-count{display:none}}
+.chart-panel{min-height:0}.chart-panel>.result-chart{flex:1;height:0;min-height:0}.parameters td{height:29px;font-size:11px;padding-left:3px}.parameters th{font-size:10.5px;white-space:normal;overflow-wrap:anywhere;padding-left:3px}.parameters th:first-child{width:22px}.parameters th:nth-child(2){width:22%}.parameters td.number{padding-left:3px}.parameters .relative-value{font-size:10.5px}.line-key{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}.check-count{font-size:10px;white-space:nowrap}.validation{background:var(--shade)}.benchmark-legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink3);font-weight:400;white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}.benchmark-legend i{display:inline-block;width:16px;border-top:1px dashed var(--ink3)}.benchmark-legend+select,.curve-selection+select{margin-left:0!important}.checks-panel{container-type:inline-size}.checks-panel .panel-header{gap:8px}.checks-panel .panel-header>span:nth-child(2){font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@container(max-width:460px){.check-count{display:none}}
 </style>

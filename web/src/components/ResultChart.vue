@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { curves, fmt, niceAxis } from '../chart'
 import type { ChartData, Line } from '../types'
 
-const props = withDefaults(defineProps<{ data: ChartData; compound?: boolean; raw?: boolean; compact?: boolean; selectedId?: string; drawdownLine?: Line | null }>(), { compound: false, raw: false, compact: false })
+const props = withDefaults(defineProps<{ data: ChartData; compound?: boolean; relative?: boolean; raw?: boolean; compact?: boolean; selectedId?: string; drawdownLine?: Line | null }>(), { compound: false, relative: false, raw: false, compact: false })
 const root = shallowRef<HTMLDivElement | null>(null)
 const width = shallowRef(1000), height = shallowRef(450)
 const start = shallowRef(0), end = shallowRef(0), hover = shallowRef(-1)
@@ -13,7 +13,7 @@ let observer: ResizeObserver | undefined
 let frame = 0
 let pendingMove: (() => void) | undefined
 const left = 48
-const right = computed(() => props.compact ? 12 : 114)
+const right = computed(() => props.compact ? 12 : props.relative ? 160 : 114)
 const plotWidth = computed(() => Math.max(40, width.value - left - right.value))
 const plotHeight = computed(() => height.value - (props.compact ? 54 : 100) - (props.raw ? 0 : 12))
 const mainHeight = computed(() => Math.max(50, plotHeight.value * (props.raw ? 1 : .8)))
@@ -24,7 +24,8 @@ const brushY = computed(() => height.value - 51)
 const length = computed(() => props.data.dates.length)
 const x = (i: number) => left + i / Math.max(1, end.value - start.value) * plotWidth.value
 const fullX = (i: number) => left + i / Math.max(1, length.value - 1) * plotWidth.value
-const plotted = computed(() => props.data.lines.map(line => ({ ...line, ...(props.raw ? { cumulative: line.values.slice(start.value, end.value + 1), drawdown: [] } : curves(line.values, props.compound, start.value, end.value)) })))
+const baseline = computed(() => props.relative ? props.data.lines.find(line => line.benchmark)?.values : undefined)
+const plotted = computed(() => props.relative && !baseline.value ? [] : props.data.lines.filter(line => !props.relative || !line.benchmark).map(line => ({ ...line, ...(props.raw ? { cumulative: line.values.slice(start.value, end.value + 1), drawdown: [] } : curves(line.values, props.compound, start.value, end.value, baseline.value)) })))
 function extent(series: number[][], zero = true): [number, number] {
   let lo = zero ? 0 : Infinity, hi = zero ? 0 : -Infinity
   for (const values of series) for (const value of values) if (Number.isFinite(value)) { lo = Math.min(lo, value); hi = Math.max(hi, value) }
@@ -33,8 +34,8 @@ function extent(series: number[][], zero = true): [number, number] {
   return [lo - span * 0.07, hi + span * 0.12]
 }
 const selectedLine = computed(() => props.drawdownLine ?? props.data.lines.find(line => !line.benchmark && line.id.startsWith(props.selectedId ?? '')) ?? props.data.lines.find(line => !line.benchmark))
-const selectedDrawdown = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound, start.value, end.value).drawdown : [])
-const mainAxis = computed(() => niceAxis(plotted.value.map(v => v.cumulative),4,!props.raw,true))
+const selectedDrawdown = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound, start.value, end.value, baseline.value).drawdown : [])
+const mainAxis = computed(() => niceAxis(plotted.value.map(v => v.cumulative),props.compact ? 2 : 4,!props.raw,true))
 const mainRange = computed(() => [mainAxis.value.min,mainAxis.value.max])
 const drawAxis = computed(() => niceAxis([selectedDrawdown.value],2,true))
 const drawRange = computed(() => [Math.min(-.01,drawAxis.value.min),0])
@@ -61,7 +62,8 @@ function path(values: number[], xf: (i: number) => number, yf: (n: number) => nu
   return output
 }
 const mainTicks = computed(() => mainAxis.value.ticks)
-const drawTicks = computed(() => drawAxis.value.ticks.filter(tick => tick <= 0))
+const drawTicks = computed(() => props.compact ? [] : drawAxis.value.ticks.filter(tick => tick <= 0))
+const drawLabel = computed(() => props.relative ? `超额回撤 · ${selectedLine.value?.kind === 'long' ? '第 1 组' : '多空'}` : '回撤')
 const validationIndex = computed(() => props.data.dates.findIndex(d => d >= '20250101'))
 const validationX = computed(() => validationIndex.value < 0 ? width.value : Math.min(left + plotWidth.value, Math.max(left, x(validationIndex.value - start.value))))
 const labels = computed(() => {
@@ -71,16 +73,19 @@ const labels = computed(() => {
   }
   return items.filter((_, i) => i % Math.max(1, Math.ceil(items.length / (width.value / 90))) === 0)
 })
-const mini = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound).cumulative : [])
+const mini = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound, 0, length.value - 1, baseline.value).cumulative : [])
 const miniYears = computed(() => props.data.dates.map((date,index) => ({date,index})).filter(({date,index}) => index === 0 || date.slice(0,4) !== props.data.dates[index-1].slice(0,4)).filter((_,i,items) => i % Math.max(1,Math.ceil(items.length / (plotWidth.value/65))) === 0))
 const miniRange = computed(() => extent([mini.value]))
 const miniY = (v: number) => brushY.value + 4 + (miniRange.value[1] - v) / (miniRange.value[1] - miniRange.value[0]) * 30
 const tooltipX = computed(() => Math.max(left, Math.min(x(hover.value) + 12, width.value - 235)))
 const lineLabels = computed(() => {
   const items = plotted.value.filter(l => Number.isFinite(l.cumulative.at(-1))).map(l => ({ id: l.id, y: y(l.cumulative.at(-1)!) + 4 })).sort((a, b) => a.y - b.y)
-  for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + 13)
-  const excess = Math.max(0, (items.at(-1)?.y ?? 0) - mainHeight.value)
-  return new Map(items.map(item => [item.id, item.y - excess]))
+  const gap = Math.min(13, (mainHeight.value - 18) / Math.max(1, items.length - 1))
+  for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + gap)
+  // 从下边界往回排，避免多空与多头同时显示时把上方标签整体挤出图外。
+  if (items.length) items[items.length - 1].y = Math.min(items[items.length - 1].y, mainHeight.value)
+  for (let i = items.length - 2; i >= 0; i--) items[i].y = Math.min(items[i].y, items[i + 1].y - gap)
+  return new Map(items.map(item => [item.id, item.y]))
 })
 function move(event: PointerEvent) {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
@@ -117,7 +122,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
 </script>
 <template>
   <div ref="root" class="result-chart" :class="{ compact }">
-    <div v-if="!data.lines.length" class="empty-chart">运行后查看结果</div>
+    <div v-if="!plotted.length" class="empty-chart">{{ relative && data.lines.length ? baseline ? '请选择参数组' : '基准数据暂不可用' : '运行后查看结果' }}</div>
     <svg v-else :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="研究结果曲线与可拖动时间窗" @pointermove="move" @pointerup="endDrag" @pointercancel="endDrag" @pointerleave="!drag && (hover = -1)">
       <rect :x="validationX" y="8" :width="Math.max(0, left + plotWidth - validationX)" :height="axisY - 15" fill="var(--shade)" />
       <g v-if="validationX < left + plotWidth && validationX > left" class="muted">
@@ -126,14 +131,14 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
       </g>
       <g v-for="tick in mainTicks" :key="tick" class="muted main-tick"><line :x1="left" :x2="left + plotWidth" :y1="y(tick)" :y2="y(tick)" stroke="var(--grid)" /><text :x="left - 7" :y="y(tick) + 3" text-anchor="end">{{ fmt(tick, !raw, raw ? 2 : 0) }}</text></g>
       <g v-for="line in plotted" :key="line.id">
-        <path :d="path(line.cumulative, x, y)" fill="none" :stroke="line.color" :stroke-width="line.benchmark ? 1.2 : compact ? 1.3 : 1.7" :stroke-dasharray="line.benchmark ? '5 4' : undefined" />
+        <path class="return-line" :data-kind="line.benchmark ? 'benchmark' : line.kind" :d="path(line.cumulative, x, y)" fill="none" :stroke="line.color" :stroke-width="line.benchmark ? 1.2 : compact ? 1.3 : 1.7" :stroke-dasharray="line.benchmark ? '5 4' : line.kind === 'long' ? '7 3' : undefined" />
         <text v-if="!compact && Number.isFinite(line.cumulative.at(-1))" :x="left + plotWidth + 6" :y="lineLabels.get(line.id)" :fill="line.color" class="line-label">{{ line.name }}</text>
       </g>
       <g v-if="!raw">
         <g v-for="tick in drawTicks" :key="tick" class="muted draw-tick"><line :x1="left" :x2="left + plotWidth" :y1="dy(tick)" :y2="dy(tick)" stroke="var(--grid)"/><text :x="left - 7" :y="dy(tick) + 3" text-anchor="end">{{ fmt(tick, true, 0) }}</text></g>
         <path v-if="selectedDrawdown.length" :d="`${path(selectedDrawdown,x,dy)} L${x(selectedDrawdown.length-1)},${dy(0)} L${x(0)},${dy(0)} Z`" :fill="selectedLine?.color" fill-opacity=".11" />
         <path :d="path(selectedDrawdown, x, dy)" fill="none" :stroke="selectedLine?.color" stroke-width="1" />
-        <text :x="left + 5" :y="drawTop + drawHeight - 4" fill="var(--ink2)">回撤</text>
+        <text :x="left + 5" :y="drawTop + drawHeight - 4" fill="var(--ink2)">{{ drawLabel }}</text>
       </g>
       <text v-for="label in labels" :key="label.index" :x="x(label.index)" :y="axisY + 3" class="muted" text-anchor="middle">{{ label.text }}</text>
       <g v-if="!compact" class="brush">
@@ -153,9 +158,9 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
         <line :x1="left" :x2="left + plotWidth" :y1="hoverY" :y2="hoverY" stroke="var(--ink3)" stroke-dasharray="3 3" />
         <g v-for="line in plotted" :key="line.id"><circle v-if="Number.isFinite(line.cumulative[hover])" :cx="x(hover)" :cy="y(line.cumulative[hover])" r="3" :fill="line.color" stroke="white" /></g>
         <rect :x="tooltipX" y="26" width="220" :height="(raw ? 30 : 52) + plotted.length * 18" rx="3" fill="white" stroke="var(--line)" />
-        <text :x="tooltipX + 10" y="44" class="mono">{{ data.dates[start + hover]?.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }}</text>
+        <text :x="tooltipX + 10" y="44" class="mono">{{ data.dates[start + hover]?.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }}{{ relative ? ' · 超额' : '' }}</text>
         <g v-for="(line, i) in plotted" :key="line.id"><text :x="tooltipX + 10" :y="64 + i * 18" :fill="line.color">{{ line.name }}</text><text :x="tooltipX + 210" :y="64 + i * 18" text-anchor="end" class="mono">{{ fmt(line.cumulative[hover], !raw) }}</text></g>
-        <text v-if="!raw && selectedLine" :x="tooltipX+10" :y="64+plotted.length*18" :fill="selectedLine.color">回撤</text><text v-if="!raw && selectedLine" :x="tooltipX+210" :y="64+plotted.length*18" text-anchor="end" class="mono">{{ fmt(selectedDrawdown[hover],true) }}</text>
+        <text v-if="!raw && selectedLine" :x="tooltipX+10" :y="64+plotted.length*18" :fill="selectedLine.color">{{ drawLabel }}</text><text v-if="!raw && selectedLine" :x="tooltipX+210" :y="64+plotted.length*18" text-anchor="end" class="mono">{{ fmt(selectedDrawdown[hover],true) }}</text>
       </g>
     </svg>
   </div>

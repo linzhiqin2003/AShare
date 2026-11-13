@@ -1,6 +1,7 @@
 export type Scalar = string | number | boolean | null
 export type Settings = Record<string, Scalar | Scalar[]>
 export type View = 'returns' | 'groups' | 'ic' | 'subs'
+export type ReturnSelection = 'both' | 'long_short' | 'long'
 export interface ApiError { message: string; line?: number; column?: number }
 export interface Completion { label: string; kind: 'operator' | 'field' | 'factor'; signature?: string; detail: string; hint: string }
 export interface Check { key: string; label: string; value: number | null; threshold: string; status: 'pass' | 'fail' | 'hint' }
@@ -11,7 +12,7 @@ export interface Run { id: string; ordinal: number; label: string; status: strin
 export interface Job { id: string; status: string; total: number; elapsed: number | null; runs: Run[] }
 export interface Packed { shape: number[]; data: string }
 export interface PlotPart { part: string; dates: string[]; series: Record<string, Packed> }
-export interface Line { id: string; name: string; color: string; values: number[]; benchmark?: boolean }
+export interface Line { id: string; name: string; color: string; values: number[]; benchmark?: boolean; kind?: 'long_short' | 'long' | 'weights' }
 export interface ChartData { dates: string[]; lines: Line[] }
 export interface Entry { id: string; name: string; source: string; settings: Settings; expression_id: string; status: string; sharpe: number | null; validation: number | null; turnover: number | null; fitness: number | null; annual_return: number | null; drawdown: number | null; coverage: number | null; t: number | null; margin: number | null; latest: string | null; summary?: Summary }
 export interface LibraryData { items: Entry[]; total: number; counts: Record<string, number>; groups: { key: string; count: number }[]; offset: number; limit: number; facets?: Record<string,Record<string,number>> }

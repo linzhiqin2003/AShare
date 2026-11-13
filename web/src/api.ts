@@ -14,7 +14,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 export const post = <T>(path: string, body?: unknown) => api<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 const seriesCache = new Map<string, Promise<PlotPart[]>>()
-export function series(run: string, view: View): Promise<PlotPart[]> {
+export function series(run: string, view: View | 'long'): Promise<PlotPart[]> {
   const key = `${run}:${view}`
   if (!seriesCache.has(key)) {
     if (seriesCache.size >= 128) seriesCache.delete(seriesCache.keys().next().value!)

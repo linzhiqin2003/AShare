@@ -219,6 +219,7 @@ def plot_payload(arrays, view="returns"):
             "returns": ["pnl.long_short"]
             + (["pnl.weights"] if f"{part}.pnl.weights" in arrays else []),
             "groups": ["groups"],
+            "long": ["pnl.long"],
             "ic": ["ic"],
             "subs": [
                 k[len(part) + 1 :] for k in arrays if k.startswith(f"{part}.sub.")
@@ -228,7 +229,14 @@ def plot_payload(arrays, view="returns"):
             {
                 "part": part,
                 "dates": dates,
-                "series": {name: packed(arrays[f"{part}.{name}"]) for name in names},
+                "series": {
+                    name: packed(
+                        arrays[f"{part}.groups"][0]
+                        if name == "pnl.long"
+                        else arrays[f"{part}.{name}"]
+                    )
+                    for name in names
+                },
             }
         )
     return parts

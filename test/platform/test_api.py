@@ -148,7 +148,7 @@ def test_run_four_variants_sse_cache_and_reuse_worker(client):
         == 304
     )
     run = result["runs"][0]["id"]
-    for view in ("returns", "groups", "ic", "subs"):
+    for view in ("returns", "long", "groups", "ic", "subs"):
         series = client.get(f"/api/runs/{run}/series?view={view}")
         assert series.status_code == 200
         assert "immutable" in series.headers["cache-control"]

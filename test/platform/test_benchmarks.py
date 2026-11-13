@@ -1,10 +1,11 @@
-"""新名单接口、旧版数据兼容与相对指标均使用合成行情。"""
+"""真实数据目录接口、默认回退与相对指标均使用合成行情。"""
 
 import numpy as np
 import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
+from ashare.data.catalog import BENCHMARKS, DEFAULT_BENCHMARK
 from ashare.platform.app import create_app
 from ashare.platform.benchmarks import Benchmarks
 from bench.platform.synthetic import write_indexes, write_panel
@@ -13,27 +14,21 @@ from bench.platform.synthetic import write_indexes, write_panel
 class Data:
     version = "synthetic"
 
-    def __init__(self, count=22, default=True):
-        self.codes = [f"{i + 1:06d}.SH" for i in range(count)]
-        if not default:
-            self.codes[0] = "999999.SH"
+    def __init__(self, count=22):
+        self.codes = list(BENCHMARKS)[:count]
 
-    def table(self, name, **options):
-        assert name == "index_daily"
-        assert options.get("end") == "20251231"
-        return pl.DataFrame({"symbol": self.codes}).lazy()
-
-
-class NamedData(Data):
     def indexes(self, query=None):
         assert query is None
         return pl.DataFrame(
             {
                 "symbol": self.codes,
-                "name": [f"合成指数{i:02d}" for i in range(len(self.codes))],
+                "name": [BENCHMARKS[code] for code in self.codes],
                 "first_date": ["20160101"] * len(self.codes),
                 "last_date": ["20251231"] * len(self.codes),
-            }
+            },
+            schema={
+                key: pl.String for key in ("symbol", "name", "first_date", "last_date")
+            },
         )
 
     def table(self, name, **options):
@@ -41,57 +36,46 @@ class NamedData(Data):
 
 
 def test_curated_indexes_search_and_default():
-    benchmarks = Benchmarks(data=NamedData())
+    benchmarks = Benchmarks(data=Data())
     result = benchmarks.search()
     assert result["total"] == len(result["items"]) == 22
     assert result["selected"]["symbol"] == "000001.SH"
     assert not result["selected"]["fallback"]
-    assert benchmarks.search("合成指数04")["items"] == [
-        {"symbol": "000005.SH", "name": "合成指数04"}
+    assert benchmarks.search("沪深300")["items"] == [
+        {"symbol": "000300.SH", "name": "沪深300"}
     ]
-    assert benchmarks.search("000005")["total"] == 1
+    assert benchmarks.search("000300")["total"] == 1
     assert benchmarks.search("不存在")["items"] == []
     assert benchmarks.search("不存在")["default"] == result["default"]
     # 日期范围留在数据层；只传控件会显示的两个字段。
     assert all(set(item) == {"symbol", "name"} for item in result["items"])
 
 
-def test_old_data_unknown_names_and_missing_default():
-    benchmarks = Benchmarks(data=Data(5, default=False))
-    result = benchmarks.search()
-    assert result["default"]["fallback"]
-    assert result["selected"]["symbol"] == result["items"][0]["symbol"]
-    assert all(r["name"] == r["symbol"] for r in result["items"])
-
-
-@pytest.mark.parametrize("future", [False, True])
-def test_data_api_compatibility_and_http(tmp_path, monkeypatch, future):
+@pytest.mark.parametrize("has_default", [False, True])
+def test_data_indexes_and_http(tmp_path, monkeypatch, has_default):
     import ashare.data
 
     data = tmp_path / "data"
     source = write_panel(data)
-    codes = write_indexes(data, source)
+    codes = ["000300.SH", "000905.SH", "000852.SH", "932000.CSI"]
+    if has_default:
+        codes.append(DEFAULT_BENCHMARK)
+    write_indexes(data, source, codes=codes)
     monkeypatch.setenv("ASHARE_DATA_DIR", str(data))
-    if future:
-
-        def indexes(self, query=None):
-            # 数据分支的公开方法负责取 catalog.BENCHMARKS 与本地日线的交集。
-            # 故意只返回两个代码，确认平台不会绕开名单把日线全部暴露出来。
-            return pl.DataFrame(
-                {
-                    "symbol": codes[:2],
-                    "name": ["合成沪深300", "合成中证500"],
-                    "first_date": ["20160101"] * 2,
-                    "last_date": ["20251231"] * 2,
-                }
-            )
-
-        monkeypatch.setattr(ashare.data.Data, "indexes", indexes, raising=False)
+    # 不替换 Data.indexes，守住真实的代码白名单和「代码_月份」清单分区约定。
+    indexes = ashare.data.open(data).indexes()
+    assert set(indexes["symbol"]) == set(codes)
+    assert set(indexes["first_date"]) == {source.dates[0]}
+    assert set(indexes["last_date"]) == {source.dates[-1]}
     directory = Benchmarks()
     result = directory.search()
-    assert result["total"] == len(result["items"]) == (2 if future else 5)
-    assert result["selected"]["fallback"]
-    assert all(row["name"] != row["symbol"] for row in result["items"])
+    assert result["total"] == len(result["items"]) == len(codes)
+    assert result["selected"]["fallback"] is (not has_default)
+    assert result["selected"]["requested"] == DEFAULT_BENCHMARK
+    assert result["selected"]["symbol"] == (
+        DEFAULT_BENCHMARK if has_default else result["items"][0]["symbol"]
+    )
+    assert all(row["name"] == BENCHMARKS[row["symbol"]] for row in result["items"])
     returns = directory.daily(codes[0], "open")
     assert all(date < "20260101" for date in returns)
     assert np.isnan(returns[max(returns)])
@@ -103,7 +87,7 @@ def test_data_api_compatibility_and_http(tmp_path, monkeypatch, future):
         assert response.status_code == 200
         assert response.json() == result
         assert client.get("/api/benchmarks?search=沪深").json()["items"] == [
-            {"symbol": "000300.SH", "name": "合成沪深300" if future else "沪深300"}
+            {"symbol": "000300.SH", "name": "沪深300"}
         ]
         assert (
             client.get("/api/settings").json()["defaults"]["benchmark"]

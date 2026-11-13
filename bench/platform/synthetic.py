@@ -86,44 +86,53 @@ def write_panel(root, source=None):
     return source
 
 
-def write_indexes(root, source=None):
-    """仅写五个有中文简称的指数的随机日线；不含真实行情，保留默认缺失回退场景。"""
+def write_indexes(root, source=None, *, codes=None):
+    """按真实清单的代码与月份分区写随机日线；价格全为合成数据。"""
     import polars as pl
 
+    from ashare.data.catalog import BENCHMARKS
     from ashare.data.store import Store
 
     source = panel(full=True) if source is None else source
     store = Store(root)
     rng = np.random.default_rng(332)
-    codes = ["000300.SH", "000905.SH", "000852.SH", "932000.CSI", "000985.CSI"]
+    codes = (
+        list(codes)
+        if codes is not None
+        else ["000001.SH", "000300.SH", "000905.SH", "000852.SH", "932000.CSI"]
+    )
+    if not set(codes) <= BENCHMARKS.keys():
+        raise ValueError("合成指数必须来自主流基准名单")
     folder = store.root / "raw/synthetic-index"
     folder.mkdir(parents=True, exist_ok=True)
-    frames = []
     for code in codes:
         prices = 1000 * np.exp(np.cumsum(rng.normal(0.0001, 0.009, len(source.dates))))
-        frames.append(
-            pl.DataFrame(
-                {
-                    "ts_code": code,
-                    "trade_date": source.dates,
-                    "open": prices,
-                    "close": prices * 1.001,
-                }
-            )
+        frame = pl.DataFrame(
+            {
+                "ts_code": code,
+                "trade_date": source.dates,
+                "open": prices,
+                "close": prices * 1.001,
+            }
         )
-    path = folder / "daily.parquet"
-    frame = pl.concat(frames)
-    frame.write_parquet(path)
-    store.mark(
-        "index_daily/synthetic",
-        dict(
-            dataset="index_daily",
-            partition="synthetic",
-            status="complete",
-            rows=len(frame),
-            file=str(path.relative_to(store.root)),
-            content_hash="synthetic",
-            file_hash="synthetic",
-        ),
-    )
+        for (month,), rows in (
+            frame.with_columns(pl.col("trade_date").str.slice(0, 6).alias("month"))
+            .partition_by("month", as_dict=True)
+            .items()
+        ):
+            partition = f"{code}_{month}"
+            path = folder / f"{partition}.parquet"
+            rows.drop("month").write_parquet(path)
+            store.mark(
+                f"index_daily/{partition}",
+                dict(
+                    dataset="index_daily",
+                    partition=partition,
+                    status="complete",
+                    rows=len(rows),
+                    file=str(path.relative_to(store.root)),
+                    content_hash="synthetic",
+                    file_hash="synthetic",
+                ),
+            )
     return codes

@@ -27,6 +27,7 @@ REFERENCES = {
     "research_empty": "p1_research_light",
     "research_running": "p1_research_light",
     "research_results": "p1_research_light",
+    "research_relative": "p1_research_light",
     "research_settings": "p1_research_settings_light",
     "research_benchmarks": "p1_research_settings_light",
     "research_completion": "p7_backtest_light",
@@ -45,13 +46,13 @@ def write_gallery(output, names):
         json.dumps(names, ensure_ascii=False, indent=2)
     )
     document = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<title>第三轮视觉对照</title><style>
+<title>第四轮视觉对照</title><style>
 body{margin:16px;font:14px sans-serif;background:#f1f2f4;color:#222}
 section{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:32px}
 figure{margin:0;min-width:0}img{width:100%;height:auto;background:white}
 figcaption{margin:8px 0;color:#59616b}h2{font-size:16px}
-</style><h1>第三轮视觉对照</h1>
-<p>左侧设计稿，右侧合成数据实现。空、运行中和基准名单使用同页设计稿作布局参考；补全只对照候选弹窗。点击图片查看原尺寸。</p>"""
+</style><h1>第四轮视觉对照</h1>
+<p>左侧设计稿，右侧合成数据实现。空、运行中、基准名单及相对基准模式使用同页设计稿作布局参考；补全只对照候选弹窗。点击图片查看原尺寸。</p>"""
     for name in names:
         state = re.sub(r"_(1366|1920)$", "", name)
         reference = (
@@ -87,6 +88,10 @@ def capture(page, output):
         for chart in page.locator(".result-chart:visible").all():
             main = chart.locator(".main-tick text")
             draw = chart.locator(".draw-tick text")
+            texts = main.all_text_contents()
+            assert len(texts) == len(set(texts)), (name, "收益轴重复标签", texts)
+            if "compact" in chart.get_attribute("class").split():
+                assert not draw.count(), (name, "抽屉回撤轴应隐藏")
             if main.count() and draw.count():
                 bottoms = [
                     box["y"] + box["height"]
@@ -98,6 +103,14 @@ def capture(page, output):
                     "收益与回撤轴标签间距",
                     top - max(bottoms),
                 )
+        # 使用浏览器测得的实际字框，守住窄屏与抽屉打开后的标签避让。
+        for scatter in page.locator(".scatter-panel:visible svg").all():
+            assert scatter.evaluate("""svg => {
+              const labels = [...svg.querySelectorAll('.placed-name')].map(e => e.getBBox());
+              const points = [...svg.querySelectorAll('circle')].map(e => e.getBBox());
+              const overlaps = (a,b) => a.x < b.x+b.width && a.x+a.width > b.x && a.y < b.y+b.height && a.y+a.height > b.y;
+              return labels.every((a,i) => a.x >= 40 && a.x+a.width <= 428 && a.y >= 22 && a.y+a.height <= 207 && points.every(b => !overlaps(a,b)) && labels.slice(i+1).every(b => !overlaps(a,b)));
+            }"""), (name, "散点标签压点、越界或互相重叠")
         for label in page.locator(".checks:visible .check-label").all():
             assert label.evaluate(
                 "el => getComputedStyle(el).whiteSpace === 'normal' && getComputedStyle(el).textOverflow !== 'ellipsis' && el.scrollWidth <= el.clientWidth + 1"
@@ -110,6 +123,43 @@ def capture(page, output):
         page.get_by_role("navigation").get_by_role(
             "button", name=name, exact=True
         ).click()
+
+    def relative_chart(name, mode):
+        page.get_by_label("收益累计方式", exact=True).select_option(mode)
+        choices = page.get_by_label("超额收益曲线", exact=True)
+        expect(choices).to_be_visible()
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="long_short"]')
+        ).to_have_count(4)
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="long"]')
+        ).to_have_count(4)
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="benchmark"]')
+        ).to_have_count(0)
+        expect(page.locator(".benchmark-legend")).to_have_count(0)
+        choices.select_option("long")
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="long_short"]')
+        ).to_have_count(0)
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="long"]')
+        ).to_have_count(4)
+        expect(page.locator(".chart-panel svg")).to_contain_text("超额回撤 · 第 1 组")
+        choices.select_option("both")
+        expect(page.locator(".chart-panel .return-line")).to_have_count(8)
+        svg = page.locator(".chart-panel svg").bounding_box()
+        page.mouse.move(svg["x"] + svg["width"] * 0.45, svg["y"] + 45)
+        expect(page.locator(".hover-tip")).to_contain_text("超额")
+        page.mouse.move(20, 20)
+        shot(name)
+        page.get_by_label("收益累计方式", exact=True).select_option("sum")
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="benchmark"]')
+        ).to_have_count(1)
+        expect(
+            page.locator('.chart-panel .return-line[data-kind="long"]')
+        ).to_have_count(0)
 
     def open_group_menu():
         page.get_by_role("button", name="视图", exact=True).click()
@@ -288,11 +338,12 @@ def capture(page, output):
     )
     expect(page.locator(".parameters tbody tr")).to_have_count(4)
     expect(page.locator(".result-chart path").first).to_be_visible()
-    expect(page.locator(".benchmark-legend")).to_contain_text("中证")
+    expect(page.locator(".benchmark-legend")).to_contain_text("上证指数")
     expect(page.locator(".parameters th").filter(has_text="年化超额")).to_have_count(1)
     expect(page.locator(".parameters th").filter(has_text="信息比率")).to_have_count(1)
     expect(page.locator(".checks th")).to_have_count(4)
     shot("research_results")
+    relative_chart("research_relative", "relative-sum")
     original_tabs = page.request.get(page.base_url + "/api/tabs").json()
     page.reload(wait_until="domcontentloaded")
     expect(page.locator(".parameters tbody tr")).to_have_count(4)
@@ -394,6 +445,8 @@ def capture(page, output):
         nav("研究台")
         expect(page.locator(".parameters tbody tr")).to_have_count(4)
         shot(f"research_{width}")
+        if width == 1366:
+            relative_chart("research_relative_1366", "relative-compound")
     # 直接路由和前进后退。
     page.goto(page.base_url + "/#/library", wait_until="domcontentloaded")
     expect(page.locator(".library-page")).to_be_visible()
@@ -408,7 +461,7 @@ def capture(page, output):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default=".cache/review-r3")
+    parser.add_argument("--output", default=".cache/review-r4")
     parser.add_argument("--browser", help="可选 Chromium 可执行文件")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]

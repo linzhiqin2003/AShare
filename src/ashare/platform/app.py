@@ -341,7 +341,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
     def series(
         run: str,
         request: Request,
-        view: Literal["returns", "groups", "ic", "subs"] = "returns",
+        view: Literal["returns", "long", "groups", "ic", "subs"] = "returns",
     ):
         etag = '"' + hashlib.sha256(f"v1:{run}:{view}".encode()).hexdigest() + '"'
         headers = {

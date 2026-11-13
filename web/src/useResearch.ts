@@ -1,12 +1,12 @@
 import { computed, onUnmounted, reactive, shallowRef, watch } from 'vue'
 import { api, friendly, post, series } from './api'
-import { chartData, withBenchmark } from './chart'
-import type { ApiError, BenchmarkData, ChartData, Completion, Job, Line, Settings, View } from './types'
+import { chartData, relativeLines, withBenchmark } from './chart'
+import type { ApiError, BenchmarkData, ChartData, Completion, Job, Line, ReturnSelection, Settings, View } from './types'
 
 export interface ResearchTab {
   id: string; name: string; source: string; settings: Settings; count: number; error: ApiError | null;
   running: boolean; progress: number; job: Job | null; selected: string; visible: string[];
-  chart: ChartData; view: View; compound: boolean; autoName: boolean; drawdown: Line | null; benchmark: BenchmarkData | null
+  chart: ChartData; view: View; compound: boolean; relative: boolean; returnSelection: ReturnSelection; autoName: boolean; drawdown: Line | null; benchmark: BenchmarkData | null
 }
 const emptyChart = (): ChartData => ({ dates: [], lines: [] })
 export function useResearch() {
@@ -29,7 +29,7 @@ export function useResearch() {
   async function addTab(draft?: Partial<ResearchTab>) {
     try {
       const { id } = await post<{ id: string }>('/tabs', { id: draft?.id ?? crypto.randomUUID().replaceAll('-', '') })
-      const tab: ResearchTab = { id, name: draft?.name ?? 'low_vol', source: draft?.source ?? '# 已实现波动率取负：低波动做多\nvol = ts_std(returns, [20, 60])\nlow_vol = -vol', settings: draft?.settings ?? { ...defaults.value, group_neutralize: ['industry', 'cap+industry'] }, count: 4, error: null, running: false, progress: 0, job: null, selected: '', visible: [], chart: emptyChart(), view: 'returns', compound: false, autoName: draft?.autoName ?? (!draft?.name || /^alpha_\d+$/.test(draft.name)), benchmark: null, drawdown: null }
+      const tab: ResearchTab = { id, name: draft?.name ?? 'low_vol', source: draft?.source ?? '# 已实现波动率取负：低波动做多\nvol = ts_std(returns, [20, 60])\nlow_vol = -vol', settings: draft?.settings ?? { ...defaults.value, group_neutralize: ['industry', 'cap+industry'] }, count: 4, error: null, running: false, progress: 0, job: null, selected: '', visible: [], chart: emptyChart(), view: 'returns', compound: false, relative: false, returnSelection: 'both', autoName: draft?.autoName ?? (!draft?.name || /^alpha_\d+$/.test(draft.name)), benchmark: null, drawdown: null }
       tabs.push(tab); activeId.value = id
       await validate(tabs[tabs.length - 1])
       return tabs[tabs.length - 1]
@@ -63,14 +63,25 @@ export function useResearch() {
   }
   async function loadChart(tab: ResearchTab) {
     const version = (chartVersions.get(tab.id) ?? 0) + 1; chartVersions.set(tab.id, version)
-    const runs = tab.job?.runs.filter(r => r.status === 'complete' && (tab.view === 'returns' ? tab.visible.includes(r.id) : r.id === tab.selected)) ?? []
+    const view = tab.view, relative = tab.relative && view === 'returns', selection = tab.returnSelection
+    const runs = tab.job?.runs.filter(r => r.status === 'complete' && (view === 'returns' ? tab.visible.includes(r.id) : r.id === tab.selected)) ?? []
+    async function partsFor(id: string) {
+      if (!relative) return series(id, view)
+      const parts = await Promise.all([
+        ...(selection !== 'long' ? [series(id, 'returns')] : []),
+        ...(selection !== 'long_short' ? [series(id, 'long')] : []),
+      ])
+      return parts.flat()
+    }
     try {
-      const parts = await Promise.all(runs.map(r => series(r.id, tab.view)))
+      const parts = await Promise.all(runs.map(r => partsFor(r.id)))
       const selected = tab.job?.runs.find(r => r.id === tab.selected && r.status === 'complete')
-      const selectedParts = selected && tab.view === 'returns' ? await series(selected.id, 'returns') : null
+      const selectedParts = selected && view === 'returns' ? await partsFor(selected.id) : null
       if (chartVersions.get(tab.id) !== version) return
-      tab.drawdown = selected && selectedParts ? chartData([selected],[selectedParts],'returns').lines.find(l => l.id.endsWith('pnl.long_short:0')) ?? null : null
-      tab.chart = withBenchmark(chartData(runs, parts, tab.view), tab.view === 'returns' ? tab.benchmark : null)
+      const drawKind = relative && selection === 'long' ? 'long' : 'long_short'
+      tab.drawdown = selected && selectedParts ? chartData([selected],[selectedParts],'returns').lines.find(l => l.kind === drawKind) ?? null : null
+      const data = withBenchmark(chartData(runs, parts, view), view === 'returns' ? tab.benchmark : null)
+      tab.chart = relative ? relativeLines(data, selection) : data
     } catch (error) { tab.error = friendly(error) }
   }
   async function loadJob(tab: ResearchTab, id: string) {
@@ -127,12 +138,19 @@ export function useResearch() {
     if (!tab.job) return loadChart(tab)
     const version = (benchmarkVersions.get(tab.id) ?? 0) + 1; benchmarkVersions.set(tab.id, version)
     const job = tab.job.id
+    if (tab.benchmark && tab.benchmark.requested !== String(tab.settings.benchmark ?? '')) {
+      tab.benchmark = null
+      tab.chart = { ...tab.chart, lines: tab.chart.lines.filter(line => !line.benchmark) }
+    }
     try {
       const result = await api<BenchmarkData>(`/jobs/${job}/benchmark?${new URLSearchParams({ symbol: String(tab.settings.benchmark ?? '') })}`)
       if (benchmarkVersions.get(tab.id) !== version || tab.job.id !== job) return
       tab.benchmark = result
       await loadChart(tab)
-    } catch (error) { tab.error = friendly(error); await loadChart(tab) }
+    } catch (error) {
+      if (benchmarkVersions.get(tab.id) !== version || tab.job.id !== job) return
+      tab.benchmark = null; tab.error = friendly(error); await loadChart(tab)
+    }
   }
   async function init() {
     try {

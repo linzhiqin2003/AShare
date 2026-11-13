@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { Database, LoaderCircle, Plus, X, Play, Square, SlidersHorizontal, Clock, Check } from 'lucide-vue-next'
 import { useResearch } from './useResearch'
-import type { Completion, Settings, View } from './types'
+import type { Completion, ReturnSelection, Settings, View } from './types'
 import ExpressionEditor from './components/ExpressionEditor.vue'
 import TabSettings from './components/TabSettings.vue'
 import ResearchResults from './components/ResearchResults.vue'
@@ -18,6 +18,8 @@ function settings(value: Settings) { if (current.value) { const benchmarkChanged
 function select(id: string) { if (current.value) { current.value.selected = id; void research.loadChart(current.value) } }
 function visible(id: string) { if (current.value) { current.value.visible = current.value.visible.includes(id) ? current.value.visible.filter(v => v !== id) : [...current.value.visible, id]; void research.loadChart(current.value) } }
 function view(value: View) { if (current.value) { current.value.view = value; void research.loadChart(current.value) } }
+function mode(value: string) { if (current.value) { current.value.compound = value.endsWith('compound'); current.value.relative = value.startsWith('relative-'); void research.loadChart(current.value) } }
+function returns(value: ReturnSelection) { if (current.value) { current.value.returnSelection = value; void research.loadChart(current.value) } }
 watch(activeId, () => { settingsOpen.value = false; signature.value = null })
 function navigate(value: string) { location.hash = '/' + value }
 function route() { page.value = location.hash === '#/library' ? 'library' : 'research' }
@@ -37,7 +39,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(toastTimer); window.rem
           <template v-if="current"><ExpressionEditor :key="current.id" :model-value="current.source" :completions="completions" :error="current.error" @update:model-value="source" @run="research.run(current)" @signature="signature = $event" /><div v-if="current.error" class="editor-error" role="alert">{{ current.error.message }}</div><div class="signature-line"><template v-if="signature"><b class="mono">{{ signature.signature }}</b><span>{{ signature.detail }}</span></template></div><div class="runbar"><button class="button settings-toggle" :class="{ on: settingsOpen }" @click="settingsOpen = !settingsOpen"><SlidersHorizontal :size="14" />设置</button><button v-if="current.running" class="button primary push" @click="research.cancel(current)"><Square :size="12" />取消</button><button v-else class="button primary push" :disabled="!current.count" @click="research.run(current)"><Play :size="13" />运行 {{ current.count || 0 }} 组<span class="run-key">⌘↵</span></button></div><TabSettings v-if="settingsOpen" :model-value="current.settings" :name="current.name" :defaults="defaults" @update:model-value="settings" @close="settingsOpen = false" /></template>
           <div v-else class="empty-editor"><button class="button" @click="research.addTab()"><Plus :size="14" />新建研究</button></div>
         </section></template>
-        <template #second><ResearchResults v-if="current" :key="current.id" :tab="current" @select="select" @visible="visible" @view="view" @compound="current.compound = $event" @chart="research.loadChart(current)" />
+        <template #second><ResearchResults v-if="current" :key="current.id" :tab="current" @select="select" @visible="visible" @view="view" @mode="mode" @returns="returns" @chart="research.loadChart(current)" />
         <section v-else class="panel"></section></template></SplitPane>
       </main>
       <FactorLibrary v-if="page === 'library'" :completions="completions" />

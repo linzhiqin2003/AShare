@@ -1,5 +1,6 @@
 """逐位对拍、窗口隔离和检验口径。"""
 
+import base64
 import math
 from statistics import NormalDist
 
@@ -7,7 +8,7 @@ import numpy as np
 import pytest
 
 from ashare.factor import Evaluator, groupbt
-from ashare.platform.analysis import checks, run_variant
+from ashare.platform.analysis import checks, plot_payload, run_variant
 from ashare.platform.config import DEFAULTS
 from ashare.platform.language import parse
 from bench.platform.synthetic import panel
@@ -40,6 +41,28 @@ def test_bitwise_equal_to_direct_groupbt(neutralize, window):
                 arrays[f"{part}.turnover.{name}"].view(np.uint64),
                 values[mask].view(np.uint64),
             )
+
+
+def test_long_view_only_packs_first_group_without_mutating_results():
+    arrays = {
+        f"{part}.{key}": value
+        for part in ("is", "validation")
+        for key, value in {
+            "dates": np.array(["20240102", "20240103", "20240104"]),
+            "groups": np.array([[0.03, -0.02, np.nan], [-0.01, 0.04, 0.01]]),
+        }.items()
+    }
+    before = {key: value.copy() for key, value in arrays.items()}
+    for part in plot_payload(arrays, "long"):
+        assert set(part["series"]) == {"pnl.long"}
+        packed = part["series"]["pnl.long"]
+        assert packed["shape"] == [3]
+        result = np.frombuffer(base64.b64decode(packed["data"]), dtype="<f4")
+        np.testing.assert_array_equal(
+            result, arrays[f"{part['part']}.groups"][0].astype("<f4")
+        )
+    for key, value in arrays.items():
+        np.testing.assert_array_equal(value, before[key])
 
 
 def test_test_window_never_reaches_evaluation_or_backtest(monkeypatch):

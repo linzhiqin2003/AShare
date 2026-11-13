@@ -207,7 +207,7 @@ def main():
         measure("GET /api/jobs/{id} (8)", f"/api/jobs/{job}")
         measure("GET /api/jobs/{id}/benchmark (8 × 2400)", f"/api/jobs/{job}/benchmark")
         measure("GET /api/jobs/{id}/events (replay)", f"/api/jobs/{job}/events")
-        for view in ("returns", "groups", "ic", "subs"):
+        for view in ("returns", "long", "groups", "ic", "subs"):
             measure(
                 f"GET /api/runs/{{id}}/series?view={view}",
                 f"/api/runs/{runs[0]}/series?view={view}",

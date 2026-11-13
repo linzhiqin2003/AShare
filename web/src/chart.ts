@@ -1,17 +1,25 @@
-import type { BenchmarkData, ChartData, Line, Packed, PlotPart, Run, View } from './types'
+import type { BenchmarkData, ChartData, Line, Packed, PlotPart, ReturnSelection, Run, View } from './types'
 export const colors = ['#14171A', '#1F4FBF', '#A14A14', '#7C43B0', '#1E7B57', '#A86A12', '#487E98', '#A04668']
 export function unpack(p: Packed): number[] {
   const bytes = Uint8Array.from(atob(p.data), c => c.charCodeAt(0))
   const data = new DataView(bytes.buffer)
   return Array.from({ length: bytes.length / 4 }, (_, i) => data.getFloat32(i * 4, true))
 }
-export function curves(values: number[], compound: boolean, start = 0, end = values.length - 1) {
+export function curves(values: number[], compound: boolean, start = 0, end = values.length - 1, benchmark?: number[]) {
   let value = compound ? 1 : 0
+  let wealth = 1, baseline = 1
   let peak = value
   const cumulative: number[] = [], drawdown: number[] = []
-  for (const raw of values.slice(start, end + 1)) {
+  for (let i = start; i <= Math.min(end, values.length - 1); i++) {
+    const raw = values[i]
     const ret = Number.isFinite(raw) ? raw : 0
-    value = compound ? value * (1 + ret) : value + ret
+    // 缺失基准日按零收益处理；复利比较净值之比，不能复利逐日收益差。
+    const base = benchmark && Number.isFinite(benchmark[i]) ? benchmark[i] : 0
+    if (compound) {
+      wealth *= 1 + ret; baseline *= 1 + base
+      value = baseline > 0 ? wealth / baseline : NaN
+    } else value += ret - base
+    if (!Number.isFinite(value)) { cumulative.push(NaN); drawdown.push(NaN); continue }
     peak = Math.max(peak, value)
     cumulative.push(compound ? value - 1 : value)
     drawdown.push(compound ? (peak ? value / peak - 1 : 0) : value - peak)
@@ -29,17 +37,21 @@ export function chartData(runs: Run[], parts: PlotPart[][], view: View): ChartDa
         const rows = packed.shape.length === 2 ? packed.shape[0] : 1
         const data = unpack(packed)
         for (let row = 0; row < rows; row++) {
-          const label = view === 'returns' ? variantLabel(run.label) + (name === 'pnl.weights' ? ' · 权重' : '') : view === 'groups' ? `第 ${row + 1} 组` : view === 'ic' ? 'Rank IC' : name.replace('sub.', '')
+          const kind = name === 'pnl.long_short' ? 'long_short' : name === 'pnl.long' ? 'long' : name === 'pnl.weights' ? 'weights' : undefined
+          const label = view === 'returns' ? variantLabel(run.label) + (kind === 'weights' ? ' · 权重' : kind === 'long' ? ' · 第 1 组' : '') : view === 'groups' ? `第 ${row + 1} 组` : view === 'ic' ? 'Rank IC' : name.replace('sub.', '')
           const key = `${name}:${row}`
           if (!collection.has(key)) collection.set(key, Array(dates.length).fill(NaN))
           const values = collection.get(key)!
           part.dates.forEach((date, i) => { values[positions.get(date)!] = data[row * part.dates.length + i] })
-          if (!lines.some(l => l.id === `${run.id}:${key}`)) lines.push({ id: `${run.id}:${key}`, name: label, color: view === 'groups' ? `hsl(220, 65%, ${32 + row * 5}%)` : colors[(view === 'returns' ? run.ordinal : lines.length) % colors.length], values })
+          if (!lines.some(l => l.id === `${run.id}:${key}`)) lines.push({ id: `${run.id}:${key}`, name: label, kind, color: view === 'groups' ? `hsl(220, 65%, ${32 + row * 5}%)` : colors[(view === 'returns' ? run.ordinal : lines.length) % colors.length], values })
         }
       }
     }
   })
   return { dates, lines }
+}
+export function relativeLines(data: ChartData, selection: ReturnSelection): ChartData {
+  return { ...data, lines: data.lines.filter(l => l.benchmark || (l.kind !== 'weights' && (selection === 'both' || l.kind === selection))).map(l => l.kind === 'long_short' ? { ...l, name: `${l.name} · 多空` } : l) }
 }
 export function fmt(value: number | null | undefined, percent = false, digits = 2) {
   return value == null || !Number.isFinite(value) ? '—' : `${(percent ? value * 100 : value).toFixed(digits)}${percent ? '%' : ''}`
