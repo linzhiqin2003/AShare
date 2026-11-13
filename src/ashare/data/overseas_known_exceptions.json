@@ -15,16 +15,20 @@
   "US-ZERO-PRICE": "源对没有成交的日子给收盘价 0、开高低价为空；面板把非正价格记为缺失",
   "US-CENT-ROUNDED": "源 us_daily 收盘价只到分，因子表 close_price 保留 4 位小数",
   "US-CLOSE-OTHER": "日线收盘价与因子表 close_price 相差超过半分，原因未查明（可能是两处收盘价口径不同）",
-  "US-PRICE-JUMP": "三大交易所上市期内（两天都有因子、有成交）相邻可交易日价格跳出 [1/3, 3]，又没有执行了的公司行为：统计上落在整数比附近的比例与随机基线相同、跳变日成交量多为放大，随机抽查绝大多数是小盘股和生物科技股的真实暴涨暴跌；不能排除夹杂少量源因子漏记的拆并股（量级不超过几十处）；没有逐个核对，按规则登记，个数见校验报告",
-  "US-HOLIDAY-FACTOR": "因子表在美股休市日有行（2014-05-26、2014-09-01）；面板只取开市日，这些行丢弃"
+  "US-HOLIDAY-FACTOR": "因子表在美股休市日有行（2014-05-26、2014-09-01）；面板只取开市日，这些行丢弃",
+  "US-JUMP-CRASH": "盘中崩跌：相邻可交易日价格跌到三分之一以下、成交股数放大 3 倍以上，成交额因价格大跌没有放大到前 10 日中位数的 5 倍",
+  "US-JUMP-SPLITLIKE": "疑似源因子漏记的拆股：价格开盘即跌到位、之后保持，成交股数约按跌幅反向放大，成交额没有放大；没有事件明细，未核实",
+  "US-JUMP-TICK": "低价股（上一收盘低于 1 美元）几分钱价位上的跳格或稀疏成交的错价",
+  "US-JUMP-OTHER": "没有成交额印证的跳变（多为下跌、成交量温和放大），原因未查明"
  },
  "cause_unknown": [
-  "US-PRICE-JUMP",
   "HK-PRE-UNKNOWN",
   "HK-PRE-PLAIN",
   "HK-LIST-DATE",
   "US-DAILY-CONFLICT",
-  "US-CLOSE-OTHER"
+  "US-CLOSE-OTHER",
+  "US-JUMP-SPLITLIKE",
+  "US-JUMP-OTHER"
  ],
  "entries": [
   {
@@ -286,14 +290,938 @@
   {
    "market": "us",
    "check": "price_jumps",
+   "ts_code": "ADAP",
+   "trade_date": "20251020",
    "kind": "相邻",
-   "reason": "US-PRICE-JUMP"
+   "reason": "US-JUMP-CRASH"
   },
   {
    "market": "us",
    "check": "price_jumps",
+   "ts_code": "AHMA",
+   "trade_date": "20260204",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "AMPGZ",
+   "trade_date": "20260814",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "BTM",
+   "trade_date": "20260518",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "BTTX",
+   "trade_date": "20240314",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "BYAH",
+   "trade_date": "20250708",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CAPT",
+   "trade_date": "20231115",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CCTG",
+   "trade_date": "20240201",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CDLR",
+   "trade_date": "20261105",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CGTL",
+   "trade_date": "20250425",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CHSN",
+   "trade_date": "20231215",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CHSN",
+   "trade_date": "20250123",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CLEU",
+   "trade_date": "20240708",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CLEU",
+   "trade_date": "20250130",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CLIK",
+   "trade_date": "20250416",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "COPR",
+   "trade_date": "20240208",
    "kind": "缺口",
-   "reason": "US-PRICE-JUMP"
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "COPR#2",
+   "trade_date": "20250116",
+   "kind": "缺口",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "COPR#2",
+   "trade_date": "20250306",
+   "kind": "相邻",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CRE",
+   "trade_date": "20250813",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "CUPR",
+   "trade_date": "20250815",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DFNS",
+   "trade_date": "20260731",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DGNX",
+   "trade_date": "20250129",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DLXY",
+   "trade_date": "20250930",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DOGZ",
+   "trade_date": "20260126",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DPU",
+   "trade_date": "20250707",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DTCK",
+   "trade_date": "20251107",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "EDHL",
+   "trade_date": "20250714",
+   "kind": "相邻",
+   "reason": "US-JUMP-SPLITLIKE"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "EJH",
+   "trade_date": "20240425",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ENGS",
+   "trade_date": "20261111",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "EPSM",
+   "trade_date": "20250909",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "EPSM",
+   "trade_date": "20250910",
+   "kind": "相邻",
+   "reason": "US-JUMP-SPLITLIKE"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "EPWK",
+   "trade_date": "20250505",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "FCHL",
+   "trade_date": "20250923",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "FCHL",
+   "trade_date": "20260417",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "FLYE",
+   "trade_date": "20250815",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "GDHG",
+   "trade_date": "20250401",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "GSIW",
+   "trade_date": "20250721",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "HAO",
+   "trade_date": "20240919",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "HIT",
+   "trade_date": "20250312",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "HODO",
+   "trade_date": "20250401",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "HOLO",
+   "trade_date": "20240220",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "HUBC",
+   "trade_date": "20260604",
+   "kind": "相邻",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ILLR",
+   "trade_date": "20251231",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "INHD",
+   "trade_date": "20231215",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "IRBT",
+   "trade_date": "20251215",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ITOC",
+   "trade_date": "20250729",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "IZM",
+   "trade_date": "20240417",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "JDZG",
+   "trade_date": "20240604",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "JDZG",
+   "trade_date": "20260731",
+   "kind": "缺口",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "JDZG",
+   "trade_date": "20261028",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "JTAIZ",
+   "trade_date": "20231207",
+   "kind": "相邻",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "JYD",
+   "trade_date": "20250402",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "KAZR",
+   "trade_date": "20250707",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "KXIN",
+   "trade_date": "20260130",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "KXIN",
+   "trade_date": "20260827",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "LBDKV",
+   "trade_date": "20250714",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "LXEH",
+   "trade_date": "20251006",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MGN",
+   "trade_date": "20260326",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MNDR",
+   "trade_date": "20240503",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MPLT",
+   "trade_date": "20260727",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MSGY",
+   "trade_date": "20251002",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MSGY",
+   "trade_date": "20260128",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MSPRZ",
+   "trade_date": "20240111",
+   "kind": "缺口",
+   "reason": "US-JUMP-SPLITLIKE"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MSS",
+   "trade_date": "20231215",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "MWYN",
+   "trade_date": "20250606",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NCI",
+   "trade_date": "20240424",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NCI",
+   "trade_date": "20260331",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NCI",
+   "trade_date": "20260928",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NMAX",
+   "trade_date": "20250402",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NTCL",
+   "trade_date": "20260611",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ONEG",
+   "trade_date": "20260507",
+   "kind": "相邻",
+   "reason": "US-JUMP-SPLITLIKE"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ORKT",
+   "trade_date": "20241024",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "OST",
+   "trade_date": "20250626",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PAPL",
+   "trade_date": "20250515",
+   "kind": "缺口",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PAVMZ",
+   "trade_date": "20241004",
+   "kind": "相邻",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PAVMZ#2",
+   "trade_date": "20241023",
+   "kind": "缺口",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PCLA",
+   "trade_date": "20250715",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PLRZ",
+   "trade_date": "20250513",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "POAS",
+   "trade_date": "20260213",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "POAS",
+   "trade_date": "20260529",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "POM",
+   "trade_date": "20251210",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PSIG",
+   "trade_date": "20260626",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PTLE",
+   "trade_date": "20250115",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "PTNM",
+   "trade_date": "20250718",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "QMMM",
+   "trade_date": "20241118",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "RAYA",
+   "trade_date": "20250721",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ROMA",
+   "trade_date": "20240117",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "RR",
+   "trade_date": "20240806",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SBET",
+   "trade_date": "20250613",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SCPX#2",
+   "trade_date": "20240807",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SDM",
+   "trade_date": "20250926",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SFHG",
+   "trade_date": "20241211",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SHAZ#2",
+   "trade_date": "20250325",
+   "kind": "缺口",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SMJF",
+   "trade_date": "20260827",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SMX",
+   "trade_date": "20251231",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SNBR",
+   "trade_date": "20260604",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SNYR",
+   "trade_date": "20240802",
+   "kind": "缺口",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SSII",
+   "trade_date": "20240827",
+   "kind": "缺口",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "STFS",
+   "trade_date": "20250820",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TDIC",
+   "trade_date": "20251010",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TENX",
+   "trade_date": "20260810",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TMDE",
+   "trade_date": "20250424",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TWG",
+   "trade_date": "20241025",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "UFG",
+   "trade_date": "20251002",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "UOKA",
+   "trade_date": "20260319",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "UPC",
+   "trade_date": "20240913",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "WBUY",
+   "trade_date": "20250129",
+   "kind": "相邻",
+   "reason": "US-JUMP-TICK"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "WCT",
+   "trade_date": "20250311",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "WCT",
+   "trade_date": "20261001",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "WNW",
+   "trade_date": "20240130",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "WNW",
+   "trade_date": "20250114",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "XHLD",
+   "trade_date": "20250214",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "XHLD",
+   "trade_date": "20260928",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ZTG",
+   "trade_date": "20260817",
+   "kind": "相邻",
+   "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "RTB",
+   "trade_date": "20130611",
+   "kind": "缺口",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "RTB",
+   "trade_date": "20180618",
+   "kind": "相邻",
+   "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TGTX",
+   "trade_date": "20111207",
+   "kind": "缺口",
+   "reason": "US-JUMP-TICK"
   }
  ]
 }

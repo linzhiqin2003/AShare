@@ -92,6 +92,14 @@ HK_ROUNDED = ("20200702", "20231229")
 GRACE = 20
 # 美股：连续这么多个「有成交、没有三大交易所因子」的成交日后退市（见 HKUS_DATA.md 第三节）。
 US_ORPHAN = 5
+# 美股价格跳变：跳变日成交额（缺失时用收盘价 × 成交量）达到前 10 个可交易日中位数的这么多倍，算成交额
+# 印证的真实行情，不需要登记；其余逐条登记（代码、日期）。
+JUMP_AMOUNT_CONFIRM = 5.0
+JUMP_BASE_DAYS = 10
+# 疑似漏记的合股（构建侧应已拆段）：上跳超过 3 倍、成交量不超过 1.5 倍、成交额不超过 5 倍。
+QUIET_JUMP, QUIET_VOLUME, QUIET_AMOUNT = 3.0, 1.5, 5.0
+# 必须逐条登记、不许按类别整体豁免的检查项。
+EXCEPTION_REQUIRED = {"price_jumps": {"ts_code", "trade_date"}}
 RATIO_NOISE = 1e-5
 # 港交所价位表（2025-08-04 前的旧表，较粗的一档；只用来放宽前收取整的容差）。
 HK_TICKS = (
@@ -132,6 +140,9 @@ def load_exceptions(market, path=EXCEPTIONS_PATH):
         keys = set(e) - {"market", "check", "reason"}
         if not keys <= allowed:
             raise ValueError(f"已知例外 {e} 含不允许的键 {sorted(keys - allowed)}")
+        required = EXCEPTION_REQUIRED.get(e["check"], set())
+        if not required <= keys:
+            raise ValueError(f"已知例外 {e} 必须逐条写明 {sorted(required - keys)}")
         if e.get("reason") not in value.get("reasons", {}):
             raise ValueError(f"已知例外 {e} 的原因编号不存在")
     return dict(
@@ -685,14 +696,14 @@ def verify_overseas(
 
     # 13. 面板（不允许例外）：抽查与原始库逐值一致；公司行为、上市、港股通字段按定义独立核对。
     try:
-        panel_problems, panel_checked, jumps = _audit_panel(
+        panel_problems, panel_checked, (jumps, confirmed) = _audit_panel(
             store, universe, daily, factor, names, securities, days, scope
         )
     except Exception as error:  # 坏数据不许让校验崩溃：记为失败并出报告。
         panel_problems = [
             dict(problem=f"面板核对出错：{type(error).__name__}: {error}")
         ]
-        panel_checked, jumps = 0, []
+        panel_checked, jumps, confirmed = 0, [], []
     checks.add("panel", panel_checked, panel_problems, exceptions=False)
     if market == "us":
         # 可登记例外：真实的暴涨暴跌（只登记代码与日期，不写数值）。
@@ -700,7 +711,15 @@ def verify_overseas(
             "price_jumps",
             panel_checked,
             jumps,
-            note="相邻可交易日价格跳出 [1/3, 3] 且没有执行了的公司行为",
+            note="相邻可交易日价格跳出 [1/3, 3]、没有执行了的公司行为、跳变日成交额不到前 10 个可交易日"
+            "中位数的 5 倍：逐条登记",
+        )
+        checks.add(
+            "price_jumps_amount_confirmed",
+            panel_checked,
+            confirmed,
+            info=True,
+            note="价格跳出 [1/3, 3]、跳变日成交额达到前 10 个可交易日中位数 5 倍以上：成交额印证的真实行情",
         )
 
     stale = [
@@ -764,7 +783,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
     不调用构建代码：持有者价值不变式、因子账目、字段之间的约束、上市退市规则、名单与持股。"""
     current = store.root / f"panel_{universe}" / "current.json"
     if not current.exists():
-        return [dict(problem="面板未构建")], 0, []
+        return [dict(problem="面板未构建")], 0, ([], [])
     path = current.parent / json.loads(current.read_text())["version"]
     meta = json.loads((path / "metadata.json").read_text())
     market = meta["market"]
@@ -785,7 +804,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                 dict(field=name, problem=f"形状或类型不符 {array.shape} {array.dtype}")
             )
     if problems:
-        return problems, len(meta["fields"]), []
+        return problems, len(meta["fields"]), ([], [])
 
     def load(name):
         return np.asarray(np.load(path / f"{name}.npy", mmap_mode="r"))
@@ -805,7 +824,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             problems.append(dict(field=field, problem=f"{problem}（另有 {extra} 格）"))
 
     T, N = len(dates), len(symbols)
-    jumps = []
+    jumps, confirmed = [], []
     source_daily, source_factor = daily, factor
     if universe == "sample":
         source_daily = _read(store, _complete(store, names["daily_hist"]).values())
@@ -1372,22 +1391,53 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             if len(trades) and trades[-1] + GRACE + 1 < T and not gone:
                 want_d[trades[-1] + GRACE + 1, j] = True
         # 相邻两个可交易日之间价格跳出 [1/3, 3]、又没有执行了的事件解释的：引擎会把它当成收益。
-        # 单列一项检查（可按代码和日期登记例外），kind 分「相邻」（中间没有交易日）与「缺口」。
-        for j in range(N):
-            ok = np.flatnonzero(tradable[:, j])
-            for a, b in zip(ok[:-1], ok[1:], strict=True):
-                if executed[a + 1 : b + 1, j].any():
+        # 跳变日成交额达到前 10 个可交易日中位数的 5 倍以上的，是成交额印证的真实行情（另列计数）；
+        # 其余单列一项检查，必须按代码和日期逐条登记；kind 分「相邻」（中间没有交易日）与「缺口」。
+        # 同一代码拆成几列时，基准按整个代码的成交序列取（与构建一致），跳变只看同一列内部。
+        # 另外：上跳超过 3 倍而成交量、成交额都没有放大的（疑似漏记的合股）构建应已拆列，还在列内就报错。
+        amount = load("amount")
+        dollar = np.where(np.isfinite(amount) & (amount > 0), amount, close * volume)
+        for js in columns.values():
+            seq = []
+            for k, j in enumerate(js):
+                stop = starts[js[k + 1]] if k + 1 < len(js) else T
+                seq += [
+                    (int(t), j)
+                    for t in np.flatnonzero(tradable[:, j])
+                    if starts[j] <= t < stop
+                ]
+            for k in range(1, len(seq)):
+                (a, ja), (b, j) = seq[k - 1], seq[k]
+                if ja != j or executed[a + 1 : b + 1, j].any():
                     continue
                 with np.errstate(invalid="ignore", divide="ignore"):
                     h = close[b, j] / close[a, j]
-                if not (1 / 3 <= h <= 3):
-                    jumps.append(
+                if 1 / 3 <= h <= 3:
+                    continue
+                prev = [(t, c) for t, c in seq[max(0, k - JUMP_BASE_DAYS) : k]]
+                base_amount = float(np.median([dollar[t, c] for t, c in prev]))
+                base_volume = float(np.median([volume[t, c] for t, c in prev]))
+                record = dict(
+                    ts_code=symbols[j],
+                    trade_date=dates[b],
+                    kind="相邻" if b == a + 1 else "缺口",
+                )
+                if (
+                    h > QUIET_JUMP
+                    and volume[b, j] <= QUIET_VOLUME * base_volume
+                    and dollar[b, j] <= QUIET_AMOUNT * base_amount
+                ):
+                    problems.append(
                         dict(
-                            ts_code=symbols[j],
-                            trade_date=dates[b],
-                            kind="相邻" if b == a + 1 else "缺口",
+                            record,
+                            field="split",
+                            problem="成交量、成交额都没有放大的上跳（疑似漏记的合股）没有拆列",
                         )
                     )
+                if dollar[b, j] >= JUMP_AMOUNT_CONFIRM * base_amount:
+                    confirmed.append(record)
+                else:
+                    jumps.append(record)
         recovery = load("delist_recovery")
         flag(
             "delist_recovery",
@@ -1451,7 +1501,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                 "与「四舍五入期、有行情、收盘价 < 0.5」不符",
                 load("price_rounded") != (period & quote & (close < 0.5)),
             )
-    return problems, checked, jumps
+    return problems, checked, (jumps, confirmed)
 
 
 def _markdown(report):

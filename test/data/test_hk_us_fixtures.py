@@ -47,6 +47,17 @@
 - SPX：第 10 天因子 ×0.85（非整数下调，小窗口）而价格不动：不执行（5）。
 - STK：第 14 天 6 拆 5（因子比 1.2，小窗口里的整数比）：照常执行。
 - SMC：第 16 天因子比 1.15、价格同步调整：小窗口里的非整数比被价格印证，执行（4）。
+- RSQ：低价股，第 14 天价格 ×20、成交股数缩到 1/20、成交额不变，因子不变（源漏记了 20 合 1）：成交量、
+  成交额都没有放大的上跳，从第 14 天起拆成 RSQ#2。
+- PMP：第 14 天价格 ×5、成交量 ×100（真实拉升）：成交额印证，不拆列、校验自动归为真实行情。
+- DRP：第 14 天价格 ÷3.5、成交量照常（成交额随价格缩小）：没有成交额印证的下跳，校验要逐条登记；
+  在 [1/4, 1/3) 之间，区间放宽到 [1/4, 4] 就看不到。
+- VUP：第 14 天价格 ×10、成交股数 ×3、成交额不变：成交量放大了，不算疑似合股，不拆列；成交额没有放大，
+  校验要逐条登记。
+- AUP：第 14 天价格 ×10、成交股数不超过前 10 日中位数（×0.6）、成交额约 ×9：成交额放大了，不拆列，校验自动归为
+  真实行情。
+- STL：因子到第 10 天为止，之后日线只有成交量为 0 的陈旧行：陈旧行不算「有成交却没有因子」，不触发
+  无因子退市。
 - PRF（类别 PF，优先股）、WRNTW（无类别、第 5 位 W 的权证）、OTCX（只有场外因子）：不进面板。
 """
 
@@ -121,6 +132,12 @@ US_EVENTS = {
     "SPX": (35.0, {}),
     "STK": (20.0, {14: 1.2}),
     "SMC": (25.0, {16: 1.15}),
+    "RSQ": (0.05, {}),
+    "PMP": (2.0, {}),
+    "DRP": (8.0, {}),
+    "VUP": (4.0, {}),
+    "AUP": (4.0, {}),
+    "STL": (6.0, {}),
     "PRF": (25.0, {}),
     "WRNTW": (0.5, {}),
     "OTCX": (3.0, {}),
@@ -404,6 +421,18 @@ def us_tables():
                 scale = 0.01
             if code == "CZO" and t >= 8:
                 scale = 80.0
+            # 成交股数的倍数（成交额 = 成交股数 × 显示的收盘价，只用于下面几只）。
+            shares = 1.0
+            if code == "RSQ" and t >= 14:
+                scale, shares = 20.0, 1 / 20
+            if code == "PMP" and t >= 14:
+                scale, shares = 5.0, (100.0 if t == 14 else 1.0)
+            if code == "DRP" and t >= 14:
+                scale = 1 / 3.5
+            if code == "VUP" and t >= 14:
+                scale, shares = 10.0, (3.0 if t == 14 else 1.0)
+            if code == "AUP" and t >= 14:
+                scale, shares = 10.0, (0.6 if t == 14 else 1.0)
             halted = code == "HLT" and 4 <= t <= 26
             if not gap and not halted and not (code == "MRG" and t == 11):
                 row = dict(
@@ -416,8 +445,16 @@ def us_tables():
                     pre_close=round(pre * scale, 4),
                     change=None,
                     pct_change=None,
-                    vol=0.0 if (code == "MRG" and t == 12) else 1e5 * (t + 1),
-                    amount=1e5 * (t + 1) * close,
+                    vol=0.0
+                    if (code == "MRG" and t == 12) or (code == "STL" and t > 10)
+                    else 1e5 * (t + 1) * shares,
+                    amount=(
+                        1e5 * (t + 1) * shares * round(close * scale, 4)
+                        if code in ("RSQ", "PMP", "DRP", "AUP")
+                        else 0.0
+                        if code == "STL" and t > 10
+                        else 1e5 * (t + 1) * close
+                    ),
                     vwap=close,
                     turnover_ratio=None,
                     total_mv=close * 1e9,
@@ -429,7 +466,7 @@ def us_tables():
                     rows.append({**row, "close": row["close"] * 2})
                 if code == "FFF" and t == 9:
                     rows.append(dict(row))
-            if gap or (code == "HOL" and 10 <= t <= 12):
+            if gap or (code == "HOL" and 10 <= t <= 12) or (code == "STL" and t > 10):
                 continue
             for exchange, fudge in _us_series(code, t):
                 factor.append(

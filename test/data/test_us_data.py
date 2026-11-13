@@ -24,12 +24,26 @@ US_EXCEPTIONS = dict(
     reasons={
         "U1": "代码复用或源重复行",
         "U2": "同一代码几个交易所的因子序列口径不同",
-        "U3": "停牌后复牌价格大幅变化（缺口不够长，没有拆段）",
+        "U3": "没有成交额印证的价格跳变",
     },
     cause_unknown=["U1"],
     entries=[
-        dict(market="us", check="price_jumps", ts_code="GAP", kind="缺口", reason="U3"),
-        dict(market="us", check="price_jumps", ts_code="SHZ", kind="缺口", reason="U3"),
+        dict(
+            market="us",
+            check="price_jumps",
+            ts_code="VUP",
+            trade_date=US_DAYS[14],
+            kind="相邻",
+            reason="U3",
+        ),
+        dict(
+            market="us",
+            check="price_jumps",
+            ts_code="DRP",
+            trade_date=US_DAYS[14],
+            kind="相邻",
+            reason="U3",
+        ),
         dict(
             market="us",
             check="unique_keys",
@@ -137,7 +151,19 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "action_source", "CZO#2")[8] == 6
     assert col(p, "has_quote", "CZO").tolist() == [i < 8 for i in range(n)]
     assert col(p, "has_quote", "CZO#2").tolist() == [i >= 8 for i in range(n)]
-    assert meta["diagnostics"]["segments_split"] == 1
+    # RSQ：第 14 天价格 ×20、成交量和成交额都没放大（疑似漏记的合股）→ 拆成 RSQ#2，旧列在那天退市，
+    # 清算价取 min(上一成交日收盘, 当天收盘) = 上一成交日收盘（回收率 1，涨幅不给）。
+    assert meta["diagnostics"]["segments_split"] == 2
+    assert meta["diagnostics"]["quiet_jump_cuts"] == [["RSQ", US_DAYS[14]]]
+    assert col(p, "has_quote", "RSQ#2").tolist() == [i >= 14 for i in range(n)]
+    assert col(p, "delist", "RSQ").tolist() == [i == 14 for i in range(n)]
+    assert col(p, "delist_recovery", "RSQ")[14] == 1.0
+    # PMP 的拉升成交量 ×100（真实行情）、DRP 的下跳、VUP（成交量放大）、AUP（成交额放大）：都不拆列。
+    assert {"PMP#2", "DRP#2", "VUP#2", "AUP#2"}.isdisjoint(p.symbols)
+    # STL：因子停了以后只有成交量为 0 的陈旧行，不算无因子成交日，不触发无因子退市。
+    assert col(p, "has_quote", "STL").all()
+    assert col(p, "tradable", "STL").tolist() == [i <= 10 for i in range(n)]
+    assert col(p, "is_listed", "STL").all() and not col(p, "delist", "STL").any()
     # 新旧两列不同时上市：旧列从新列开始那天起为假，并在那天退市；价格是向上跳，清算不打折。
     assert col(p, "is_listed", "CZO").tolist() == [i < 8 for i in range(n)]
     assert col(p, "delist", "CZO").tolist() == [i == 8 for i in range(n)]
@@ -210,7 +236,8 @@ def test_us_long_gap_split_into_segments(tmp_path, monkeypatch):
     us = ad.open(tmp_path / "root", market="us")
     p = us.panel(["has_quote", "is_listed", "delist", "close", "delist_recovery"])
     n = len(US_DAYS)
-    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 3
+    # GAP、SHZ 两处长缺口，加上 CZO 与 RSQ 原有的两处。
+    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 4
     assert col(p, "has_quote", "GAP").tolist() == [i <= 5 for i in range(n)]
     assert col(p, "has_quote", "GAP#2").tolist() == [i >= 21 for i in range(n)]
     assert col(p, "is_listed", "GAP").tolist() == [i <= 20 for i in range(n)]
@@ -242,17 +269,24 @@ def test_us_verify(tmp_path):
     }
     assert report["checks"]["unique_keys"]["verdict"] == "explained"
     assert report["known_exceptions"]["cause_unknown"] == 2
-    # 价格跳变：GAP（×50）、SHZ（×0.1）复牌那天跨过缺口跳出 [1/3, 3]、没有事件解释，按清单登记；
-    # ORF 第 17 天的错价不可交易，不算。
+    # 价格跳变：GAP（×50）、SHZ（×0.1）复牌日和 PMP 的拉升，跳变日成交额都在前 10 日中位数 5 倍以上，
+    # 自动归为成交额印证的真实行情（AUP 同样）；DRP 的 ÷3.5、VUP 只放大了成交股数，没有成交额印证，
+    # 必须逐条登记（清单里有）。
+    # ORF 第 17 天的错价不可交易，不算；RSQ 已拆列，不在列内。
     jumps = report["checks"]["price_jumps"]
     assert jumps["verdict"] == "explained" and jumps["explained"] == 2
     assert {
         (e["ts_code"], e["trade_date"], e["kind"]) for e in jumps["explained_examples"]
-    } == {
-        ("GAP", US_DAYS[21], "缺口"),
-        ("SHZ", US_DAYS[21], "缺口"),
+    } == {("DRP", US_DAYS[14], "相邻"), ("VUP", US_DAYS[14], "相邻")}
+    auto = report["checks"]["price_jumps_amount_confirmed"]
+    assert auto["verdict"] == "info"
+    assert {(e["ts_code"], e["trade_date"]) for e in auto["examples"]} == {
+        ("GAP", US_DAYS[21]),
+        ("SHZ", US_DAYS[21]),
+        ("PMP", US_DAYS[14]),
+        ("AUP", US_DAYS[14]),
     }
-    # 清单里去掉这两条：跳变检查本身判 fail。
+    # 清单里去掉 DRP、VUP 这两条：跳变检查本身判 fail。
     bare = dict(
         US_EXCEPTIONS,
         entries=[e for e in US_EXCEPTIONS["entries"] if e["check"] != "price_jumps"],
@@ -481,3 +515,97 @@ def test_us_verify_panel_faults(tmp_path, monkeypatch, field):
     panel = verify_overseas(store, exceptions_path=exc)["checks"]["panel"]
     assert panel["verdict"] == "fail"
     assert field in {e.get("field") for e in panel["examples"]}, panel["examples"]
+
+
+def test_us_verify_catches_unsplit_quiet_jump(tmp_path, monkeypatch):
+    """构建侧关掉「疑似漏记的合股拆段」时，校验独立重算出 RSQ 第 14 天应拆未拆。"""
+    from ashare.data import overseas_panel as op
+
+    monkeypatch.setattr(op, "US_QUIET_JUMP", 1e9)
+    store, _ = make(tmp_path)
+    meta = build_overseas(store, "all")
+    assert (
+        "RSQ#2" not in meta["symbols"] and meta["diagnostics"]["quiet_jump_cuts"] == []
+    )
+    exc = tmp_path / "exc.json"
+    exc.write_text(json.dumps(US_EXCEPTIONS, ensure_ascii=False))
+    panel = verify_overseas(store, exceptions_path=exc)["checks"]["panel"]
+    assert panel["verdict"] == "fail"
+    assert any(
+        e.get("ts_code") == "RSQ"
+        and e.get("trade_date") == US_DAYS[14]
+        and "漏记的合股" in e.get("problem", "")
+        for e in panel["examples"]
+    ), panel["examples"]
+
+
+def test_us_new_jump_without_amount_must_be_registered(tmp_path):
+    """面板里一只正常证券某天收盘 ×10（成交额不变）：没有成交额印证的新跳变，不会被已有登记解释。
+    价格跳变的例外只能逐条（代码、日期）登记，按类别整体豁免的条目直接拒绝。"""
+    from ashare.data.overseas_verify import load_exceptions
+
+    store, _ = make(tmp_path)
+    build_overseas(store, "all")
+    exc = tmp_path / "exc.json"
+    exc.write_text(json.dumps(US_EXCEPTIONS, ensure_ascii=False))
+    path = _us_panel_path(store)
+    meta = json.loads((path / "metadata.json").read_text())
+    close = np.load(path / "close.npy")
+    close[5, meta["symbols"].index("AAA")] *= 10
+    np.save(path / "close.npy", close)
+    jumps = verify_overseas(store, exceptions_path=exc)["checks"]["price_jumps"]
+    assert jumps["verdict"] == "fail"
+    assert {(e["ts_code"], e["trade_date"]) for e in jumps["examples"]} == {
+        ("AAA", US_DAYS[5]),
+        ("AAA", US_DAYS[6]),
+    }
+    wide = dict(
+        US_EXCEPTIONS,
+        entries=[dict(market="us", check="price_jumps", kind="相邻", reason="U3")],
+    )
+    exc.write_text(json.dumps(wide, ensure_ascii=False))
+    with pytest.raises(ValueError, match="逐条"):
+        load_exceptions("us", exc)
+
+
+def test_listing_us_orphan_streak_and_grace():
+    """无因子连续计数遇到有因子的成交日清零；已过 20 天宽限（已不算上市）后的无因子成交日不再触发退市。"""
+    from ashare.data.overseas_panel import _listing_us
+
+    T = 60
+    close = np.full((T, 1), 10.0)
+    ones = np.ones((T, 1))
+    # 3 个无因子成交日、1 个可交易日、再 3 个无因子成交日：连续数最多 3，不退市。
+    trade = np.zeros((T, 1), bool)
+    lone = np.zeros((T, 1), bool)
+    trade[:10, 0] = trade[13, 0] = True
+    lone[10:13, 0] = lone[14:17, 0] = True
+    listed, delist, _, gone = _listing_us(
+        trade, orphan=lone, close=close, multiplier=ones
+    )
+    assert gone == 0
+    assert delist[:, 0].tolist() == [t == 13 + 21 for t in range(T)]
+    # 最后可交易日第 0 天，满 20 天后第 21 天退市；第 30–34 天才有 5 个无因子成交日：那时已不算上市，
+    # 不再记一次无因子退市。
+    trade = np.zeros((T, 1), bool)
+    lone = np.zeros((T, 1), bool)
+    trade[0, 0] = True
+    lone[30:35, 0] = True
+    listed, delist, recovery, gone = _listing_us(
+        trade, orphan=lone, close=close, multiplier=ones
+    )
+    assert gone == 0
+    assert delist[:, 0].tolist() == [t == 21 for t in range(T)]
+    assert listed[:, 0].tolist() == [t <= 20 for t in range(T)]
+    assert np.isnan(recovery).all()
+
+
+def test_cut_recovery_counts_split_on_last_day():
+    """清算倍数包含窗口最后一天执行的拆并股：上一成交日收盘 10，b 当天 1 拆 2、收盘 4 →
+    持有者价值 2 × 4 = 8，清算价 min(10, 8) = 8，回收率 0.8（记账价是上一成交日收盘 10）。"""
+    from ashare.data.overseas_actions import cut_recovery
+
+    close = np.array([[9.0], [10.0], [4.0]])
+    tradable = np.array([[True], [True], [True]])
+    multiplier = np.array([[1.0], [1.0], [2.0]])
+    assert cut_recovery(close, tradable, multiplier, 0, 2) == pytest.approx(0.8)

@@ -302,29 +302,69 @@ def corporate_actions(
     )
 
 
-def segments(close, tradable, multiplier, suspect, gap_days=60):
+def segments(
+    close,
+    tradable,
+    multiplier,
+    suspect,
+    gap_days=60,
+    *,
+    volume=None,
+    amount=None,
+    quiet=None,
+    found=None,
+):
     """美股：价格不连续又没有被印证的事件解释时，把一列拆成两段（第二段起另起一列）。
 
     看相邻两次成交 a、b：缺口里执行了的事件合计倍数 M，持有者价值倍数 h = M·close[b]/close[a]
     （照引擎记账）。h 在 [1/3, 3] 之外，且「缺口长于 ``gap_days`` 个交易日」（代码复用、长停牌后复牌）
     或「缺口里有没执行的可疑事件」（源因子与价格对不上，如漏记的合股、分位以下价格的合股）时在 b 处
-    拆开，不让引擎把这次跳变当成收益。返回 [(列, 起始行, 结束行)]，同一列按时间排。
+    拆开，不让引擎把这次跳变当成收益。
+
+    ``quiet=(倍数, 成交量倍数, 成交额倍数, 基准天数)``：另一种情形，**疑似源因子漏记的合股**。a 到 b
+    之间没有执行了的事件、价格上跳超过「倍数」、b 当天成交股数不超过前「基准天数」个成交日（含 a）中位数
+    的「成交量倍数」、成交额不超过中位数的「成交额倍数」时也在 b 处拆开：真实的拉升都伴随成交额放大
+    几十到几百倍，合股则是价格 ×N、股数 ÷N、成交额大致不变。只用到 b 当天及以前的数据。``found`` 给出
+    时把这种拆开的 (列, b) 追加进去。
+
+    返回 [(列, 起始行, 结束行)]，同一列按时间排。
     """
     T, N = close.shape
     out = []
     for j in range(N):
         trades = np.flatnonzero(tradable[:, j])
         start = 0
-        for a, b in zip(trades[:-1], trades[1:], strict=True):
-            long_gap = b - a - 1 > gap_days
-            if not (long_gap or suspect[a + 1 : b + 1, j].any()):
-                continue
-            h = float(np.prod(multiplier[a + 1 : b + 1, j])) * close[b, j] / close[a, j]
-            if not (1 / 3 <= h <= 3):
-                out.append((j, start, int(b)))
-                start = int(b)
+        for k in range(1, len(trades)):
+            a, b = int(trades[k - 1]), int(trades[k])
+            window = multiplier[a + 1 : b + 1, j]
+            h = float(np.prod(window)) * close[b, j] / close[a, j]
+            if b - a - 1 > gap_days or suspect[a + 1 : b + 1, j].any():
+                cut = not (1 / 3 <= h <= 3)
+            else:
+                cut = quiet is not None and _quiet_jump(
+                    h, window, volume, amount, trades[:k], b, j, quiet
+                )
+                if cut and found is not None:
+                    found.append((j, b))
+            if cut:
+                out.append((j, start, b))
+                start = b
         out.append((j, start, T))
     return out
+
+
+def _quiet_jump(h, window, volume, amount, before, b, j, quiet):
+    """没有执行了的事件、价格上跳超过门槛、成交量和成交额都没有放大（疑似漏记的合股）。"""
+    jump, max_volume, max_amount, days = quiet
+    if h <= jump or (window != 1).any():
+        return False
+    prev = before[-days:]
+    base_volume = float(np.median(volume[prev, j]))
+    base_amount = float(np.median(amount[prev, j]))
+    return bool(
+        volume[b, j] <= max_volume * base_volume
+        and amount[b, j] <= max_amount * base_amount
+    )
 
 
 def cut_recovery(close, tradable, multiplier, j, b):
