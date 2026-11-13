@@ -503,8 +503,9 @@ a second concurrent `step`, or reading `state` from another thread during a
 kernel, so `run`, `run_batch` and `Simulator` all use them at kernel speed.
 Daily bars only give open, high, low and close, not their order inside the day:
 every choice below takes the pessimistic side so a rule never gains from an
-unknowable intraday path. Rules and limit targets are not supported with
-futures columns (rejected at input).
+unknowable intraday path. With futures columns, exit rules act on spot
+columns only and limit targets are rejected (see "Exit rules in mixed
+panels").
 
 **Inputs.** `Market` accepts optional `open`, `high`, `low` T×N panels
 (positive or NaN; with validation, `low <= open <= high` where all three are
@@ -657,6 +658,137 @@ ordinary rebalance. In a real session a limit buy may fill before the stop
 that funds it, and with an average price the rebalance trades through the day
 while an exit may come late; both are mildly optimistic for cash-constrained
 accounts.
+
+## Stand-alone futures portfolios
+
+`FuturesBook` (module `futures_book`) prepares a futures-only (or mixed)
+`Market`, `Costs` and `Config` from per-contract, per-row exchange inputs and
+runs it with the unchanged kernel loop of "Futures" above; results are the
+ordinary `Result`. The kernel is not modified for this: every rule below is
+an input transformation, so the existing spot and hedge-leg paths are
+untouched. `reference_book.py` is an independent naive loop written from this
+section; it reads the raw book inputs cell by cell.
+
+Inputs: `settlement`, `close`, `exec_price` (default `open`), `multiplier[N]`,
+`expiry[N]` (last trading row; T = after the sample) and `margin_rate`; rates
+are scalar, (1, N), (T, 1) or T×N. A futures column's settlement is forward
+filled (rows before its first value take that value as a sizing placeholder).
+The trading window of a column runs from its first tradable row to its end
+row (below); outside it margin and fees are zero and need no value.
+
+1. **Targets.** `kind="lots"` (signed whole contracts), `"notional"` (signed
+   notional / pretrade equity, the kernel's weights) and `"margin"` (signed
+   margin used / pretrade equity). A margin weight becomes notional by
+   dividing by that row's effective margin rate; the rate of row t is known
+   before row t opens (exchanges set it at the previous settlement), so this
+   is not look-ahead. A margin target outside the column's window is an
+   error. Lots round toward zero like every futures target. Shorts are
+   negative and need no borrow permission. `Simulator` takes lots or notional;
+   `margin_to_notional` converts one margin row.
+2. **Marking and cash.** Unchanged kernel rules: variation at each row's
+   settlement, collateral `|lots| × multiplier × settlement × rate`,
+   available cash = equity − collateral (pure futures: equity is cash).
+   `FuturesAccount(margin_add, margin_scale, fee_scale)` applies broker terms:
+   effective rate = exchange rate × margin_scale + margin_add, trading fees ×
+   fee_scale. Defaults are neutral (exchange minimums); the domestic
+   preset in the research package (`ashare.backtest.futures.CN_RETAIL`:
+   +5 percentage points, fees × 3) is an assumption taken from published
+   broker schedules, on the pessimistic end.
+3. **Fees.** Every fill pays `|lots| × (multiplier × price × fee_rate +
+   fee_per_contract)`; both terms may be nonzero and vary by contract and
+   row. A daily target never opens and closes the same contract on one row
+   (a reversal closes the previous position and opens a new one), so
+   close-today fees cannot arise and are not modeled. The stepping interface
+   also trades each column once per direction per row, so the same holds; a
+   position opened on its own end row is closed at that row's settlement with
+   the ordinary fee, which understates exchanges whose close-today fee is
+   higher (the reason this is mentioned at all).
+4. **Margin calls.** The cash account rules of "Futures" apply: a call when
+   collateral exceeds equity at the close (available cash < 0), next-row
+   proportional liquidation at the execution price (with slippage) toward the
+   initial requirement, insolvency when equity ≤ 0 (close everything, never
+   reopen). Counted in `margin_call`, `coverage["futures_margin_call"]`,
+   `coverage["futures_liquidation"]`, `liquidation_events` and
+   `bankruptcy_events`.
+5. **Price limits.** `no_buy`/`no_sell` masks or `limit_up`/`limit_down`
+   prices (a fill at or beyond a limit is refused in that direction).
+   `infer_locked=True` refuses, on a row whose open, high and low are equal
+   with positive volume, buying when the open is above the previous row's
+   settlement and selling when below (an open equal to it refuses nothing).
+   What it catches and misses: most one-price rows are thin contracts with a
+   single small fill, not limit days, so refusing them is pessimistic there;
+   a row that opens at the limit and then trades away from it is not caught,
+   so a fill at such an open is optimistic. With limit prices available, pass
+   `limit_up`/`limit_down` and leave `infer_locked` off.
+6. **Rolls.** The book holds individual contracts; the research package
+   steps product targets onto contracts on its roll schedule (decision at row
+   t−1's close, execution at row t's open, both legs paying fees and
+   slippage). A roll row moves only the rolling product (same lots, rescaled
+   by the multiplier ratio); other positions do not trade. Continuous prices
+   are for signals only.
+7. **End rows.** A futures column ends on `min(expiry, last_hold + 1)`.
+   `last_hold[N]` is the last row a position may be held at the close (a
+   retail position limit); the next row still trades normally, and whatever
+   is held at its close is closed at that row's settlement. On a cash-settled
+   contract's own expiry (`cash_settled=True`) the position settles at the
+   delivery settlement price paying the delivery fee; otherwise (a physical
+   contract's last trading row, or a retail end row) the close pays the
+   trading fee plus the slippage, at the settlement: one forced exit with
+   slippage. The kernel's expiry step performs it (reported as an expiry
+   event and in `delivery_fee`/`other_fee`), and later nonzero targets are
+   counted as expired.
+8. **Unit changes.** A contract whose multiplier changes is two columns: the
+   first ends on the row before the change (a forced close as in 7), the
+   second trades from the change row (a new opening). Fees and slippage are
+   paid on both sides and the position is flat for the night between; the
+   exchange's proportional conversion is not modeled.
+9. **Missing rates.** A NaN margin or fee inside a trading window raises by
+   default. `missing="previous"` forward-fills within the window (never from
+   later rows); a number fills the gap with that value.
+10. **Execution time.** `exec_price` is whatever the caller passes; with the
+   open of an exchange that has a night session it is the previous evening's
+   auction. A signal computed at row t's close fills at row t+1's open; row
+   t+1's open, high, low or volume must not enter that signal.
+11. **No negative prices.** A zero or negative settlement, execution, close
+   or open price on a futures column is rejected whatever `validate` says:
+   collateral would turn negative and losses would not trigger a margin
+   call. Negative-price episodes (WTI on 2020-04-20) cannot be simulated.
+   The check belongs to `FuturesBook`; a `Market(futures=...)` built directly
+   with `validate=False` is not protected (with `validate=True` the kernel's
+   own input check rejects nonpositive settlements).
+
+Not modeled, with the direction of the error: close-today fees (unclear:
+cheaper on some SHFE products, ten times on CFFEX index futures);
+exchange-specific margin offsets and the larger-side rule for two-sided
+positions (pessimistic: every contract pays full margin); limit expansion
+after one-sided markets, the automatic margin increase that goes with it and
+the ban on opening in the limit direction after a limit close (optimistic);
+queueing at the limit (unclear, see 5); forced position reduction at the limit
+(optimistic); daily open-position caps and position limits (optimistic);
+physical delivery (unclear: positions never enter it); proportional unit
+conversion (mostly pessimistic, see 8); intraday paths (unclear).
+
+## Exit rules in mixed panels
+
+With futures columns, `Rules` act on spot columns only; limit targets are
+rejected (`run`, `run_batch`, `Simulator.step`), because a limit opening is
+sized against spot cash and margin only and could overbuy beside futures
+collateral. A scalar percentage or `max_hold` applies to spot columns; a
+length-N or T×N percentage must be NaN on every futures column, otherwise the
+input is rejected. Futures columns are never evaluated, keep no cost, entry
+row or peak, and their ordinary targets are never blocked by a rule state.
+
+The rule phase runs where it runs without futures (before the rebalance for
+`fill_time` "close"/"average", after the openings for "open"). In a margin
+account the own-cash trim of a rule reduction subtracts the futures collateral
+held at that moment: the collateral at the last settlement and today's rate
+before the rebalance, or after the rebalance the running value in which
+contracts traded earlier in the row use their execution price. In the cash
+specialization rule sales keep the legacy fee check, like ordinary spot sales
+beside futures. The kernel compiles a futures + tracking build of the loop
+for this case; markets without rules or without futures use the same builds
+as before. `reference_rules_futures.py` combines the rule reference with the
+mixed-account reference.
 
 ## Review clarifications
 

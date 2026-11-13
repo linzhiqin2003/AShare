@@ -455,7 +455,8 @@ class Rules:
     "average") and decides whether rules act after or before the day's
     rebalance. Percentages are positive fractions: a scalar, a length-N
     vector or a T×N panel; NaN disables a cell. Requires `Market` open, high
-    and low panels; not available with futures columns. See SPEC.md.
+    and low panels. With futures columns they act on spot columns only and
+    limit targets are rejected. See SPEC.md.
 
     `limit_fill="cross"` (default) fills a limit buy only when the day's low
     is strictly below the limit (a sell: the high strictly above); "touch"

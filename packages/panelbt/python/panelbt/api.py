@@ -75,9 +75,11 @@ def _rules(market: Market, rules: Rules | None, any_limits: bool):
         return None
     if not isinstance(rules, Rules):
         raise ValueError("rules: expected Rules")
-    if market.futures is not None:
+    if market.futures is not None and any_limits:
+        # Limit openings size against spot cash and margin only; with futures
+        # collateral in the account they could overbuy (SPEC, mixed panels).
         raise ValueError(
-            "rules: futures columns are not supported with exit rules or limit targets"
+            "limits: limit targets are not supported in markets with futures columns"
         )
     if market.open is None or market.high is None or market.low is None:
         raise ValueError("rules: Market needs open, high and low panels")
@@ -110,6 +112,24 @@ def _rules(market: Market, rules: Rules | None, any_limits: bool):
         _percent(getattr(rules, k), t, n, k)
         for k in ("stop_loss", "take_profit", "trailing_stop")
     ]
+    if market.futures is not None:
+        # Rules act on spot columns only. A scalar applies to spot columns; a
+        # per-security or T×N value must be NaN (disabled) on futures columns.
+        fut = np.asarray(market.futures.is_future, dtype=bool)
+        for k, a in zip(
+            ("stop_loss", "take_profit", "trailing_stop"), arrays[3:], strict=True
+        ):
+            ndim = np.ndim(getattr(rules, k))
+            if ndim == 1:
+                bad = ~np.isnan(a[fut])
+            elif ndim == 2:
+                bad = ~np.isnan(a.reshape(t, n)[:, fut])
+            else:
+                continue
+            if np.any(bad):
+                raise ValueError(
+                    f"{k}: rules act on spot columns only; set futures columns to NaN"
+                )
     terms = (
         int(rules.max_hold or 0),
         timing,

@@ -532,10 +532,19 @@ def test_input_errors():
         expiry=[2],
     )
     fm = replace(m, futures=futures, split=None, cash_div=None)
+    # Exit rules are accepted with futures columns (they act on spot columns,
+    # see test_exit_rules_futures); limit targets and a rule percentage on a
+    # futures column are still rejected.
     with pytest.raises(ValueError, match="futures"):
-        bt.run(fm, target, config=bt.Config(rules=bt.Rules(fill_time="open")))
-    with pytest.raises(ValueError, match="futures"):
-        bt.Simulator(fm, config=bt.Config(rules=bt.Rules(fill_time="open")))
+        bt.run(
+            fm,
+            bt.Targets.from_dense([[1.0], [np.nan]], limits=[[9.0], [np.nan]]),
+            config=bt.Config(rules=bt.Rules(fill_time="open")),
+        )
+    with pytest.raises(ValueError, match="spot columns only"):
+        bt.Simulator(
+            fm, config=bt.Config(rules=bt.Rules(fill_time="open", stop_loss=[0.1]))
+        )
 
 
 @pytest.mark.parametrize("name", ["README.md", "README.zh-CN.md"])

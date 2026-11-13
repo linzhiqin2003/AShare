@@ -1,0 +1,343 @@
+{
+ "method": "bench/pair.py (6 runs) and bench/pair_futures.py (4 runs); base = main d791a69 LTO build; alternating AB/BA rounds; results identical in both builds",
+ "runs_spot": [
+  {
+   "load_start": [
+    10.52294921875,
+    8.50732421875,
+    8.00341796875
+   ],
+   "full_rules": {
+    "median_ratio": 1.1228757891798327,
+    "min_ratio": 1.0087715754842976
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.9615470955489929,
+    "min_ratio": 1.0194242852604847
+   },
+   "prices_only": {
+    "median_ratio": 0.9112640380064628,
+    "min_ratio": 0.9641995251368622
+   },
+   "long_short": {
+    "median_ratio": 1.0072193369444165,
+    "min_ratio": 1.014671717208051
+   },
+   "batch16": {
+    "median_ratio": 0.9835882534023693,
+    "min_ratio": 1.0360988780665261
+   }
+  },
+  {
+   "load_start": [
+    11.0087890625,
+    8.82373046875,
+    8.13427734375
+   ],
+   "full_rules": {
+    "median_ratio": 0.9436599081871038,
+    "min_ratio": 0.9786237620463425
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.979589185725511,
+    "min_ratio": 1.042536127983074
+   },
+   "prices_only": {
+    "median_ratio": 1.0006533774397366,
+    "min_ratio": 0.957948087326999
+   },
+   "long_short": {
+    "median_ratio": 1.002301905693731,
+    "min_ratio": 0.9870026770810825
+   },
+   "batch16": {
+    "median_ratio": 0.9945706310983066,
+    "min_ratio": 0.9796036290503707
+   }
+  },
+  {
+   "load_start": [
+    11.16796875,
+    8.892578125,
+    8.16259765625
+   ],
+   "full_rules": {
+    "median_ratio": 1.120070732836932,
+    "min_ratio": 1.0082111117921158
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.9427015261819972,
+    "min_ratio": 1.0015109164348033
+   },
+   "prices_only": {
+    "median_ratio": 1.0490692142682356,
+    "min_ratio": 1.023793088046767
+   },
+   "long_short": {
+    "median_ratio": 1.0209213980010199,
+    "min_ratio": 1.015818878942779
+   },
+   "batch16": {
+    "median_ratio": 0.9993166250904243,
+    "min_ratio": 0.9859768055042087
+   }
+  },
+  {
+   "load_start": [
+    10.6005859375,
+    8.84619140625,
+    8.15478515625
+   ],
+   "full_rules": {
+    "median_ratio": 0.9572946528458365,
+    "min_ratio": 0.9588215557706155
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.9935115818705816,
+    "min_ratio": 0.9946057776897476
+   },
+   "prices_only": {
+    "median_ratio": 1.044507613393468,
+    "min_ratio": 1.0444020786324277
+   },
+   "long_short": {
+    "median_ratio": 1.0099848888055922,
+    "min_ratio": 0.9735418354548674
+   },
+   "batch16": {
+    "median_ratio": 0.9713357186912626,
+    "min_ratio": 0.970133793067182
+   }
+  },
+  {
+   "load_start": [
+    12.95947265625,
+    10.4609375,
+    8.92236328125
+   ],
+   "full_rules": {
+    "median_ratio": 0.9815078970722262,
+    "min_ratio": 0.9971581723022828
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.9943676602016835,
+    "min_ratio": 1.05796365161875
+   },
+   "prices_only": {
+    "median_ratio": 0.9976780986966748,
+    "min_ratio": 1.014612434899121
+   },
+   "long_short": {
+    "median_ratio": 1.016724335273342,
+    "min_ratio": 0.9918845960577537
+   },
+   "batch16": {
+    "median_ratio": 1.0071212760792252,
+    "min_ratio": 1.0079174870431489
+   }
+  },
+  {
+   "load_start": [
+    12.95947265625,
+    10.4609375,
+    8.92236328125
+   ],
+   "full_rules": {
+    "median_ratio": 0.9515294469953458,
+    "min_ratio": 1.0029087867836324
+   },
+   "no_delist_panel": {
+    "median_ratio": 0.9765536743928123,
+    "min_ratio": 1.0014826611006402
+   },
+   "prices_only": {
+    "median_ratio": 1.0060104827704597,
+    "min_ratio": 1.063263342315783
+   },
+   "long_short": {
+    "median_ratio": 1.0206346706686042,
+    "min_ratio": 0.9974191182505243
+   },
+   "batch16": {
+    "median_ratio": 0.9967177988076349,
+    "min_ratio": 0.9958830676002707
+   }
+  }
+ ],
+ "runs_futures": [
+  {
+   "load_start": [
+    11.04150390625,
+    8.64794921875,
+    8.0556640625
+   ],
+   "hedge_leg": {
+    "median_ratio": 1.0038106041876251,
+    "min_ratio": 0.9874211903814804,
+    "base_ms": 1.6236255032708868,
+    "current_ms": 1.6298124974127859
+   },
+   "pure_futures": {
+    "median_ratio": 1.0432304832687227,
+    "min_ratio": 1.0280603477091932,
+    "base_ms": 0.19372899987502024,
+    "current_ms": 0.20210399816278368
+   },
+   "spot_rules": {
+    "median_ratio": 1.0035146373026074,
+    "min_ratio": 0.9923093348259086,
+    "base_ms": 3.9894580040709116,
+    "current_ms": 4.003479501989204
+   }
+  },
+  {
+   "load_start": [
+    11.0087890625,
+    8.82373046875,
+    8.13427734375
+   ],
+   "hedge_leg": {
+    "median_ratio": 1.0133732456326427,
+    "min_ratio": 0.9969717924991861,
+    "base_ms": 1.4767915054108016,
+    "current_ms": 1.4965410009608604
+   },
+   "pure_futures": {
+    "median_ratio": 1.0176701425825863,
+    "min_ratio": 1.0361861580758496,
+    "base_ms": 0.17093750648200512,
+    "current_ms": 0.17395799659425393
+   },
+   "spot_rules": {
+    "median_ratio": 0.9891994755328363,
+    "min_ratio": 0.9774415633445763,
+    "base_ms": 3.634083506767638,
+    "current_ms": 3.594833498937078
+   }
+  },
+  {
+   "load_start": [
+    10.9140625,
+    8.87744140625,
+    8.16162109375
+   ],
+   "hedge_leg": {
+    "median_ratio": 0.9875603648503942,
+    "min_ratio": 0.9589702841167744,
+    "base_ms": 1.4318750036181882,
+    "current_ms": 1.4140630009933375
+   },
+   "pure_futures": {
+    "median_ratio": 0.9972750242777699,
+    "min_ratio": 0.9966150498191201,
+    "base_ms": 0.1761464955052361,
+    "current_ms": 0.1756665005814284
+   },
+   "spot_rules": {
+    "median_ratio": 0.9966685464400792,
+    "min_ratio": 1.016691822723153,
+    "base_ms": 3.6583125038305297,
+    "current_ms": 3.646125005616341
+   }
+  },
+  {
+   "load_start": [
+    10.6005859375,
+    8.84619140625,
+    8.15478515625
+   ],
+   "hedge_leg": {
+    "median_ratio": 0.9732400577275967,
+    "min_ratio": 0.9962116794646214,
+    "base_ms": 1.529020504676737,
+    "current_ms": 1.4881040042382665
+   },
+   "pure_futures": {
+    "median_ratio": 0.9566929669650206,
+    "min_ratio": 1.0038387355474923,
+    "base_ms": 0.17749999824445695,
+    "current_ms": 0.16981299995677546
+   },
+   "spot_rules": {
+    "median_ratio": 0.9897528611836542,
+    "min_ratio": 0.9883445387603207,
+    "base_ms": 3.734749501745682,
+    "current_ms": 3.696479005157016
+   }
+  }
+ ],
+ "summary": {
+  "full_rules": {
+   "runs": 6,
+   "median_ratio_range": [
+    0.9436599081871038,
+    1.1228757891798327
+   ],
+   "median_of_median_ratios": 0.9694012749590313,
+   "median_of_min_ratios": 1.0000334795429575
+  },
+  "no_delist_panel": {
+   "runs": 6,
+   "median_ratio_range": [
+    0.9427015261819972,
+    0.9943676602016835
+   ],
+   "median_of_median_ratios": 0.9780714300591616,
+   "median_of_min_ratios": 1.0104676008476439
+  },
+  "prices_only": {
+   "runs": 6,
+   "median_ratio_range": [
+    0.9112640380064628,
+    1.0490692142682356
+   ],
+   "median_of_median_ratios": 1.003331930105098,
+   "median_of_min_ratios": 1.019202761472944
+  },
+  "long_short": {
+   "runs": 6,
+   "median_ratio_range": [
+    1.002301905693731,
+    1.0209213980010199
+   ],
+   "median_of_median_ratios": 1.0133546120394672,
+   "median_of_min_ratios": 0.994651857154139
+  },
+  "batch16": {
+   "runs": 6,
+   "median_ratio_range": [
+    0.9713357186912626,
+    1.0071212760792252
+   ],
+   "median_of_median_ratios": 0.9956442149529707,
+   "median_of_min_ratios": 0.9909299365522397
+  },
+  "hedge_leg": {
+   "runs": 4,
+   "median_ratio_range": [
+    0.9732400577275967,
+    1.0133732456326427
+   ],
+   "median_of_median_ratios": 0.9956854845190097,
+   "median_of_min_ratios": 0.9918164349230509
+  },
+  "pure_futures": {
+   "runs": 4,
+   "median_ratio_range": [
+    0.9566929669650206,
+    1.0432304832687227
+   ],
+   "median_of_median_ratios": 1.007472583430178,
+   "median_of_min_ratios": 1.0159495416283426
+  },
+  "spot_rules": {
+   "runs": 4,
+   "median_ratio_range": [
+    0.9891994755328363,
+    1.0035146373026074
+   ],
+   "median_of_median_ratios": 0.9932107038118667,
+   "median_of_min_ratios": 0.9903269367931147
+  }
+ }
+}

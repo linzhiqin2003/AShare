@@ -241,6 +241,33 @@ On an expiry row, `settlement` must be the exchange delivery settlement price.
 The engine does not distinguish close-today fees, which CFFEX charges at a much
 higher rate; same-day open-and-close rolls are therefore under-costed.
 
+## Stand-alone futures portfolios
+
+`FuturesBook` builds a futures-only (or mixed) market from per-contract,
+per-row exchange inputs and runs it with the same kernel. It adds broker
+terms (`FuturesAccount(margin_add, margin_scale, fee_scale)`), forced closes
+on a physical contract's last trading row or after an optional last holding
+row (at that row's settlement, paying the fee and the slippage), price-limit
+masks and three target kinds: contracts (`"lots"`), notional / equity
+(`"notional"`) and margin / equity (`"margin"`).
+
+```python
+s = np.array([[100.0], [101.0], [99.0]])
+book = bt.FuturesBook(
+    settlement=s, close=s, exec_price=s, multiplier=[10.0], expiry=[3],
+    margin_rate=0.1, fee_rate=1e-4,
+    account=bt.FuturesAccount(margin_add=0.05, fee_scale=2.0),
+    initial_cash=1e5,
+)
+book_result = book.run(np.array([[0.5], [np.nan], [np.nan]]), kind="margin")
+book_result.equity, book_result.futures_margin
+```
+
+P&L always comes from each contract's settlement prices; build signals from a
+continuous series if you like, but never compute returns from it (a roll gap
+would become profit or loss). Semantics and reasons: SPEC "Stand-alone futures
+portfolios".
+
 ## Stepping one row at a time
 
 `bt.Simulator` advances the same kernel one row per call, so a strategy can
@@ -334,8 +361,10 @@ high strictly above): a low that just equals the limit is often an order
 resting at the day's extreme that never traded, and counting those days as
 fills overstates buy-the-dip strategies considerably. An exit that cannot trade (limit-down, suspension)
 retries at the next rows' `exec_price`. Without rules, results are bit-for-bit
-those of a build without the feature. Rules are not available with futures
-columns. The exact semantics are in [SPEC.md](SPEC.md).
+those of a build without the feature. In a market with futures columns, exit
+rules act on the spot columns only (a scalar percentage applies to spot
+columns; per-security or T×N values must be NaN on futures columns) and limit
+targets are rejected. The exact semantics are in [SPEC.md](SPEC.md).
 
 ## Input validation
 

@@ -1,0 +1,182 @@
+[
+  {
+    "mutant": "broker margin add-on ignored",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "fee multiple not applied to the per-contract fee",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "forced close without slippage",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "last holding row off by one",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "locked-day direction swapped",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "margin targets multiplied by the rate",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "cash-settled expiry treated as a forced close",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "limit-up refusal only beyond the limit",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "untradable cells keep their price",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "missing='previous' fills from later values",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "carried lots not rescaled across a unit change",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "carried lots rounded to nearest instead of toward zero",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll lots not converted by the multiplier ratio",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll lots rounded to nearest instead of toward zero",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "first-row lots divided by the multiplier",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "kept positions sized without the half-lot margin",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll rows re-target every product",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "written rows drop the engine's carried orders",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "target on a contract's end row treated as waiting",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "written rows keep a leftover old contract",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "waiting target ignored while a leftover old contract is held",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "waiting entries kept through a margin-call liquidation",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "end-row rebalance carry drops the multiplier reference",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "landing ignores the product's orders in flight",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll ignores the caller's order in flight on the new contract",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll overrides a waiting caller target",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "liquidation on an end row drops the remainder",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal lead ignored",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "last trading day on the last sample row treated as after the sample",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "delivery-month personal rule one day late",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal roll looks at the switch row's quote (look-ahead)",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "external params take the smaller side's margin",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "one-price day at the previous settlement blocks buying",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "nonpositive prices accepted with validate=False",
+    "file": "packages/panelbt/python/panelbt/futures_book.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal override disabled",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  },
+  {
+    "mutant": "SC personal rule off by one day",
+    "file": "src/ashare/backtest/futures.py",
+    "caught": true
+  }
+]

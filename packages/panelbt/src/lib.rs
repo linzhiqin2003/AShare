@@ -29,18 +29,7 @@ type RuleTerms = (i64, u8, bool, i64, bool, bool, bool, bool);
 
 /// Rules from six flattened arrays (open, high, low: T×N; stop, take, trail:
 /// empty, 1, N or T×N) and the scalar terms.
-fn rules<'a>(
-    t: usize,
-    n: usize,
-    arrays: &[&'a [f64]],
-    terms: RuleTerms,
-    futures: bool,
-) -> PyResult<Rules<'a>> {
-    if futures {
-        return Err(PyValueError::new_err(
-            "rules: futures columns are not supported with exit rules or limit targets",
-        ));
-    }
+fn rules<'a>(t: usize, n: usize, arrays: &[&'a [f64]], terms: RuleTerms) -> PyResult<Rules<'a>> {
     if arrays.len() != 6
         || arrays[..3].iter().any(|a| a.len() != t * n)
         || arrays[3..]
@@ -280,7 +269,7 @@ fn run<'py>(
         &panels,
     )?;
     if let Some((_, terms)) = rule_spec {
-        s.rules = Some(rules(t, n, &rule_arrays, terms, m.futures.is_some())?);
+        s.rules = Some(rules(t, n, &rule_arrays, terms)?);
     }
     let targets: Vec<Targets<'_>> = plans
         .iter()
@@ -321,6 +310,13 @@ fn run<'py>(
         return Err(PyValueError::new_err(message));
     }
     for plan in &targets {
+        // Exit rules act on spot columns of a mixed market; limit targets
+        // size against spot cash and margin only, so they stay rejected.
+        if m.futures.is_some() && plan.limits.iter().any(|x| x.is_finite()) {
+            return Err(PyValueError::new_err(
+                "limits: limit targets are not supported in markets with futures columns",
+            ));
+        }
         if plan.indptr.len() != plan.days.len() + 1
             || plan.indptr.first() != Some(&0)
             || plan.indptr.last().copied() != Some(plan.cols.len() as i64)
@@ -641,7 +637,7 @@ macro_rules! with_market {
             &ps,
         )?;
         if let Some(terms) = *rule_terms {
-            $s.rules = Some(rules(*t, *n, &rs, terms, $m.futures.is_some())?);
+            $s.rules = Some(rules(*t, *n, &rs, terms)?);
         }
         $body
     }};
