@@ -166,7 +166,7 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "delist_recovery", "RSQ")[14] == 1.0
     # PMP 的拉升成交股数 ×50（真实行情）、DRP 的下跳、VUP（成交股数 ×3）、EEE 合股后的真实拉升（基准换算成
     # 新单位后 6.7 倍）、CZO#2 第 12 天的拉升（整个代码的基准下 12 倍）：都不拆列。
-    assert {"PMP#2", "DRP#2", "VUP#2", "EEE#2", "CZO#3"}.isdisjoint(p.symbols)
+    assert {"PMP#2", "DRP#2", "VUP#2", "EEE#2", "CZO#3", "AAA#2"}.isdisjoint(p.symbols)
     # STL：因子停了以后只有成交量为 0 的陈旧行，不算无因子成交日，不触发无因子退市。
     assert col(p, "has_quote", "STL").all()
     assert col(p, "tradable", "STL").tolist() == [i <= 10 for i in range(n)]
@@ -287,13 +287,16 @@ def test_us_verify(tmp_path):
     auto = report["checks"]["price_jumps_confirmed"]
     assert auto["verdict"] == "info"
     # EEE 第 21 天：基准里有第 18 天 10 合 1 之前的旧单位股数，换算成新单位后才是 6.7 倍；CZO#2 第 12 天：
-    # 基准按整个代码取（含 CZO 那一列的低成交日）是 12 倍，只按 CZO#2 一列取是 1.2 倍。
+    # 基准按整个代码取（含 CZO 那一列的低成交日，合股执行在 CZO#2 里也要换算）是 12 倍，只按 CZO#2 一列取、
+    # 或旧列那几天不按新列里的合股换算是 1.2 倍；AAA 第 17 天：执行日（第 12 天，已按新单位成交）不再乘拆股
+    # 倍数时是 5.3 倍，多乘一次就掉到 4 倍。
     assert {(e["ts_code"], e["trade_date"]) for e in auto["examples"]} == {
         ("GAP", US_DAYS[21]),
         ("SHZ", US_DAYS[21]),
         ("PMP", US_DAYS[14]),
         ("EEE", US_DAYS[21]),
         ("CZO#2", US_DAYS[12]),
+        ("AAA", US_DAYS[17]),
     }
     # 清单里去掉 DRP、VUP 这两条：跳变检查本身判 fail。
     bare = dict(
@@ -603,6 +606,31 @@ def test_quiet_split_volume_threshold():
         found=found,
     )
     assert len(parts) == 1 and found == []
+    # 执行日当天的股数决定中位数落在哪边：基准第 10–19 天里旧单位、新单位各 5 天，第 15 天执行 1:100 的合股
+    # （执行日排第 6，当天已按新单位成交）。折成新单位：旧单位 5 天各 2、执行日 10、之后 4 天各 1，中位数 2；
+    # 第 20 天价格 ×4、成交股数 2.7 是 1.35 倍，拆。执行日的股数若被再乘一次 0.01，中位数变成 1.5、倍数 1.8，
+    # 就不拆了。
+    close = np.full((T, 1), 5.0)
+    close[15:] *= 100
+    close[20:] *= 4
+    multiplier = np.ones((T, 1))
+    multiplier[15] = 0.01
+    volume = np.ones((T, 1))
+    volume[10:15] = 200.0
+    volume[15] = 10.0
+    volume[20] = 2.7
+    found = []
+    parts = segments(
+        close,
+        np.ones((T, 1), bool),
+        multiplier,
+        np.zeros((T, 1), bool),
+        op.US_GAP_SPLIT,
+        volume=volume,
+        quiet=(op.US_QUIET_JUMP, op.US_QUIET_VOLUME, op.US_QUIET_DAYS),
+        found=found,
+    )
+    assert len(parts) == 2 and found == [(0, 20)]
 
 
 def test_us_verify_jump_confirmation_thresholds(tmp_path):
