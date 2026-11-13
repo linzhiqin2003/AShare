@@ -215,5 +215,24 @@ class FuturesData:
 
         return roll_schedule(self, product, **kwargs)
 
+    def held_columns(self, product, **kwargs):
+        """(面板, 每行持有的列号)，参数见 ``futures_continuous.held_columns``。"""
+        from .futures_continuous import held_columns
+
+        return held_columns(self, product, **kwargs)
+
+    @staticmethod
+    def adjust_prices(held, price, mode):
+        """(原始价, 复权价, 换月记录)，参数见 ``futures_continuous.adjust_prices``。"""
+        from .futures_continuous import adjust_prices
+
+        return adjust_prices(held, price, mode)
+
+    def panelbt_inputs(self, **kwargs):
+        """``panelbt.Market`` / ``panelbt.Futures`` 的输入，参数见 ``futures_panelbt.panelbt_inputs``。"""
+        from .futures_panelbt import panelbt_inputs
+
+        return panelbt_inputs(self, **kwargs)
+
 
 __all__ = ["FuturesData"]

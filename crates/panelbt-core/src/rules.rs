@@ -1,5 +1,8 @@
 //! Declarative exit rules and limit targets (spot only), compiled in only
 //! when position tracking (`T`) is on. See SPEC "Declarative exit rules".
+//! In a market with futures columns only exit rules are accepted; they act on
+//! spot columns (`st.held`), and the own-cash test of a margin account's rule
+//! reduction excludes the futures collateral `fm`.
 
 use super::{
     Account, Market, Output, Settings, State, Track, capacity, fill, lot, lot_terms, movement,
@@ -316,6 +319,7 @@ fn reduce<const CLASSIC: bool>(
     reason: u8,
     day: usize,
     shares: bool,
+    fm: f64,
     m: &Market<'_>,
     s: &Settings<'_>,
     r: &Rules<'_>,
@@ -362,7 +366,8 @@ fn reduce<const CLASSIC: bool>(
         }
     } else if !s.flags[3] {
         let a = marked_account(st);
-        let own = |b: Account| b.own_cash(s.flags[4]);
+        // Futures collateral is not own cash (0 without futures columns).
+        let own = |b: Account| b.own_cash(s.flags[4]) - fm;
         if own(a) >= -1e-10 * s.scalars[5] && own(projected_at(a, i, q, cur, raw, day, m, s)) < 0.0
         {
             let (mut lo, mut hi) = (0.0, q.abs());
@@ -394,6 +399,7 @@ pub(super) fn intraday<const CLASSIC: bool>(
     day: usize,
     shares: bool,
     bankrupt: bool,
+    fm: f64,
     m: &Market<'_>,
     s: &Settings<'_>,
     r: &Rules<'_>,
@@ -436,7 +442,9 @@ pub(super) fn intraday<const CLASSIC: bool>(
             rb.blocked.push(i);
         }
         rb.block[i] = day as i64;
-        reduce::<CLASSIC>(i, -cur, raw, reason, day, shares, m, s, r, st, trk, rb, out);
+        reduce::<CLASSIC>(
+            i, -cur, raw, reason, day, shares, fm, m, s, r, st, trk, rb, out,
+        );
         if st.shares[i] != 0.0 {
             rb.due[i] = reason;
             rb.counts[DEFERRED] += 1;
@@ -537,8 +545,9 @@ fn limit_orders<const CLASSIC: bool>(
             0.0
         };
         if request != 0.0 {
+            // Limit targets are rejected with futures columns: no collateral.
             let q = reduce::<CLASSIC>(
-                i, request, raw, LIMIT, day, shares, m, s, r, st, trk, rb, out,
+                i, request, raw, LIMIT, day, shares, 0.0, m, s, r, st, trk, rb, out,
             );
             if q != 0.0 {
                 rb.counts[LIMIT_FILLED] += 1;

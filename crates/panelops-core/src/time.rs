@@ -1336,50 +1336,140 @@ fn summand<const O: usize, const D: bool>(pan: Panel<'_>, i: usize) -> (f64, boo
     (keep_bits(v, used), ok)
 }
 
+/// One row of a column block as equal-length slices, so the update loops below carry no
+/// bounds checks or mask branches and vectorize; `valid` is all true without a mask.
+struct Lanes<'a> {
+    x: &'a [f64],
+    y: &'a [f64],
+    valid: &'a [bool],
+}
+impl<'a> Lanes<'a> {
+    #[inline(always)]
+    fn new<const O: usize>(
+        pan: Panel<'a>,
+        r: usize,
+        first: usize,
+        n: usize,
+        all: &'a [bool],
+    ) -> Self {
+        let i = r * pan.n + first;
+        Self {
+            x: &pan.x[i..i + n],
+            y: if O == SUMIF {
+                &pan.y[i..i + n]
+            } else {
+                &pan.x[i..i + n]
+            },
+            valid: if pan.mask.is_empty() {
+                &all[..n]
+            } else {
+                &pan.mask[i..i + n]
+            },
+        }
+    }
+    /// Same contribution and validity as `summand`.
+    #[inline(always)]
+    fn get<const O: usize, const D: bool>(&self, k: usize) -> (f64, bool) {
+        let (x, y) = (self.x[k], self.y[k]);
+        let ok = D || (x.is_finite() & (O != SUMIF || y.is_finite()) & self.valid[k]);
+        let v = if O == COUNT { f64::from(x != 0.) } else { x };
+        let used = if O == SUMIF { ok & (y != 0.) } else { ok };
+        (keep_bits(v, used), ok)
+    }
+}
+
 fn sum_rows<const O: usize, const D: bool>(
     pan: Panel<'_>,
     p: Options,
     first: usize,
     rows: Vec<&mut [f64]>,
 ) {
+    if p.exact {
+        exact_sum_rows::<O, D>(pan, p, first, rows);
+        return;
+    }
+    if p.window <= SHORT_SUM_WINDOW {
+        short_sum_rows::<O, D>(pan, p, first, rows);
+        return;
+    }
     let n = rows[0].len();
     let (mut main, mut correction, mut peak) = (vec![0.; n], vec![0.; n], vec![0f64; n]);
     let mut counts = vec![0usize; n];
+    let (mut run, mut last) = (vec![0usize; n], vec![f64::NAN; n]);
+    let mut redo = vec![false; n];
+    let all = vec![true; n];
     for (t, row) in rows.into_iter().enumerate() {
+        let (main, correction, peak) = (&mut main[..n], &mut correction[..n], &mut peak[..n]);
+        let (counts, run, last) = (&mut counts[..n], &mut run[..n], &mut last[..n]);
         if t % 512 == 0 {
             main.fill(0.);
             correction.fill(0.);
             counts.fill(0);
             peak.fill(0.);
             for r in (t + 1).saturating_sub(p.window)..=t {
+                let lanes = Lanes::new::<O>(pan, r, first, n, &all);
                 for k in 0..n {
-                    let (a, ok) = summand::<O, D>(pan, r * pan.n + first + k);
+                    let (a, ok) = lanes.get::<O, D>(k);
                     add(&mut main[k], &mut correction[k], a);
                     peak[k] = peak[k].max(a.abs());
                     counts[k] += usize::from(ok);
                 }
             }
+            // The equal run spans all history, so a rebuild only extends it by today.
+            if O != COUNT {
+                let lanes = Lanes::new::<O>(pan, t, first, n, &all);
+                for k in 0..n {
+                    let (a, ok) = lanes.get::<O, D>(k);
+                    (run[k], last[k]) = advance_run(run[k], last[k], a, ok);
+                }
+            }
         } else {
             if t >= p.window {
-                let base = (t - p.window) * pan.n + first;
+                let lanes = Lanes::new::<O>(pan, t - p.window, first, n, &all);
                 for k in 0..n {
-                    let (a, ok) = summand::<O, D>(pan, base + k);
+                    let (a, ok) = lanes.get::<O, D>(k);
                     add(&mut main[k], &mut correction[k], -a);
                     counts[k] -= usize::from(ok);
                 }
             }
-            let base = t * pan.n + first;
+            let lanes = Lanes::new::<O>(pan, t, first, n, &all);
             for k in 0..n {
-                let (a, ok) = summand::<O, D>(pan, base + k);
+                let (a, ok) = lanes.get::<O, D>(k);
                 add(&mut main[k], &mut correction[k], a);
                 counts[k] += usize::from(ok);
+                if O != COUNT {
+                    (run[k], last[k]) = advance_run(run[k], last[k], a, ok);
+                }
             }
         }
-        for (k, dest) in row.iter_mut().enumerate() {
-            *dest = f64::NAN;
-            let mut value = main[k] + correction[k];
+        let row = &mut row[..n];
+        let today = Lanes::new::<O>(pan, t, first, n, &all);
+        let mut any = false;
+        for k in 0..n {
             peak[k] = peak[k].max(main[k].abs());
-            if !value.is_finite() || 8. * f64::EPSILON * peak[k] > 1e-11 * (value.abs() + 1.) {
+            let raw = main[k] + correction[k];
+            // All valid contributions equal (often all zero): the correctly rounded sum is
+            // one product. Counts are integer sums already, so they skip the check.
+            let constant = (O != COUNT) & (counts[k] > 0) & (run[k] >= counts[k]);
+            let product = counts[k] as f64 * last[k];
+            let value = choose(product, raw, constant);
+            // A constant window drops the residue its state carried: the state becomes
+            // the exact sum, the rounded product plus its exact rounding error (fma).
+            // Doing this in the vectorized pass measured cheaper than a separate reset pass.
+            let residual = (counts[k] as f64).mul_add(last[k], -product);
+            main[k] = choose(product, main[k], constant);
+            correction[k] = choose(residual, correction[k], constant);
+            peak[k] = choose(product.abs(), peak[k], constant);
+            redo[k] = !constant
+                & (!raw.is_finite() | (8. * f64::EPSILON * peak[k] > 1e-11 * (raw.abs() + 1.)));
+            any |= redo[k];
+            row[k] = or_nan(
+                window_result::<O>(value, counts[k], constant, last[k]),
+                (counts[k] >= p.min_periods) & (D || today.valid[k]),
+            );
+        }
+        if any {
+            for k in (0..n).filter(|&k| redo[k]) {
                 let mut contributions = Vec::with_capacity(p.window.min(t + 1));
                 counts[k] = 0;
                 for r in (t + 1).saturating_sub(p.window)..=t {
@@ -1390,21 +1480,363 @@ fn sum_rows<const O: usize, const D: bool>(
                     }
                 }
                 peak[k] = contributions.iter().fold(0f64, |m, x| m.max(x.abs()));
-                value = accurate_sum(contributions.into_iter());
+                let value = accurate_sum(contributions.into_iter());
                 main[k] = value;
                 correction[k] = 0.;
+                row[k] = or_nan(
+                    window_result::<O>(value, counts[k], false, last[k]),
+                    (counts[k] >= p.min_periods) & (D || pan.valid(t * pan.n + first + k)),
+                );
             }
-            let out = if O == MEAN {
-                value / counts[k] as f64
+        }
+    }
+}
+
+/// Windows up to this length are summed directly instead of incrementally: at this
+/// length the direct sum is no slower (docs/PANELOPS_BENCHMARKS.md), and each cell then
+/// depends only on its own window, never on the rows that left it.
+const SHORT_SUM_WINDOW: usize = 3;
+
+/// Sum or mean of one window. A window whose valid contributions are all equal
+/// (`constant`, from the trailing equal run) has mean exactly that value; `sum` already
+/// holds its correctly rounded product. `+ 0.` makes every zero result positive.
+#[inline(always)]
+fn window_result<const O: usize>(sum: f64, count: usize, constant: bool, last: f64) -> f64 {
+    if O == MEAN {
+        choose(last + 0., sum / count as f64, constant)
+    } else {
+        sum + 0.
+    }
+}
+
+/// Short windows: each window is summed directly in time order with error-free
+/// transformations (two-sum), vectorized across columns. The sum plus its exactly
+/// accumulated errors rounds once, so the result is the correctly rounded window sum and
+/// depends only on the window; a cell whose error sum was itself inexact, or that
+/// overflowed, takes the correctly rounded scalar sum.
+fn short_sum_rows<const O: usize, const D: bool>(
+    pan: Panel<'_>,
+    p: Options,
+    first: usize,
+    rows: Vec<&mut [f64]>,
+) {
+    let n = rows[0].len();
+    let (mut total, mut lost) = (vec![0f64; n], vec![0f64; n]);
+    let mut counts = vec![0usize; n];
+    let (mut run, mut last) = (vec![0usize; n], vec![f64::NAN; n]);
+    let mut redo = vec![false; n];
+    let mut partials = Vec::with_capacity(8);
+    let all = vec![true; n];
+    let mut ring = vec![0f64; p.window * n];
+    for (t, row) in rows.into_iter().enumerate() {
+        let (total, lost) = (&mut total[..n], &mut lost[..n]);
+        let (counts, run, last, row) = (
+            &mut counts[..n],
+            &mut run[..n],
+            &mut last[..n],
+            &mut row[..n],
+        );
+        let start = (t + 1).saturating_sub(p.window);
+        // Counts are integers, so updating them incrementally is exact.
+        if t >= p.window {
+            let leaving = Lanes::new::<O>(pan, t - p.window, first, n, &all);
+            for (k, c) in counts.iter_mut().enumerate() {
+                *c -= usize::from(leaving.get::<O, D>(k).1);
+            }
+        }
+        let today = Lanes::new::<O>(pan, t, first, n, &all);
+        let slot = &mut ring[(t % p.window) * n..(t % p.window + 1) * n];
+        for k in 0..n {
+            let (a, ok) = today.get::<O, D>(k);
+            slot[k] = a;
+            counts[k] += usize::from(ok);
+            (run[k], last[k]) = advance_run(run[k], last[k], a, ok);
+        }
+        // Contributions are kept once per row; the window (at most 3 rows) is summed in
+        // time order in one pass. Two rows round once, so their sum is already correctly
+        // rounded; three rows keep the two-sum errors and flag any loss for the exact pass.
+        let slot = |r: usize| &ring[(r % p.window) * n..(r % p.window + 1) * n];
+        let (a, b, c) = (slot(start), slot(start + usize::from(t > start)), slot(t));
+        // Fewer than three rows only occur before the first full window, so `lost` is
+        // still zero there.
+        match t + 1 - start {
+            1 => total.copy_from_slice(a),
+            2 => {
+                for k in 0..n {
+                    total[k] = a[k] + c[k];
+                }
+            }
+            // 0/1 contributions: plain sums of integers are exact.
+            _ if O == COUNT => {
+                for k in 0..n {
+                    total[k] = a[k] + b[k] + c[k];
+                }
+            }
+            _ => {
+                for k in 0..n {
+                    let (low, e1) = two_sum(a[k], b[k]);
+                    let (sum, e2) = two_sum(low, c[k]);
+                    let (acc, rest) = two_sum(e1, e2);
+                    total[k] = sum + acc;
+                    lost[k] = rest;
+                }
+            }
+        }
+        let mut any = false;
+        for k in 0..n {
+            let constant = (counts[k] > 0) & (run[k] >= counts[k]);
+            let value = choose(counts[k] as f64 * last[k], total[k], constant);
+            redo[k] = !constant & (!value.is_finite() | (lost[k] != 0.));
+            any |= redo[k];
+            row[k] = or_nan(
+                window_result::<O>(value, counts[k], constant, last[k]),
+                (counts[k] >= p.min_periods) & (D || today.valid[k]),
+            );
+        }
+        if any {
+            for k in (0..n).filter(|&k| redo[k]) {
+                let value = window_sum::<O, D>(pan, start, t, first + k, &mut partials);
+                row[k] = or_nan(
+                    window_result::<O>(value, counts[k], false, last[k]),
+                    (counts[k] >= p.min_periods) & (D || today.valid[k]),
+                );
+            }
+        }
+    }
+}
+
+/// `a + b` and its exact rounding error (Knuth's two-sum; exact for finite operands).
+#[inline(always)]
+fn two_sum(a: f64, b: f64) -> (f64, f64) {
+    let sum = a + b;
+    let b_part = sum - a;
+    (sum, (a - (sum - b_part)) + (b - b_part))
+}
+
+/// `exact`: each column keeps the window sum as an exact floating expansion (adding and
+/// removing values is error free) and rounds it correctly at every row, so a cell depends
+/// only on the multiset of values in its window. Cost does not grow with the window.
+fn exact_sum_rows<const O: usize, const D: bool>(
+    pan: Panel<'_>,
+    p: Options,
+    first: usize,
+    rows: Vec<&mut [f64]>,
+) {
+    let n = rows[0].len();
+    let mut exact: Vec<Vec<f64>> = vec![Vec::with_capacity(4); n];
+    let mut counts = vec![0usize; n];
+    let (mut run, mut last) = (vec![0usize; n], vec![f64::NAN; n]);
+    let mut partials = Vec::with_capacity(8);
+    for (t, row) in rows.into_iter().enumerate() {
+        let start = (t + 1).saturating_sub(p.window);
+        for (k, dest) in row.iter_mut().enumerate() {
+            let j = first + k;
+            let mut intact = true;
+            if t >= p.window {
+                let (a, ok) = summand::<O, D>(pan, (t - p.window) * pan.n + j);
+                counts[k] -= usize::from(ok);
+                intact &= grow(&mut exact[k], -a);
+            }
+            let (a, ok) = summand::<O, D>(pan, t * pan.n + j);
+            counts[k] += usize::from(ok);
+            (run[k], last[k]) = advance_run(run[k], last[k], a, ok);
+            intact &= grow(&mut exact[k], a);
+            let rounded = match exact[k].as_slice() {
+                [] => 0.,
+                [single] => *single + 0.,
+                parts => round_expansion(parts),
+            };
+            let value = if intact && rounded.is_finite() {
+                rounded
             } else {
+                // A partial (or the rounding) overflowed: take the window alone.
+                let value = window_sum::<O, D>(pan, start, t, j, &mut partials);
+                exact[k].clear();
+                for r in start..=t {
+                    let (a, _) = summand::<O, D>(pan, r * pan.n + j);
+                    if !grow(&mut exact[k], a) {
+                        exact[k].clear();
+                        exact[k].push(f64::NAN);
+                        break;
+                    }
+                }
                 value
             };
+            let constant = counts[k] > 0 && run[k] >= counts[k];
             *dest = or_nan(
-                out,
-                (counts[k] >= p.min_periods) & (D || pan.valid(t * pan.n + first + k)),
+                window_result::<O>(value, counts[k], constant, last[k]),
+                (counts[k] >= p.min_periods) & (D || pan.valid(t * pan.n + j)),
             );
         }
     }
+}
+
+/// The correctly rounded sum of one window's contributions (all finite). When a partial
+/// sum of the expansion overflows, an exact fixed-point sum decides the rounding, so the
+/// result is ±inf only when the exact sum itself rounds beyond the largest double.
+fn window_sum<const O: usize, const D: bool>(
+    pan: Panel<'_>,
+    start: usize,
+    t: usize,
+    j: usize,
+    partials: &mut Vec<f64>,
+) -> f64 {
+    partials.clear();
+    let contributions = (start..=t).map(|r| summand::<O, D>(pan, r * pan.n + j).0);
+    let mut intact = true;
+    for a in contributions.clone() {
+        intact = intact && grow(partials, a);
+    }
+    let rounded = if intact {
+        round_expansion(partials)
+    } else {
+        f64::NAN
+    };
+    if rounded.is_finite() {
+        rounded
+    } else {
+        fixed_point_sum(contributions)
+    }
+}
+
+const LIMBS: usize = 36;
+
+/// The correctly rounded sum of finite values, exactly: every finite double is an
+/// integer multiple of 2^-1074, so positive and negative parts accumulate as 2304-bit
+/// integers (2098 bits of range plus carry room for 2^200 terms) and the difference is
+/// rounded once, half to even. Only the rare overflow path uses it.
+fn fixed_point_sum(values: impl Iterator<Item = f64>) -> f64 {
+    let (mut positive, mut negative) = ([0u64; LIMBS], [0u64; LIMBS]);
+    for v in values {
+        let bits = v.to_bits();
+        let exponent = ((bits >> 52) & 0x7ff) as usize;
+        let fraction = bits & ((1 << 52) - 1);
+        let (mantissa, shift) = if exponent == 0 {
+            (fraction, 0)
+        } else {
+            (fraction | (1 << 52), exponent - 1)
+        };
+        if mantissa == 0 {
+            continue;
+        }
+        let target = if v < 0. { &mut negative } else { &mut positive };
+        let mut carry = u128::from(mantissa) << (shift % 64);
+        let mut limb = shift / 64;
+        while carry != 0 {
+            let sum = u128::from(target[limb]) + (carry & u128::from(u64::MAX));
+            target[limb] = sum as u64;
+            carry = (carry >> 64) + (sum >> 64);
+            limb += 1;
+        }
+    }
+    let negative_wins = positive.iter().rev().cmp(negative.iter().rev()).is_lt();
+    let (big, small) = if negative_wins {
+        (negative, positive)
+    } else {
+        (positive, negative)
+    };
+    let mut magnitude = [0u64; LIMBS];
+    let mut borrow = 0u64;
+    for i in 0..LIMBS {
+        let (d, b1) = big[i].overflowing_sub(small[i]);
+        let (d, b2) = d.overflowing_sub(borrow);
+        magnitude[i] = d;
+        borrow = u64::from(b1 | b2);
+    }
+    let bit = |b: usize| (magnitude[b / 64] >> (b % 64)) & 1 == 1;
+    let Some(top) = (0..LIMBS).rev().find(|&i| magnitude[i] != 0) else {
+        return 0.;
+    };
+    let high = top * 64 + 63 - magnitude[top].leading_zeros() as usize;
+    let value = if high <= 52 {
+        // Below 2^53 units of 2^-1074: exactly representable.
+        magnitude[0] as f64 * f64::from_bits(1)
+    } else {
+        let shift = high - 52;
+        let mut mantissa = (shift..=high)
+            .rev()
+            .fold(0u64, |m, b| (m << 1) | u64::from(bit(b)));
+        let half = bit(shift - 1);
+        let sticky = (0..shift - 1).any(bit);
+        let mut biased = shift + 1;
+        if half && (sticky || mantissa & 1 == 1) {
+            mantissa += 1;
+            if mantissa == 1 << 53 {
+                mantissa >>= 1;
+                biased += 1;
+            }
+        }
+        if biased >= 2047 {
+            f64::INFINITY
+        } else {
+            f64::from_bits(((biased as u64) << 52) | (mantissa & ((1 << 52) - 1)))
+        }
+    };
+    if negative_wins { -value } else { value }
+}
+
+/// Adds `x` to a nonoverlapping expansion (increasing magnitude) without rounding error.
+/// Returns false, leaving the expansion unusable, when a partial sum overflows; a NaN
+/// partial marks an expansion that already overflowed.
+fn grow(partials: &mut Vec<f64>, mut x: f64) -> bool {
+    if partials.first().is_some_and(|v| v.is_nan()) {
+        return false;
+    }
+    if x == 0. {
+        return true;
+    }
+    let mut length = 0;
+    for index in 0..partials.len() {
+        let mut y = partials[index];
+        if x.abs() < y.abs() {
+            std::mem::swap(&mut x, &mut y);
+        }
+        let high = x + y;
+        if !high.is_finite() {
+            return false;
+        }
+        let low = y - (high - x);
+        if low != 0. {
+            partials[length] = low;
+            length += 1;
+        }
+        x = high;
+    }
+    partials.truncate(length);
+    if x != 0. {
+        partials.push(x);
+    }
+    true
+}
+
+/// Correct rounding of a nonoverlapping expansion, with the half-way correction of
+/// CPython's `math.fsum`; the result depends only on the exact value represented.
+fn round_expansion(partials: &[f64]) -> f64 {
+    let mut m = partials.len();
+    if m == 0 {
+        return 0.;
+    }
+    m -= 1;
+    let mut high = partials[m];
+    let mut low = 0.;
+    while m > 0 {
+        let x = high;
+        m -= 1;
+        let y = partials[m];
+        high = x + y;
+        low = y - (high - x);
+        if low != 0. {
+            break;
+        }
+    }
+    if m > 0 && ((low < 0. && partials[m - 1] < 0.) || (low > 0. && partials[m - 1] > 0.)) {
+        let y = low * 2.;
+        let x = high + y;
+        if y == x - high {
+            high = x;
+        }
+    }
+    high + 0.
 }
 
 /// Length of the trailing run of equal valid values, updated without branches:
@@ -1611,5 +2043,83 @@ mod mad_tests {
             let actual = sorted_mad(&sorted);
             assert_eq!(actual.to_bits(), expected.to_bits(), "{sorted:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_sum_tests {
+    use super::{grow, round_expansion};
+
+    fn rounded(values: &[f64]) -> f64 {
+        let mut e = Vec::new();
+        for &v in values {
+            assert!(grow(&mut e, v));
+        }
+        round_expansion(&e)
+    }
+
+    #[test]
+    fn expansion_sum_is_exact_and_order_free() {
+        assert_eq!(rounded(&[1., 1e100, 1., -1e100]), 2.);
+        assert_eq!(rounded(&[0.1, 0.2, 0.3]), 0.6);
+        assert_eq!(rounded(&[0.3, 0.2, 0.1]), 0.6);
+        // Half-way case: 1 + 2^-53 + 2^-106 rounds up, not to even.
+        let h = 2f64.powi(-53);
+        assert_eq!(rounded(&[1., h, h * h]), 1. + 2. * h);
+        assert_eq!(rounded(&[h * h, h, 1.]), 1. + 2. * h);
+        // Removing every value restores positive zero.
+        let mut e = Vec::new();
+        for v in [171.2, 3.3, 0.1, 55.5, 1e3] {
+            assert!(grow(&mut e, v));
+        }
+        for v in [3.3, 1e3, 0.1, 171.2, 55.5] {
+            assert!(grow(&mut e, -v));
+        }
+        assert!(e.is_empty());
+        let zero = round_expansion(&e);
+        assert!(zero == 0. && zero.is_sign_positive());
+    }
+
+    #[test]
+    fn fixed_point_sum_rounds_correctly_at_the_extremes() {
+        use super::fixed_point_sum;
+        let max = f64::MAX;
+        let tie = 2f64.powi(970); // half a unit in the last place of f64::MAX
+        // `2f64.powi(-1074)` is 0 in debug builds (1 / 2^1074 overflows first).
+        let tiny = f64::from_bits(1);
+        let sum = |v: &[f64]| fixed_point_sum(v.iter().copied());
+        assert_eq!(sum(&[1e308, 1e308, -1e308]), 1e308);
+        assert_eq!(sum(&[1e308, -1e308, 1e308]), 1e308);
+        assert_eq!(sum(&[max, max, -max]), max);
+        assert_eq!(sum(&[max, max]), f64::INFINITY);
+        assert_eq!(sum(&[-max, -max, 1.]), f64::NEG_INFINITY);
+        // Exactly half way above f64::MAX rounds to even, i.e. overflows; anything less
+        // stays at f64::MAX.
+        assert_eq!(sum(&[max, tie]), f64::INFINITY);
+        assert_eq!(sum(&[max, tie, -tiny]), max);
+        assert_eq!(sum(&[tiny, tiny, tiny]), 3. * tiny);
+        assert_eq!(sum(&[1., 2f64.powi(-53), tiny]), 1. + f64::EPSILON);
+        assert_eq!(sum(&[1., 2f64.powi(-53)]), 1.);
+        let zero = sum(&[-0., 3.5, -3.5]);
+        assert!(zero == 0. && zero.is_sign_positive());
+        let mut state = 7u64;
+        for _ in 0..2000 {
+            let values: Vec<f64> = (0..5)
+                .map(|_| {
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    let e = ((state >> 33) % 120) as i32 - 60;
+                    let m = (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5;
+                    m * 2f64.powi(e)
+                })
+                .collect();
+            assert_eq!(sum(&values).to_bits(), rounded(&values).to_bits());
+        }
+    }
+
+    #[test]
+    fn overflow_is_reported() {
+        let mut e = Vec::new();
+        assert!(grow(&mut e, 1e308));
+        assert!(!grow(&mut e, 1e308));
     }
 }

@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import date, timedelta
 
-from .catalog import DATASETS, FUTURES_DATASETS
+from .catalog import DATASETS, FUND_DATASETS, FUTURES_DATASETS
 from .maintenance import collect_garbage, disk_usage
 from .panel import build
 from .sources import Tushare
@@ -51,6 +51,20 @@ def main():
     futures.add_argument("--budget", type=int, default=60000)
     commands.add_parser("build-futures", help="由期货原始库构建交易日×合约面板")
     commands.add_parser("verify-futures", help="期货原始库与面板的独立校验")
+    funds = commands.add_parser("sync-funds", help="场内基金（ETF、LOF）与可转债原始库")
+    funds.add_argument("--start", default="2015-01-05")
+    funds.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
+    funds.add_argument("--datasets", nargs="+", choices=FUND_DATASETS)
+    funds.add_argument("--force", action="store_true")
+    funds.add_argument("--no-refresh", action="store_true")
+    funds.add_argument("--workers", type=int, default=8)
+    funds.add_argument("--rate", type=float, default=200)
+    funds.add_argument("--budget", type=int, default=40000)
+    built = commands.add_parser("build-funds", help="构建基金、可转债的交易日×证券面板")
+    built.add_argument(
+        "--stock-root", help="正股收盘价所在的数据根（算转股价值），默认与 --root 相同"
+    )
+    commands.add_parser("verify-funds", help="基金与可转债原始库和面板的独立校验")
     # 港股、美股（第 2 批）：配合 --market hk / --market us，数据根 <root>/hk、<root>/us。
     overseas = commands.add_parser(
         "sync-overseas", help="港股或美股原始库（--market hk|us）"
@@ -195,6 +209,46 @@ def main():
         if report["verdict"] == "fail":
             print(json.dumps(result, ensure_ascii=False, indent=2))
             raise SystemExit(1)
+    elif args.command == "sync-funds":
+        from .fund_sync import sync_funds
+
+        async def run_funds():
+            async with Tushare(
+                rate=args.rate,
+                concurrency=args.workers,
+                state_path=store.root / "account.json",
+                budget=args.budget,
+            ) as source:
+                outcome = await sync_funds(
+                    source,
+                    store,
+                    args.start,
+                    args.end,
+                    args.datasets,
+                    force=args.force,
+                    refresh=not args.no_refresh,
+                    workers=args.workers,
+                )
+                return dict(stats=outcome["stats"], calls=source.calls)
+
+        result = asyncio.run(run_funds())
+    elif args.command == "build-funds":
+        from .fund_panel import build_funds
+
+        result = build_funds(store, stock_root=args.stock_root)
+    elif args.command == "verify-funds":
+        from .fund_verify import verify_funds
+
+        report = verify_funds(store)
+        result = {
+            k: {p: v[p] for p in ("verdict", "checked", "failed", "explained")}
+            for k, v in report["checks"].items()
+        }
+        result["verdict"] = report["verdict"]
+        result["report"] = str(store.root / "reports/funds_verify.md")
+        if report["verdict"] == "fail":
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            raise SystemExit(1)
     elif args.command in (
         "sync-overseas",
         "select-sample-overseas",
@@ -261,6 +315,18 @@ def main():
         }
         if futures_status:
             result["futures"] = futures_status
+        # 基金与可转债同样单独一节。
+        fund_status = {
+            name: dict(
+                partitions=len(entries),
+                rows=sum(e.get("rows", 0) for e in entries.values()),
+                failed=sum(e["status"] != "complete" for e in entries.values()),
+            )
+            for name in FUND_DATASETS
+            if (entries := store.entries(name))
+        }
+        if fund_status:
+            result["funds"] = fund_status
         # 港股、美股的数据集只出现在 <root>/hk、<root>/us 的清单里，A 股清单里永远没有。
         from .catalog import OVERSEAS_DATASETS
 

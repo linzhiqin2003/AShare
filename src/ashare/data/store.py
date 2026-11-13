@@ -12,7 +12,7 @@ from pathlib import Path
 
 import polars as pl
 
-from .catalog import ALL_DATASETS, FUTURES_DATASETS
+from .catalog import ALL_DATASETS, FUND_DATASETS, FUTURES_DATASETS
 from .manifest import Manifest
 
 # cn 是 A 股（含境内期货）；hk、us 是港股、美股的独立数据根（第 2 批，见 overseas_sync）。
@@ -341,6 +341,7 @@ class Store:
             for k, v in self.manifest().items()
             if v["status"] == "complete"
             and (v.get("dataset") in FUTURES_DATASETS) == futures
+            and v.get("dataset") not in FUND_DATASETS  # 基金与可转债另算版本
         }
         return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
@@ -353,3 +354,13 @@ class Store:
     def futures_version(self):
         """期货原始库（FUTURES_DATASETS）的内容版本，与股票版本互不影响。"""
         return self._version(True)
+
+    @property
+    def fund_version(self):
+        """场内基金与可转债原始库（FUND_DATASETS）的内容版本，与股票、期货版本互不影响。"""
+        values = {
+            k: v["content_hash"]
+            for k, v in self.manifest().items()
+            if v["status"] == "complete" and v.get("dataset") in FUND_DATASETS
+        }
+        return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()

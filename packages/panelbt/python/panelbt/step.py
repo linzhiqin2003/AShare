@@ -199,6 +199,14 @@ class Simulator:
                 raise ValueError("cols/values: expected equal lengths")
             if limits is not None and limits.shape != values.shape:
                 raise ValueError("limits: expected one limit per target entry")
+            if (
+                limits is not None
+                and self._market.futures is not None
+                and np.isfinite(limits).any()
+            ):
+                raise ValueError(
+                    "limits: limit targets are not supported in markets with futures columns"
+                )
             if cols.size > 1 and np.any(cols[1:] <= cols[:-1]):
                 order = np.argsort(cols, kind="stable")
                 cols, values = cols[order], values[order]
