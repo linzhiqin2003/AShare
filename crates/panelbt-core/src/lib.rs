@@ -1068,11 +1068,11 @@ impl Core {
             };
             if reduction != 0.0 {
                 let allowed = p.is_finite()
-                    && if reduction > 0.0 {
-                        m.buy[base + i] != 0
-                    } else {
-                        m.sell[base + i] != 0
-                    };
+                    && tradecore::direction_allowed(
+                        reduction > 0.0,
+                        m.buy[base + i] != 0,
+                        m.sell[base + i] != 0,
+                    );
                 let mut q = if allowed {
                     reduction.signum()
                         * round_close(reduction.abs().min(cap), current.abs(), minimum, step)
@@ -1591,8 +1591,10 @@ fn run_impl<const CLASSIC: bool, const FUT: bool, const T: bool>(
 }
 
 pub mod futures;
+pub mod group_weights;
 pub mod rules;
 pub mod validate;
+pub mod weights;
 pub fn run_batch(
     m: &Market<'_>,
     targets: &[Targets<'_>],

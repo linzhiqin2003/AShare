@@ -14,9 +14,9 @@ def ts_delay(x, d):
     d = int(d)
     if d < 0:
         raise ValueError("d 必须是非负整数")
-    a = np.array(x, dtype=np.float64, copy=True)
+    a = np.asarray(x, dtype=np.float64)
     if d == 0:
-        return a
+        return a.copy()
     out = np.full_like(a, np.nan)
     if d < a.shape[0]:
         out[d:] = a[:-d]
@@ -42,7 +42,7 @@ def risk_factors(close_adj, total_mv):
 
 
 def risk_exposure(weights, risk, universe):
-    """每行截面去均值后的风险因子按权重加总；整行无有效权重的暴露为 NaN。"""
+    """每行去均值后按权重加总，无持仓为 NaN；保留供手算与参考测试，run 使用 Rust。"""
     w = np.array(weights, dtype=np.float64, copy=True)
     w = np.where(np.isnan(w), 0.0, w)
     active = np.any(w != 0.0, axis=1)

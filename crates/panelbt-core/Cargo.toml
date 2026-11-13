@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 rayon.workspace = true
 tradecore = { path = "../tradecore" }
+panelops-core = { path = "../panelops-core" }

@@ -7,9 +7,12 @@
 from dataclasses import dataclass, field
 
 import numpy as np
+import panelbt
+import panelops
+from panelbt.markets.ashare import price_permissions
 
 from ..windows import IS, TEST, VALIDATION  # noqa: F401
-from . import metrics, plot, portfolio, weights
+from . import metrics, plot, portfolio
 
 UNIVERSES = {
     "TOP800": ("member_csi300", "member_csi500"),
@@ -37,7 +40,6 @@ FIELDS = (
 )
 # 中证1000 的成分数据从 2014 年 11 月才有；涉及 TOP1800 的回测统一从这一天起算。
 TOP1800_START = "20150101"
-PRICE_TOL = 0.005  # 与数据层开盘口径相同
 PERIODS = 240  # 一年按 240 个交易日
 
 
@@ -74,20 +76,18 @@ def industry_groups(panel):
 
 def _adjusted(panel, name):
     """复权价；停牌或缺价的日子沿用上一个有效价（持仓在停牌期间收益为 0，复牌时一次体现）。"""
-    px = np.asarray(panel[name], dtype=np.float64) * np.asarray(
-        panel["adj_factor"], dtype=np.float64
-    )
-    px = np.where(np.isfinite(px) & (px > 0), px, np.nan)
-    idx = np.where(np.isnan(px), 0, np.arange(px.shape[0])[:, None])
-    np.maximum.accumulate(idx, axis=0, out=idx)
-    return np.take_along_axis(px, idx, axis=0)
+    # ufunc 以 float64 运算，但不先把两份输入各展开成完整的 float64 副本。
+    px = np.multiply(panel[name], panel["adj_factor"], dtype=np.float64)
+    px[~(np.isfinite(px) & (px > 0))] = np.nan
+    return panelops.ts_ffill(np.ascontiguousarray(px))
 
 
 def _forward_return(price):
     """第 s 行：s 日到 s+1 日同一时点的收益；最后一行为 NaN。"""
     out = np.full(price.shape, np.nan)
     with np.errstate(invalid="ignore", divide="ignore"):
-        out[:-1] = price[1:] / price[:-1] - 1.0
+        np.divide(price[1:], price[:-1], out=out[:-1])
+        out[:-1] -= 1.0
     return out
 
 
@@ -100,22 +100,19 @@ def close_masks(panel):
         panel["has_quote"], dtype=bool
     )
     with np.errstate(invalid="ignore"):
-        valid = np.isfinite(close) & (close > 0) & ~stop
-        no_buy = np.isfinite(up) & (close >= up - PRICE_TOL)
-        no_sell = np.isfinite(down) & (close <= down + PRICE_TOL)
-    return valid & ~no_buy, valid & ~no_sell
+        return price_permissions(close, up, down, stop)
 
 
 class _Until:
     """面板截到第 stop 行为止的只读视图：之后的行在回测里读不到。"""
 
-    def __init__(self, panel, stop):
-        self._panel, self._stop = panel, stop
-        self.dates = np.asarray(panel.dates)[:stop]
+    def __init__(self, panel, stop, first=0):
+        self._panel, self._stop, self._first = panel, stop, first
+        self.dates = np.asarray(panel.dates)[first:stop]
         self.symbols = panel.symbols
 
     def __getitem__(self, name):
-        return self._panel[name][: self._stop]
+        return self._panel[name][self._first : self._stop]
 
     @property
     def shape(self):
@@ -249,51 +246,6 @@ def _html_table(frame):
     )
 
 
-def _one(name, alpha_all, inputs, options):
-    """一个股票池：抽池、池内去均值、分组、推进、统计。"""
-    panel, fwd, can_buy, can_sell, risk = inputs
-    mask = universe_mask(panel, name, options["start"])
-    built = weights.build_weights(alpha_all, mask, decay=options["decay"])
-    n = options["n_groups"]
-    groups = portfolio.assign_groups(built["alpha"], n)
-
-    def run(target, keep=False):
-        return portfolio.simulate(
-            _shift(target), fwd, can_buy, can_sell, keep_weights=keep
-        )
-
-    group_runs = [run(portfolio.group_targets(groups, g)) for g in range(n)]
-    long_short = run(portfolio.long_short_targets(groups, n), keep=True)
-    pnl = {"long_short": long_short["pnl"], "top": group_runs[0]["pnl"]}
-    turnover = {"long_short": long_short["turnover"], "top": group_runs[0]["turnover"]}
-    if options["weights_portfolio"]:
-        full = run(built["weights"])
-        pnl["weights"], turnover["weights"] = full["pnl"], full["turnover"]
-    # 持仓在成交日 s 生效，对应的风险因子和股票池是信号日 s-1 的。
-    known = {k: _shift(v) for k, v in risk.items()}
-    pool = np.zeros(mask.shape, dtype=bool)
-    pool[1:] = mask[:-1]
-    exposure = metrics.risk_exposure(long_short["weights"], known, pool)
-    # 第一个有持仓的成交日之前不计入统计。
-    live = np.flatnonzero(np.abs(long_short["weights"]).sum(axis=1) > 0)
-    group_pnl = np.array([g["pnl"] for g in group_runs])
-    first = live[0] if live.size else len(group_pnl[0])
-    for series in (*pnl.values(), *turnover.values(), *group_pnl):
-        series[:first] = np.nan
-        series[-1:] = np.nan  # 最后一行没有下一日的价格，盈亏未知
-    return GroupBacktest(
-        universe=name,
-        trade_at=options["trade_at"],
-        n_groups=n,
-        dates=np.asarray(panel.dates),
-        group_pnl=group_pnl,
-        pnl=pnl,
-        turnover=turnover,
-        exposure=exposure,
-        by=options["by"],
-    )
-
-
 def run(
     factor,
     panel,
@@ -326,7 +278,8 @@ def run(
       样本外窗口 `VALIDATION`、`TEST` 要显式传入才会用到。
 
     `panel` 需要 `FIELDS` 里的字段（`ashare.data.open().panel(FIELDS)`）。分不出 `n_groups`
-    组的交易日会抛 `GroupingError`。
+    组的交易日会抛 `GroupingError`。调用期间不要修改任何输入（包括共享底层内存的
+    其他视图）；内核会释放 GIL。有效窗口的因子独立复制，其他传入内核的视图临时只读。
     """
     if trade_at not in ("open", "close"):
         raise ValueError("trade_at 只能是 'open' 或 'close'")
@@ -334,57 +287,105 @@ def run(
         raise ValueError("n_groups 只能是 5 或 10")
     if by not in ("year", "quarter"):
         raise ValueError("by 只能是 'year' 或 'quarter'")
+    if universe not in UNIVERSES:
+        raise ValueError(f"universe 只能是 {tuple(UNIVERSES)}，得到 {universe!r}")
     x = np.asarray(factor, dtype=np.float64)
     if x.shape != panel.shape:
         raise ValueError(f"factor 形状 {x.shape} 与面板 {panel.shape} 不一致")
     start, stop = (str(d) for d in window)
     if not start < stop:
         raise ValueError(f"window 的起日 {start} 要早于止日 {stop}")
-    panel = _Until(panel, int(np.searchsorted(np.asarray(panel.dates), stop)))
-    x = x[: panel.shape[0]]
+    history = _Until(panel, int(np.searchsorted(np.asarray(panel.dates), stop)))
+    dates = history.dates
+    # 窗口之前不可能持仓；因子的中性化均为逐截面运算，不需要历史行。
+    # 价格仍从全历史前填，风险因子单独保留所需的 240 行历史。
+    first = int(np.searchsorted(dates, start))
+    first = min(first, max(len(dates) - 1, 0))
+    panel = _Until(history, len(dates), first)
+    x = x[first : len(dates)].copy(order="C")
     if vector_neut is not None:
         many = isinstance(vector_neut, (list, tuple))
         cut = [
-            np.asarray(v)[: panel.shape[0]]
+            np.asarray(v)[first : len(dates)]
             for v in (vector_neut if many else [vector_neut])
         ]
         vector_neut = cut if many else cut[0]
-    x = np.where(np.isfinite(x), x, np.nan)
-    cap = np.asarray(panel["total_market_cap"], dtype=np.float64)
+    if group_neutralize not in (None, "industry", "cap", "cap+industry"):
+        raise ValueError(f"无法识别的 group_neutralize 取值：{group_neutralize!r}")
+    logcap = np.array(panel["total_market_cap"], dtype=np.float64, copy=True)
+    logcap[~(logcap > 0)] = np.nan
     with np.errstate(invalid="ignore", divide="ignore"):
-        logcap = np.log(np.where(cap > 0, cap, np.nan))
-    # 全市场上的中性化；抽池、池内去均值在 _one 里做。
-    everything = np.ones(x.shape, dtype=bool)
-    alpha_all = weights.build_weights(
-        x,
-        everything,
-        industry=industry_groups(panel) if group_neutralize else None,
-        logcap=logcap,
-        group_neutralize=group_neutralize,
-        vector=vector_neut,
-    )["alpha"]
-    price = _adjusted(panel, trade_at)
-    fwd = _forward_return(price)
+        np.log(logcap, out=logcap)
+    industry = None
+    if group_neutralize in ("industry", "cap+industry"):
+        industry = panel["industry"]
     if not trade_limitation:
         can_buy = can_sell = None
     elif trade_at == "open":
-        can_buy = np.asarray(panel["can_buy_open"], dtype=bool)
-        can_sell = np.asarray(panel["can_sell_open"], dtype=bool)
+        can_buy, can_sell = panel["can_buy_open"], panel["can_sell_open"]
     else:
         can_buy, can_sell = close_masks(panel)
-    risk = metrics.risk_factors(_adjusted(panel, "close"), cap)
-    inputs = (panel, fwd, can_buy, can_sell, risk)
-    options = dict(
-        trade_at=trade_at,
-        n_groups=n_groups,
-        decay=decay,
-        by=by,
-        weights_portfolio=weights_portfolio,
-        # 主池是 TOP1800 时，带的小池也从同一天起算，才能并排比较。
-        start=max(start, TOP1800_START) if universe == "TOP1800" else start,
+    names = [universe, *(NESTED[universe] if sub_universes else ())]
+    pool_start = max(start, TOP1800_START) if universe == "TOP1800" else start
+    masks = [universe_mask(panel, name, pool_start) for name in names]
+    vectors = (
+        []
+        if vector_neut is None
+        else (vector_neut if isinstance(vector_neut, (list, tuple)) else [vector_neut])
     )
-    result = _one(universe, alpha_all, inputs, options)
-    if sub_universes:
-        for name in NESTED[universe]:
-            result.subs[name] = _one(name, alpha_all, inputs, options)
-    return result
+    # ashare 显式指定信号行和成交行的错位；引擎不推断交易时点。
+    runs = panelbt.run_group_weights(
+        x,
+        history[trade_at],
+        history["close"],
+        history["adj_factor"],
+        logcap,
+        masks,
+        signal_start=first,
+        execution_start=first + 1,
+        industry=industry,
+        industry_zero_missing=True,
+        vectors=vectors,
+        can_buy=can_buy,
+        can_sell=can_sell,
+        n_groups=n_groups,
+        neutralize=group_neutralize,
+        decay=0 if decay <= 1 else decay,
+        weighted=weights_portfolio,
+    )
+    results = []
+    for name, out in zip(names, runs, strict=True):
+        if out["bad_rows"]:
+            raise portfolio.GroupingError(out["bad_rows"])
+        p, turn = out["pnl"], out["turnover"]
+        for arr in (p, turn):
+            arr[:, : out["first_live"]] = np.nan
+            arr[:, -1:] = np.nan
+        p = np.pad(p, ((0, 0), (first, 0)), constant_values=np.nan)
+        turn = np.pad(turn, ((0, 0), (first, 0)), constant_values=np.nan)
+        exp = np.pad(out["exposure"], ((0, 0), (first, 0)), constant_values=np.nan)
+        pnl = {"long_short": p[n_groups], "top": p[0]}
+        turnover = {"long_short": turn[n_groups], "top": turn[0]}
+        if weights_portfolio:
+            pnl["weights"], turnover["weights"] = p[-1], turn[-1]
+        results.append(
+            GroupBacktest(
+                universe=name,
+                trade_at=trade_at,
+                n_groups=n_groups,
+                dates=dates,
+                group_pnl=p[:n_groups].copy(),
+                pnl=pnl,
+                turnover=turnover,
+                exposure=dict(
+                    zip(
+                        ("size", "reversal_20", "reversal_60", "momentum"),
+                        exp,
+                        strict=True,
+                    )
+                ),
+                by=by,
+            )
+        )
+    results[0].subs = dict(zip(names[1:], results[1:], strict=True))
+    return results[0]

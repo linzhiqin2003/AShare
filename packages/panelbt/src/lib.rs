@@ -1,5 +1,11 @@
 //! Read-only NumPy borrowing; release the GIL during independent simulations.
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+// The sole unsafe boundary calls NumPy's own float64 dot function, preserving
+// the installed BLAS provider's exact rounding while the GIL is released.
+mod group_weights;
+#[allow(unsafe_code)]
+mod numpy_dot;
+mod weights;
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
     PyUntypedArrayMethods, ndarray::Array2,
@@ -1017,8 +1023,24 @@ impl Simulator {
     }
 }
 
+/// Small import-time probes; no detached call or Python callback is needed.
+#[pyfunction]
+fn _numpy_sums<'py>(
+    py: Python<'py>,
+    probes: Vec<PyReadonlyArray1<'py, f64>>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let sums = probes
+        .iter()
+        .map(|p| Ok(panelbt_core::weights::sum(p.as_slice()?)))
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(sums.into_pyarray(py))
+}
+
 #[pymodule(name = "_core")]
 fn panelbt_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(_numpy_sums, m)?)?;
+    m.add_function(wrap_pyfunction!(group_weights::run_group_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(weights::run_weights_batch, m)?)?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_market, m)?)?;
     m.add_function(wrap_pyfunction!(validate_futures, m)?)?;

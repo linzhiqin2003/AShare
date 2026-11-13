@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 
-_TOL = 1e-12
-
 
 class GroupingError(ValueError):
     """某些行的有效股票数或不同取值数不足以分成指定组数。"""
@@ -44,11 +42,15 @@ def assign_groups(alpha, n_groups):
         count = int(valid.sum())
         if count == 0:
             continue
-        if count < n_groups or np.unique(values[t][valid]).size < n_groups:
+        if count < n_groups:
             bad_rows.append(t)
             continue
         cols = np.flatnonzero(valid)
         order = np.argsort(-values[t][cols], kind="stable")
+        sorted_values = values[t, cols[order]]
+        if 1 + np.count_nonzero(sorted_values[1:] != sorted_values[:-1]) < n_groups:
+            bad_rows.append(t)
+            continue
         ranks = np.empty(count, dtype=np.int64)
         ranks[order] = np.arange(count, dtype=np.int64)
         out[t, cols] = ranks * n_groups // count
@@ -76,82 +78,9 @@ def long_short_targets(groups, n_groups):
     )
 
 
-def _advance(target, prev, buy, sell):
-    """推进一步：受限股票冻结在上一行权重，其余按剩余额度分多空两边缩放。"""
-    budget_long = float(target[target > 0].sum())
-    budget_short = float(-target[target < 0].sum())
-    frozen = np.zeros(target.shape, dtype=bool)
-
-    while True:
-        free = ~frozen
-        used_long = float(prev[frozen & (prev > 0)].sum())
-        used_short = float(-prev[frozen & (prev < 0)].sum())
-        free_long = float(target[free & (target > 0)].sum())
-        free_short = float(-target[free & (target < 0)].sum())
-        scale_long = (
-            max(budget_long - used_long, 0.0) / free_long if free_long > 0 else 0.0
-        )
-        scale_short = (
-            max(budget_short - used_short, 0.0) / free_short if free_short > 0 else 0.0
-        )
-
-        cand = np.where(frozen, prev, 0.0)
-        up = free & (target > 0)
-        down = free & (target < 0)
-        cand[up] = target[up] * scale_long
-        cand[down] = target[down] * scale_short
-
-        violate = free & (
-            ((cand > prev + _TOL) & ~buy) | ((cand < prev - _TOL) & ~sell)
-        )
-        if not violate.any():
-            return cand
-        frozen |= violate
-
-
 def simulate(target, fwd_ret, can_buy=None, can_sell=None, *, keep_weights=True):
-    """逐行推进持仓，返回 weights、pnl 与 turnover。
+    """兼容旧内部入口；组合模拟统一由 panelbt 的纯权重模式执行。"""
+    from panelbt import run_weights
 
-    target 是目标权重，fwd_ret 是持仓在持有期内的收益，两者中的 NaN 都当 0。
-    can_buy/can_sell 是 (T, N) 的布尔面板，None 表示不限；只给一个时另一个
-    视为全 True。权重变大需要 can_buy，变小需要 can_sell（负权重按数值大小）。
-    keep_weights=False 时不保存逐日持仓（结果里 weights 为 None），省内存和时间。
-    """
-    tgt = np.asarray(target, dtype=np.float64)
-    ret = np.asarray(fwd_ret, dtype=np.float64)
-    if tgt.ndim != 2 or ret.shape != tgt.shape:
-        raise ValueError("target 与 fwd_ret 必须是同形状的二维数组")
-    for name, flags in (("can_buy", can_buy), ("can_sell", can_sell)):
-        if flags is not None and np.shape(flags) != tgt.shape:
-            raise ValueError(f"{name} 必须与 target 同形状")
-    n_rows, n_cols = tgt.shape
-    pnl = np.zeros(n_rows, dtype=np.float64)
-    turnover = np.zeros(n_rows, dtype=np.float64)
-    held = np.zeros(tgt.shape) if keep_weights else None
-    limited = can_buy is not None or can_sell is not None
-    buy = None if can_buy is None else np.asarray(can_buy, dtype=bool)
-    sell = None if can_sell is None else np.asarray(can_sell, dtype=bool)
-    prev = np.zeros(n_cols, dtype=np.float64)
-    # 只在有目标或有持仓的列上推进：一个分组通常只占全部股票的一小部分。
-    live = np.zeros(0, dtype=np.int64)
-    for t in range(n_rows):
-        row = tgt[t]
-        wanted = np.flatnonzero((row != 0.0) & ~np.isnan(row))
-        cols = np.union1d(live, wanted) if live.size else wanted
-        if cols.size == 0:
-            continue
-        before = prev[cols]
-        want = np.nan_to_num(row[cols])
-        if limited:
-            ok_buy = np.ones(cols.size, dtype=bool) if buy is None else buy[t, cols]
-            ok_sell = np.ones(cols.size, dtype=bool) if sell is None else sell[t, cols]
-            cur = _advance(want, before, ok_buy, ok_sell)
-        else:
-            cur = want
-        if keep_weights:
-            held[t, cols] = cur
-        pnl[t] = float(np.dot(cur, np.nan_to_num(ret[t, cols])))
-        turnover[t] = float(np.abs(cur - before).sum())
-        prev[cols] = cur
-        live = cols[cur != 0.0]
-    return {"weights": held, "pnl": pnl, "turnover": turnover}
+    result = run_weights(target, fwd_ret, can_buy, can_sell, keep_weights=keep_weights)
+    return {"weights": result.weights, "pnl": result.pnl, "turnover": result.turnover}

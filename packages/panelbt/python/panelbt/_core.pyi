@@ -6,6 +6,26 @@ BUILD_MARKER: str
 SOURCE_SHA256: str
 VALIDATION_CHUNK: int
 
+def _numpy_sums(probes: list[NDArray]) -> NDArray: ...
+def run_weights_batch(
+    returns: NDArray,
+    buy: NDArray,
+    sell: NDArray,
+    targets: list[tuple[NDArray, NDArray, int, int, float, float, bool]],
+) -> list[dict[str, Any]]: ...
+def run_group_weights(
+    factor: NDArray,
+    logcap: NDArray,
+    industry: NDArray,
+    vectors: list[NDArray],
+    universes: list[NDArray],
+    price: NDArray,
+    close: NDArray,
+    adjustment: NDArray,
+    buy: NDArray,
+    sell: NDArray,
+    options: tuple[int, int, int, int, int, bool, bool, bool],
+) -> list[dict[str, Any]]: ...
 def run(
     floats: list[NDArray],
     masks: list[NDArray],

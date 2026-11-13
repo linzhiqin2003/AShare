@@ -39,6 +39,8 @@ cache-keys = [
   { file = "../../Cargo.toml" },
   { file = "../../crates/tradecore/Cargo.toml" },
   { file = "../../crates/tradecore/src/**/*.rs" },
+  { file = "../../crates/panelops-core/Cargo.toml" },
+  { file = "../../crates/panelops-core/src/**/*.rs" },
   { file = "../../Cargo.lock" },
   { file = "python/**/*.py" },
 ]

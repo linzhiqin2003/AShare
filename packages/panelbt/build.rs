@@ -25,8 +25,9 @@ fn main() {
     let binding = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let core = dependency(&binding, "panelbt-core");
     let trade = dependency(&core, "tradecore");
+    let ops = dependency(&core, "panelops-core");
     let mut digest = Sha256::new();
-    for root in [&binding, &core, &trade] {
+    for root in [&binding, &core, &trade, &ops] {
         let mut files = Vec::new();
         sources(&root.join("src"), &mut files);
         if root.join("build.rs").exists() {
