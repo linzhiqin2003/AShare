@@ -15,6 +15,9 @@ import polars as pl
 from .catalog import ALL_DATASETS, FUND_DATASETS, FUTURES_DATASETS
 from .manifest import Manifest
 
+# cn 是 A 股（含境内期货）；hk、us 是港股、美股的独立数据根（第 2 批，见 overseas_sync）。
+MARKETS = ("cn", "hk", "us")
+
 
 def data_root(root=None):
     resolved = Path(
@@ -71,8 +74,9 @@ def lock(path, *, shared=False, blocking=True):
 
 class Store:
     def __init__(self, root=None, market="cn", *, readonly=False):
-        if market != "cn":
-            raise ValueError(f"尚不支持市场 {market!r}，可用市场：cn")
+        if market not in MARKETS:
+            raise ValueError(f"尚不支持市场 {market!r}，可用市场：{', '.join(MARKETS)}")
+        self.market = market
         self.root = data_root(root) / market
         self._manifest = Manifest(self.root, readonly=readonly)
         self.manifest_path = self._manifest.path

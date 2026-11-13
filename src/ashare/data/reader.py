@@ -31,6 +31,11 @@ class Panel:
 
 class Data:
     def __init__(self, root=None, market="cn"):
+        if market in ("hk", "us"):
+            # 港股、美股的面板由 OverseasData 读取（ashare.data.open(root, market="hk") 会自动分派）。
+            raise ValueError(
+                f"Data 只读 A 股；{market} 请用 ashare.data.open(root, market={market!r})"
+            )
         self._store = Store(root, market, readonly=True).snapshot()
         current = self._store.root / "panel/current.json"
         self._path = None
