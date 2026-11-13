@@ -18,6 +18,7 @@ import pytest
 from futures_foreign_fixtures import (
     BRENT,
     CL,
+    CLOSED_DAYS,
     CME_DAYS,
     END,
     EXPIRED_TICKER,
@@ -214,6 +215,7 @@ def data():
 def _databento(products=("CL", "B"), budget=100.0, client=None, **kwargs):
     client = client or FakeHistorical()
     source = DatabentoSource(budget_usd=budget, client=client)
+    kwargs.setdefault("closed_days", CLOSED_DAYS)
     return DatabentoFutures(source, list(products), START, END, **kwargs), client
 
 

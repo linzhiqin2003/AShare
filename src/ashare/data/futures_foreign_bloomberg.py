@@ -32,11 +32,14 @@ from .futures_foreign import (
     PRODUCTS,
     ForeignAdapter,
     _as_date,
+    bars_on_closed_days,
     calendar_from_open_days,
     check_settlements,
+    closed_days_by_exchange,
     conform_minute,
     inside_listing,
     previous_settlement,
+    raise_on_closed_trading_days,
     resolve_year,
     trade_dates,
     unified_symbol,
@@ -242,6 +245,7 @@ class BloombergFutures(ForeignAdapter):
         margin=None,
         generic_ranks=(1, 2),
         require_settlement=True,
+        closed_days=None,
     ):
         super().__init__(margin=margin)
         unknown = [
@@ -255,6 +259,9 @@ class BloombergFutures(ForeignAdapter):
         self.start, self.end = start, end
         self.generic_ranks = tuple(generic_ranks)
         self.require_settlement = require_settlement
+        self._allowed = closed_days_by_exchange(
+            closed_days, sorted({PRODUCTS[c].exchange for c in self.products})
+        )
 
     def _lead(self):
         return (_as_date(self.start) - dt.timedelta(days=HISTORY_LEAD_DAYS)).strftime(
@@ -303,6 +310,21 @@ class BloombergFutures(ForeignAdapter):
             symbol = symbol_of.get(r["security"])
             if symbol in exchange_of and r.get("PX_SETTLE") is not None:
                 open_days.setdefault(exchange_of[symbol], set()).add(_text(r["date"]))
+        # 有行情却没有 PX_SETTLE 的工作日会被当成休市（分钟线并进下一开市日）：不在已知休市日里就报错。
+        suspicious, accepted = {}, {}
+        for r in history:
+            symbol = symbol_of.get(r["security"])
+            day = _text(r["date"])
+            e = exchange_of.get(symbol)
+            known = open_days.get(e)
+            if e is None or not known or day in known:
+                continue
+            if not (min(known) <= day <= max(known)):
+                continue
+            bucket = accepted if day in self._allowed[e] else suspicious
+            bucket.setdefault(e, {}).setdefault(day, 0)
+            bucket[e][day] += 1
+        raise_on_closed_trading_days(suspicious)
         empty = sorted(set(live["exchange"]) - set(open_days))
         if empty:
             raise ValueError(
@@ -329,6 +351,13 @@ class BloombergFutures(ForeignAdapter):
             require_settlement=self.require_settlement,
         )
         diag["skipped_tickers"] = skipped
+        diag["closed_days_with_bars"] = {
+            e: dict(sorted(d.items())) for e, d in sorted(accepted.items())
+        }
+        diag["unknown_listing_contracts"] = sorted(
+            set(live.filter(pl.col("listing_date").is_null())["symbol"])
+            & set(daily["symbol"])
+        )
         calendar = full.filter(
             pl.col("date").is_between(pl.lit(self.start), pl.lit(self.end))
         )
@@ -412,6 +441,19 @@ class BloombergFutures(ForeignAdapter):
             rows = self.source.intraday_bars(ticker, first, last, interval=1)
             if not rows:
                 continue
+            raise_on_closed_trading_days(
+                {
+                    p.exchange: bars_on_closed_days(
+                        [
+                            t if t.tzinfo else t.replace(tzinfo=dt.UTC)
+                            for t in (r["time"] for r in rows)
+                        ],
+                        p.session,
+                        open_days,
+                        self._allowed[p.exchange],
+                    )
+                }
+            )
             times = [
                 t if t.tzinfo else t.replace(tzinfo=dt.UTC)
                 for t in (r["time"] for r in rows)

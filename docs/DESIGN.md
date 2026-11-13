@@ -537,7 +537,7 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - **分层**照境内：取数层在 `ashare.data.sources.databento`、`ashare.data.sources.bloomberg`（只用官方客户端 `databento`、`blpapi`，不自己拼请求，不导入其他 ashare 模块）；换算层 `futures_foreign`（品种表、代码解析、交易日归属、分钟线字段、落盘、接面板）、`futures_foreign_databento`、`futures_foreign_bloomberg`，交出 `futures_schema` 的统一字段，面板、连续合约、`panelbt_inputs` 都不改。
 - **可选依赖**：`ashare[databento]`，默认不装。`blpapi` 只在 Bloomberg 的包索引上，不作可选依赖（锁文件不依赖那台主机），需要时手动 `uv pip install --index-url https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi`。没装时报错并给出安装命令；换算层不依赖官方库（测试用假客户端）。
 - **费用闸门**：Databento 按量计费。取第一个请求前先对**整份请求计划**逐个调 `metadata.get_cost`（免费），累计已批准额加计划总价超过调用方给的预算就一个都不取，报出计划总价、已花和差额；已取到的原始表在会话内缓存，重试不重取。预算、估价都必须是有限的非负数。默认预算 0，即默认只估不取。密钥只从环境变量 `DATABENTO_API_KEY` 读；Bloomberg 桌面 API 走本机终端，不要密钥。
-- **交易日**：CME 本地 17:00（芝加哥）、ICE 布伦特 23:00（伦敦）以后的成交归下一个交易日，再顺延过周末和休市日；开市日（由结算价推出）要覆盖整个取数窗口，窗口两端归不进已知日历的成交丢掉，不顺延进区间；日线不用 Databento 的 `ohlcv-1d`（按 UTC 日切分），用小时线按交易日聚合，结算价、持仓量取 `statistics`。
+- **交易日**：CME 本地 17:00（芝加哥）、ICE 布伦特 23:00（伦敦）以后的成交归下一个交易日，再顺延过周末和休市日；开市日（由结算价推出）要覆盖整个取数窗口，窗口两端归不进已知日历的成交丢掉，不顺延进区间；有成交却没有结算价的工作日默认报错，真正的休市日由调用方用 `closed_days` 声明（不内置节假日表）；日线不用 Databento 的 `ohlcv-1d`（按 UTC 日切分），用小时线按交易日聚合，结算价、持仓量取 `statistics`。
 - **合约标识**：两家的代码（`CLZ6`、`BRN FMZ0026!`、`CLZ6 Comdty`、`COZ6 Comdty`）解析成 `CL2612.NYMEX`、`B2612.ICE`；一位、两位年份按最后交易日解十年回绕。
 - **连续合约**：适配器只取具体合约，连续合约由 `futures_continuous` 用同一套换月规则拼；两家自带的连续序列（Databento `CL.c.0`/`n.0`/`v.0`、Bloomberg `CL1 Comdty`）只作对账参照。
 - **分钟线**：统一字段新增分钟线表（`futures_foreign.MINUTE`：K 线开始时刻 UTC、所属交易日、合约、开高低收、成交量），暂时定义在 `futures_foreign` 里；境内以后加分钟线时挪进 `futures_schema`。

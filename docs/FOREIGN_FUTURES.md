@@ -19,7 +19,8 @@ from ashare.data.futures_foreign_databento import DatabentoFutures
 from ashare.data.futures_foreign import build_panel, write_parquet
 
 src = DatabentoSource()                                   # 默认预算 0：只估价，不取数
-fut = DatabentoFutures(src, ["CL"], "20261102", "20261106", margin={"CL": 0.1})
+fut = DatabentoFutures(src, ["CL"], "20261102", "20261106", margin={"CL": 0.1},
+                       closed_days={"NYMEX": ["20261126"]})  # 区间里的已知休市日（见「交易日归属」）
 print(fut.estimate())                                      # 各请求的估算费用（美元），不计费
 src.budget_usd = 2.0                                       # 显式给预算才会取数（整份计划先估总价，超了一个都不取）
 fut.daily(); fut.contracts(); fut.minute("20261104", "20261104")
@@ -27,6 +28,8 @@ write_parquet(fut, "data/foreign/databento")               # 只存本地 data/�
 panel = build_panel(fut, "data/foreign/panel")             # 单独的数据根
 panel.continuous("CL", rule="open_interest")              # 本仓库的换月规则
 ```
+
+取到「今天」时：end 当天的结算价还没发布，最后一天不会出现在日线里（当天的 K 线归不进已知日历，丢掉并计数），诊断 `calendar_unknown_days` 列出这一天、`bars_outside_calendar` 记着丢掉的 K 线条数。结算价公布后重取即可。
 
 ```python
 from ashare.data.sources.bloomberg import BloombergSource  # 本机终端已登录，127.0.0.1:8194
@@ -79,7 +82,7 @@ market = bt.Market(**inputs["market"], futures=inputs["futures"])
 | symbol | 品种 + `maturity_year`/`maturity_month`（缺失时解析 `raw_symbol`，以 `expiration` 为参照日解年份；两者不一致时以定义为准并记进诊断 `maturity_conflicts`） | 解析代码（以 `LAST_TRADEABLE_DT` 为参照日解年份） |
 | exchange、product | 品种表 | 品种表 |
 | name | 品种表名称 + 年月 | `NAME`（缺了留空） |
-| listing_date | `activation` 按交易时段归属的交易日 | `FUT_FIRST_TRADE_DT`（缺了留空） |
+| listing_date | `activation` 按交易时段归属的交易日（为空时留空） | `FUT_FIRST_TRADE_DT`（缺了留空） |
 | last_trade_date | `expiration`（最后可成交时刻）按交易时段归属的交易日 | `LAST_TRADEABLE_DT` |
 | delivery_date | 空（来源没有） | `FUT_DLV_DT_LAST`（缺了留空） |
 | delivery_month | 年月 | 年月 |
@@ -91,6 +94,8 @@ market = bt.Market(**inputs["market"], futures=inputs["futures"])
 | multiplier_source | `contract_table_unverified`（没有成交额可反查） | 同左 |
 
 Databento 的定义：只要 `instrument_class == "F"`（价差是 S，代码带 `-`）；同一 `instrument_id` 取 `ts_recv` 最晚的一条，`security_update_action == "D"` 的删掉。`display_factor` 不是 1 的记进诊断 `display_factor`。请求窗口里同一个 `instrument_id` 对应几个代码（来源复用了 id）时报错，不合并成一个合约。
+
+**上市日缺了留空，当作没有下界**：上市期过滤只看最后交易日，不丢这个合约的行，这样的合约列在诊断 `unknown_listing_contracts` 里。
 
 **乘数、最小变动价位、币种缺了就报错，不回退到品种表**（品种表的值只用来与来源比对）：Databento 的 `unit_of_measure_qty`、`min_price_increment`、`currency`，Bloomberg 的 `FUT_CONT_SIZE`、`FUT_TICK_SIZE`、`CRNCY`、`LAST_TRADEABLE_DT`。所以合约表里这几列一定来自来源本身。
 
@@ -148,6 +153,8 @@ WTI 2020-04-20 的结算价是负数（CLK0，−37.63）。境内统一字段�
 
 `futures_foreign.trade_dates`：把 UTC 时刻换到交易所时区，本地时间 ≥ 切换点的归下一天，再顺延过周六周日，给了开市日集合时继续顺延到下一个开市日。
 
+**有成交却没有结算价的工作日要声明**：开市日由「有最终结算价的日子」推出。来源漏了某个工作日的结算价（或整天的统计）时，那天会被当成休市，K 线并进下一个开市日，开盘、最高、最低、电子盘成交量都错，而且不进其他诊断（差异复核 P1-A）。所以：已知日历范围内、有 K 线成交（Databento 的小时线、Bloomberg 的分钟线）或有历史行情行（Bloomberg）、却被判成休市的工作日，**默认报错**并列出日期和条数。真正的休市日（CME 感恩节、圣诞、元旦等，Globex 当天确有部分时段成交）由调用方用 `closed_days` 列出才放行：`closed_days={"NYMEX": [...], "ICE": [...]}`，或一个日期集合（对所有交易所）；放行的日子和 K 线条数记在诊断 `closed_days_with_bars`。适配器**没有内置节假日表**（两家都没有日历接口，交易所节假日要调用方从 CME、ICE 的公告里取，这一点未核实能否从来源自动拿到）。
+
 **只在已知日历范围内顺延**：已知范围是开市日集合的最早、最晚一天（或显式传 `known=(首日, 末日)`）。自然交易日落在范围之外、或顺延越过最后一个开市日的，返回空，由调用方丢弃并计数（诊断 `bars_outside_calendar`），不会被顺延到范围的第一天。复核发现的原缺陷就是这里：开市日只覆盖 `[start, end]` 时，start 之前三天的 K 线被顺延进 start，start=2026-10-05 的 CLZ6 开盘价、电子盘成交量都错了。
 
 | 交易所 | 时区 | 切换点 | 例 |
@@ -179,9 +186,10 @@ Databento 的 `symbology.resolve` 返回区间 `d0`/`d1`，按「d0 含、d1 不
 
 - Databento 按量计费。`DatabentoSource.fetch_plan(请求列表)` 在取第一个请求前，先对计划里**全部**还没取过的请求用**同样的参数**调 `metadata.get_cost`（免费），已批准累计 `spent_usd` 加计划总价不超过 `budget_usd` 才开始逐个 `timeseries.get_range`；**预算为 0 时永远不取**（估算为 0 也不取）。超预算抛 `BudgetExceeded`：`plan_total`（完成这次取数还要多少）、`spent`（此前已批准）、`budget`、`shortfall`（至少还差多少）和逐个请求的估价，消息里写明「把 `budget_usd` 调到不低于 `spent + plan_total`」，照做后重试即可。适配器的日线一次就是一份计划（每个数据集三个请求），分钟线另一份。`fut.estimate()` 只估价、不计费。每次估价记在 `source.log`，也进诊断 `cost_log`。
 - 已取到的原始表按请求参数缓存在 `DatabentoSource` 对象里：同一会话里重试、换个适配器取同样的请求，都不重取、不重计。请求发出后才失败（网络断了）时，那个请求的估价已经记进 `spent_usd`（发出就可能已计费，宁可多记），重试时它要重新过闸门。
-- 预算和估价都必须是有限的非负数：预算是 NaN、无穷、负数在建对象和每次取数时都报 `ValueError`，是字符串、布尔、空值报 `TypeError`；`get_cost` 返回 NaN、负数、非数字同样报错，不取数。检查、记账和缓存在一把锁里，多线程共用一个对象时预算不会被并发越过。`spent_usd`、`budget_usd` 是公开属性，只应由本对象改；改坏了（NaN 等）下一次取数会报错。
+- 预算和估价都必须是有限的非负数：预算是 NaN、无穷、负数在建对象和每次取数时都报 `ValueError`，是字符串、布尔、空值报 `TypeError`；`get_cost` 返回 NaN、负数、非数字同样报错，不取数。检查、记账和缓存在一把锁里，多线程共用一个对象时预算不会被并发越过。`spent_usd`、`budget_usd` 是公开属性，只应由本对象改；改坏了（NaN、负数、非数字等）下一次取数前就报错。
 - 不要 pickle 适配器或 `DatabentoSource`：官方客户端对象里带着密钥。
 - 官方说明：估价按请求范围，账单按实际发送字节；起止不对齐 10 分钟边界时估价可能偏高。所以预算闸门是上限保护，不是精确账单。
+- 多取天数对费用的影响（复核按各请求覆盖的日历天数推算、用假客户端的单价加权，**真实单价未核实**，definition 按天的字节量还取决于母代码下价差合约的多少）：取一天约是只取区间的 2.2 倍，取一周约 1.6 倍，取一年只多约 2%。短区间贵一倍左右，长区间可忽略。
 - 一次日线取数的请求：每个数据集 `definition`（[start−7, end+1)）、`statistics`（[start−7, end+7)：开市日要覆盖整个 K 线窗口，start 当天要有前结算价，持仓量、结算量在下一个 UTC 日或周日发布）、`ohlcv-1h`（[start−5, end+1)：start 那个交易日从上一开市日傍晚开始，周末加休市日也够；上一开市日比这还早时报错，不悄悄少算几个小时）。分钟线 `minute(a, b)` 只接受落在 `[start, end]` 里的区间（否则不估价直接报错），取 [a 的上一开市日, b+1)。
 - Bloomberg 的历史请求从 start 前 7 天取到 end（同样为了日历和 start 当天的前结算价），分钟线逐个合约取 [a 的上一开市日 UTC 0 点, b 次日 UTC 0 点)。
 - 密钥只从环境变量 `DATABENTO_API_KEY` 读，不写进任何文件、日志、诊断或报错；没设时报「环境变量没有设置」，不打印环境。Bloomberg 桌面 API 走本机终端，不需要密钥。
@@ -196,6 +204,7 @@ Databento 的 `symbology.resolve` 返回区间 `d0`/`d1`，按「d0 含、d1 不
 - 在形状与官方一致的输入上，两个适配器的日线与夹具**独立算出**的期望（夹具按「前一开市日切换点到当天切换点」逐日循环生成，不经过适配器的 UTC 归属代码）逐位相同，**对七组不同的 start/end 各跑一遍**（周一、感恩节后的周五、月初且跨夏令时、圣诞前一天结束、圣诞后的周一且跨元旦、end 是数据最后一天、整段），两种成交量口径都比；start 当天的前结算价也对；分钟线跨四个交易日（含周一）与夹具的期望逐位相同；同一份合成市场经两家的形状进来，统一日线、日历、合约表关键字段逐位相同；两家的分钟线逐位相同。
 - 交易日归属与直白参考（「早于 D 当地切换点的最早开市日 D」）在随机时刻上一致；十年回绕与逐年枚举的参考在随机年份上一致。
 - 默认预算下任何公开方法都在发请求前停下，`get_range` 调用数为 0；估价与取数用同一组参数；预算按累计计；整份计划先估：预算只够前两个请求时一个都不取，报出的总价、差额对，照报错调预算后重试每个请求只取一次；中途网络失败后重试不重取已取到的；预算、估价为 NaN、无穷、负数、字符串、布尔都在取数前报错；八个线程共用一个只够一次的预算时只有一个取到；缺可选依赖时报错写明怎么装；密钥只取自环境变量，不出现在报错和日志里。
+- 区间中间缺统计：复核的两个复现（CL 10-14 只缺结算价且用电子盘口径或放宽结算价检查、整天统计都缺）都报错并列出日期；把那天列进 `closed_days` 后按休市归并（开盘取前一天的第一根、成交量相加）；感恩节不声明就报错。Bloomberg 一侧，某天缺 `PX_SETTLE` 的历史行、或历史整天缺而分钟线有，都报错。首个交易日缺失（Bloomberg 不给 `FUT_FIRST_TRADE_DT`、Databento 的 `activation` 为空）时合约的行照常保留，列进 `unknown_listing_contracts`。
 - 完整性：ICE 结算价没有 final 位时报错而不是「全部休市」；有成交缺结算价默认报错、放宽后诊断计数对；Bloomberg 历史请求的 `securityError`、两种请求的 `fieldExceptions`、`PX_SETTLE` 整列为空、某合约没有结算价、合约表缺必需字段都报错；定义里的乘数与品种表不同时用定义的值；定义缺乘数 / 最小变动 / 币种、一个 id 两个代码都报错；DBN v1 的未定义数量（真库编码、官方 `to_df()` 读出）当空；`minute` 区间外不花钱就报错；负价格走通适配器和面板，`ratio` 复权报错、`difference` 正常。
 - 装了 `databento` 时：假客户端每个方法的参数名与官方 0.90.0 逐个相同；用 `databento_dbn` 把夹具编码成真正的 DBN 字节，经官方 `DBNStore.to_df()` 读出的表与假对象给的表在用到的列上逐位相同，整条适配器换算结果也相同。
 - 走通适配器 → 面板 → 连续合约（与直白参考对拍）→ 换月日程表 → `panelbt_inputs` → `bt.Market`；面板版本随适配器输出内容变化。
@@ -204,7 +213,7 @@ Databento 的 `symbology.resolve` 返回区间 `d0`/`d1`，按「d0 含、d1 不
 
 ### 变异检查
 
-逐个改坏一处、跑上面三个测试文件（`-x`），先确认测试导入的是 worktree 里被改坏的那份代码，并先跑不改动的对照（全过）。28 处全部被抓住（第一轮 13 处，复核返工后加 15 处，含复核漏网的 M5、M10 和原缺陷 P0）：
+逐个改坏一处、跑上面三个测试文件（`-x`），先确认测试导入的是 worktree 里被改坏的那份代码，并先跑不改动的对照（全过）。34 处全部被抓住（第一轮 13 处，复核返工后加 15 处，含复核漏网的 M5、M10 和原缺陷 P0；差异复核后再加 6 处，含复核漏网的 N9、N1b）：
 
 | 改坏的地方 | 抓住它的测试 |
 |---|---|
@@ -236,6 +245,12 @@ Databento 的 `symbology.resolve` 返回区间 `d0`/`d1`，按「d0 含、d1 不
 | Bloomberg 合约表缺字段不报错 | test_bloomberg_missing_contract_field_raises_not_falls_back |
 | Bloomberg `PX_SETTLE` 整列为空不报错 | test_bloomberg_settle_column_all_empty_raises |
 | `ratio` 复权不拦非正价格 | test_ratio_adjust_rejects_nonpositive_prices |
+| 差异复核 P1-A（Databento）：有成交缺结算价的工作日不报错 | test_weekday_without_statistics_raises |
+| 差异复核 P1-A（Bloomberg）：有行情缺 `PX_SETTLE` 的工作日不报错 | test_bloomberg_weekday_without_settle_raises |
+| 差异复核 P1-B：上市日为空时整个合约的行被丢掉 | test_missing_first_trade_date_keeps_rows |
+| N9：上一开市日早于 K 线窗口不报错 | test_previous_open_day_before_bar_window_raises |
+| N1b：显式 `known` 时顺延越过末日 | test_trade_dates_explicit_known_range_stops_at_its_end |
+| `spent_usd` 被改成负数不拦 | test_tampered_spent_is_rejected_before_fetch |
 
 第一轮「十年回绕」漏网：原写法前后两个循环互相兜底，改坏一个另一个会纠正；简化成一步判断并补了「参照日就在交割月」的用例后抓住。这一轮「去掉锁」第一次漏网：并发测试里八个线程取的是不同请求，估价之后的「检查 + 记账」在 GIL 下本来就不交错；补了「八个线程同时取同一个请求」（没有锁时都在估价时看到没缓存、各取一次）后抓住，连跑三次都抓住，正常代码连跑五次都过。
 
@@ -272,7 +287,7 @@ Bloomberg：
 
 共同：
 
-1. 日历由「有结算价的日子」推出，半天交易日照常算开市。
+1. 日历由「有结算价的日子」推出，半天交易日照常算开市。节假日没有内置表，要调用方用 `closed_days` 给；交易所节假日当天到底有没有成交、成交归哪天，按「顺延到下一开市日」处理，未核实。
 2. `activation` 可能早于真正的首个交易日；`listing_date` 只用于上市期过滤。
 3. 合约表的 `delivery_date` 在 Databento 一侧为空。
 
@@ -289,7 +304,7 @@ Bloomberg：
 3. 同一周取布伦特（`IFEU.IMPACT`）：B2601 每天的结算价与 ICE Report Center 公布值相同，价格是美元/桶（不是美分）；**诊断 `settlement_missing` 里 B 为 0**（ICE 的 `stat_flags`、`ts_ref` 口径与 GLBX 一致）；母代码 `BRN.FUT` 能取到单月合约；原始代码写法与上面的推断一致。
    - 再取一段跨年的长区间（如 2024 全年）看会不会报「同一个 instrument_id 对应几个合约代码」：会的话说明 CME 复用 id，要分段取。
 4. 取 CL 2020-04-17 至 04-22：CLK0 2020-04-20 的结算价是 −37.63，`nonpositive_price_rows` > 0。
-5. 节假日：取 CL 2026-11-25 至 11-30，确认感恩节（11-26）没有结算价、当天的成交归到 11-27，日历里 11-26 休市。
+5. 节假日：取 CL 2026-11-25 至 11-30，先不给 `closed_days`，应报「20261126 有成交却没有结算价」；再给 `closed_days={"NYMEX": ["20261126"]}`，确认当天的成交归到 11-27、日历里 11-26 休市。
 6. `reference_continuous=True` 取一个月：`CL.c.0` 在到期次日换月；`CL.n.0` 与 `panel.continuous("CL", rule="open_interest")` 逐日对应同一合约的比例（境内五个品种是 79%–99%）。
 
 拿到 Bloomberg 终端后：

@@ -36,11 +36,14 @@ from .futures_foreign import (
     MONTH_CODES,
     PRODUCTS,
     ForeignAdapter,
+    bars_on_closed_days,
     calendar_from_open_days,
     check_settlements,
+    closed_days_by_exchange,
     conform_minute,
     inside_listing,
     previous_settlement,
+    raise_on_closed_trading_days,
     resolve_year,
     trade_dates,
     unified_symbol,
@@ -303,8 +306,12 @@ def daily_from_raw(
     volume="cleared",
     settlement="final",
     require_settlement=True,
+    closed_days=None,
 ):
     """小时线 + 统计 → 统一日线（只留 [start, end] 且在上市期内的行）。返回 (日线, 诊断)。
+
+    ``closed_days`` 是调用方给的已知休市日（见 ``futures_foreign.closed_days_by_exchange``）：有 K 线成交却没有
+    结算价的工作日，只有列在里面才按休市处理（K 线并进下一开市日），否则报错。
 
     ``calendar`` 是覆盖整个取数窗口的**内部**日历（不止 [start, end]）：K 线、持仓量按它归属交易日，
     归不进去的丢掉并计数；``previous_settlement`` 在裁到 [start, end] 之前算，所以 start 当天也有。"""
@@ -322,6 +329,8 @@ def daily_from_raw(
         diag[f"unknown_instrument_{name}_rows"] = joined["symbol"].null_count()
         keyed[name] = joined.filter(pl.col("symbol").is_not_null())
     pieces, undated = [], 0
+    allowed = closed_days_by_exchange(closed_days, sorted(set(contracts["exchange"])))
+    suspicious, accepted = {}, {}
     for code in sorted(set(contracts["product"])):
         product = PRODUCTS[code]
         open_days = set(
@@ -341,6 +350,13 @@ def daily_from_raw(
             open_days,
         )
         undated += own_bars["date"].null_count()
+        everything = bars_on_closed_days(
+            own_bars["ts_event"], product.session, open_days, ()
+        )
+        for day, n in everything.items():
+            bucket = accepted if day in allowed[product.exchange] else suspicious
+            target = bucket.setdefault(product.exchange, {})
+            target[day] = target.get(day, 0) + n
         merged = _aggregate(own_bars)
         for part in (
             settlement_rows(own_stats, settlement=settlement),
@@ -370,6 +386,10 @@ def daily_from_raw(
             )
         pieces.append(merged)
     diag["bars_outside_calendar"] = undated
+    diag["closed_days_with_bars"] = {
+        e: dict(sorted(d.items())) for e, d in sorted(accepted.items())
+    }
+    raise_on_closed_trading_days(suspicious)
     long = pl.concat(pieces, how="diagonal_relaxed") if pieces else pl.DataFrame()
     for column in (
         "open",
@@ -465,6 +485,7 @@ class DatabentoFutures(ForeignAdapter):
         bar_schema="ohlcv-1h",
         reference_continuous=False,
         require_settlement=True,
+        closed_days=None,
     ):
         super().__init__(margin=margin)
         unknown = [
@@ -489,6 +510,10 @@ class DatabentoFutures(ForeignAdapter):
         self.volume, self.settlement, self.bar_schema = volume, settlement, bar_schema
         self.reference_continuous = reference_continuous
         self.require_settlement = require_settlement
+        closed_days_by_exchange(  # 先查格式，免得取完数才报错
+            closed_days, sorted({PRODUCTS[c].exchange for c in self.products})
+        )
+        self.closed_days = closed_days
 
     # ------------------------------------------------------------ 请求计划与估价
     def _groups(self):
@@ -570,6 +595,7 @@ class DatabentoFutures(ForeignAdapter):
         contracts, id_map, diag = contracts_from_definitions(defs, self.products)
         if contracts is None:
             raise ValueError("definition 里没有所选品种的单月期货合约")
+        unknown_listing = contracts.filter(pl.col("listing_date").is_null())["symbol"]
         full = self._calendar(stats, id_map, contracts)
         self._check_window(full)
         daily, daily_diag = daily_from_raw(
@@ -583,6 +609,7 @@ class DatabentoFutures(ForeignAdapter):
             volume=self.volume,
             settlement=self.settlement,
             require_settlement=self.require_settlement,
+            closed_days=self.closed_days,
         )
         diag.update(daily_diag)
         calendar = full.filter(
@@ -591,6 +618,9 @@ class DatabentoFutures(ForeignAdapter):
         diag["calendar_unknown_days"] = self._unknown_days(full)
         listed = set(daily["symbol"])
         contracts = contracts.filter(pl.col("symbol").is_in(list(listed)))
+        diag["unknown_listing_contracts"] = sorted(
+            set(unknown_listing.to_list()) & listed
+        )
         diag["cost_log"] = list(getattr(self.source, "log", []))
         out = dict(
             contracts=contracts,

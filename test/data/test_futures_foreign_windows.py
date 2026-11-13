@@ -12,6 +12,7 @@ import numpy as np
 import polars as pl
 import pytest
 from futures_foreign_fixtures import (
+    CLOSED_DAYS,
     CME_DAYS,
     ICE_DAYS,
     MINUTE_DAYS,
@@ -56,6 +57,7 @@ def _expected(start, end, volume="cleared", data=DATA):
 def _databento(start, end, products=("CL", "B"), data=DATA, budget=1e6, **kwargs):
     fake = FakeHistorical(data)
     source = DatabentoSource(budget_usd=budget, client=fake)
+    kwargs.setdefault("closed_days", CLOSED_DAYS)
     return DatabentoFutures(source, list(products), start, end, **kwargs), fake
 
 
@@ -585,3 +587,203 @@ def test_negative_prices_end_to_end(tmp_path):
     assert (cont["price"] < 0).all() and cont.height == daily[
         "date"
     ].n_unique() - 1  # 首日没有前一日持仓量
+
+
+# ---------------------------------------------------------------- 差异复核 P1-A：区间中间缺统计的工作日
+def _drop_stats(days, types=(3,), ids=range(1000, 1100)):
+    data = copy.copy(DATA)
+    data.stats = [
+        r
+        for r in DATA.stats
+        if not (
+            r["stat_type"] in types
+            and r["instrument_id"] in ids
+            and r["ts_ref"] is not None
+            and r["ts_ref"].strftime("%Y%m%d") in days
+        )
+    ]
+    return data
+
+
+@pytest.mark.parametrize(
+    ("types", "kwargs"),
+    [
+        ((3,), dict(volume="electronic")),
+        ((3,), dict(require_settlement=False)),
+        ((3, 6, 9), dict(volume="electronic")),
+        ((3, 6, 9), dict()),
+    ],
+)
+def test_weekday_without_statistics_raises(types, kwargs):
+    """复核的复现：CL 10-14（周三）缺结算价或整天统计。原来当天被当成休市、K 线并进 10-15 且几乎不报警；
+    现在报错并列出日期。"""
+    data = _drop_stats({"20261014"}, types)
+    adapter, _ = _databento("20261012", "20261016", data=data, **kwargs)
+    with pytest.raises(ValueError, match=r"NYMEX.*20261014"):
+        adapter.daily()
+
+
+def test_weekday_without_statistics_merged_when_declared_closed():
+    """调用方把 10-14 列进已知休市日后，当天的 K 线按休市并进 10-15：开盘取 10-14 的第一根、成交量相加。"""
+    data = _drop_stats({"20261014"}, (3, 6, 9))
+    closed = {**CLOSED_DAYS, "NYMEX": [*CLOSED_DAYS["NYMEX"], "20261014"]}
+    adapter, _ = _databento(
+        "20261012", "20261016", data=data, volume="electronic", closed_days=closed
+    )
+    daily = adapter.daily()
+    assert "20261014" not in set(
+        daily.filter(pl.col("symbol").str.ends_with("NYMEX"))["date"]
+    )
+    row = daily.filter(
+        (pl.col("symbol") == "CL2611.NYMEX") & (pl.col("date") == "20261015")
+    ).row(0, named=True)
+    wed, thu = (DATA.expected[("CL2611.NYMEX", d)] for d in ("20261014", "20261015"))
+    assert row["open"] == wed["open"] and row["close"] == thu["close"]
+    assert row["low"] == min(wed["low"], thu["low"])
+    assert row["volume"] == wed["electronic_volume"] + thu["electronic_volume"]
+    assert adapter.diagnostics()["closed_days_with_bars"]["NYMEX"]["20261014"] > 0
+
+
+def test_real_holiday_needs_declaring():
+    """感恩节当天有成交、没有结算价：不声明就报错，声明后按休市归并（诊断里列出）。"""
+    adapter, _ = _databento("20261123", "20261130", products=("CL",), closed_days=None)
+    with pytest.raises(ValueError, match="20261126"):
+        adapter.daily()
+    adapter, _ = _databento("20261123", "20261130", products=("CL",))
+    assert adapter.daily().equals(
+        _expected("20261123", "20261130").filter(
+            pl.col("symbol").str.ends_with("NYMEX")
+        )
+    )
+    assert set(adapter.diagnostics()["closed_days_with_bars"]["NYMEX"]) == {"20261126"}
+    with pytest.raises(ValueError, match="不认识"):
+        _databento("20261123", "20261130", closed_days={"CME": ["20261126"]})
+    with pytest.raises(ValueError, match="YYYYMMDD"):
+        _databento("20261123", "20261130", closed_days={"NYMEX": ["2026-11-26"]})
+
+
+def _bloomberg_without(day, *, drop_rows):
+    """假 Bloomberg 的历史请求在 ``day`` 那天对 CL 合约不给 PX_SETTLE（``drop_rows`` 时整行不给）。"""
+    api = FakeBlpapi(DATA)
+    original = api.respond
+
+    def respond(request):
+        bodies = original(request)
+        if request.operation != "HistoricalDataRequest":
+            return bodies
+        for body in bodies:
+            data = body["securityData"]
+            if not data["security"].startswith("CL"):
+                continue
+            rows = []
+            for r in data["fieldData"]:
+                if r["date"].strftime("%Y%m%d") == day:
+                    if drop_rows:
+                        continue
+                    r = {k: v for k, v in r.items() if k != "PX_SETTLE"}
+                rows.append(r)
+            data["fieldData"] = rows
+        return bodies
+
+    api.respond = respond
+    return api
+
+
+def test_bloomberg_weekday_without_settle_raises():
+    api = _bloomberg_without("20261104", drop_rows=False)
+    adapter, _ = _bloomberg(
+        "20261102", "20261106", products=("CL",), api=api, require_settlement=False
+    )
+    with pytest.raises(ValueError, match=r"NYMEX.*20261104"):
+        adapter.daily()
+    api = _bloomberg_without("20261104", drop_rows=False)
+    adapter, _ = _bloomberg(
+        "20261102",
+        "20261106",
+        products=("CL",),
+        api=api,
+        require_settlement=False,
+        closed_days={"NYMEX": ["20261104"]},
+    )
+    adapter.daily()
+    assert adapter.diagnostics()["closed_days_with_bars"] == {"NYMEX": {"20261104": 3}}
+
+
+def test_bloomberg_minute_on_weekday_missing_from_history_raises():
+    """历史请求整天不给（日线里看不出），分钟线却有：分钟线会并进下一开市日，所以报错。"""
+    api = _bloomberg_without("20261104", drop_rows=True)
+    adapter, _ = _bloomberg("20261102", "20261106", products=("CL",), api=api)
+    assert "20261104" not in set(adapter.daily()["date"])
+    with pytest.raises(ValueError, match=r"NYMEX.*20261104"):
+        adapter.minute("20261103", "20261105")
+
+
+# ---------------------------------------------------------------- 差异复核 P1-B：首个交易日缺失
+def test_missing_first_trade_date_keeps_rows():
+    api = FakeBlpapi(DATA)
+    api.patches["CLZ6 Comdty"] = dict(FUT_FIRST_TRADE_DT=None)
+    bbg, _ = _bloomberg("20261102", "20261106", products=("CL",), api=api)
+    want = _expected("20261102", "20261106").filter(
+        pl.col("symbol").str.ends_with("NYMEX")
+    )
+    assert bbg.daily().equals(want)
+    assert bbg.diagnostics()["unknown_listing_contracts"] == ["CL2612.NYMEX"]
+    listing = bbg.contracts().filter(pl.col("symbol") == "CL2612.NYMEX")["listing_date"]
+    assert listing[0] is None
+
+    data = copy.copy(DATA)
+    data.defs = [
+        dict(r, activation=None) if r["instrument_id"] == 1002 else r for r in DATA.defs
+    ]
+    adapter, _ = _databento("20261102", "20261106", products=("CL",), data=data)
+    assert adapter.daily().equals(want)
+    assert adapter.diagnostics()["unknown_listing_contracts"] == ["CL2612.NYMEX"]
+    bbg_ok, _ = _bloomberg("20261102", "20261106", products=("CL",))
+    bbg_ok.daily()
+    assert bbg_ok.diagnostics()["unknown_listing_contracts"] == []
+
+
+# ---------------------------------------------------------------- 差异复核 P2
+@pytest.mark.parametrize(
+    ("spent", "error"),
+    [
+        (-100.0, ValueError),
+        (float("nan"), ValueError),
+        (float("-inf"), ValueError),
+        ("0", TypeError),
+    ],
+)
+def test_tampered_spent_is_rejected_before_fetch(spent, error):
+    fake = FakeHistorical(DATA)
+    source = DatabentoSource(budget_usd=1, client=fake)
+    source.spent_usd = spent
+    with pytest.raises(error, match="spent_usd"):
+        source.fetch(
+            "GLBX.MDP3",
+            "definition",
+            ["CL.FUT"],
+            "2026-11-02",
+            "2026-11-03",
+            stype_in="parent",
+        )
+    assert fake.count("get_cost") == 0 and fake.count("get_range") == 0
+
+
+def test_previous_open_day_before_bar_window_raises():
+    """start 的上一开市日早于 K 线窗口起点（start−5 天）时报错，不悄悄少算 start 那个交易日的开头几小时。"""
+    data = _drop_stats(
+        {"20261020", "20261021", "20261022", "20261023"}, (3,), range(2000, 2100)
+    )
+    adapter, _ = _databento("20261026", "20261030", products=("B",), data=data)
+    with pytest.raises(ValueError, match="早于 K 线窗口起点"):
+        adapter.daily()
+
+
+def test_trade_dates_explicit_known_range_stops_at_its_end():
+    """显式给 ``known`` 且末日不是开市日时，顺延不越过它（默认用法下末日本身就是开市日，走不到这里）。"""
+    monday = utc(2026, 11, 30, 15)  # 09:00 CST 周一 11-30
+    open_days = {"20261127", "20261202"}
+    assert trade_dates([monday], CME, open_days) == ["20261202"]
+    assert trade_dates([monday], CME, open_days, known=("20261125", "20261130")) == [
+        None
+    ]

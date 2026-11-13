@@ -178,6 +178,15 @@ class DatabentoSource:
         requests = [_as_request(r) for r in requests]
         with self._lock:
             budget = _check_budget(self.budget_usd)
+            # spent_usd 是公开属性；被改成负数或非有限值等于凭空多出额度，取数前拦下。
+            if isinstance(self.spent_usd, bool) or not isinstance(
+                self.spent_usd, int | float
+            ):
+                raise TypeError(f"spent_usd 必须是数，收到 {self.spent_usd!r}")
+            if not math.isfinite(self.spent_usd) or self.spent_usd < 0:
+                raise ValueError(
+                    f"spent_usd 必须是有限的非负数，收到 {self.spent_usd!r}；它只应由本对象改"
+                )
             pending = [r for r in dict.fromkeys(requests) if r not in self._cache]
             quotes = [(r, self._cost(r)) for r in pending]
             total = sum(c for _, c in quotes)

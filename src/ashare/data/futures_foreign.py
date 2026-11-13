@@ -280,6 +280,68 @@ def previous_settlement(daily, contracts, calendar):
     )
 
 
+def closed_days_by_exchange(closed_days, exchanges):
+    """调用方给的「已知休市日」→ {交易所: 日期集合}。``closed_days`` 可以是日期的可迭代对象（对所有交易所）
+    或 {交易所: 日期列表}；日期写成 YYYYMMDD。"""
+    if closed_days is None:
+        return {e: frozenset() for e in exchanges}
+    if isinstance(closed_days, dict):
+        valid = {p.exchange for p in PRODUCTS.values()}
+        unknown = sorted(set(closed_days) - valid)
+        if unknown:  # 写错交易所名会让白名单悄悄不生效，所以报错
+            raise ValueError(
+                f"closed_days 里的交易所 {unknown} 不认识；可用 {sorted(valid)}"
+            )
+        out = {e: frozenset(closed_days.get(e, ())) for e in exchanges}
+    elif isinstance(closed_days, str):
+        raise TypeError("closed_days 要给日期集合或 {交易所: 日期集合}，不是单个字符串")
+    else:
+        days = frozenset(closed_days)
+        out = {e: days for e in exchanges}
+    for days in out.values():
+        for day in days:
+            if not (isinstance(day, str) and len(day) == 8 and day.isdigit()):
+                raise ValueError(
+                    f"closed_days 的日期要写成 YYYYMMDD 字符串，收到 {day!r}"
+                )
+    return out
+
+
+def bars_on_closed_days(ts, session, open_days, allowed):
+    """有成交、却被开市日集合判成休市的工作日：返回 {日期: K 线条数}，只算已知日历范围内、不在 ``allowed``
+    （调用方给的已知休市日）里的。
+
+    开市日由「有结算价的日子」推出，某个工作日来源漏了结算价或整天的统计，它就会被当成休市，当天的 K 线
+    顺延进下一个开市日，开盘、最高、最低、电子盘成交量都错，而且不进任何其他诊断。真正的休市日（CME 感恩节
+    等确有部分时段成交）要由调用方列进 ``allowed`` 才放行。"""
+    opened = set(open_days)
+    if not opened:
+        return {}
+    first, last = min(opened), max(opened)
+    natural = pl.Series("day", trade_dates(ts, session), dtype=pl.String)
+    hit = natural.filter(
+        natural.is_not_null()
+        & natural.is_between(pl.lit(first), pl.lit(last))
+        & ~natural.is_in(list(opened))
+    ).value_counts()
+    return {
+        r["day"]: int(r["count"])
+        for r in hit.iter_rows(named=True)
+        if r["day"] not in allowed
+    }
+
+
+def raise_on_closed_trading_days(found):
+    """``found`` = {交易所: {日期: K 线条数}}；有任何一天就报错（列出日期，说明怎么放行）。"""
+    found = {e: dict(sorted(d.items())) for e, d in found.items() if d}
+    if found:
+        raise ValueError(
+            f"这些工作日有成交却没有结算价、被当成休市（K 线会并进下一个开市日）：{found}。"
+            "来源可能漏了这几天的统计；确实是休市日（如 CME 感恩节有部分时段成交）就把它们列进 "
+            "closed_days，例如 closed_days={'NYMEX': ['20261126']}"
+        )
+
+
 def check_settlements(daily, contracts, *, require=True):
     """结算价完整性：返回每个品种区间内结算价为空的行数（进诊断）。
 
@@ -343,8 +405,10 @@ def inside_listing(frame, contracts):
         on="symbol",
         how="inner",
     )
+    # 上市日为空（来源没给首个交易日）时当作没有下界，不丢行；哪些合约上市日未知记在诊断里。
     keep = span.filter(
-        pl.col("date").is_between(pl.col("listing_date"), pl.col("last_trade_date"))
+        (pl.col("listing_date").is_null() | (pl.col("date") >= pl.col("listing_date")))
+        & (pl.col("date") <= pl.col("last_trade_date"))
     )
     return keep.drop("listing_date", "last_trade_date"), len(frame) - len(keep)
 
@@ -482,7 +546,9 @@ __all__ = [
     "ForeignAdapter",
     "build_panel",
     "calendar_from_open_days",
+    "bars_on_closed_days",
     "check_settlements",
+    "closed_days_by_exchange",
     "conform_minute",
     "resolve_year",
     "trade_dates",

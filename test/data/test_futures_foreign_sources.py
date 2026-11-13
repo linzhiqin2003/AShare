@@ -16,6 +16,7 @@ import sys
 import polars as pl
 import pytest
 from futures_foreign_fixtures import (
+    CLOSED_DAYS,
     END,
     START,
     FakeBlpapi,
@@ -129,7 +130,11 @@ def test_budget_is_cumulative():
     # 预算足够时，adapter 的全部请求逐个先估价再取，估价次数 = 取数次数。
     fake = FakeHistorical()
     DatabentoFutures(
-        DatabentoSource(budget_usd=1e6, client=fake), ["CL"], START, END
+        DatabentoSource(budget_usd=1e6, client=fake),
+        ["CL"],
+        START,
+        END,
+        closed_days=CLOSED_DAYS,
     ).daily()
     assert fake.count("get_cost") == fake.count("get_range") == 3
 
@@ -384,10 +389,18 @@ def test_official_dbnstore_through_adapter():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         via_real = DatabentoFutures(
-            DatabentoSource(budget_usd=100, client=fake), ["CL"], START, END
+            DatabentoSource(budget_usd=100, client=fake),
+            ["CL"],
+            START,
+            END,
+            closed_days=CLOSED_DAYS,
         ).daily()
     via_fake = DatabentoFutures(
-        DatabentoSource(budget_usd=100, client=FakeHistorical(data)), ["CL"], START, END
+        DatabentoSource(budget_usd=100, client=FakeHistorical(data)),
+        ["CL"],
+        START,
+        END,
+        closed_days=CLOSED_DAYS,
     ).daily()
     assert via_real.equals(via_fake)
 
