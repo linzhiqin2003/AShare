@@ -2,12 +2,23 @@ ifeq ($(SANDBOX),1)
 export CARGO_HOME := $(CURDIR)/.cache/cargo-home
 endif
 export PYO3_PYTHON := $(CURDIR)/.venv/bin/python
+export npm_config_cache := $(CURDIR)/.cache/npm
 
 .PHONY: dev check bench bench-pair bench-compare bench-docs spike mutate mutate-1c risk-bench risk-validate risk-mutate
 
 dev:
 	uv sync --all-packages --group dev --group ml --inexact
 	uv run --no-sync python bench/clean_extension.py
+
+.PHONY: web web-dev web-check
+web:
+	cd web && npm ci && npm run build
+
+web-dev:
+	cd web && npm run dev
+
+web-check:
+	cd web && npm run check
 
 check:
 	uv run --no-sync ruff check .
