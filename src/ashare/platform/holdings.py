@@ -7,23 +7,39 @@ import numpy as np
 
 
 def mean_days(snapshot, stop):
-    """只计窗口内观察到的连续同侧区间，窗口两端不外推。"""
-    totals, intervals = [0, 0], [0, 0]
-    previous = [set(), set()]
-    days, offsets = snapshot["days"], snapshot["offsets"]
-    for i, day in enumerate(days):
-        columns = snapshot["columns"][offsets[i] : offsets[i + 1]]
-        weights = snapshot["weights"][offsets[i] : offsets[i + 1]]
-        duration = int(days[i + 1] if i + 1 < len(days) else stop) - int(day)
-        for side, mask in enumerate((weights > 0, weights < 0)):
-            current = set(columns[mask].tolist())
-            totals[side] += len(current) * duration
-            intervals[side] += len(current - previous[side])
-            previous[side] = current
-    return tuple(
-        total / count if count else None
-        for total, count in zip(totals, intervals, strict=True)
-    )
+    """只计窗口内观察到的连续同侧区间，窗口两端不外推。
+
+    多头、空头各自：总持仓天数 ÷ 新进次数（上一快照同侧没有这只即算新进）。
+    整数运算，向量化；与逐快照集合运算的写法结果完全相同（测试有对照）。
+    """
+    days = np.asarray(snapshot["days"], dtype=np.int64)
+    n = len(days)
+    if n == 0:
+        return None, None
+    offsets = np.asarray(snapshot["offsets"], dtype=np.int64)
+    columns = np.asarray(snapshot["columns"], dtype=np.int64)
+    weights = np.asarray(snapshot["weights"])
+    duration = np.append(days[1:], int(stop)) - days
+    row = np.repeat(np.arange(n, dtype=np.int64), np.diff(offsets))
+    out = []
+    width = int(columns.max()) + 1 if len(columns) else 1
+    for mask in (weights > 0, weights < 0):
+        # 每个 (快照, 股票) 一个键。快照按日期、股票按编号存放时键本身已升序，不用排序；
+        # 否则（或同一快照同侧有重复）退回 np.unique。
+        keys = row[mask] * width + columns[mask]
+        if len(keys) > 1 and not (keys[1:] > keys[:-1]).all():
+            keys = np.unique(keys)
+        if not len(keys):
+            out.append(None)
+            continue
+        snapshot_of = keys // width
+        total = int(duration[snapshot_of].sum())
+        previous = keys - width  # 同一股票在上一个快照的键
+        hit = np.searchsorted(keys, previous)
+        present = (snapshot_of > 0) & (keys[np.minimum(hit, len(keys) - 1)] == previous)
+        count = len(keys) - int(present.sum())
+        out.append(total / count if count else None)
+    return tuple(out)
 
 
 def archive_arrays(arrays):

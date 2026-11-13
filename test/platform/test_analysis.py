@@ -199,3 +199,42 @@ def test_shared_diagnostics_do_not_change_any_result_bits():
                 value.view(np.uint64) if value.dtype == np.float64 else value,
             )
     assert set(cache) == {"is", "validation"}
+
+
+def test_shared_ic_inputs_are_bitwise_identical(tmp_path):
+    """任务内缓存的股票池和未来收益：多个信号、两种成交时点、两个股票池复用后，输出与不缓存逐位相同。"""
+    from ashare.platform.analysis import evaluate_signal, run_variant
+    from ashare.platform.config import DEFAULTS
+    from ashare.platform.language import parse
+    from bench.platform.synthetic import write_panel
+
+    source = write_panel(tmp_path / "data")
+
+    class Cached:
+        diagnostics = {}
+
+        def __getattr__(self, name):
+            return getattr(source, name)
+
+        def __getitem__(self, name):
+            return source[name]
+
+    cached = Cached()
+    for text in ("rank(close)", "-ts_std(returns, 5)"):
+        expression = parse(text, factors={})[0].expression
+        for trade_at in ("open", "close"):
+            for universe in ("TOP1800", "ALL"):
+                settings = dict(DEFAULTS, trade_at=trade_at, universe=universe)
+                plain = run_variant(expression, source, settings)
+                shared = run_variant(
+                    expression,
+                    cached,
+                    settings,
+                    signal=evaluate_signal(expression, cached),
+                )
+                assert plain[0] == shared[0]
+                assert plain[1].keys() == shared[1].keys()
+                for key, value in plain[1].items():
+                    assert value.dtype == shared[1][key].dtype, key
+                    assert value.tobytes() == shared[1][key].tobytes(), key
+    assert sum(1 for k in Cached.diagnostics if k[0] == "ic-inputs") == 8
