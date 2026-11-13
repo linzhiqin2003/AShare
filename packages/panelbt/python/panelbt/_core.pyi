@@ -6,6 +6,9 @@ BUILD_MARKER: str
 SOURCE_SHA256: str
 VALIDATION_CHUNK: int
 
+class ExposureCache:
+    def __init__(self, rows: int, pools: int) -> None: ...
+
 def _numpy_sums(probes: list[NDArray]) -> NDArray: ...
 def run_weights_batch(
     returns: NDArray,
@@ -24,8 +27,10 @@ def run_group_weights(
     adjustment: NDArray,
     buy: NDArray,
     sell: NDArray,
-    options: tuple[int, int, int, int, int, bool, bool, bool],
-) -> list[dict[str, Any]]: ...
+    options: tuple[int, int, int, int, int, bool, bool, bool, int, bool],
+    cache: ExposureCache | None = None,
+    variants: list[tuple[int, bool, bool]] | None = None,
+) -> list[dict[str, Any]] | list[list[dict[str, Any]]]: ...
 def run(
     floats: list[NDArray],
     masks: list[NDArray],

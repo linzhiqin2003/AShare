@@ -43,3 +43,22 @@ python3 bench/groupbt/run.py 3600 make check
 tracemalloc 不跟踪 Rust 的全部分配，不能当作总内存。四组场景选定 20/60 日波动率
 与 industry/cap+industry 两种中性化；分别测 1、2、4 个外部线程。
 原始剖析和真实输出只留 `.cache/`。公开报告只写性能和逐位一致数量，不写行情值。
+
+扫描共享这一轮另有以下工具（同样先由 `run.py` 设置超时和本地缓存）：
+
+- `python -m bench.platform.bitwise baseline|compare -o .cache/groupbt-fusion/platform.md`：
+  经 HTTP API 跑 4/8 变体和调仓扫描，等待全部持仓写完，比较每个数组 dtype、shape、bytes
+  和原始摘要 JSON。UUID 与压缩容器时间戳不作为数值输出；按 ordinal 对齐独立空库。
+- `python -m bench.groupbt.ablation -o .cache/groupbt-fusion/ablation.json`：分别开关行情准备
+  共享、均值缓存与目标合批，同进程交替计时，包含原始内核输出的逐位断言。
+- `python -m bench.platform.evaluation -o .cache/groupbt-fusion/evaluation.json`：独立求值
+  与公共子式共享的交替计时、分配量及信号逐位比较。
+- `python -m bench.groupbt.shared_mutations -o .cache/groupbt-fusion/mutations.json`：8 种
+  共享键、输入别名、表达式窗口、暴露归约和调仓日历变异，恢复源码与扩展后再次通过测试。
+- `python -m bench.platform.grid --output .cache/groupbt-fusion/grid`：依次运行
+  `bench/platform/speed.py` 的并发 × 算子线程组合；可用 `--reference` 指向 `.cache`
+  内保存的旧版 `src/ashare` 和 `panelbt` 包，交替测前后版本。不要与其他测试同时计时。
+
+`shared.py` 的 `--reference` 是修改前复制到 `.cache` 的 Python 包与编译扩展（分别名为
+`groupbt_a5`、`panelbt_a5`）；它用于隔离旧版与当前版的单组、批量配对测量，不能在修改
+之后用当前包覆盖参考。参考文件和行情结果均不加入 git。

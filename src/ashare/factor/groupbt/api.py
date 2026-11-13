@@ -4,6 +4,7 @@
 （`trade_at="open"` 按开盘价，`"close"` 按收盘价），持有到 t+2 日同一时点。结果按成交日记账。
 """
 
+import mmap
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -124,6 +125,23 @@ def _shift(x):
     out = np.full(x.shape, np.nan)
     out[1:] = x[:-1]
     return out
+
+
+def _factor_window(x):
+    """只对底层缓冲区不可写的连续数组免拷贝；flags 本身不能排除可写别名。"""
+    if x.flags.c_contiguous and not x.flags.writeable:
+        base = x
+        while isinstance(base, (np.ndarray, memoryview)):
+            if isinstance(base, memoryview):
+                # toreadonly() 只限制该视图，必须继续追到真实缓冲区所有者。
+                base = base.obj
+            else:
+                if base.flags.writeable or base.base is None:
+                    break
+                base = base.base
+        if isinstance(base, (bytes, mmap.mmap)) and memoryview(base).readonly:
+            return x
+    return x.copy(order="C")
 
 
 @dataclass
@@ -284,8 +302,34 @@ def run(
 
     `panel` 需要 `FIELDS` 里的字段（`ashare.data.open().panel(FIELDS)`）。分不出 `n_groups`
     组的交易日会抛 `GroupingError`。调用期间不要修改任何输入（包括共享底层内存的
-    其他视图）；内核会释放 GIL。有效窗口的因子独立复制，其他传入内核的视图临时只读。
+    其他视图）；内核会释放 GIL。有效窗口的因子独立复制，底层缓冲区不可写的连续输入
+    （如只读 mmap）免拷贝；其他传入内核的视图临时只读。
     """
+    prepared = _prepare(**locals())
+    return prepared.finish(
+        panelbt.run_group_weights(*prepared.args, **prepared.options)
+    )
+
+
+def _prepare(
+    factor,
+    panel,
+    universe,
+    *,
+    trade_at="open",
+    trade_limitation=True,
+    n_groups=10,
+    group_neutralize=None,
+    vector_neut=None,
+    decay=0,
+    rebalance=1,
+    record_holdings=False,
+    by="year",
+    weights_portfolio=False,
+    sub_universes=True,
+    window=IS,
+    _shared=None,
+):
     if trade_at not in ("open", "close"):
         raise ValueError("trade_at 只能是 'open' 或 'close'")
     if (
@@ -313,20 +357,40 @@ def run(
     first = int(np.searchsorted(dates, start))
     first = min(first, max(len(dates) - 1, 0))
     panel = _Until(history, len(dates), first)
-    x = x[first : len(dates)].copy(order="C")
+    shared = {} if _shared is None else _shared
+
+    def reuse(key, build):
+        if key not in shared:
+            shared[key] = build()
+        return shared[key]
+
+    x = reuse(
+        ("factor", id(factor), first, len(dates)),
+        lambda: _factor_window(x[first : len(dates)]),
+    )
     if vector_neut is not None:
         many = isinstance(vector_neut, (list, tuple))
         cut = [
-            np.asarray(v)[first : len(dates)]
+            reuse(
+                ("vector", id(v), first, len(dates)),
+                lambda v=v: np.asarray(v)[first : len(dates)],
+            )
             for v in (vector_neut if many else [vector_neut])
         ]
         vector_neut = cut if many else cut[0]
     if group_neutralize not in (None, "industry", "cap", "cap+industry"):
         raise ValueError(f"无法识别的 group_neutralize 取值：{group_neutralize!r}")
-    logcap = np.array(panel["total_market_cap"], dtype=np.float64, copy=True)
-    logcap[~(logcap > 0)] = np.nan
-    with np.errstate(invalid="ignore", divide="ignore"):
-        np.log(logcap, out=logcap)
+
+    def make_logcap():
+        logcap = np.array(panel["total_market_cap"], dtype=np.float64, copy=True)
+        logcap[~(logcap > 0)] = np.nan
+        with np.errstate(invalid="ignore", divide="ignore"):
+            np.log(logcap, out=logcap)
+        logcap.flags.writeable = False
+        return logcap
+
+    window_key = (first, len(dates))
+    logcap = reuse(("logcap", window_key), make_logcap)
     industry = None
     if group_neutralize in ("industry", "cap+industry"):
         industry = panel["industry"]
@@ -335,23 +399,33 @@ def run(
     elif trade_at == "open":
         can_buy, can_sell = panel["can_buy_open"], panel["can_sell_open"]
     else:
-        can_buy, can_sell = close_masks(panel)
+        can_buy, can_sell = reuse(
+            ("close-masks", window_key), lambda: close_masks(panel)
+        )
     names = [universe, *(NESTED[universe] if sub_universes else ())]
     pool_start = max(start, TOP1800_START) if universe == "TOP1800" else start
-    masks = [universe_mask(panel, name, pool_start) for name in names]
+    masks = [
+        reuse(
+            ("pool", window_key, name, pool_start),
+            lambda name=name: universe_mask(panel, name, pool_start),
+        )
+        for name in names
+    ]
     vectors = (
         []
         if vector_neut is None
         else (vector_neut if isinstance(vector_neut, (list, tuple)) else [vector_neut])
     )
     # ashare 显式指定信号行和成交行的错位；引擎不推断交易时点。
-    runs = panelbt.run_group_weights(
+    args = (
         x,
         history[trade_at],
         history["close"],
         history["adj_factor"],
         logcap,
         masks,
+    )
+    options = dict(
         signal_start=first,
         execution_start=first + 1,
         industry=industry,
@@ -366,56 +440,166 @@ def run(
         rebalance=rebalance,
         record_holdings=record_holdings,
     )
-    results = []
-    for name, out in zip(names, runs, strict=True):
-        if out["bad_rows"]:
-            raise portfolio.GroupingError(out["bad_rows"])
-        p, turn = out["pnl"], out["turnover"]
-        for arr in (p, turn):
-            arr[:, : out["first_live"]] = np.nan
-            arr[:, -1:] = np.nan
-        p = np.pad(p, ((0, 0), (first, 0)), constant_values=np.nan)
-        turn = np.pad(turn, ((0, 0), (first, 0)), constant_values=np.nan)
-        exp = np.pad(out["exposure"], ((0, 0), (first, 0)), constant_values=np.nan)
-        pnl = {"long_short": p[n_groups], "top": p[0]}
-        turnover = {"long_short": turn[n_groups], "top": turn[0]}
-        if weights_portfolio:
-            pnl["weights"], turnover["weights"] = p[-1], turn[-1]
-        holdings = out.get("holdings")
-        if holdings is not None:
-            # 仅稀疏地摘取调仓信号，不展开每日全证券权重。
-            signal_rows = holdings["days"].astype(np.int64) - 1
-            repeated = np.repeat(
-                signal_rows, np.diff(holdings["offsets"]).astype(np.int64)
-            )
-            columns = holdings["columns"]
-            holdings["factor"] = x[repeated, columns]
-            holdings["industry"] = np.asarray(panel["industry"])[
-                repeated, columns
-            ].astype(np.int32)
-            holdings["signal_dates"] = dates[signal_rows + first]
-            holdings["dates"] = dates[holdings["days"] + first]
-            holdings["days"] = holdings["days"] + first
-            holdings["symbols"] = np.asarray(panel.symbols)
-        results.append(
-            GroupBacktest(
-                universe=name,
-                trade_at=trade_at,
-                n_groups=n_groups,
-                dates=dates,
-                group_pnl=p[:n_groups].copy(),
-                pnl=pnl,
-                turnover=turnover,
-                exposure=dict(
-                    zip(
-                        ("size", "reversal_20", "reversal_60", "momentum"),
-                        exp,
-                        strict=True,
-                    )
-                ),
-                by=by,
-                holdings=holdings,
-            )
+    if _shared is not None:
+        options["exposure_cache"] = reuse(
+            ("exposure", window_key, tuple(names), pool_start),
+            lambda: panelbt.GroupExposureCache(logcap, masks, args[2], args[3], first),
         )
-    results[0].subs = dict(zip(names[1:], results[1:], strict=True))
-    return results[0]
+    key = (
+        id(x),
+        window_key,
+        tuple(names),
+        pool_start,
+        trade_at,
+        trade_limitation,
+        n_groups,
+        group_neutralize,
+        tuple(id(v) for v in vectors),
+        options["decay"],
+    )
+
+    def finish(runs):
+        results = []
+        for name, out in zip(names, runs, strict=True):
+            if out["bad_rows"]:
+                raise portfolio.GroupingError(out["bad_rows"])
+            p, turn = out["pnl"], out["turnover"]
+            for arr in (p, turn):
+                arr[:, : out["first_live"]] = np.nan
+                arr[:, -1:] = np.nan
+            p = np.pad(p, ((0, 0), (first, 0)), constant_values=np.nan)
+            turn = np.pad(turn, ((0, 0), (first, 0)), constant_values=np.nan)
+            exp = np.pad(out["exposure"], ((0, 0), (first, 0)), constant_values=np.nan)
+            pnl = {"long_short": p[n_groups], "top": p[0]}
+            turnover = {"long_short": turn[n_groups], "top": turn[0]}
+            if weights_portfolio:
+                pnl["weights"], turnover["weights"] = p[-1], turn[-1]
+            holdings = out.get("holdings")
+            if holdings is not None:
+                # 仅稀疏地摘取调仓信号，不展开每日全证券权重。
+                signal_rows = holdings["days"].astype(np.int64) - 1
+                repeated = np.repeat(
+                    signal_rows, np.diff(holdings["offsets"]).astype(np.int64)
+                )
+                columns = holdings["columns"]
+                holdings["factor"] = x[repeated, columns]
+                holdings["industry"] = np.asarray(panel["industry"])[
+                    repeated, columns
+                ].astype(np.int32)
+                holdings["signal_dates"] = dates[signal_rows + first]
+                holdings["dates"] = dates[holdings["days"] + first]
+                holdings["days"] = holdings["days"] + first
+                holdings["symbols"] = np.asarray(panel.symbols)
+            results.append(
+                GroupBacktest(
+                    universe=name,
+                    trade_at=trade_at,
+                    n_groups=n_groups,
+                    dates=dates,
+                    group_pnl=p[:n_groups].copy(),
+                    pnl=pnl,
+                    turnover=turnover,
+                    exposure=dict(
+                        zip(
+                            ("size", "reversal_20", "reversal_60", "momentum"),
+                            exp,
+                            strict=True,
+                        )
+                    ),
+                    by=by,
+                    holdings=holdings,
+                )
+            )
+        results[0].subs = dict(zip(names[1:], results[1:], strict=True))
+        return results[0]
+
+    return _Prepared(args, options, finish, key)
+
+
+@dataclass
+class _Prepared:
+    args: tuple
+    options: dict
+    finish: object
+    key: tuple
+
+
+def run_many(
+    factors, panel, configurations, *, workers=1, on_result=None, executor=None
+):
+    """一次任务的多个回测，按输入顺序返回；参数字典与 run 相同（不含 factor/panel）。
+
+    每个因子都与同一面板对齐。只在本次调用内共享窗口市值、股票池与风险均值，
+    workers 控制独立回测的并发数。on_result(index, result) 在调用线程按完成顺序通知，
+    供下游统计与剩余回测重叠执行；返回值仍按输入顺序排列。调用期间不得修改任何输入及其底层别名。
+    可传入由调用方管理的线程池 executor，让回测与下游统计共用同一并发预算。
+    """
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+    factors, configurations = list(factors), list(configurations)
+    if len(factors) != len(configurations):
+        raise ValueError("factors 与 configurations 数量必须一致")
+    if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+        raise ValueError("workers 必须为正整数")
+    shared = {}
+    prepared = [
+        _prepare(factor, panel, **config, _shared=shared)
+        for factor, config in zip(factors, configurations, strict=True)
+    ]
+
+    batches = {}
+    for i, p in enumerate(prepared):
+        batches.setdefault(p.key, []).append((i, p))
+
+    def execute(batch):
+        p = batch[0][1]
+        if len(batch) == 1:
+            outputs = [panelbt.run_group_weights(*p.args, **p.options)]
+        else:
+            ledger = {"rebalance", "weighted", "record_holdings"}
+            outputs = panelbt.run_group_weights_batch(
+                *p.args,
+                **{k: v for k, v in p.options.items() if k not in ledger},
+                variants=[{k: item.options[k] for k in ledger} for _, item in batch],
+            )
+        return [
+            (i, item.finish(out)) for (i, item), out in zip(batch, outputs, strict=True)
+        ]
+
+    ordered = [None] * len(prepared)
+
+    def collect(batch):
+        for i, result in batch:
+            ordered[i] = result
+            if on_result is not None:
+                on_result(i, result)
+
+    def dispatch(pool):
+        iterator = iter(batches.values())
+        pending = set()
+
+        def refill():
+            while len(pending) < workers:
+                batch = next(iterator, None)
+                if batch is None:
+                    break
+                pending.add(pool.submit(execute, batch))
+
+        refill()
+        while pending:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            pending.difference_update(done)
+            for future in done:
+                collect(future.result())
+            # 回调可先提交统计，再排下一批回测，避免队列中所有回测挡住统计。
+            refill()
+
+    if executor is not None:
+        dispatch(executor)
+    elif workers == 1:
+        for batch in batches.values():
+            collect(execute(batch))
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            dispatch(executor)
+    return ordered

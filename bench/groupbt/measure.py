@@ -30,6 +30,12 @@ def main():
     p.add_argument("--profile", action="store_true")
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument(
+        "--factor",
+        type=Path,
+        help="读取 .cache 内预先保存的只读信号，隔离表达式的 RSS 高水位",
+    )
+    p.add_argument("--record-holdings", action="store_true")
+    p.add_argument(
         "--platform",
         action="store_true",
         help="20/60 日波动率 × industry/cap+industry，共四组",
@@ -39,7 +45,20 @@ def main():
     root = Path(__file__).resolve().parents[2]
     if not args.o.resolve().is_relative_to(root / ".cache"):
         p.error("原始剖析只能写在 worktree 的 .cache 内")
-    panel, factor = real() if args.data == "real" else synthetic()
+    if args.factor is not None:
+        if (
+            not args.factor.resolve().is_relative_to(root / ".cache")
+            or args.data != "real"
+        ):
+            p.error("--factor 仅接受本 worktree .cache 内的真实信号")
+        import numpy as np
+
+        import ashare.data
+
+        panel = ashare.data.open().panel(groupbt.FIELDS)
+        factor = np.load(args.factor, mmap_mode="r", allow_pickle=False)
+    else:
+        panel, factor = real() if args.data == "real" else synthetic()
     api = oracle if args.backend == "main" else groupbt
     if args.backend == "simulation":
         api = importlib.import_module("bench.groupbt.simulation")
@@ -87,7 +106,8 @@ def main():
         f = factors[i // 2] if args.platform else factor
         neutral = ("industry", "cap+industry")[i % 2] if args.platform else "industry"
         tick = time.perf_counter()
-        a = api.run(f, panel, "TOP1800", group_neutralize=neutral)
+        extra = {"record_holdings": True} if args.record_holdings else {}
+        a = api.run(f, panel, "TOP1800", group_neutralize=neutral, **extra)
         middle = time.perf_counter()
         b = api.run(
             f,
@@ -96,6 +116,7 @@ def main():
             group_neutralize=neutral,
             sub_universes=False,
             window=api.VALIDATION,
+            **extra,
         )
         end = time.perf_counter()
         steps.append([middle - tick, end - middle])

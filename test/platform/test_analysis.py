@@ -142,13 +142,13 @@ def test_config_variants_share_one_evaluation_per_expression(tmp_path, monkeypat
 
     write_panel(tmp_path / "data")
     calls, progress = [], []
-    actual = runner.evaluate_signal
+    actual = runner.evaluate_signals
 
-    def recording(expression, source):
-        calls.append(expression.digest)
-        return actual(expression, source)
+    def recording(expressions, source):
+        calls.extend(expressions)
+        return actual(expressions, source)
 
-    monkeypatch.setattr(runner, "evaluate_signal", recording)
+    monkeypatch.setattr(runner, "evaluate_signals", recording)
     runs = [{"source": f"-ts_std(returns,{w})"} for _ in range(2) for w in (20, 60)]
     prepared = runner.prepare_signals(
         runs,
@@ -162,7 +162,56 @@ def test_config_variants_share_one_evaluation_per_expression(tmp_path, monkeypat
     assert all(
         not np.load(run["signal"], mmap_mode="r").flags.writeable for run in prepared
     )
+    source = runner.PanelCache(tmp_path / "data")
+    from ashare.platform.analysis import evaluate_signal
+
+    for run in prepared:
+        expression = parse(run["source"])[0].expression
+        source.ensure(expression.fields)
+        expected = evaluate_signal(expression, source)
+        actual = np.load(run["signal"], mmap_mode="r")
+        assert actual.dtype == expected.dtype and actual.shape == expected.shape
+        assert actual.tobytes() == expected.tobytes()
     assert progress == [(i, p) for i in range(4) for p in ("evaluate", "prepared")]
+
+
+def test_shared_evaluation_keeps_exact_parameter_and_common_node(monkeypatch):
+    from ashare.factor import call, field
+    from ashare.platform.analysis import evaluate_signal, evaluate_signals
+
+    source = panel()
+    common = field("close") / field("previous_close") - 1
+    expressions = {
+        str((w, exact)): call("ts_sum", common, window=w, exact=exact)
+        for w in (5, 20)
+        for exact in (False, True)
+    }
+    expected = {k: evaluate_signal(e, source) for k, e in expressions.items()}
+    evaluator = Evaluator()
+    monkeypatch.setattr("ashare.platform.analysis.Evaluator", lambda: evaluator)
+    for k, actual in evaluate_signals(expressions, source):
+        assert actual.tobytes() == expected[k].tobytes()
+    assert evaluator.last_counts[common.digest] == 1
+
+
+def test_shared_variant_timing_includes_backtest(tmp_path, monkeypatch):
+    from queue import Queue
+    from types import SimpleNamespace
+
+    from ashare.platform import runner
+
+    path = tmp_path / "signal.npy"
+    np.save(path, np.zeros((2, 2)))
+    source = SimpleNamespace(version="synthetic", diagnostics={})
+    run = dict(id="run", signal=str(path), ordinal=0, settings=DEFAULTS)
+    ticks = iter((100.0, 101.0))
+    monkeypatch.setattr(
+        runner, "time", SimpleNamespace(perf_counter=lambda: next(ticks))
+    )
+    monkeypatch.setattr(runner, "run_variant", lambda *a, **kw: ({}, {}))
+    result = runner.calculate_run(run, source, "job", Queue(), {}, 2.5)
+    assert result["elapsed"] == 3.5
+    assert result["timings"] == {"shared.backtest": 2.5}
 
 
 def test_benchmark_does_not_change_backtest_bits():

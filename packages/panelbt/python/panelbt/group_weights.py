@@ -6,6 +6,40 @@ from . import _core
 from ._readonly import contiguous, readonly
 
 
+class GroupExposureCache:
+    """Share means only for identical risk buffers, pool masks and history rows.
+
+    Scope this cache to one task. All bound arrays must remain unchanged for its
+    entire lifetime. References are retained so buffer addresses cannot be reused.
+    Different signals and rebalance schedules may use the same cache concurrently.
+    """
+
+    def __init__(self, logcap, universes, close, adjustment, signal_start):
+        self._arrays = [logcap, *universes, close, adjustment]
+        self._key = self._identity(self._arrays, signal_start)
+        self._native = _core.ExposureCache(len(logcap), len(universes))
+
+    @staticmethod
+    def _identity(arrays, signal_start):
+        return (
+            signal_start,
+            tuple(
+                (a.__array_interface__["data"][0], a.shape, a.strides, a.dtype.str)
+                for a in arrays
+            ),
+        )
+
+    def _check(self, logcap, universes, close, adjustment, signal_start):
+        if (
+            self._identity([logcap, *universes, close, adjustment], signal_start)
+            != self._key
+        ):
+            raise ValueError(
+                "exposure cache requires identical risk buffers, pools and signal window"
+            )
+        return self._native
+
+
 def run_group_weights(
     factor,
     price,
@@ -28,6 +62,8 @@ def run_group_weights(
     profile=False,
     rebalance=1,
     record_holdings=False,
+    exposure_cache=None,
+    _variants=None,
 ):
     """Run all groups, long/short and optional normalized weights in one call.
 
@@ -98,5 +134,44 @@ def run_group_weights(
         ),
     )
     borrowed = [*args[:3], *args[3], *args[4], *args[5:10]]
+    if exposure_cache is not None or _variants is not None:
+        cache = (
+            None
+            if exposure_cache is None
+            else exposure_cache._check(args[1], args[4], args[6], args[7], signal_start)
+        )
+        args += (cache, _variants)
     with readonly(borrowed):
         return _core.run_group_weights(*args)
+
+
+def run_group_weights_batch(*args, variants, **kwargs):
+    """Share daily targets/prices across independent weight ledgers in one call.
+
+    ``variants`` contains dictionaries with rebalance, weighted and record_holdings
+    (defaults: 1, False, False). Other arguments match run_group_weights; ledger
+    options must be supplied only in variants. Results follow variant order.
+    Working target buffers remain bounded to 64 days, regardless of history size.
+    """
+    names = {"rebalance", "weighted", "record_holdings"}
+    if names.intersection(kwargs):
+        raise ValueError("supply ledger options in variants only")
+    settings = []
+    for variant in variants:
+        if set(variant) - names:
+            raise ValueError("unknown grouped weight variant option")
+        n = variant.get("rebalance", 1)
+        if (
+            isinstance(n, (bool, np.bool_))
+            or not isinstance(n, (int, np.integer))
+            or n < 1
+        ):
+            raise ValueError("rebalance must be a positive integer")
+        settings.append(
+            (
+                int(n),
+                bool(variant.get("weighted", False)),
+                bool(variant.get("record_holdings", False)),
+            )
+        )
+    return run_group_weights(*args, **kwargs, _variants=settings)

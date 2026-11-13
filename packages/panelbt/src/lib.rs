@@ -1040,6 +1040,7 @@ fn _numpy_sums<'py>(
 fn panelbt_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_numpy_sums, m)?)?;
     m.add_function(wrap_pyfunction!(group_weights::run_group_weights, m)?)?;
+    m.add_class::<group_weights::ExposureCache>()?;
     m.add_function(wrap_pyfunction!(weights::run_weights_batch, m)?)?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_market, m)?)?;

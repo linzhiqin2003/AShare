@@ -20,7 +20,7 @@ import numpy as np
 from ashare.factor import groupbt
 from ashare.ledger import code_version
 
-from .analysis import evaluate_signal, run_variant
+from .analysis import evaluate_signals, run_variant
 from .config import (
     expand_settings,
     job_concurrency,
@@ -116,10 +116,12 @@ def prepare_signals(runs, panel, folder, progress):
     expressions = [parse(run["source"])[0].expression for run in runs]
     panel.ensure(set(groupbt.FIELDS).union(*(e.fields for e in expressions)))
     prepared = {}
+    evaluated = iter(evaluate_signals({e.digest: e for e in expressions}, panel))
     for index, expression in enumerate(expressions):
         progress(index, "evaluate")
         if expression.digest not in prepared:
-            alpha = evaluate_signal(expression, panel)
+            digest, alpha = next(evaluated)
+            assert digest == expression.digest
             path = folder / f"{expression.digest}.npy"
             np.save(path, alpha, allow_pickle=False)
             prepared[expression.digest] = str(path)
@@ -131,7 +133,7 @@ def prepare_signals(runs, panel, folder, progress):
     return runs
 
 
-def calculate_run(run, panel, job, outgoing):
+def calculate_run(run, panel, job, outgoing, backtests=None, backtest_seconds=None):
     started = time.perf_counter()
     alpha = np.load(run["signal"], mmap_mode="r", allow_pickle=False)
     timings = {}
@@ -148,15 +150,60 @@ def calculate_run(run, panel, job, outgoing):
             (run["signal"], run["settings"]["universe"], run["settings"]["trade_at"]),
             {},
         ),
+        backtests=backtests,
     )
+    if backtest_seconds is not None:
+        timings["shared.backtest"] = backtest_seconds
     return dict(
         run=run["id"],
         summary=summary,
         arrays=arrays,
-        elapsed=time.perf_counter() - started,
+        elapsed=time.perf_counter() - started + (backtest_seconds or 0.0),
         data_version=panel.version,
         timings=timings,
     )
+
+
+def calculate_many(runs, panel, job, outgoing, parallel):
+    """同一任务显式共享行情计算；信号按文件身份复用，结束后全部释放。"""
+    signals, factors, configurations = {}, [], []
+    for run in runs:
+        path = run["signal"]
+        if path not in signals:
+            signals[path] = np.load(path, mmap_mode="r", allow_pickle=False)
+        for part, window in (("is", groupbt.IS), ("validation", groupbt.VALIDATION)):
+            options = {k: v for k, v in run["settings"].items() if k != "benchmark"}
+            if part == "validation":
+                options["sub_universes"] = False
+            configurations.append(options | {"window": window, "record_holdings": True})
+            factors.append(signals[path])
+    start = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=parallel) as executor:
+        ready, futures = {}, []
+
+        def publish(i, backtests, seconds):
+            result = calculate_run(runs[i], panel, job, outgoing, backtests, seconds)
+            outgoing.put((job, "result", result))
+
+        def completed(index, result):
+            ready[index] = result
+            i = index // 2
+            if 2 * i in ready and 2 * i + 1 in ready:
+                backtests = {"is": ready.pop(2 * i), "validation": ready.pop(2 * i + 1)}
+                futures.append(
+                    executor.submit(publish, i, backtests, time.perf_counter() - start)
+                )
+
+        groupbt.run_many(
+            factors,
+            panel,
+            configurations,
+            workers=parallel,
+            on_result=completed,
+            executor=executor,
+        )
+        for future in as_completed(futures):
+            future.result()
 
 
 _CHILD = None
@@ -217,15 +264,9 @@ def worker_main(incoming, outgoing, data_root, result_root, concurrency, mode):
                     for future in as_completed(futures):
                         outgoing.put((job, "result", future.result()))
             else:
-                with ThreadPoolExecutor(
-                    max_workers=parallel if mode == "threads" else 1
-                ) as executor:
-                    futures = [
-                        executor.submit(calculate_run, run, panel, job, outgoing)
-                        for run in runs
-                    ]
-                    for future in as_completed(futures):
-                        outgoing.put((job, "result", future.result()))
+                calculate_many(
+                    runs, panel, job, outgoing, parallel if mode == "threads" else 1
+                )
             elapsed = time.perf_counter() - started
             LOG.info(
                 "任务完成 mode=%s variants=%d elapsed=%.3f evaluation=%.3f peak_rss=%d fields=%d children=%d",

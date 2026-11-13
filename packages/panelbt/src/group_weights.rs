@@ -1,7 +1,27 @@
 //! Borrowed mixed-precision price inputs for streaming grouped weights.
 use numpy::{IntoPyArray, PyReadonlyArray2, PyUntypedArrayMethods, ndarray::Array2};
-use panelbt_core::group_weights::{Input, Labels, Numbers};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
+use panelbt_core::group_weights::{Input, Labels, Numbers, Output, Variant};
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyDict, PyList},
+};
+
+#[pyclass(frozen)]
+pub struct ExposureCache(panelbt_core::group_weights::ExposureCache);
+
+#[pymethods]
+impl ExposureCache {
+    #[new]
+    fn new(rows: usize, pools: usize) -> PyResult<Self> {
+        if rows.checked_mul(pools).is_none() {
+            return Err(PyValueError::new_err("exposure cache shape overflow"));
+        }
+        Ok(Self(panelbt_core::group_weights::ExposureCache::new(
+            rows, pools,
+        )))
+    }
+}
 
 enum Prices<'py> {
     F32(PyReadonlyArray2<'py, f32>),
@@ -55,6 +75,7 @@ impl<'py> Prices<'py> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (factor, logcap, industry, vectors, universes, price, close, adjustment, buy, sell, options, cache=None, variants=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn run_group_weights<'py>(
     py: Python<'py>,
@@ -80,7 +101,9 @@ pub fn run_group_weights<'py>(
         usize,
         bool,
     ),
-) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    cache: Option<PyRef<'py, ExposureCache>>,
+    variants: Option<Vec<(usize, bool, bool)>>,
+) -> PyResult<Bound<'py, PyAny>> {
     let (
         signal_start,
         execution_start,
@@ -115,6 +138,12 @@ pub fn run_group_weights<'py>(
         ));
     }
     let active = [rows - signal_start, cols];
+    if cache
+        .as_ref()
+        .is_some_and(|c| c.0.means.len() != active[0] * universes.len())
+    {
+        return Err(PyValueError::new_err("exposure cache shape mismatch"));
+    }
     if factor.shape() != active
         || logcap.shape() != active
         || ((neutralize == 1 || neutralize == 3) && industry.shape() != active)
@@ -154,29 +183,65 @@ pub fn run_group_weights<'py>(
         profile,
         rebalance,
         record_holdings,
+        exposure_cache: cache.as_ref().map(|c| &c.0),
     };
     let dot = crate::numpy_dot::NumpyDot::load(py)?;
-    let output = py.detach(|| panelbt_core::group_weights::run(&input, |x, y| dot.dot(x, y)));
-    let books = groups + 1 + usize::from(weighted);
+    if let Some(variants) = variants {
+        if variants.iter().any(|v| v.0 == 0) {
+            return Err(PyValueError::new_err("rebalance must be positive"));
+        }
+        let variants: Vec<_> = variants
+            .into_iter()
+            .map(|(rebalance, weighted, record_holdings)| Variant {
+                rebalance,
+                weighted,
+                record_holdings,
+            })
+            .collect();
+        let output = py.detach(|| {
+            panelbt_core::group_weights::run_many(&input, &variants, |x, y| dot.dot(x, y))
+        });
+        let results: Vec<_> = output
+            .into_iter()
+            .zip(&variants)
+            .map(|(out, v)| convert(py, out, groups + 1 + usize::from(v.weighted), active[0]))
+            .collect::<PyResult<_>>()?;
+        Ok(PyList::new(py, results)?.into_any())
+    } else {
+        let output = py.detach(|| panelbt_core::group_weights::run(&input, |x, y| dot.dot(x, y)));
+        Ok(PyList::new(
+            py,
+            convert(py, output, groups + 1 + usize::from(weighted), active[0])?,
+        )?
+        .into_any())
+    }
+}
+
+fn convert(
+    py: Python<'_>,
+    output: Vec<Output>,
+    books: usize,
+    rows: usize,
+) -> PyResult<Vec<Bound<'_, PyDict>>> {
     output
         .into_iter()
         .map(|o| {
             let result = PyDict::new(py);
             result.set_item(
                 "pnl",
-                Array2::from_shape_vec((books, active[0]), o.pnl)
+                Array2::from_shape_vec((books, rows), o.pnl)
                     .unwrap()
                     .into_pyarray(py),
             )?;
             result.set_item(
                 "turnover",
-                Array2::from_shape_vec((books, active[0]), o.turnover)
+                Array2::from_shape_vec((books, rows), o.turnover)
                     .unwrap()
                     .into_pyarray(py),
             )?;
             result.set_item(
                 "exposure",
-                Array2::from_shape_vec((4, active[0]), o.exposure)
+                Array2::from_shape_vec((4, rows), o.exposure)
                     .unwrap()
                     .into_pyarray(py),
             )?;
