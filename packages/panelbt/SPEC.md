@@ -753,6 +753,9 @@ row (below); outside it margin and fees are zero and need no value.
    or open price on a futures column is rejected whatever `validate` says:
    collateral would turn negative and losses would not trigger a margin
    call. Negative-price episodes (WTI on 2020-04-20) cannot be simulated.
+   The check belongs to `FuturesBook`; a `Market(futures=...)` built directly
+   with `validate=False` is not protected (with `validate=True` the kernel's
+   own input check rejects nonpositive settlements).
 
 Not modeled, with the direction of the error: close-today fees (unclear:
 cheaper on some SHFE products, ten times on CFFEX index futures);

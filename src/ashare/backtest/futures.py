@@ -63,16 +63,27 @@ def personal_rule(exchange, product):
     return PERSONAL_RULES.get((exchange, product), EXCHANGE_DEFAULT.get(exchange))
 
 
-def last_hold_dates(contracts, calendar):
+def last_hold_dates(contracts, calendar, lead=0):
     """每个合约的个人客户「最后一个可以收盘持仓的交易日」（YYYYMMDD；不限制为 None）。
 
     ``contracts``：合约表（symbol、exchange、product、last_trade_date、delivery_month）；
-    ``calendar``：升序交易日（YYYYMMDD 字符串数组）。没覆盖到的日子（样本截在合约到期之前时）
-    用周一到周五补上：漏掉节假日只会让算出的期限更早，偏保守。
+    ``calendar``：升序交易日（YYYYMMDD 字符串数组），应覆盖到最后交易日（数据层的
+    ``fut.calendar()`` 带未来一年多的交易所日历）。没覆盖到的日子用周一到周五补上并发出警告：
+    节假日被当成交易日，往回数会落在**更晚**的日子，算出的期限偏晚、偏乐观。
+    ``lead``：再提前的交易日数（期货公司常比交易所规定更早要求平仓；默认 0）。
     """
+    if lead < 0:
+        raise ValueError("lead 不能为负")
     calendar = np.asarray(calendar, dtype="U8")
     lasts = [d for d in contracts["last_trade_date"].to_list() if d]
     if lasts and calendar.size and max(lasts) > calendar[-1]:
+        import warnings
+
+        warnings.warn(
+            f"交易日历只到 {calendar[-1]}，之后用周一到周五补齐：节假日被当成交易日，"
+            "个人持仓期限会偏晚（偏乐观）；请传覆盖到最后交易日的日历",
+            stacklevel=2,
+        )
 
         def iso(d):
             return f"{d[:4]}-{d[4:6]}-{d[6:]}"
@@ -101,8 +112,23 @@ def last_hold_dates(contracts, calendar):
         else:
             # 第 k 个交易日收市后须为 0：最后一个可以持仓过夜的是第 k+1 个交易日。
             k = int(np.searchsorted(calendar, last, side="right")) - 1 - rule[1] - 1
+        k -= lead
         out[row["symbol"]] = str(calendar[k]) if k >= 0 else "00000000"
     return out
+
+
+def _exchange_calendar(fut, contracts):
+    """这些合约所在交易所的交易日（数据层的交易所日历，含未来日期），合并成一份升序数组。"""
+    exchanges = sorted(set(contracts["exchange"].to_list()))
+    days = (
+        fut.calendar()
+        .filter(pl.col("exchange").is_in(exchanges) & pl.col("is_open"))
+        .select("date")
+        .unique()
+        .sort("date")
+        .collect()["date"]
+    )
+    return np.asarray(days.to_list(), dtype="U8")
 
 
 def _rows(dates, day):
@@ -148,189 +174,24 @@ class FuturesPortfolio:
 
         - 调用方给了目标的行（不全为 NaN）整体调仓：目标落在当行持有的合约上，其余 NaN 当 0，
           不在目标里的合约（含旧合约）平掉。``kind="lots"`` 是当行持有合约的整手数。
-        - 品种在目标行还没有可交易的合约（样本第一行、刚上市、个人期限后换不到下一个合约）时，
-          目标挂起，等它第一次落到可交易合约上的那一行按原目标开仓（给 k 手就开 k 手）。
+        - 品种在目标行还没有可交易的合约（样本第一行、刚上市、合约还没有成交价、换不到下一个合约）时，
+          三种写法都挂起，等它第一次落到可交易合约上的那一行开仓：手数照给的开；名义和保证金按
+          落地那一行的权益和价格定手数（开盘前已知，不是前视）。
         - 只有换月的行（换月、个人持仓期限、交易单位分界）只动正在换月的品种：平旧开新，
-          **保持手数**，交易单位改变时按「旧乘数 / 新乘数」折算后向零取整；其他品种的持仓不动、
-          不成交。被引擎在结束行了结的持仓（交易单位分界、换不过去的合约）同样按手数接到下一个合约。
-        - 其余行不交易（引擎照常盯市、追保、到期了结）。
+          **保持「手数 × 乘数」**，向零取整（零头计入诊断）；其他品种的持仓不动、不成交，
+          引擎里顺延中的单子原样带上。被引擎在结束行了结的持仓（交易单位分界、换不过去的合约）
+          同样按手数接到下一个合约。
+        - 其余行不交易（引擎照常盯市、追保、顺延、到期了结）。
 
-        返回 ``panelbt.Result``。逐行推进用 ``FuturesBook.simulator``，与 ``bt.run`` 逐位等价。
+        返回 ``panelbt.Result``；``diagnostics["futures_portfolio"]`` 记换月取整的次数和名义零头、
+        换月当行旧合约没平掉（持仓加倍一天）的次数、挂起目标落地的次数。逐行推进用
+        ``FuturesBook.simulator``，实现与不变量见 ``futures_step``。
         """
         if kind not in bt.futures_book.KINDS:
             raise ValueError(f"kind 只能是 {bt.futures_book.KINDS}")
-        w = self._weights(weights)
-        book = self.book
-        sim = book.simulator("lots" if kind == "lots" else "notional")
-        t, p = self.held.shape
-        n = len(self.symbols)
-        mult = np.asarray(book.market.futures.multiplier, dtype=float)
-        price = np.asarray(book.market.exec_price, dtype=float)
-        end_row = np.asarray(book.end_row)
-        buffer = 1.0 - book.config.cash_buffer
-        owner = np.full(n, -1, dtype=np.int64)
-        for k in range(p):
-            cols = self.held[:, k]
-            owner[cols[cols >= 0]] = k
-        # entry[k]：品种空仓时等着开仓的东西。("goal", 目标, 设目标时的乘数或 None)
-        # 或 ("units", 手数 × 乘数)（被结束行了结、要接到下一个合约的持仓）。
-        entry = [None] * p
-        intent = {}  # 品种 → [列, 手数（None：按 goal 开）, 本行新发]
+        from .futures_step import simulate
 
-        def value(day, col, lots, equity, basis):
-            """把「这一列持有 lots 手」写成模拟器的目标值。"""
-            if kind == "lots":
-                return float(lots)
-            mark = price[day, col]
-            if not np.isfinite(mark):
-                mark = basis[col]
-            if lots == 0 or not (equity > 0 and np.isfinite(mark) and mark > 0):
-                return 0.0
-            # 引擎按 trunc(|w| × E × (1 − buffer) / (价格 × 乘数)) 取手数：多给半手，取整后正好是 lots。
-            return (lots + 0.5 * np.sign(lots)) * mark * mult[col] / (equity * buffer)
-
-        def goal_value(day, h, g):
-            if kind == "margin":
-                return float(book.margin_to_notional(day, [h], [g])[1][0])
-            return float(g)
-
-        def lots_of(e, h):
-            if e[0] == "units":
-                return np.trunc(e[1] / mult[h])
-            if kind == "lots":
-                return e[1] if e[2] is None else np.trunc(e[1] * e[2] / mult[h])
-            return None  # 名义 / 保证金目标：按原目标重新换算
-
-        def step(day, cols, vals, rebalance=False):
-            """推进一行。被结束行了结的、本来要留着的持仓接到品种的下一个合约。"""
-            ends = ending_on.get(day)
-            if ends is not None:
-                q0 = np.array(sim.state.shares, dtype=float)
-                kept = q0 != 0
-                if cols is not None:
-                    kept = np.zeros(n, dtype=bool)
-                    kept[np.asarray(cols, dtype=np.int64)[np.asarray(vals) != 0]] = True
-            if cols is None:
-                sim.step(None)
-            else:
-                order = np.argsort(cols, kind="stable")
-                sim.step(
-                    (
-                        np.asarray(cols, dtype=np.int64)[order],
-                        np.asarray(vals, dtype=float)[order],
-                    )
-                )
-            if ends is None:
-                return
-            for c in ends[kept[ends]]:
-                k = owner[c]
-                if k < 0 or sim.state.shares[c] != 0:
-                    continue
-                if rebalance:
-                    entry[k] = ("goal", goal_now[k], mult[c])
-                elif entry[k] is None or entry[k][0] != "units":
-                    entry[k] = ("units", q0[c] * mult[c])
-                else:
-                    entry[k] = ("units", entry[k][1] + q0[c] * mult[c])
-
-        ending_on = {}
-        for c in np.flatnonzero(end_row < t):
-            ending_on.setdefault(int(end_row[c]), []).append(int(c))
-        ending_on = {d: np.asarray(c) for d, c in ending_on.items()}
-        goal_now = np.zeros(p)
-        for day in range(t):
-            st = sim.state
-            if st.bankrupt:
-                step(day, None, None)
-                continue
-            q = np.array(st.shares, dtype=float)
-            row = w[day]
-            if not np.all(np.isnan(row)):
-                row = np.nan_to_num(row, nan=0.0)
-                cols, vals = [], []
-                intent.clear()
-                for k in range(p):
-                    h = self.held[day, k]
-                    goal_now[k] = row[k]
-                    entry[k] = None
-                    if row[k] == 0:
-                        continue
-                    if h >= 0 and end_row[h] >= day:
-                        cols.append(h)
-                        vals.append(goal_value(day, h, row[k]))
-                    else:
-                        entry[k] = ("goal", row[k], None)
-                step(day, cols, vals, rebalance=True)
-                continue
-            held_now = np.flatnonzero(q)
-            by_product = {}
-            for c in held_now.tolist():
-                by_product.setdefault(int(owner[c]), []).append(c)
-            waiting = [k for k in range(p) if entry[k] is not None]
-            touched = False
-            for k in sorted(set(by_product) | set(waiting) | set(intent)):
-                if k < 0:
-                    continue
-                h = self.held[day, k]
-                if k in intent and intent[k][0] != h:
-                    del intent[k]
-                if h < 0 or end_row[h] < day:
-                    continue
-                mine = by_product.get(k, [])
-                if entry[k] is not None and not mine:
-                    intent[k] = [h, lots_of(entry[k], h), True]
-                    if intent[k][1] is None:
-                        intent[k][1] = ("goal", entry[k][1])
-                    entry[k] = None
-                    touched = True
-                elif mine and h not in mine and k not in intent:
-                    # 换月：平旧开新，保持手数（交易单位改变时按乘数折算）。
-                    mine = np.asarray(mine)
-                    lots = np.trunc(np.sum(q[mine] * mult[mine]) / mult[h])
-                    intent[k] = [h, lots, True]
-                    touched = True
-            if not touched:
-                step(day, None, None)
-                continue
-            equity, basis = st.equity, np.asarray(st.futures_basis)
-            pending = np.asarray(st.pending_cols).tolist()
-            carried = dict(
-                zip(pending, np.asarray(st.pending_targets).tolist(), strict=True)
-            )
-            carried_by = {}
-            for c in carried:
-                carried_by.setdefault(int(owner[c]), []).append(c)
-            cols, vals = [], []
-            for k in sorted(set(by_product) | set(intent) | set(carried_by)):
-                h = self.held[day, k] if k >= 0 else -1
-                if k in intent:
-                    _, lots, fresh = intent[k]
-                    if not fresh and h in carried:
-                        v = carried[h]
-                    elif isinstance(lots, tuple):
-                        v = goal_value(day, h, lots[1])
-                    else:
-                        v = value(day, h, lots, equity, basis)
-                    if v != 0:
-                        cols.append(h)
-                        vals.append(v)
-                    continue
-                # 引擎用原目标重试顺延的单子（受限未成交）；新写一行会替换它们，所以原样带上。
-                for c in carried_by.get(k, []):
-                    cols.append(c)
-                    vals.append(carried[c])
-                for c in by_product.get(k, []):
-                    # 不换月的品种保持现有手数；当前合约以外的残余（上次换月没平掉的）这一行平掉。
-                    if c not in carried and (k < 0 or h < 0 or c == h):
-                        cols.append(c)
-                        vals.append(value(day, c, q[c], equity, basis))
-            step(day, cols, vals)
-            after = set(np.asarray(sim.state.pending_cols).tolist())
-            for k in list(intent):
-                intent[k][2] = False
-                if intent[k][0] not in after:
-                    del intent[k]
-        return sim.result()
+        return simulate(self, self._weights(weights), kind)
 
     def run(self, weights, kind="notional"):
         """同 ``simulate``。"""
@@ -401,6 +262,7 @@ def futures_portfolio(
     rule="open_interest",
     account=CN_RETAIL,
     personal=True,
+    personal_lead=0,
     infer_locked=True,
     slippage=2e-4,
     costs=None,
@@ -416,7 +278,8 @@ def futures_portfolio(
 
     - ``rule``：数据层的换月规则（``"open_interest"`` / ``"volume"`` / ``"source"``）。
     - ``account``：期货公司条款，默认 ``CN_RETAIL``（假设：保证金 +5 个百分点、手续费 ×3）。
-    - ``personal``：个人客户持仓期限（默认开启，规则见 ``PERSONAL_RULES``）。
+    - ``personal``：个人客户持仓期限（默认开启，规则见 ``PERSONAL_RULES``）；``personal_lead``：
+      再提前几个交易日换月（默认 0，见 ``docs/FUTURES_BACKTEST.md`` 第 7 条）。
     - ``infer_locked``：开盘 = 最高 = 最低且有成交的行，按相对前一结算价的方向禁止买入（涨停）或卖出（跌停）。
     - ``slippage``：每笔成交的价格滑点比例（强平也按它计一次）。
     - ``missing`` / ``param_fill``：缺失的保证金、手续费如何处理，原样交给 ``fut.panelbt_inputs``（默认缺值报错）。
@@ -424,11 +287,24 @@ def futures_portfolio(
     products = list(products)
     if not products:
         raise ValueError("products 不能为空")
-    probe = fut.panel(["is_listed"], products=products[:1])
-    calendar = probe.dates
     info = fut.contracts(products=products).collect()
-    holds = last_hold_dates(info, calendar) if personal else {}
     dates = fut.panel(["is_listed"], products=products[:1], start=start, end=end).dates
+    holds = {}
+    if personal:
+        import warnings
+
+        calendar = _exchange_calendar(fut, info)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            holds = last_hold_dates(info, calendar, lead=personal_lead)
+        # 交易所日历之后才到期的合约（远月）补齐出来的期限都在样本之后，不影响回测，不警告。
+        late = [
+            s
+            for s, last in zip(info["symbol"], info["last_trade_date"], strict=True)
+            if last and last > calendar[-1] and holds.get(s) and holds[s] <= dates[-1]
+        ]
+        if caught and late:
+            warnings.warn(str(caught[0].message), stacklevel=2)
 
     def hold_row(symbol):
         return _rows(dates, holds.get(symbol)) if personal else len(dates)

@@ -63,11 +63,20 @@ def test_personal_last_hold_rules():
     # 大商所：交割月前一个月最后一个交易日（20260630）收市后须为 0 → 最后过夜 20260629。
     assert out["M2607.DCE"] == "20260629"
     assert out["IF2606.CFFEX"] is None and out["EC2607.INE"] is None
-    # 日历截在到期之前（样本末日早于最后交易日）：用工作日补齐，不能把期限算到样本末日上。
-    short = calendar[calendar <= "20260612"]
-    cut = bf.last_hold_dates(contracts, short)
-    assert cut["SC2607.INE"] == "20260621" or cut["SC2607.INE"] > "20260612"
-    assert cut["M2607.DCE"] > "20260612" and cut["LU2607.INE"] > "20260612"
+    # 提前量：每个合约的期限再往前挪 lead 个交易日。
+    early = bf.last_hold_dates(contracts, calendar, lead=2)
+    assert early["SC2607.INE"] == "20260619" and early["M2607.DCE"] == "20260627"
+    assert early["IF2606.CFFEX"] is None
+    # 日历截在到期之前：用周一到周五补齐并警告；节假日当成交易日，算出的期限只会更晚。
+    days = np.arange(np.datetime64("2026-06-01"), np.datetime64("2026-07-10"))
+    days = np.char.replace(days[np.is_busday(days)].astype("U10"), "-", "").astype("U8")
+    holiday = days[(days <= "20260612") | (days >= "20260622")]  # 停市一周
+    full = bf.last_hold_dates(contracts, holiday)
+    with pytest.warns(UserWarning, match="偏晚"):
+        cut = bf.last_hold_dates(contracts, holiday[holiday <= "20260612"])
+    for symbol in ("SC2607.INE", "LU2607.INE", "M2607.DCE"):
+        assert cut[symbol] >= full[symbol]
+    assert cut["SC2607.INE"] > full["SC2607.INE"]
 
 
 def test_portfolio_holds_contracts_and_rolls(fut):

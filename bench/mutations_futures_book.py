@@ -18,10 +18,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "packages/panelbt/python/panelbt/futures_book.py"
 PORT = ROOT / "src/ashare/backtest/futures.py"
+STEP = ROOT / "src/ashare/backtest/futures_step.py"
 TESTS = [
     "test/test_futures_book.py",
     "test/backtest/test_futures_backtest.py",
     "test/backtest/test_futures_public_entries.py",
+    "test/backtest/test_futures_step.py",
 ]
 
 MUTANTS = [
@@ -87,33 +89,81 @@ MUTANTS = [
     ),
     (
         "carried lots not rescaled across a unit change",
-        PORT,
-        'entry[k] = ("units", q0[c] * mult[c])',
-        'entry[k] = ("units", q0[c])',
+        STEP,
+        'wait[k] = ("units", q0[c] * mult[c], None)',
+        'wait[k] = ("units", q0[c], None)',
+    ),
+    (
+        "carried lots rounded to nearest instead of toward zero",
+        STEP,
+        "return keep_value(day, h, np.trunc(amount / mult[h]), equity, basis)",
+        "return keep_value(day, h, np.round(amount / mult[h]), equity, basis)",
     ),
     (
         "roll lots not converted by the multiplier ratio",
-        PORT,
-        "lots = np.trunc(np.sum(q[mine] * mult[mine]) / mult[h])",
-        "lots = np.trunc(np.sum(q[mine]))",
+        STEP,
+        "lots = np.trunc(units / mult[h])",
+        "lots = np.trunc(units / mult[own[0]])",
+    ),
+    (
+        "roll lots rounded to nearest instead of toward zero",
+        STEP,
+        "lots = np.trunc(units / mult[h])",
+        "lots = np.round(units / mult[h])",
     ),
     (
         "first-row lots divided by the multiplier",
-        PORT,
-        "return e[1] if e[2] is None else np.trunc(e[1] * e[2] / mult[h])",
-        "return np.trunc(e[1] / mult[h])",
+        STEP,
+        "lots = amount if ref is None else np.trunc(amount * ref / mult[h])",
+        "lots = np.trunc(amount / mult[h])",
     ),
     (
         "kept positions sized without the half-lot margin",
-        PORT,
-        "return (lots + 0.5 * np.sign(lots)) * mark * mult[col] / (equity * buffer)",
-        "return lots * mark * mult[col] / (equity * buffer)",
+        STEP,
+        "return (lots + 0.5 * np.sign(lots)) * m * mult[col] / (equity * buffer)",
+        "return lots * m * mult[col] / (equity * buffer)",
     ),
     (
         "roll rows re-target every product",
-        PORT,
-        "vals.append(value(day, c, q[c], equity, basis))",
+        STEP,
+        "vals.append(keep_value(day, c, shares[c], equity, basis))",
         "vals.append(goal_value(day, c, goal_now[k]))",
+    ),
+    (
+        "written rows drop the engine's carried orders",
+        STEP,
+        "vals.append(pend[c])  # 引擎自己的顺延目标原样带上",
+        "vals.append(0.0)",
+    ),
+    (
+        "target on a contract's end row treated as waiting",
+        STEP,
+        "return h >= 0 and first[h] <= day <= end_row[h]",
+        "return h >= 0 and first[h] <= day < end_row[h]",
+    ),
+    (
+        "written rows keep a leftover old contract",
+        STEP,
+        "if k < 0 or h < 0 or c == h:",
+        "if True:",
+    ),
+    (
+        "waiting target ignored while a leftover old contract is held",
+        STEP,
+        "if wait[k] is not None and not pend_by.get(k):",
+        "if wait[k] is not None and not own and not pend_by.get(k):",
+    ),
+    (
+        "waiting entries kept through a margin-call liquidation",
+        STEP,
+        "        if call:\n            wait[:] = [None] * p",
+        "        if False:\n            wait[:] = [None] * p",
+    ),
+    (
+        "personal lead ignored",
+        PORT,
+        "        k -= lead\n",
+        "",
     ),
     (
         "last trading day on the last sample row treated as after the sample",

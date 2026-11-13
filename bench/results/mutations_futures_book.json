@@ -51,26 +51,66 @@
   },
   {
     "mutant": "carried lots not rescaled across a unit change",
-    "file": "src/ashare/backtest/futures.py",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "carried lots rounded to nearest instead of toward zero",
+    "file": "src/ashare/backtest/futures_step.py",
     "caught": true
   },
   {
     "mutant": "roll lots not converted by the multiplier ratio",
-    "file": "src/ashare/backtest/futures.py",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "roll lots rounded to nearest instead of toward zero",
+    "file": "src/ashare/backtest/futures_step.py",
     "caught": true
   },
   {
     "mutant": "first-row lots divided by the multiplier",
-    "file": "src/ashare/backtest/futures.py",
+    "file": "src/ashare/backtest/futures_step.py",
     "caught": true
   },
   {
     "mutant": "kept positions sized without the half-lot margin",
-    "file": "src/ashare/backtest/futures.py",
+    "file": "src/ashare/backtest/futures_step.py",
     "caught": true
   },
   {
     "mutant": "roll rows re-target every product",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "written rows drop the engine's carried orders",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "target on a contract's end row treated as waiting",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "written rows keep a leftover old contract",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "waiting target ignored while a leftover old contract is held",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "waiting entries kept through a margin-call liquidation",
+    "file": "src/ashare/backtest/futures_step.py",
+    "caught": true
+  },
+  {
+    "mutant": "personal lead ignored",
     "file": "src/ashare/backtest/futures.py",
     "caught": true
   },
