@@ -83,6 +83,43 @@ def write_panel(root, source=None):
     )
     for name, array in source._arrays.items():
         np.save(folder / f"{name}.npy", array)
+    import polars as pl
+
+    from ashare.data.store import Store
+
+    pl.DataFrame(
+        dict(
+            ts_code=source.symbols,
+            name=[f"合成证券{i + 1}" for i in range(len(source.symbols))],
+            market="主板",
+            exchange="SYN",
+            list_date="20000101",
+            delist_date=None,
+        )
+    ).write_parquet(folder / "securities.parquet")
+    store = Store(root)
+    path = store.root / "raw/synthetic-industries.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        dict(
+            index_code=["801010.SI", "801020.SI", "801030.SI"],
+            industry_name=["合成农业", "合成能源", "合成材料"],
+            src="SW2021",
+            level="L1",
+        )
+    ).write_parquet(path)
+    store.mark(
+        "index_classify/SW2021",
+        dict(
+            dataset="index_classify",
+            partition="SW2021",
+            status="complete",
+            rows=3,
+            file=str(path.relative_to(store.root)),
+            content_hash="synthetic",
+            file_hash="synthetic",
+        ),
+    )
     return source
 
 

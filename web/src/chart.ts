@@ -58,7 +58,7 @@ export function fmt(value: number | null | undefined, percent = false, digits = 
 }
 export function configLabel(settings: Record<string, unknown>) {
   const neutral: Record<string, string> = { none: '无', industry: '行业', cap: '市值', 'cap+industry': '市值 + 行业' }
-  return `${settings.universe} · ${neutral[String(settings.group_neutralize ?? 'none')]} · 衰减 ${settings.decay}`
+  return `${settings.universe} · ${neutral[String(settings.group_neutralize ?? 'none')]} · 衰减 ${settings.decay} · 调仓 ${settings.rebalance ?? 1} 天`
 }
 export function variantLabel(label: string) {
   return label.replace('cap+industry', '市值 + 行业').replace('industry', '行业').replace('cap', '市值')

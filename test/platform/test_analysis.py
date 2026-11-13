@@ -178,3 +178,24 @@ def test_benchmark_does_not_change_backtest_bits():
             value.view(np.uint64) if value.dtype.kind == "f" else value,
             actual[key].view(np.uint64) if value.dtype.kind == "f" else actual[key],
         )
+
+
+def test_shared_diagnostics_do_not_change_any_result_bits():
+    source = panel()
+    expression = parse("rank(close)", factors={})[0].expression
+    cache = {}
+    for neutralize in ("industry", "cap+industry"):
+        settings = DEFAULTS | {"group_neutralize": neutralize}
+        expected_summary, expected = run_variant(expression, source, settings)
+        actual_summary, actual = run_variant(
+            expression, source, settings, diagnostics=cache
+        )
+        assert actual_summary == expected_summary
+        for key, value in expected.items():
+            np.testing.assert_array_equal(
+                actual[key].view(np.uint64)
+                if value.dtype == np.float64
+                else actual[key],
+                value.view(np.uint64) if value.dtype == np.float64 else value,
+            )
+    assert set(cache) == {"is", "validation"}

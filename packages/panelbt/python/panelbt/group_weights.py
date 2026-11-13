@@ -26,6 +26,8 @@ def run_group_weights(
     decay=0,
     weighted=False,
     profile=False,
+    rebalance=1,
+    record_holdings=False,
 ):
     """Run all groups, long/short and optional normalized weights in one call.
 
@@ -43,12 +45,22 @@ def run_group_weights(
     The last signal is validated even if its execution lies beyond the history.
     Missing exposures are NaN; statistical window masking is the caller's job.
     Inputs must not be mutated while the GIL is released.
+
+    Rebalance on signal rows 0, N, 2N, ...; intervening execution rows hold
+    actual weights unchanged with zero turnover. Optional main-pool long/short
+    holdings contain sparse post-trade rows (days, offsets, columns, weights).
     """
     modes = {None: 0, "industry": 1, "cap": 2, "cap+industry": 3}
     if neutralize not in modes:
         raise ValueError(f"unknown neutralization: {neutralize!r}")
     if int(decay) != decay or decay < 0:
         raise ValueError("decay must be a nonnegative integer")
+    if (
+        isinstance(rebalance, (bool, np.bool_))
+        or not isinstance(rebalance, (int, np.integer))
+        or rebalance < 1
+    ):
+        raise ValueError("rebalance must be a positive integer")
 
     def array(value, dtype):
         return contiguous(value, dtype)
@@ -81,6 +93,8 @@ def run_group_weights(
             bool(weighted),
             bool(profile),
             bool(industry_zero_missing),
+            int(rebalance),
+            bool(record_holdings),
         ),
     )
     borrowed = [*args[:3], *args[3], *args[4], *args[5:10]]

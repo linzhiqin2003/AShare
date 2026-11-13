@@ -59,6 +59,7 @@ class PanelCache:
         self.dates, self.symbols = allowed, meta.symbols
         self.version = meta.version
         self.arrays = {}
+        self.diagnostics = {}
 
     @property
     def shape(self):
@@ -105,6 +106,7 @@ def rss_bytes():
 def prepare_signals(runs, panel, folder, progress):
     """同摘要只求值一次，配置变体及两个窗口共享只读信号文件。"""
     folder.mkdir(parents=True, exist_ok=True)
+    panel.diagnostics.clear()
     expressions = [parse(run["source"])[0].expression for run in runs]
     panel.ensure(set(groupbt.FIELDS).union(*(e.fields for e in expressions)))
     prepared = {}
@@ -126,6 +128,7 @@ def prepare_signals(runs, panel, folder, progress):
 def calculate_run(run, panel, job, outgoing):
     started = time.perf_counter()
     alpha = np.load(run["signal"], mmap_mode="r", allow_pickle=False)
+    timings = {}
     summary, arrays = run_variant(
         None,
         panel,
@@ -134,6 +137,11 @@ def calculate_run(run, panel, job, outgoing):
             (job, "progress", {"ordinal": run["ordinal"], "phase": phase})
         ),
         signal=alpha,
+        timings=timings,
+        diagnostics=panel.diagnostics.setdefault(
+            (run["signal"], run["settings"]["universe"], run["settings"]["trade_at"]),
+            {},
+        ),
     )
     return dict(
         run=run["id"],
@@ -141,6 +149,7 @@ def calculate_run(run, panel, job, outgoing):
         arrays=arrays,
         elapsed=time.perf_counter() - started,
         data_version=panel.version,
+        timings=timings,
     )
 
 
@@ -264,7 +273,7 @@ class Manager:
             1,
             min(8, concurrency or int(os.environ.get("ASHARE_PLATFORM_VARIANTS", "2"))),
         )
-        self.mode = mode or os.environ.get("ASHARE_PLATFORM_EXECUTOR", "processes")
+        self.mode = mode or os.environ.get("ASHARE_PLATFORM_EXECUTOR", "threads")
         if self.mode not in ("threads", "processes"):
             raise ValueError("运行模式须为 threads 或 processes")
         self.idle_seconds = (
@@ -379,6 +388,15 @@ class Manager:
     def _finish(self, state, status, elapsed=None):
         job = state["job"]
         self.store.finish(job, status, elapsed)
+        self.store.event(
+            job,
+            {
+                "kind": "memory",
+                "pid": os.getpid(),
+                "rss": rss_bytes(),
+                "role": "server",
+            },
+        )
         shutil.rmtree(self.store.root / "work" / job, ignore_errors=True)
         state.update(
             job=None,
@@ -424,7 +442,9 @@ class Manager:
                                 self.store.save(**payload)
                             elif kind in ("complete", "failed"):
                                 self.store.event(job, {"kind": "timing", **payload})
-                                self._finish(state, kind, payload["elapsed"])
+                                self._finish(
+                                    state, kind, time.monotonic() - state["started"]
+                                )
                             else:
                                 self.store.event(job, {"kind": kind, **payload})
                     except queue.Empty:

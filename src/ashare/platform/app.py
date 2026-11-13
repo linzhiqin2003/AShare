@@ -21,6 +21,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from .analysis import plot_payload
 from .benchmarks import Benchmarks
 from .config import CHOICES, DEFAULTS, expand_settings, platform_dir
+from .holdings import Holdings
 from .language import ExpressionError, completions, parse, suggested_name
 from .runner import Manager, configure_logging
 from .storage import Store, dumps
@@ -113,6 +114,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
     configure_logging(store.root)
     manager = manager_factory(store, data_root=data_root)
     benchmarks = Benchmarks(data_root)
+    holdings = Holdings(store, data_root)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -355,6 +357,18 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
         headers["X-Uncompressed-Bytes"] = str(len(content))
         return Response(content, media_type="application/json", headers=headers)
 
+    @app.get("/api/runs/{run}/holdings")
+    def positions(
+        run: str,
+        date: str | None = Query(None, pattern=r"^[0-9]{8}$"),
+        compare: bool = False,
+        search: str = Query("", max_length=100),
+    ):
+        result = holdings.read(run, date, compare=compare, search=search)
+        if result is None:
+            raise HTTPException(404, "结果尚未就绪")
+        return result
+
     @app.get("/api/library")
     def library(
         search: str = Query("", max_length=200),
@@ -362,6 +376,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
         universe: str = "",
         neutralize: str = "",
         category: str = "",
+        rebalance: str = "",
         metric: str = "sharpe",
         minimum: float | None = None,
         maximum: float | None = None,
@@ -380,6 +395,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
             universe=universe,
             neutralize=neutralize,
             category=category,
+            rebalance=rebalance,
             metric=metric,
             minimum=minimum,
             maximum=maximum,

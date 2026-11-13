@@ -68,7 +68,18 @@ pub fn run_group_weights<'py>(
     adjustment: Bound<'py, PyAny>,
     buy: PyReadonlyArray2<'py, bool>,
     sell: PyReadonlyArray2<'py, bool>,
-    options: (usize, usize, usize, usize, usize, bool, bool, bool),
+    options: (
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        bool,
+        bool,
+        bool,
+        usize,
+        bool,
+    ),
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
     let (
         signal_start,
@@ -79,6 +90,8 @@ pub fn run_group_weights<'py>(
         weighted,
         profile,
         industry_zero_missing,
+        rebalance,
+        record_holdings,
     ) = options;
     let industry = Groups::extract(&industry)?;
     let (price, close, adjustment) = (
@@ -92,6 +105,8 @@ pub fn run_group_weights<'py>(
         || execution_start < signal_start
         || groups == 0
         || neutralize > 3
+        || rebalance == 0
+        || cols > u32::MAX as usize
         || close.shape() != shape
         || adjustment.shape() != shape
     {
@@ -137,6 +152,8 @@ pub fn run_group_weights<'py>(
         decay,
         weighted,
         profile,
+        rebalance,
+        record_holdings,
     };
     let dot = crate::numpy_dot::NumpyDot::load(py)?;
     let output = py.detach(|| panelbt_core::group_weights::run(&input, |x, y| dot.dot(x, y)));
@@ -166,6 +183,14 @@ pub fn run_group_weights<'py>(
             result.set_item("first_live", o.first_live)?;
             result.set_item("bad_rows", o.bad_rows)?;
             result.set_item("stages", o.stages)?;
+            if let Some(snapshot) = o.holdings {
+                let held = PyDict::new(py);
+                held.set_item("days", snapshot.days.into_pyarray(py))?;
+                held.set_item("offsets", snapshot.offsets.into_pyarray(py))?;
+                held.set_item("columns", snapshot.columns.into_pyarray(py))?;
+                held.set_item("weights", snapshot.weights.into_pyarray(py))?;
+                result.set_item("holdings", held)?;
+            }
             Ok(result)
         })
         .collect()

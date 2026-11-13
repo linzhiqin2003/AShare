@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from .analysis import checks
+from .holdings import archive_arrays, write_archive
 
 
 def dumps(value):
@@ -22,6 +23,7 @@ class Store:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "series").mkdir(exist_ok=True)
+        (self.root / "holdings").mkdir(exist_ok=True)
         with self.connect() as db:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -49,6 +51,7 @@ class Store:
                     "family": "TEXT NOT NULL DEFAULT ''",
                     "t": "REAL",
                     "margin": "REAL",
+                    "holding_days": "REAL",
                 },
                 "runs": {"benchmark": "TEXT"},
             }.items():
@@ -104,14 +107,22 @@ class Store:
             for i, (variant, settings) in enumerate(variants):
                 config = dumps(
                     dict(
-                        sorted((k, v) for k, v in settings.items() if k != "benchmark")
+                        sorted(
+                            (k, v)
+                            for k, v in settings.items()
+                            if k != "benchmark" and not (k == "rebalance" and v == 1)
+                        )
                     )
                 )
                 expression_id = variant.expression.digest
                 entry = hashlib.sha256((expression_id + config).encode()).hexdigest()
                 run = uuid.uuid4().hex
                 label = " · ".join(
-                    (*variant.parameters, settings["group_neutralize"] or "无")
+                    (
+                        *variant.parameters,
+                        settings["group_neutralize"] or "无",
+                        f"调仓{settings.get('rebalance', 1)}天",
+                    )
                 )
                 db.execute(
                     """INSERT INTO entries(id,expression_id,name,source,settings,updated)
@@ -217,7 +228,8 @@ class Store:
                 )
         return sorted(values, key=lambda r: -abs(r["value"]))
 
-    def save(self, run, summary, arrays, elapsed, data_version):
+    def save(self, run, summary, arrays, elapsed, data_version, timings=None):
+        started = time.perf_counter()
         with self.connect() as db:
             row = db.execute("SELECT * FROM runs WHERE id=?", (run,)).fetchone()
             if not row or row["status"] != "running":
@@ -228,6 +240,9 @@ class Store:
         summary["correlations"] = correlation[:20]
         summary["checks"] = checks(summary, self.trials(), correlation)
         summary["trial_count"] = self.trials()
+        holdings = archive_arrays(arrays)
+        if holdings:
+            write_archive(self.root / "holdings" / f"{run}.npz", holdings)
         path = self.root / "series" / f"{run}.npz"
         temporary = path.with_suffix(".tmp")
         with temporary.open("wb") as stream:
@@ -260,13 +275,22 @@ class Store:
                 ),
             )
             db.execute(
-                "UPDATE entries SET t=?,margin=? WHERE id=?",
-                (a["t"], a["margin"], row["entry"]),
+                "UPDATE entries SET t=?,margin=?,holding_days=? WHERE id=?",
+                (a["t"], a["margin"], a.get("holding_days"), row["entry"]),
             )
             self._event(
                 db,
                 row["job"],
                 {"kind": "variant", "run": run, "ordinal": row["ordinal"]},
+            )
+        if timings is not None:
+            self.event(
+                row["job"],
+                {
+                    "kind": "stages",
+                    "ordinal": row["ordinal"],
+                    "seconds": timings | {"persistence": time.perf_counter() - started},
+                },
             )
         return True
 
@@ -425,6 +449,7 @@ class Store:
         universe="",
         neutralize="",
         category="",
+        rebalance="",
         metric="sharpe",
         minimum=None,
         maximum=None,
@@ -454,13 +479,24 @@ class Store:
             "universe",
             "neutralize",
             "decay",
+            "rebalance",
+            "holding_days",
         }
         if (
             sort not in columns
             or metric
             not in columns
-            - {"name", "source", "status", "updated", "universe", "neutralize", "decay"}
-            or group not in ("none", "expression", "config")
+            - {
+                "name",
+                "source",
+                "status",
+                "updated",
+                "universe",
+                "neutralize",
+                "decay",
+                "rebalance",
+            }
+            or group not in ("none", "expression", "config", "rebalance")
         ):
             raise ValueError("不支持的列表选项")
         clauses, args = [], []
@@ -478,6 +514,10 @@ class Store:
                 "coalesce(json_extract(settings,'$.group_neutralize'),'none')",
             ),
             (category, "category"),
+            (
+                rebalance,
+                "CAST(coalesce(json_extract(settings,'$.rebalance'),1) AS TEXT)",
+            ),
         ]:
             if value:
                 values = value.split(",")
@@ -498,13 +538,17 @@ class Store:
                 clauses.append(f"{column}{op}?")
                 args.append(value)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        group_key = {"expression": "expression_id", "config": "settings", "none": None}[
-            group
-        ]
+        group_key = {
+            "expression": "expression_id",
+            "config": "settings",
+            "none": None,
+            "rebalance": "rebalance",
+        }[group]
         sort_sql = {
             "universe": "json_extract(settings,'$.universe')",
             "neutralize": "json_extract(settings,'$.group_neutralize')",
             "decay": "json_extract(settings,'$.decay')",
+            "rebalance": "coalesce(json_extract(settings,'$.rebalance'),1)",
         }.get(sort, sort)
         order = (
             f"{group_key}," if group_key else ""
@@ -513,21 +557,22 @@ class Store:
             # 一个读事务，计数、分组和分页看到同一版筛选结果。
             db.execute("BEGIN")
             facets = {
-                key: {} for key in ("status", "universe", "neutralize", "category")
+                key: {}
+                for key in ("status", "universe", "neutralize", "category", "rebalance")
             }
             population = db.execute(
-                "SELECT status,json_extract(settings,'$.universe'),coalesce(json_extract(settings,'$.group_neutralize'),'none'),category,count(*) FROM entries"
+                "SELECT status,json_extract(settings,'$.universe'),coalesce(json_extract(settings,'$.group_neutralize'),'none'),category,CAST(coalesce(json_extract(settings,'$.rebalance'),1) AS TEXT),count(*) FROM entries"
                 + where
-                + " GROUP BY 1,2,3,4",
+                + " GROUP BY 1,2,3,4,5",
                 args,
             )
             for values in population:
                 for index, key in enumerate(facets):
                     value = values[index]
-                    facets[key][value] = facets[key].get(value, 0) + values[4]
+                    facets[key][value] = facets[key].get(value, 0) + values[5]
             counts = facets["status"]
             rows = db.execute(
-                "SELECT id,name,source,settings,expression_id,status,sharpe,validation,turnover,fitness,annual_return,drawdown,coverage,t,margin,latest FROM entries"
+                "SELECT id,name,source,settings,expression_id,status,sharpe,validation,turnover,holding_days,fitness,annual_return,drawdown,coverage,t,margin,latest,coalesce(json_extract(settings,'$.rebalance'),1) AS rebalance FROM entries"
                 + where
                 + f" ORDER BY {order} LIMIT ? OFFSET ?",
                 [*args, limit, offset],
@@ -536,14 +581,19 @@ class Store:
             if group_key and rows:
                 visible = list(dict.fromkeys(row[group_key] for row in rows))
                 group_where = where + (" AND " if where else " WHERE ")
-                group_where += f"{group_key} IN ({','.join('?' for _ in visible)})"
+                group_sql = (
+                    "coalesce(json_extract(settings,'$.rebalance'),1)"
+                    if group == "rebalance"
+                    else group_key
+                )
+                group_where += f"{group_sql} IN ({','.join('?' for _ in visible)})"
                 # 只传当前页会画的分组头；每个分组的计数仍基于全部已筛选条目。
                 groups = [
                     dict(r)
                     for r in db.execute(
-                        f"SELECT {group_key} AS key,count(*) AS count FROM entries"
+                        f"SELECT {group_sql} AS key,count(*) AS count FROM entries"
                         + group_where
-                        + f" GROUP BY {group_key}",
+                        + f" GROUP BY {group_sql}",
                         [*args, *visible],
                     )
                 ]

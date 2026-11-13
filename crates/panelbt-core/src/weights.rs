@@ -139,6 +139,7 @@ impl Scratch {
 
 /// A target row, with group member columns in ascending order.
 pub enum RowTarget<'a> {
+    Hold,
     Dense(&'a [f64]),
     Groups {
         long: &'a [usize],
@@ -183,7 +184,18 @@ impl Engine {
         scratch.target.clear();
         scratch.previous.clear();
         scratch.returns.clear();
+        let hold = matches!(plan, RowTarget::Hold);
         match plan {
+            RowTarget::Hold => {
+                for &col in live.iter() {
+                    scratch.push(
+                        col,
+                        previous[col],
+                        previous[col],
+                        market.returns[start + col],
+                    );
+                }
+            }
             RowTarget::Dense(target) => {
                 for (j, &want) in target.iter().enumerate() {
                     scratch.push(j, want, previous[j], market.returns[start + j]);
@@ -229,7 +241,9 @@ impl Engine {
             return (0.0, 0.0);
         }
         scratch.current.resize(scratch.cols.len(), 0.0);
-        if market.buy.is_empty() && market.sell.is_empty() {
+        if hold {
+            scratch.current.copy_from_slice(&scratch.previous);
+        } else if market.buy.is_empty() && market.sell.is_empty() {
             scratch.current.copy_from_slice(&scratch.target);
         } else {
             scratch.advance(market, start);

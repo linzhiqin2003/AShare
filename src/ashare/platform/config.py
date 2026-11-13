@@ -13,6 +13,7 @@ DEFAULTS = dict(
     n_groups=10,
     group_neutralize=None,
     decay=0,
+    rebalance=1,
     by="year",
     weights_portfolio=False,
     sub_universes=True,
@@ -60,8 +61,8 @@ def expand_settings(settings, expression_count=1):
         if not 1 <= len(values) <= 8:
             raise ValueError("设置选项须有 1–8 项")
         for v in values:
-            if key == "decay":
-                valid = type(v) is int and 0 <= v <= 2520
+            if key in ("decay", "rebalance"):
+                valid = type(v) is int and (1 if key == "rebalance" else 0) <= v <= 2520
             else:
                 valid = any(type(v) is type(c) and v == c for c in CHOICES[key])
             if not valid:
