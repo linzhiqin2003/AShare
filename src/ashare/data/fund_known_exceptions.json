@@ -1,0 +1,376 @@
+{
+ "source": "Tushare Pro（fund_basic / fund_daily / fund_adj / fund_div / cb_basic / cb_daily / cb_call / cb_price_chg），数据 2015-01-05 至 2026-11-12",
+ "note": "每条：check 为 verify-funds 的检查项，其余字段为匹配键，reason 指向 reasons。由「空清单校验」列出全部不符后逐条归类；新数据里出现清单之外的不符，校验即失败。只写匹配键与原因，不写由价格、成交量、成交额算出的数值。",
+ "excluded_classes": {
+  "graded": "分级基金（证券表 fund_class == graded）整类不进 fund_gap / fund_factor / fund_factor_missing 的判定，不逐格登记：A 份额的定期折算、上下折不完整地反映在复权因子里，前收盘与因子对不上是常态；它们的不符只在校验报告里计数（graded_cells）。fund_market 默认也不让买，回测里不可用"
+ },
+ "cause_unknown": [
+  "cb_amount_low",
+  "factor_vs_gap",
+  "no_trade_days",
+  "one_price_bar"
+ ],
+ "reasons": {
+  "cb_amount_low": "成交额折算的均价远低于当天最低价（原因未查明）",
+  "code_not_in_table": "日线里出现基金表没有的代码（161022A.SZ 是分级基金份额的特殊代码，158008.OF 是场外代码），面板不收",
+  "factor_vs_gap": "复权因子的变化与交易所前收盘缺口不一致（分级基金折算、长期停牌后复牌、LOF 分红等），面板按复权因子记事件，交易所参考价对不上（原因未查明）",
+  "fund_amount_x10": "成交额约为成交量×价格的十倍：源单行成交额错误",
+  "no_trade_days": "两个有行情日之间隔着源里没有日线（无成交或缺行）或只有沿用价的交易日，交易所前收盘与上一有行情日收盘不同；复权因子没动、没有分红记录，不是公司行为，面板不记事件（原因未查明）",
+  "one_price_bar": "日线开高低收为同一个价，成交额折算的均价却不在这个价上：价格字段是沿用值，成交量额是真实成交（源为何这样给未查明）；面板把这一天算作无行情、不能成交",
+  "reits_distribution": "REITs 收益分配：交易所不调整前收盘，复权因子按分配调整；面板按复权因子记现金分配",
+  "source_missing_factor": "源在这几个有行情的日子没有这只基金的复权因子（其余日子都有），面板这几天按交易所前收盘缺口裁决"
+ },
+ "entries": [
+  {
+   "check": "cb_vwap",
+   "symbol": "110046.SH",
+   "date": "20190724",
+   "reason": "cb_amount_low"
+  },
+  {
+   "check": "fund_code_not_in_table",
+   "symbol": "158008.OF",
+   "reason": "code_not_in_table"
+  },
+  {
+   "check": "fund_code_not_in_table",
+   "symbol": "161022A.SZ",
+   "reason": "code_not_in_table"
+  },
+  {
+   "check": "fund_factor_missing",
+   "symbol": "161131.SZ",
+   "reason": "source_missing_factor"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "159645.SZ",
+   "date": "20240529",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160324.SZ",
+   "date": "20181130",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160643.SZ",
+   "date": "20190201",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160910.SZ",
+   "date": "20170525",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160910.SZ",
+   "date": "20220408",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160921.SZ",
+   "date": "20171221",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "160925.SZ",
+   "date": "20190902",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "161022.SZ",
+   "date": "20210817",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "161036.SZ",
+   "date": "20190610",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "161630.SZ",
+   "date": "20170418",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "161630.SZ",
+   "date": "20170901",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "161831.SZ",
+   "date": "20201030",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "162215.SZ",
+   "date": "20231227",
+   "reason": "factor_vs_gap"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "162307.SZ",
+   "date": "20200227",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "163003.SZ",
+   "date": "20210316",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "165528.SZ",
+   "date": "20191227",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "165528.SZ",
+   "date": "20200410",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "168101.SZ",
+   "date": "20200817",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "168106.SZ",
+   "date": "20190221",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "168701.SZ",
+   "date": "20241016",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "169102.SZ",
+   "date": "20181220",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "169102.SZ",
+   "date": "20181224",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "169102.SZ",
+   "date": "20181226",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "169102.SZ",
+   "date": "20190102",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "169105.SZ",
+   "date": "20190805",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "501035.SH",
+   "date": "20180108",
+   "reason": "factor_vs_gap"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "501035.SH",
+   "date": "20190108",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "501038.SH",
+   "date": "20190211",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "501072.SH",
+   "date": "20210506",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "501201.SH",
+   "date": "20240422",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "508008.SH",
+   "date": "20230411",
+   "reason": "reits_distribution"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "510900.SH",
+   "date": "20210726",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_gap",
+   "symbol": "513630.SH",
+   "date": "20240920",
+   "reason": "no_trade_days"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150052.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150067.SZ",
+   "date": "20200213",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150067.SZ",
+   "date": "20200214",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150157.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150158.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150174.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150176.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150199.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "150247.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "159645.SZ",
+   "date": "20240528",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "161210.SZ",
+   "date": "20181008",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "161820.SZ",
+   "date": "20220209",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "161823.SZ",
+   "date": "20220113",
+   "reason": "fund_amount_x10"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "161831.SZ",
+   "date": "20201029",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "162215.SZ",
+   "date": "20231222",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "163110.SZ",
+   "date": "20161213",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "501072.SH",
+   "date": "20210430",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "510390.SH",
+   "date": "20230526",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "510900.SH",
+   "date": "20210723",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "513030.SH",
+   "date": "20210723",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "513500.SH",
+   "date": "20210723",
+   "reason": "one_price_bar"
+  },
+  {
+   "check": "fund_vwap",
+   "symbol": "513630.SH",
+   "date": "20240919",
+   "reason": "one_price_bar"
+  }
+ ]
+}
