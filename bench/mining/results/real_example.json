@@ -1,0 +1,134 @@
+{
+ "panel": {
+  "rows": 2637,
+  "symbols": 5923,
+  "first": "2016",
+  "last": "2026"
+ },
+ "split": {
+  "valid_start": "2022",
+  "holdout_start": "2024"
+ },
+ "load_before": "11.99 15.98 13.79",
+ "settings": {
+  "space": "Space.default()",
+  "rebalance": 5,
+  "top_fraction": 0.1,
+  "screen_t": 1.0,
+  "sr_var": "null",
+  "alpha": 0.05,
+  "benchmark": "universe",
+  "autocorr": true,
+  "random": 1000,
+  "population": 100,
+  "generations": 5
+ },
+ "random": {
+  "strategy": {
+   "strategy": "random",
+   "n": 1000,
+   "seed": 1,
+   "batch": 100
+  },
+  "proposed": 1000,
+  "unique": 1000,
+  "screened_out": 772,
+  "backtested": 228,
+  "duplicates": 51,
+  "failed": 0,
+  "cache_hits": 0,
+  "trials_total": 1000,
+  "effective_trials": 77.99999999999997,
+  "pbo": 0.0,
+  "pbo_note": null,
+  "significant": {
+   "ic_raw": 204,
+   "ic_holm": 113,
+   "ic_bh": 171,
+   "ic_by": 151,
+   "long_psr": 0,
+   "long_dsr": 0,
+   "long_dsr_null": 0,
+   "valid_dsr": 0
+  },
+  "psr_train_hist": {
+   "[0,0.5)": 168,
+   "[0.5,0.9)": 8,
+   "[0.9,0.95)": 1,
+   "[0.95,0.99)": 0,
+   "[0.99,1]": 0
+  },
+  "dsr_train_hist": {
+   "[0,0.5)": 177,
+   "[0.5,0.9)": 0,
+   "[0.9,0.95)": 0,
+   "[0.95,0.99)": 0,
+   "[0.99,1]": 0
+  },
+  "dsr_valid_hist": {
+   "[0,0.5)": 177,
+   "[0.5,0.9)": 0,
+   "[0.9,0.95)": 0,
+   "[0.95,0.99)": 0,
+   "[0.99,1]": 0
+  },
+  "seconds": 87.76421570801176,
+  "per_second": 11.394165514188177
+ },
+ "evolution": {
+  "strategy": {
+   "strategy": "evolution",
+   "population": 100,
+   "generations": 5,
+   "tournament": 3,
+   "crossover": 0.5,
+   "seed": 1
+  },
+  "proposed": 600,
+  "unique": 600,
+  "screened_out": 277,
+  "backtested": 323,
+  "duplicates": 154,
+  "failed": 0,
+  "cache_hits": 125,
+  "trials_total": 1475,
+  "effective_trials": 57.00000000000008,
+  "pbo": 0.0,
+  "pbo_note": null,
+  "significant": {
+   "ic_raw": 309,
+   "ic_holm": 243,
+   "ic_bh": 295,
+   "ic_by": 277,
+   "long_psr": 10,
+   "long_dsr": 0,
+   "long_dsr_null": 0,
+   "valid_dsr": 0
+  },
+  "psr_train_hist": {
+   "[0,0.5)": 152,
+   "[0.5,0.9)": 7,
+   "[0.9,0.95)": 0,
+   "[0.95,0.99)": 6,
+   "[0.99,1]": 4
+  },
+  "dsr_train_hist": {
+   "[0,0.5)": 167,
+   "[0.5,0.9)": 2,
+   "[0.9,0.95)": 0,
+   "[0.95,0.99)": 0,
+   "[0.99,1]": 0
+  },
+  "dsr_valid_hist": {
+   "[0,0.5)": 169,
+   "[0.5,0.9)": 0,
+   "[0.9,0.95)": 0,
+   "[0.95,0.99)": 0,
+   "[0.99,1]": 0
+  },
+  "seconds": 76.8204590419773,
+  "per_second": 6.183248654377916
+ },
+ "seconds_total": 166.91158890724182,
+ "load_after": "22.61 18.14 15.01"
+}

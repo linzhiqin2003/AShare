@@ -1,0 +1,76 @@
+{
+ "factors": 100,
+ "start": "20160101",
+ "end": "20251231",
+ "cpus": 15,
+ "load_before": "12:25  up 1 day, 14:56, 2 users, load averages: 12.05 15.10 13.21",
+ "shape": [
+  2430,
+  5923
+ ],
+ "read_fields": 0.21347062499262393,
+ "runs": [
+  {
+   "prepare": 0.3383319999848027,
+   "benchmark": 0.18384250000235625,
+   "expressions": 2.4640597068937495,
+   "ic_groups_etc": 14.546346835093573,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.2625907500041649,
+   "summaries": 0.10935270800837316,
+   "screen_only_with_expressions": 4.946629582991591,
+   "total": 17.90452449998702
+  },
+  {
+   "prepare": 0.4456753749982454,
+   "benchmark": 0.18603924999479204,
+   "expressions": 2.7814991612685844,
+   "ic_groups_etc": 15.054390087840147,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.2735579169820994,
+   "summaries": 0.07793558301636949,
+   "screen_only_with_expressions": 5.300727041991195,
+   "total": 18.819097374100238
+  },
+  {
+   "prepare": 0.5458241669985,
+   "benchmark": 0.18279870800324716,
+   "expressions": 2.367675498215249,
+   "ic_groups_etc": 15.682647423789604,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.365060625015758,
+   "summaries": 0.07737441701465286,
+   "screen_only_with_expressions": 5.093125790997874,
+   "total": 19.22138083903701
+  }
+ ],
+ "median": {
+  "prepare": 0.4456753749982454,
+  "benchmark": 0.18384250000235625,
+  "expressions": 2.4640597068937495,
+  "ic_groups_etc": 15.054390087840147,
+  "evaluator_batches": 2,
+  "backtest_run_batch": 0.2735579169820994,
+  "summaries": 0.07793558301636949,
+  "screen_only_with_expressions": 5.093125790997874,
+  "total": 18.819097374100238
+ },
+ "rank_ic_one_factor_one_horizon": {
+  "numpy_loop": 1.378564999991795,
+  "panelops": 0.016354499995941296
+ },
+ "cheap_breakdown_ms_per_factor": {
+  "ic_h1": 15.282062301412225,
+  "ic_h5": 14.938295801403001,
+  "ic_h20": 14.926829005707987,
+  "groups": 14.428829096141271,
+  "size_ic": 20.33217479765881,
+  "autocorr": 64.44274999375921,
+  "targets": 6.505216701771133
+ },
+ "backtest_10": {
+  "sequential_run": 0.30505325002013706,
+  "run_batch": 0.032008749985834584
+ },
+ "load_after": "12:27  up 1 day, 14:58, 2 users, load averages: 14.73 15.27 13.45"
+}

@@ -6,7 +6,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
   ],
-  "seconds": 3.0
+  "seconds": 2.9
  },
  {
   "name": "label_buy_one_day_early",
@@ -15,7 +15,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_label_alignment_matches_backtest_timing[1-1]"
   ],
-  "seconds": 3.0
+  "seconds": 2.8
  },
  {
   "name": "buyable_misaligned",
@@ -24,7 +24,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
   ],
-  "seconds": 3.1
+  "seconds": 2.7
  },
  {
   "name": "blocked_not_excluded",
@@ -33,7 +33,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_buyable_aligned_to_buy_day_and_blocked_excluded"
   ],
-  "seconds": 2.9
+  "seconds": 2.7
  },
  {
   "name": "gap_minus_one",
@@ -87,7 +87,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
   ],
-  "seconds": 3.6
+  "seconds": 2.7
  },
  {
   "name": "carry_span_not_widened",
@@ -96,7 +96,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
   ],
-  "seconds": 2.9
+  "seconds": 2.7
  },
  {
   "name": "end_day_ignores_carry",
@@ -105,7 +105,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_sell_blocked_carry_against_daily_loop[1-1-3]"
   ],
-  "seconds": 2.8
+  "seconds": 2.7
  },
  {
   "name": "lookahead_end_off_by_one",
@@ -123,7 +123,7 @@
   "by": [
    "FAILED test/ml/test_labels.py::test_zscore_target_against_daily_loop - Assert..."
   ],
-  "seconds": 3.2
+  "seconds": 3.4
  },
  {
   "name": "store_key_missing_preprocess",
@@ -249,7 +249,7 @@
   "by": [
    "FAILED test/ml/test_ledger_identity.py::test_library_versions_in_run_key_and_ledger"
   ],
-  "seconds": 4.6
+  "seconds": 3.8
  },
  {
   "name": "winsor_upper_ignored",

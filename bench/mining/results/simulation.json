@@ -1,0 +1,173 @@
+{
+ "setup": {
+  "t": 760,
+  "n": 120,
+  "candidates": 80,
+  "alpha": 0.05,
+  "split": "最后 1 年留出、之前 1 年验证、其余训练",
+  "frictions": {
+   "suspend": 0.002,
+   "suspend_days": 10.0,
+   "suspend_drift": -0.003,
+   "delist": 0.03,
+   "delist_st": 60,
+   "delist_halt": 20,
+   "st": 0.08,
+   "st_days": 120,
+   "st_drift": -0.001,
+   "ipo": 0.2
+  }
+ },
+ "noise_default_costs": {
+  "reps": 200,
+  "alpha": 0.05,
+  "ic_raw_any": {
+   "hits": 143,
+   "rate": 0.715
+  },
+  "ic_holm": {
+   "hits": 1,
+   "rate": 0.005
+  },
+  "ic_bh": {
+   "hits": 1,
+   "rate": 0.005
+  },
+  "ic_by": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "psr_any": {
+   "hits": 48,
+   "rate": 0.24
+  },
+  "dsr_null": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "dsr_empirical": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "train_and_valid": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "per_candidate_ic_raw_rate": 0.0209375,
+  "per_candidate_psr_rate": 0.0035625,
+  "mean_candidates": 80.0,
+  "binomial_upper_3sd": 0.09623310502226733
+ },
+ "noise_zero_costs": {
+  "reps": 200,
+  "alpha": 0.05,
+  "ic_raw_any": {
+   "hits": 133,
+   "rate": 0.665
+  },
+  "ic_holm": {
+   "hits": 1,
+   "rate": 0.005
+  },
+  "ic_bh": {
+   "hits": 1,
+   "rate": 0.005
+  },
+  "ic_by": {
+   "hits": 1,
+   "rate": 0.005
+  },
+  "psr_any": {
+   "hits": 116,
+   "rate": 0.58
+  },
+  "dsr_null": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "dsr_empirical": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "train_and_valid": {
+   "hits": 0,
+   "rate": 0.0
+  },
+  "per_candidate_ic_raw_rate": 0.0190625,
+  "per_candidate_psr_rate": 0.012,
+  "mean_candidates": 80.0,
+  "binomial_upper_3sd": 0.09623310502226733
+ },
+ "planted": {
+  "0.001": {
+   "backtested": {
+    "hits": 9,
+    "rate": 0.9
+   },
+   "dsr_null": {
+    "hits": 0,
+    "rate": 0.0
+   },
+   "dsr_empirical": {
+    "hits": 0,
+    "rate": 0.0
+   },
+   "ic_holm": {
+    "hits": 7,
+    "rate": 0.7
+   },
+   "top_corr": {
+    "hits": 8,
+    "rate": 0.8
+   },
+   "reps": 10
+  },
+  "0.002": {
+   "backtested": {
+    "hits": 9,
+    "rate": 0.9
+   },
+   "dsr_null": {
+    "hits": 1,
+    "rate": 0.1
+   },
+   "dsr_empirical": {
+    "hits": 0,
+    "rate": 0.0
+   },
+   "ic_holm": {
+    "hits": 10,
+    "rate": 1.0
+   },
+   "top_corr": {
+    "hits": 9,
+    "rate": 0.9
+   },
+   "reps": 10
+  },
+  "0.003": {
+   "backtested": {
+    "hits": 9,
+    "rate": 0.9
+   },
+   "dsr_null": {
+    "hits": 5,
+    "rate": 0.5
+   },
+   "dsr_empirical": {
+    "hits": 0,
+    "rate": 0.0
+   },
+   "ic_holm": {
+    "hits": 10,
+    "rate": 1.0
+   },
+   "top_corr": {
+    "hits": 10,
+    "rate": 1.0
+   },
+   "reps": 10
+  }
+ },
+ "seconds": 484.9535639286041
+}

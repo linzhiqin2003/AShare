@@ -1,0 +1,362 @@
+[
+ {
+  "name": "holdout_leak",
+  "desc": "留出段并进验证段（搜索的面板不截断、验证段延到最后一天）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
+  ],
+  "seconds": 6.6
+ },
+ {
+  "name": "label_one_day_late",
+  "desc": "收益标签对齐差一天（T+2 开盘买）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_and_groups_match_reference"
+  ],
+  "seconds": 2.0
+ },
+ {
+  "name": "execution_lag_wrong",
+  "desc": "多头端成交晚一天",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.4
+ },
+ {
+  "name": "segment_not_purged",
+  "desc": "段内 IC 用了标签跨出段尾的信号日",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_batch_equals_single_and_segments"
+  ],
+  "seconds": 3.5
+ },
+ {
+  "name": "costs_not_charged",
+  "desc": "默认不扣成本",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.5
+ },
+ {
+  "name": "duplicates_not_ledgered",
+  "desc": "判为数值重复的候选不记进台账（不计入试验数）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_duplicates_still_count_as_trials"
+  ],
+  "seconds": 6.8
+ },
+ {
+  "name": "screened_not_ledgered",
+  "desc": "粗筛掉的候选不记进台账",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
+  ],
+  "seconds": 6.7
+ },
+ {
+  "name": "dsr_uses_search_count",
+  "desc": "折算夏普只用本次搜索的试验数而不是台账累计",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_dsr_uses_cumulative_trials - a..."
+  ],
+  "seconds": 7.7
+ },
+ {
+  "name": "evolution_unseeded",
+  "desc": "进化的每一代不按种子取随机数",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_strategies_deterministic - Asse..."
+  ],
+  "seconds": 5.7
+ },
+ {
+  "name": "dedup_key_keeps_rank",
+  "desc": "去重键不剥根上的截面排名",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_canonical_and_dedup_key - Asser..."
+  ],
+  "seconds": 5.5
+ },
+ {
+  "name": "commutative_not_sorted",
+  "desc": "可交换算子的操作数不排序（a+b 与 b+a 算两个）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_enumerate_is_complete_and_valid"
+  ],
+  "seconds": 5.6
+ },
+ {
+  "name": "units_not_checked",
+  "desc": "加减时不检查量纲",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_units - AssertionError: Regex p..."
+  ],
+  "seconds": 5.3
+ },
+ {
+  "name": "unlock_twice",
+  "desc": "留出段可以重复解锁",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_unlock_holdout_once - Failed: ..."
+  ],
+  "seconds": 8.4
+ },
+ {
+  "name": "student_p_to_normal",
+  "desc": "IC 的 p 值用正态近似（小样本尾部太薄）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
+  ],
+  "seconds": 3.4
+ },
+ {
+  "name": "ic_t_ignores_overlap",
+  "desc": "重叠持有期的 IC t 值不放大方差（按独立样本算）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
+  ],
+  "seconds": 2.5
+ },
+ {
+  "name": "ic_df_not_blocks",
+  "desc": "重叠持有期的 IC 自由度按天数而不是不重叠的块数",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
+  ],
+  "seconds": 2.3
+ },
+ {
+  "name": "screen_not_purged",
+  "desc": "粗筛的段内 IC 用了标签跨进下一段的信号日",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_valid_perturbation_keeps_train_side"
+  ],
+  "seconds": 20.1
+ },
+ {
+  "name": "bench_same_day_universe",
+  "desc": "基准用成交日的股票池（前视一天）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_benchmark_uses_signal_day_universe"
+  ],
+  "seconds": 4.6
+ },
+ {
+  "name": "bench_close_default",
+  "desc": "默认基准退回收盘到收盘的旧口径",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.5
+ },
+ {
+  "name": "capital_small_default",
+  "desc": "默认账户规模退回 1 亿元（最低佣金让持有全体的基准多扣成本）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_default_capital_makes_minimum_commission_irrelevant"
+  ],
+  "seconds": 4.7
+ },
+ {
+  "name": "grid_not_aligned",
+  "desc": "因子调仓日不对齐固定日表（从第一个有值的行起每 rebalance 行）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_rebalance_days_follow_fixed_grid"
+  ],
+  "seconds": 5.2
+ },
+ {
+  "name": "capital_overrides_config",
+  "desc": "传 BacktestMarket 时忽略用户的 config=",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_user_config_wins_over_capital"
+  ],
+  "seconds": 5.1
+ },
+ {
+  "name": "q_no_floor",
+  "desc": "方差比去掉「不低于 1」的下限（负自相关放松检验）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_variance_ratio_reference - asse..."
+  ],
+  "seconds": 5.5
+ },
+ {
+  "name": "old_bench_same_day_universe",
+  "desc": "旧基准（benchmark=\"close\"）用当天的股票池",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_old_benchmark_uses_previous_day_universe"
+  ],
+  "seconds": 5.3
+ },
+ {
+  "name": "long_start_ignored",
+  "desc": "多头端指标不从第一次成交那天算起",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.4
+ },
+ {
+  "name": "exec_not_checked",
+  "desc": "传入行情的成交价与 exec 不符时不报错",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_exec_price_must_match_market"
+  ],
+  "seconds": 4.1
+ },
+ {
+  "name": "evaluate_needs_ml",
+  "desc": "评估依赖 ashare.ml（没有 ml 依赖组就用不了）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_import_without_ml_group - Asse..."
+  ],
+  "seconds": 16.1
+ },
+ {
+  "name": "trial_id_no_definition",
+  "desc": "试验编号不含评估定义（换了成交价、基准、费用仍复用旧结果）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_evaluation_definition_enters_trial_id"
+  ],
+  "seconds": 16.5
+ },
+ {
+  "name": "reuse_ignores_threshold",
+  "desc": "复用台账时不按这次的门槛重判旧回测",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_screen_threshold_is_rejudged_on_reuse"
+  ],
+  "seconds": 17.7
+ },
+ {
+  "name": "holm_not_padded",
+  "desc": "Holm 的分母不补到台账累计试验数",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holm_denominator_is_ledger_total"
+  ],
+  "seconds": 18.0
+ },
+ {
+  "name": "sharpe_ignores_autocorr",
+  "desc": "折算夏普不按序列相关修正标准误",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_dsr_uses_cumulative_trials - a..."
+  ],
+  "seconds": 19.6
+ },
+ {
+  "name": "evolution_same_stream",
+  "desc": "进化的每一代用同一个随机流",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_evolution_draws_fresh_randomness_each_generation"
+  ],
+  "seconds": 5.8
+ },
+ {
+  "name": "level_ranks_allowed",
+  "desc": "截面排名可以作用在价格、成交量水平上",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_level_ranks_excluded_by_default"
+  ],
+  "seconds": 5.6
+ },
+ {
+  "name": "ts_corr_key_ordered",
+  "desc": "去重键不把 ts_corr 当对称",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_dedup_key_symmetry_and_nonnegative_abs"
+  ],
+  "seconds": 5.8
+ },
+ {
+  "name": "abs_kept_on_nonneg",
+  "desc": "去重键不去掉非负量上的 abs",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_dedup_key_symmetry_and_nonnegative_abs"
+  ],
+  "seconds": 5.8
+ },
+ {
+  "name": "ledger_torn_line",
+  "desc": "台账末尾是半行时直接接着写（两条记录粘成一行）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_ledger_tolerates_torn_line - A..."
+  ],
+  "seconds": 21.0
+ },
+ {
+  "name": "holm_multiplier",
+  "desc": "Holm 的乘数少 1",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
+  ],
+  "seconds": 5.3
+ },
+ {
+  "name": "bh_wrong_direction",
+  "desc": "BH 累计最小值方向反了",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
+  ],
+  "seconds": 5.2
+ },
+ {
+  "name": "psr_kurtosis_sign",
+  "desc": "PSR 分母偏度项符号反了",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
+  ],
+  "seconds": 5.0
+ },
+ {
+  "name": "emax_no_gamma",
+  "desc": "期望最大夏普少了欧拉常数修正",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
+  ],
+  "seconds": 5.2
+ }
+]

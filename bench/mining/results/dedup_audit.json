@@ -1,0 +1,27 @@
+{
+ "settings": {
+  "space": "Space.default()",
+  "draws": 20000,
+  "distinct_checked": [
+   1500,
+   1500
+  ],
+  "period": "2023–2024",
+  "fingerprint_rows": 32
+ },
+ "expressions": 14875,
+ "keys_new": 14082,
+ "keys_old": 14603,
+ "same_key": {
+  "groups_new": 592,
+  "groups_old": 272,
+  "pairs_checked": 300,
+  "min_rank_corr": 0.9999999997675275,
+  "pairs_rank_corr_below_0.9999": 1,
+  "max_rank_diff_share": 0.0005238540692235734
+ },
+ "identical_rankings_share_new": 0.034,
+ "identical_rankings_share_old": 0.04066666666666666,
+ "load": "5.56 8.58 9.09",
+ "seconds": 286.110906124115
+}

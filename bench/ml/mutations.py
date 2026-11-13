@@ -19,28 +19,28 @@ SRC = ROOT / "src" / "ashare" / "ml"
 MUTATIONS = [
     (
         "label_shift_one_day",
-        "labels.py",
+        "../labels.py",
         "raw[:m] = adjusted[hold : hold + m] / buy - 1",
         "raw[:m] = adjusted[hold - 1 : hold - 1 + m] / buy - 1",
         "标签少移一天（卖出日提前一天）",
     ),
     (
         "label_buy_one_day_early",
-        "labels.py",
+        "../labels.py",
         "buy = adjusted[lag : m + lag]",
         "buy = adjusted[lag - 1 : m + lag - 1]",
         "买入价早取一天（信号日当天成交）",
     ),
     (
         "buyable_misaligned",
-        "labels.py",
+        "../labels.py",
         "buyable[:m] = can_buy[lag : m + lag]",
         "buyable[:m] = can_buy[:m]",
         "可买性取信号日而不是买入日",
     ),
     (
         "blocked_not_excluded",
-        "labels.py",
+        "../labels.py",
         "            ok &= self.buyable\n",
         "            pass\n",
         "买不进的样本也进训练集",
@@ -82,21 +82,21 @@ MUTATIONS = [
     ),
     (
         "carry_ignores_can_sell",
-        "labels.py",
+        "../labels.py",
         "ok = np.isnan(sell) & can_sell[rows] & np.isfinite(adjusted[rows])",
         "ok = np.isnan(sell) & np.isfinite(adjusted[rows])",
         "顺延口径不看卖出日能否卖出",
     ),
     (
         "carry_span_not_widened",
-        "labels.py",
+        "../labels.py",
         "return self.lag + self.horizon + self.carry",
         "return self.lag + self.horizon",
         "顺延时最小间隔没有加上顺延天数",
     ),
     (
         "end_day_ignores_carry",
-        "labels.py",
+        "../labels.py",
         "            end[:m] = when\n",
         "            end[:m] = np.arange(hold, hold + m)[:, None]\n",
         "实际卖出日记成了不顺延的那天",
@@ -110,7 +110,7 @@ MUTATIONS = [
     ),
     (
         "zscore_not_applied",
-        "labels.py",
+        "../labels.py",
         "        target = panelops.cs_zscore(target, mask=universe)\n",
         "        target = target\n",
         "截面标准分目标没有生效",
@@ -208,7 +208,7 @@ MUTATIONS = [
     ),
     (
         "ledger_counts_runs_not_definitions",
-        "ledger.py",
+        "../ledger.py",
         '            ids.add(r["trial_id"])',
         '            ids.add(r["run_id"])',
         "账本按运行（含线程数）而不是按定义数试验组数",
@@ -228,6 +228,19 @@ MUTATIONS = [
         "逐日 Rank IC 的预测与标签错位",
     ),
 ]
+
+
+def _merge(path, results):
+    """把这次跑过的条目并进已有结果：同名的替换，其余保留（--only 只重跑一部分时不丢留档），
+    按 MUTATIONS 的顺序排，清单里已删掉的条目不再保留。"""
+    old = {}
+    if path.exists():
+        try:
+            old = {r["name"]: r for r in json.loads(path.read_text())}
+        except (ValueError, KeyError, TypeError):
+            old = {}
+    old.update({r["name"]: r for r in results})
+    return [old[m[0]] for m in MUTATIONS if m[0] in old]
 
 
 def main():
@@ -289,7 +302,8 @@ def main():
         print(json.dumps(results[-1], ensure_ascii=False), flush=True)
     out = ROOT / "bench" / "ml" / "results" / "mutations.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    merged = _merge(out, results)
+    out.write_text(json.dumps(merged, ensure_ascii=False, indent=1))
     missed = [r["name"] for r in results if not r["caught"]]
     print("没抓到：", missed or "无")
     sys.exit(1 if missed else 0)
