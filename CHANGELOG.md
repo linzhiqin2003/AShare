@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-13（境外期货）
+- Databento 的 K 线只留场内发布方：ICE 数据集（`IFEU.IMPACT`）另有场外成交发布方（`publisher_id` 84，大宗、EFP），同一合约同一时段各出一根 K 线，原先一起聚合进日线和分钟线，最高、最低、收盘和电子盘成交量都会错。新增 `on_exchange_bars` 与 `ON_EXCHANGE_PUBLISHERS`（CME 1、ICE 欧洲 57），日线和分钟线都先过滤，丢掉的行数记在诊断 `off_exchange_bar_rows`；K 线没有 `publisher_id` 列、或数据集没登记场内发布方时报错。用真实的布伦特连续合约分钟线核对过（过滤后同一分钟不再有重复行）。
+
 ## 2026-11-13（因子挖掘）
 - 复核返工：默认基准改为同一套 `panelbt` 成交机制持有信号日股票池全体等权（同样的调仓日表、成交错位、可交易规则和费用），零假设下超额接近 0；评估的默认初始资金改为 100 亿元（`capital=`，成本模型不变：1 亿元时最低佣金让持有全体的基准每年多扣约 0.4%，零假设下超额偏正）；旧的收盘到收盘基准留作 `benchmark="close"`，文档里「纯噪声超额为负」的说法更正，并给出真实数据上新旧基准的对照。合成行情加摩擦（`Frictions`：停牌、退市、ST、中途上市）。IC 的 t 值改为重叠方差上界 s²·h/n、自由度按不重叠的块数，块数不足时不给 p 值；网格模拟（h ∈ {1, 5, 20} × n ∈ {250, 750, 1500}）下 Holm 不超名义水平。PSR / DSR 按超额日序列的方差比修正序列相关（Lo 2002，Bartlett 默认 20 阶、`var_ratio_lags=` 可设，默认打开，`autocorr=False` 关）。变异检查结果改为合并写入（`--only` 不再覆盖其余条目），ml 的变异留档恢复齐全。评估定义加入成交价 `exec` 与基准口径，台账复用按这次的粗筛门槛重判。标签和台账挪到 `ashare.labels`、`ashare.ledger`（`ashare.ml` 转出、接口不变），挖掘不再依赖 ml 依赖组；台账末尾半行先补换行再写。去重键把 `ts_corr` 当对称、去掉非负量上的 `abs`；截面算子默认不排价格、成交量水平。PBO 无候选时显示不适用；私有 Rank IC 内核缺失时提示一次。补真实收益噪声检验与去重键审计，变异清单补齐、全部抓到。
 - 单因子评估 `ashare.factor.evaluate`（`docs/DESIGN.md` 6.2.2、`docs/MINING_NOTES.md`）：收益标签复用 `ashare.ml.labels`（t+1 开盘买）；多个持有期的 Rank IC（Hansen–Hodrick 均匀核 t 值、Student t 的 p 值）、分组收益与单调性、多头端（前 10% 等权、`execution_targets` 错位、`panelbt.run_batch` 扣成本，相对等权或给定基准的超额、信息比率、夏普、回撤、换手、成本）、分年度、分市值段、自相关、与已有因子的相关；`to_dict()` 与 `text()`。对 pandas / NumPy 逐日循环的参考实现和直接 `panelbt.run` 对拍。

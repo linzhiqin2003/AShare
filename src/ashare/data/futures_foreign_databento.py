@@ -266,6 +266,27 @@ def quantity_rows(stats, stat_type, session, open_days, name):
     return _latest_stat(picked, stat_type, "quantity").rename({"value": name})
 
 
+# 各数据集的场内发布方（Databento ``publisher_id``）。ICE 的数据集另有一个场外成交发布方（venue XOFF，
+# 如 IFEU.IMPACT 的 84：大宗、EFP），同一合约同一时段各出一根 K 线，价格可以远离盘面。K 线只留场内的。
+ON_EXCHANGE_PUBLISHERS = {"GLBX.MDP3": 1, "IFEU.IMPACT": 57}
+
+
+def on_exchange_bars(bars, datasets):
+    """K 线只留 ``datasets`` 的场内发布方。返回 (K 线, 丢掉的行数)；没有 ``publisher_id`` 列报错。"""
+    if "publisher_id" not in bars.columns:
+        raise ValueError(
+            "K 线缺少 publisher_id 列：分不出场内和场外成交（ICE 数据集两者都有），不能聚合"
+        )
+    unknown = sorted(set(datasets) - ON_EXCHANGE_PUBLISHERS.keys())
+    if unknown:
+        raise ValueError(
+            f"数据集 {unknown} 的场内发布方没有登记（ON_EXCHANGE_PUBLISHERS）"
+        )
+    allowed = [ON_EXCHANGE_PUBLISHERS[d] for d in datasets]
+    kept = bars.filter(pl.col("publisher_id").cast(pl.Int64).is_in(allowed))
+    return kept, bars.height - kept.height
+
+
 def dated_bars(bars, session, open_days):
     """K 线加交易日列 ``date``；落在开市日集合覆盖范围之外的为空（见 ``trade_dates``）。"""
     bars = bars.sort("ts_event")
@@ -318,6 +339,9 @@ def daily_from_raw(
     if volume not in VOLUMES:
         raise ValueError(f"volume 只能是 {VOLUMES}")
     diag = {}
+    bars, diag["off_exchange_bar_rows"] = on_exchange_bars(
+        bars, {PRODUCTS[c].databento_dataset for c in set(contracts["product"])}
+    )
     ids = id_map.with_columns(pl.col("instrument_id").cast(pl.Int64)).join(
         contracts.select("symbol", "product"), on="symbol"
     )
@@ -818,6 +842,7 @@ class DatabentoFutures(ForeignAdapter):
         bars = _drop_mapped(pl.concat(frames, how="diagonal_relaxed")).with_columns(
             pl.col("instrument_id").cast(pl.Int64)
         )
+        bars, _ = on_exchange_bars(bars, groups.keys())
         bars = bars.join(id_map, on="instrument_id", how="inner")
         out = []
         for code in sorted(set(contracts["product"])):
@@ -855,10 +880,12 @@ class DatabentoFutures(ForeignAdapter):
 
 __all__ = [
     "DatabentoFutures",
+    "ON_EXCHANGE_PUBLISHERS",
     "aggregate_bars",
     "contracts_from_definitions",
     "daily_from_raw",
     "dated_bars",
+    "on_exchange_bars",
     "parse_continuous",
     "parse_raw_symbol",
     "quantity_rows",

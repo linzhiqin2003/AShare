@@ -402,9 +402,14 @@ class FakeStore:
         return self._frame.set_index(self._index)
 
 
-def _frame(rows, schema):
+# 场内发布方；行里带 publisher_id 的（测试注入的场外成交，IFEU 是 84）照行里的。
+PUBLISHER = {"GLBX.MDP3": 1, "IFEU.IMPACT": 57}
+
+
+def _frame(rows, schema, dataset=None):
     utc = "datetime64[ns, UTC]"
     if schema in RTYPE:
+        publishers = [r.get("publisher_id", PUBLISHER[dataset]) for r in rows]
         df = pd.DataFrame(
             rows,
             columns=[
@@ -426,7 +431,7 @@ def _frame(rows, schema):
             }
         )
         df.insert(1, "rtype", np.uint8(RTYPE[schema]))
-        df.insert(2, "publisher_id", np.uint16(1))
+        df.insert(2, "publisher_id", np.array(publishers, dtype=np.uint16))
         df["symbol"] = None
         return FakeStore(df, "ts_event")
     if schema == "statistics":
@@ -551,7 +556,7 @@ class FakeTimeseries:
             for r in source
             if any(r["instrument_id"] in rg for rg in wanted) and lo <= r[key] < hi
         ]
-        return _frame(rows, schema)
+        return _frame(rows, schema, dataset)
 
 
 class FakeSymbology:

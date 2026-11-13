@@ -52,6 +52,7 @@ from ashare.data.futures_foreign_bloomberg import (
 )
 from ashare.data.futures_foreign_databento import (
     DatabentoFutures,
+    on_exchange_bars,
     parse_continuous,
     parse_raw_symbol,
     settlement_rows,
@@ -378,6 +379,40 @@ def test_params_margin_given_or_empty():
     )
     assert (params.filter(pl.col("product") == "CL")["margin_long"] == 0.12).all()
     assert params.filter(pl.col("product") == "B")["margin_long"].null_count() > 0
+
+
+def test_databento_drops_off_exchange_bars():
+    """ICE 数据集的场外成交发布方（84）与场内的同一时段各出一根 K 线：不过滤的话最低价、成交量、收盘都错。"""
+    clean, _ = _databento()
+    fake = FakeHistorical()
+    ice = [b for b in fake.data.bars if 2000 <= b["instrument_id"] < 2100]
+    extra = [
+        dict(b, publisher_id=84, low=b["low"] - 5.0, close=b["close"] + 3.0, volume=7)
+        for b in ice[::3]
+    ]
+    fake.data.bars.extend(extra)  # 排在最后：不过滤时收盘也会取到它
+    fake.minute.extend(dict(b, publisher_id=84, low=1.0) for b in fake.minute[:5])
+    adapter, _ = _databento(client=fake)
+    for volume in ("cleared", "electronic"):
+        a, _ = _databento(client=fake, volume=volume)
+        b, _ = _databento(volume=volume)
+        assert a.daily().equals(b.daily())
+    # 夹具比取数窗口长，丢掉的行数不超过注入的行数
+    assert 0 < adapter.diagnostics()["off_exchange_bar_rows"] <= len(extra)
+    assert clean.diagnostics()["off_exchange_bar_rows"] == 0
+    assert adapter.minute("20261104", "20261104").equals(
+        clean.minute("20261104", "20261104")
+    )
+
+
+def test_on_exchange_bars_needs_publisher_and_known_dataset():
+    bars = pl.DataFrame({"publisher_id": [57, 84, 1], "close": [1.0, 2.0, 3.0]})
+    kept, dropped = on_exchange_bars(bars, ["IFEU.IMPACT"])
+    assert kept["close"].to_list() == [1.0] and dropped == 2
+    with pytest.raises(ValueError, match="publisher_id"):
+        on_exchange_bars(bars.drop("publisher_id"), ["IFEU.IMPACT"])
+    with pytest.raises(ValueError, match="NDEX.IMPACT"):
+        on_exchange_bars(bars, ["NDEX.IMPACT"])
 
 
 def test_databento_minute_bars():
