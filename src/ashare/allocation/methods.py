@@ -302,10 +302,16 @@ class TargetVolatility(Method):
         w = self.base.weights(window)
         sub = w[window.columns]
         vol = float(np.sqrt(max(sub @ window.sigma @ sub, 0.0) * ANNUAL))
-        scale = (
-            self.max_leverage if vol <= 0 else min(self.max_leverage, self.target / vol)
-        )
-        window.notes["target_volatility"] = dict(ex_ante=vol, scale=scale)
+        if vol > 0:
+            scale = min(self.max_leverage, self.target / vol)
+            window.notes["target_volatility"] = dict(ex_ante=vol, scale=scale)
+        else:
+            # 事前波动为 0（全部资产窗口内不动、或基础配置全是现金）：没法按波动缩放，
+            # 不加杠杆，原样用基础配置（不超过 1）。
+            scale = min(1.0, self.max_leverage)
+            window.notes["target_volatility"] = dict(
+                ex_ante=vol, scale=scale, fallback="事前波动为 0，用基础配置"
+            )
         return w * scale
 
     def describe(self):

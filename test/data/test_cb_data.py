@@ -167,3 +167,84 @@ def test_cb_market(cb):
     assert not np.asarray(cm.market.can_buy)[LAST_TRADE + 1 :, j].any()
     assert (np.asarray(cm.config().min_qty) == 10).all()
     assert np.all(np.asarray(cm.costs().tax_sell) == 0)
+
+
+def test_call_flag_uses_first_implementation_notice(tmp_path, monkeypatch):
+    """同一只债有两条「公告实施强赎」（重复公告）：标记从第一条的下一交易日起。"""
+    import polars as pl
+    from test_fund_fixtures import DAYS as D
+
+    monkeypatch.setattr(cb_panel, "stock_closes", fake_stock_closes)
+    source = FakeFundTushare()
+    calls = source.tables["cb_call"]
+    again = calls.filter(pl.col("is_call") == "公告实施强赎").with_columns(
+        pl.lit(D[CALL_ANN + 3]).alias("ann_date")
+    )
+    source.tables["cb_call"] = pl.concat([calls, again])
+    store = Store(tmp_path / "root")
+    asyncio.run(sync_funds(source, store, D[0], D[-1]))
+    build_funds(store)
+    p = ad.open(store.root.parent).funds().panel("cb", ["call_announced"])
+    flags = np.asarray(p["call_announced"])[:, list(p.symbols).index("113001.SH")]
+    assert np.flatnonzero(flags).tolist() == list(range(CALL_ANN + 1, 18))
+
+
+def run_cb(cm, weights, *, exit=True):
+    import panelbt as bt
+
+    return bt.run(
+        cm.market,
+        cm.targets(weights, exit=exit),
+        cm.costs(commission_rate=0.0, slippage=0.0),
+        cm.config(initial_cash=1e5, record_trades=True),
+    )
+
+
+def test_cb_redemption_and_exit(cb):
+    """手算：第 1 行开盘买 113001.SH，一直持有。
+
+    - 不清仓（exit=False）：最后交易日（第 14 行）之后估值为赎回价 100.3，第 18 行摘牌按 100.3 了结；
+      最后收盘（第 14 行）远高于赎回价时，持有到摘牌只拿到赎回价。
+    - 默认清仓：第 13 行（最后交易日前 1 个交易日）开盘按正常成交卖出。
+    """
+    funds, p, _ = cb
+    cm = cb_market(funds, ["113001.SH"])
+    assert cm.exit_rows.tolist() == [LAST_TRADE - 1]
+    assert cm.redemption.tolist() == [100.3]
+    close = np.asarray(cm.market.close)[:, 0]
+    assert (close[LAST_TRADE + 1 : 18] == 100.3).all()
+    can_buy = np.asarray(cm.market.can_buy)[:, 0]
+    assert not can_buy[CALL_ANN + 1 :].any() and can_buy[CALL_ANN]
+    weights = np.full(cm.shape, np.nan)
+    weights[1] = 1.0
+    held = run_cb(cm, weights, exit=False)
+    qty = held.positions[17, 0]
+    assert qty > 0 and held.positions[18, 0] == 0
+    cash_before = held.cash[17]
+    assert held.cash[18] == pytest.approx(cash_before + qty * 100.3)
+    sold = run_cb(cm, weights)
+    assert (
+        sold.positions[LAST_TRADE - 2, 0] > 0 and sold.positions[LAST_TRADE - 1, 0] == 0
+    )
+    price = np.asarray(cm.market.exec_price)[LAST_TRADE - 1, 0]
+    assert sold.cash[LAST_TRADE - 1] == pytest.approx(
+        sold.cash[LAST_TRADE - 2] + qty * price
+    )
+
+
+def test_cb_apply_exit_keeps_other_targets(cb):
+    funds, _, _ = cb
+    cm = cb_market(funds, ["113001.SH", "123001.SZ"])
+    w = np.full(cm.shape, np.nan)
+    w[6] = [0.4, 0.5]
+    w[16] = [0.3, 0.6]  # 清仓之后又想买回：一律为 0
+    out = cm.apply_exit(w)
+    row = LAST_TRADE - 1
+    assert out[row].tolist() == [0.0, 0.5]  # 插入的一行：其他债保持最近一次目标
+    assert out[16].tolist() == [0.0, 0.6]
+    assert np.isnan(out[row + 1]).all() and out[6].tolist() == [0.4, 0.5]
+    assert np.isnan(cm.apply_exit(np.full(cm.shape, np.nan))).all()  # 没有持仓不插行
+    late = cb_market(funds, ["113001.SH"], exit_days=0)
+    assert late.exit_rows.tolist() == [LAST_TRADE]
+    early = cb_market(funds, ["113001.SH"], exit_days=10)
+    assert early.exit_rows.tolist() == [CALL_ANN + 1]  # 不早于强赎公告可知

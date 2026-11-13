@@ -312,10 +312,10 @@ def test_verify_passes_and_fails(built):
         report["verdict"] == "pass"
         and report["checks"]["code_reuse"]["verdict"] == "explained"
     )
-    assert (
-        report["checks"]["fund_adj_vs_gap"]["details"]["split_or_conversion_events"]
-        == 1
-    )
+    for name in ("fund_gap", "fund_factor", "fund_factor_missing"):
+        assert report["checks"][name]["verdict"] == "pass", name
+    details = report["checks"]["fund_factor"]["details"]
+    assert details["split_cells"] == 1 and details["dividend_cells"] == 1
     assert (store.root / "reports/funds_verify.md").exists()
 
 
@@ -337,12 +337,13 @@ def test_verify_catches_broken_adj(tmp_path, monkeypatch):
     asyncio.run(sync_funds(source, store, DAYS[0], DAYS[-1]))
     build_funds(store)
     report = verify_funds(store, write=False, known={})
-    item = report["checks"]["fund_adj_vs_gap"]
+    item = report["checks"]["fund_gap"]
     assert item["verdict"] == "fail"
     assert item["details"]["unexplained"] == [
         dict(symbol="510001.SH", date=DAYS[SPLIT_DAY])
     ]
-    # 面板只在「复权因子也变了」时认拆分：这一天不当拆分。
+    # 面板以复权因子为准：因子没变，这一天不当拆分（与因子一致，所以只有前收盘那条路径报错）。
+    assert report["checks"]["fund_factor"]["verdict"] == "pass"
     p = (
         ad.open(store.root.parent)
         .funds()
@@ -359,3 +360,257 @@ def test_known_exceptions_only_keys():
         assert set(entry) == allowed, entry
         assert entry["reason"] in doc["reasons"]
     assert set(doc["cause_unknown"]) <= set(doc["reasons"])
+
+
+# ---------- 停牌期间的拆分、重复分红、代码复用、沿用价 ----------
+
+
+def build_from(tmp_path, monkeypatch, source):
+    monkeypatch.setattr(cb_panel, "stock_closes", fake_stock_closes)
+    store = Store(tmp_path / "root")
+    asyncio.run(sync_funds(source, store, DAYS[0], DAYS[-1]))
+    build_funds(store)
+    return store, ad.open(store.root.parent).funds()
+
+
+def panel_path(store):
+    base = store.root / "fund_panel" / "fund"
+    return base / json.loads((base / "current.json").read_text())["version"]
+
+
+def tamper(store, name, row, symbol, value):
+    """改写已构建面板的一个格子（模拟构建代码的错误），再看校验是否抓到。"""
+    folder = panel_path(store)
+    col = json.loads((folder / "metadata.json").read_text())["symbols"].index(symbol)
+    path = folder / f"{name}.npy"
+    a = np.load(path)
+    a[row, col] = value
+    np.save(path, a)
+
+
+def suspend_over_split(source):
+    """510001.SH 在拆分日及前一天停牌：源里没有这两天的日线，复权因子照常在拆分日翻倍；
+    复牌第一天的交易所前收盘 = 停牌前收盘 / 2。"""
+    t = source.tables
+    gone = [DAYS[SPLIT_DAY - 1], DAYS[SPLIT_DAY]]
+    daily = t["fund_daily"]
+    last = daily.filter(
+        (pl.col("ts_code") == "510001.SH")
+        & (pl.col("trade_date") == DAYS[SPLIT_DAY - 2])
+    )["close"].item()
+    t["fund_daily"] = daily.filter(
+        ~((pl.col("ts_code") == "510001.SH") & pl.col("trade_date").is_in(gone))
+    ).with_columns(
+        pl.when(
+            (pl.col("ts_code") == "510001.SH")
+            & (pl.col("trade_date") == DAYS[SPLIT_DAY + 1])
+        )
+        .then(pl.lit(last / 2))
+        .otherwise(pl.col("pre_close"))
+        .alias("pre_close")
+    )
+    return last
+
+
+def test_split_during_suspension_lands_on_resumption(tmp_path, monkeypatch):
+    source = FakeFundTushare()
+    suspend_over_split(source)
+    store, f = build_from(tmp_path, monkeypatch, source)
+    p = f.panel("fund", ["split", "has_quote", "action_source"], symbols=["510001.SH"])
+    split = np.asarray(p["split"])[:, 0]
+    assert not np.asarray(p["has_quote"])[[SPLIT_DAY - 1, SPLIT_DAY], 0].any()
+    assert split[SPLIT_DAY + 1] == pytest.approx(2.0, abs=1e-12)
+    assert (np.delete(split, SPLIT_DAY + 1) == 1).all()
+    assert np.asarray(p["action_source"])[SPLIT_DAY + 1, 0] == 3
+    report = verify_funds(store, write=False, known={})
+    assert report["checks"]["fund_gap"]["verdict"] == "pass"
+    assert report["checks"]["fund_factor"]["verdict"] == "pass"
+    # 面板若漏掉这次拆分（修复前的写法），两条校验路径都要报出复牌那一天。
+    tamper(store, "split", SPLIT_DAY + 1, "510001.SH", 1.0)
+    report = verify_funds(store, write=False, known={})
+    for name in ("fund_gap", "fund_factor"):
+        assert report["checks"][name]["details"]["unexplained"] == [
+            dict(symbol="510001.SH", date=DAYS[SPLIT_DAY + 1])
+        ], name
+
+
+def test_dividend_during_suspension_moves_to_resumption(tmp_path, monkeypatch):
+    source = FakeFundTushare()
+    t = source.tables
+    day = DIV_DAY
+    daily = t["fund_daily"]
+    t["fund_daily"] = daily.filter(
+        ~((pl.col("ts_code") == "510001.SH") & (pl.col("trade_date") == DAYS[day]))
+    )
+    last = daily.filter(
+        (pl.col("ts_code") == "510001.SH") & (pl.col("trade_date") == DAYS[day - 1])
+    )["close"].item()
+    t["fund_daily"] = t["fund_daily"].with_columns(
+        pl.when(
+            (pl.col("ts_code") == "510001.SH") & (pl.col("trade_date") == DAYS[day + 1])
+        )
+        .then(pl.lit(last - DIVIDEND))
+        .otherwise(pl.col("pre_close"))
+        .alias("pre_close")
+    )
+    store, f = build_from(tmp_path, monkeypatch, source)
+    p = f.panel("fund", ["cash_dividend"], symbols=["510001.SH"])
+    cash = np.asarray(p["cash_dividend"])[:, 0]
+    assert cash[day + 1] == DIVIDEND and cash.sum() == DIVIDEND
+    report = verify_funds(store, write=False, known={})
+    assert report["checks"]["fund_gap"]["verdict"] == "pass"
+    assert report["checks"]["fund_factor"]["verdict"] == "pass"
+
+
+def duplicate_dividend(source):
+    """同一次分红两行：一行除息日写成登记日（前一天）、net_ex_date 为空；另一行是真正的除息日。"""
+    t = source.tables
+    div = t["fund_div"]
+    real = div.filter(
+        (pl.col("ts_code") == "510001.SH") & (pl.col("div_proc") == "实施")
+    ).with_columns(
+        pl.lit(DAYS[DIV_DAY - 1]).alias("record_date"),
+        pl.lit(DAYS[DIV_DAY]).alias("net_ex_date"),
+    )
+    fake = real.with_columns(
+        pl.lit(DAYS[DIV_DAY - 1]).alias("ex_date"),
+        pl.lit(None, dtype=pl.String).alias("net_ex_date"),
+    )
+    others = div.filter(
+        ~((pl.col("ts_code") == "510001.SH") & (pl.col("div_proc") == "实施"))
+    )
+    t["fund_div"] = pl.concat([others, fake, real])
+
+
+def test_duplicate_dividend_counted_once(tmp_path, monkeypatch):
+    source = FakeFundTushare()
+    duplicate_dividend(source)
+    store, f = build_from(tmp_path, monkeypatch, source)
+    p = f.panel("fund", ["cash_dividend", "action_source"], symbols=["510001.SH"])
+    cash = np.asarray(p["cash_dividend"])[:, 0]
+    assert cash[DIV_DAY] == DIVIDEND and cash.sum() == DIVIDEND
+    assert f.diagnostics("fund")["actions"]["distributions"] == 1
+    report = verify_funds(store, write=False, known={})
+    assert report["checks"]["fund_gap"]["verdict"] == "pass"
+    # 修复前的写法会在登记日再记一次：两条校验路径都要报出那一天。
+    tamper(store, "cash_dividend", DIV_DAY - 1, "510001.SH", DIVIDEND)
+    report = verify_funds(store, write=False, known={})
+    for name in ("fund_gap", "fund_factor"):
+        assert report["checks"][name]["details"]["unexplained"] == [
+            dict(symbol="510001.SH", date=DAYS[DIV_DAY - 1])
+        ], name
+
+
+def test_dividend_rejected_when_factor_does_not_move():
+    from ashare.data.fund_actions import _decide
+
+    assert _decide(4.0, 0.4, 1.0, 1.0) == (1.0, 0.0, 4)  # 因子没动：否决
+    assert _decide(4.0, 0.4, 4.0 / 3.6, 4.0 / 3.6) == (1.0, 0.4, 1)
+    s, c, code = _decide(4.0, 0.4, 2 * 4.0 / 3.6, 1.0)  # 分红加 1 拆 2
+    assert code == 2 and c == 0.4 and s == pytest.approx(2.0)
+    assert _decide(4.0, 0.0, 1.0004, 1.0) == (
+        1.0004,
+        0.0,
+        3,
+    )  # 噪声以内仍记（因子为准）
+    assert _decide(4.0, 0.0, 1.0, 2.0)[2] == 3  # 因子没动：前收盘缺口不算拆分
+    assert _decide(4.0, 0.0, np.nan, 2.0) == (2.0, 0.0, 5)  # 没有因子才看缺口
+
+
+def test_reused_codes_resolved():
+    from ashare.data.fund_actions import resolve_reused
+
+    basic = pl.DataFrame(
+        dict(
+            ts_code=["502000.SH", "5020001.SH", "160123.SZ", "1601231.SZ"],
+            name=["新LOF", "旧分级", "同一只", "同一只"],
+            list_date=["20200219", "20150427", "20110725", "20110725"],
+        )
+    )
+    daily = pl.DataFrame(
+        dict(
+            symbol=["502000.SH"] * 4 + ["5020001.SH"] * 2 + ["1601231.SZ"] * 2,
+            date=["d1", "d2", "d3", "d4", "d2", "d2x", "d1", "d2"],
+            close=[1.0, 2.0, 3.0, 4.0, 9.0, 8.0, 5.0, 6.0],
+        )
+    )
+    adj = pl.DataFrame(
+        dict(
+            symbol=["502000!1.SH", "502000!1.SH", "502000.SH", "502000.SH"]
+            + ["160123!1.SZ"] * 2,
+            date=["d1", "d2", "d3", "d4", "d1", "d2"],
+            adj_factor=[0.5, 0.5, 1.0, 1.0, 1.2, 1.2],
+        )
+    )
+    d, a, drop, notes = resolve_reused(basic, daily, adj)
+    rows = {(r["symbol"], r["date"]): r["close"] for r in d.iter_rows(named=True)}
+    # 两只基金：旧段（六位代码当天没有自己的因子）归七位代码；七位代码同日的零星行丢掉、别的日子保留。
+    assert rows[("5020001.SH", "d1")] == 1.0 and rows[("5020001.SH", "d2")] == 2.0
+    assert rows[("5020001.SH", "d2x")] == 8.0
+    assert ("502000.SH", "d1") not in rows and rows[("502000.SH", "d3")] == 3.0
+    # 同一只基金：并到六位代码，七位代码不建列。
+    assert rows[("160123.SZ", "d1")] == 5.0 and "1601231.SZ" in drop
+    factors = {
+        (r["symbol"], r["date"]): r["adj_factor"] for r in a.iter_rows(named=True)
+    }
+    assert factors[("5020001.SH", "d1")] == 0.5 and factors[("160123.SZ", "d2")] == 1.2
+    assert not any("!" in s for s, _ in factors)
+    assert {n["rule"] for n in notes} == {"split", "merge", "stray_dropped"}
+
+
+def test_stale_bar_is_not_a_quote(tmp_path, monkeypatch):
+    source = FakeFundTushare()
+    t = source.tables
+    k = 20
+    t["fund_daily"] = (
+        t["fund_daily"]
+        .with_columns(
+            [
+                pl.when(
+                    (pl.col("ts_code") == "511001.SH")
+                    & (pl.col("trade_date") == DAYS[k])
+                )
+                .then(pl.col("pre_close"))
+                .otherwise(pl.col(c))
+                .alias(c)
+                for c in ("open", "high", "low", "close")
+            ]
+        )
+        .with_columns(
+            pl.when(
+                (pl.col("ts_code") == "511001.SH") & (pl.col("trade_date") == DAYS[k])
+            )
+            .then(pl.col("amount") * 0.9)
+            .otherwise(pl.col("amount"))
+            .alias("amount")
+        )
+    )
+    store, f = build_from(tmp_path, monkeypatch, source)
+    p = f.panel("fund", ["has_quote"], symbols=["511001.SH"])
+    has = np.asarray(p["has_quote"])[:, 0]
+    assert not has[k] and has[k - 1] and has[k + 1]
+    assert f.diagnostics("fund")["stale_bars"] == 1
+    fm = fund_market(f, ["511001.SH"])
+    assert not np.asarray(fm.market.can_buy)[k, 0]
+
+
+def test_classify_known_misnames():
+    """名称里的「有色」「MSCI中国A」「黄金…股票」都是 A 股股票 ETF（T+1），不能判成商品或跨境（T+0）。"""
+    names = {
+        "512400.SH": ("南方中证申万有色金属ETF", "股票型", "stock"),
+        "560000.SH": ("华夏MSCI中国A50互联互通ETF", "股票型", "stock"),
+        "517520.SH": ("永赢中证沪深港黄金产业股票ETF", "股票型", "stock"),
+        "510170.SH": ("国联安上证大宗商品股票ETF", "股票型", "stock"),
+        "159985.SZ": ("华夏饲料豆粕期货ETF", "其他", "gold_commodity"),
+        "518850.SH": ("华夏黄金ETF", "其他", "gold_commodity"),
+        "513000.SH": ("汇添富MSCI美国50ETF(QDII)", "股票型", "cross_border"),
+    }
+    securities = pl.DataFrame(
+        dict(
+            symbol=list(names),
+            name=[v[0] for v in names.values()],
+            fund_type=[v[1] for v in names.values()],
+        )
+    )
+    got = dict(classify(securities).select("symbol", "asset_class").iter_rows())
+    assert got == {k: v[2] for k, v in names.items()}

@@ -11,8 +11,10 @@
   （深市创业板 ETF 2020-08-24、沪市科创板 ETF 上市即 20%）；REITs 上市首日 ±30%、之后 ±10%。
   创业板 / 科创板的认定按名称关键词，**未逐只核实**；校验用实际涨跌幅反查（docs 里有结果）。
 - 交收：股票类 ETF、LOF 为 T+1；跨境、债券、黄金、商品期货、货币 ETF 可当日回转（T+0）。日频回测里
-  每天只有一次成交机会，T+0 / T+1 只作为元数据（`t0` 列），不影响结果。分类按基金类型和名称关键词，
-  **未逐只核实**。
+  每天只有一次成交机会，T+0 / T+1 只作为元数据（`t0` 列），不影响结果。分类**按基金类型和名称推断、
+  未逐只核实**；已知的错分都偏乐观（把 T+1 的判成 T+0）：通过港股通投资的「沪深港」ETF 按股票算 T+1
+  （未核实）、分级基金的债券类子份额判为 T+0（未核实）。名称含「有色」「大宗商品」的是股票 ETF，
+  「MSCI 中国 A」是 A 股 ETF，已按股票处理。
 - 价格最小变动单位 0.001 元，涨跌停价按此四舍五入。
 """
 
@@ -69,10 +71,13 @@ CROSS_BORDER = (
     "美元",
     "中韩",
     "新加坡",
-    "MSCI中国",
     "互联网50",
 )
-COMMODITY = ("黄金", "上海金", "白银", "豆粕", "有色", "能源化工", "原油", "商品")
+PRECIOUS = (
+    "黄金",
+    "上海金",
+    "白银",
+)  # 名称里没有「股」才算商品（「黄金产业股票ETF」是股票）
 GROWTH_BOARD = ("创业板", "创业", "科创", "双创")
 GROWTH_BOARD_FROM = {"SZ": "20200824", "SH": "20190722"}
 
@@ -88,9 +93,12 @@ def classify(securities):
             kind = "reits"
         elif ftype == "货币型" or "货币" in name:
             kind = "money"
-        elif any(k in name for k in CROSS_BORDER):
+        elif any(k in name for k in CROSS_BORDER) or (
+            "MSCI中国" in name and "MSCI中国A" not in name
+        ):
             kind = "cross_border"
-        elif any(k in name for k in COMMODITY):
+        elif "期货" in name or (any(k in name for k in PRECIOUS) and "股" not in name):
+            # 商品类只认商品期货基金和贵金属现货基金；「有色金属」「大宗商品股票」是股票 ETF。
             kind = "gold_commodity"
         elif ftype == "债券型" or "债" in name:
             kind = "bond"

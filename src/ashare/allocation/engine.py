@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -307,6 +309,17 @@ def allocate(
             previous = w
             last_trade = int(row)
     weights = np.array(weights) if weights else np.zeros((0, n))
+    solver = Counter(
+        d["risk_parity"]["status"] for d in diagnostics if "risk_parity" in d
+    )
+    issues = {k: v for k, v in solver.items() if k != "converged"}
+    if issues:
+        warnings.warn(
+            f"风险平价有 {sum(issues.values())} 个调仓日没有在原协方差上解到（{issues}）；"
+            "见各调仓日 diagnostics 的 risk_parity",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return Allocation(
         rows=np.array(out_rows, dtype=np.int64),
         dates=[dates[r] for r in out_rows],
@@ -326,6 +339,7 @@ def allocate(
                     shrinkage=covariance.shrinkage,
                     target=covariance.target,
                 ),
+                risk_parity_status=dict(solver),
             )
         ),
         n_rows=t,

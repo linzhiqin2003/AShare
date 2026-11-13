@@ -87,3 +87,21 @@ def test_stock_and_futures_identical_with_fund_partitions(tables, make_store, tm
     assert fund_usage["files"] > 10
     assert store.fund_version != version_before
     assert len(store.entries("fund_daily")) > 20
+    # 反过来：期货、股票条目变了，基金版本不动（fund_version 只看 FUND_DATASETS）。
+    fund_now, futures_now, stock_now = (
+        store.fund_version,
+        store.futures_version,
+        store.version,
+    )
+    store.mark(
+        "futures_daily/20260216",
+        dict(
+            dataset="futures_daily",
+            partition="20260216",
+            params={},
+            status="complete",
+            content_hash="0" * 64,
+        ),
+    )
+    assert store.futures_version != futures_now
+    assert store.fund_version == fund_now and store.version == stock_now

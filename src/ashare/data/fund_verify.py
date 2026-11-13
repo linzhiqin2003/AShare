@@ -13,7 +13,7 @@
     from ashare.data.store import Store
     from ashare.data.fund_verify import verify_funds
     report = verify_funds(Store("/path/to/root", readonly=True))
-    report["verdict"], report["checks"]["fund_adj_vs_gap"]["verdict"]
+    report["verdict"], report["checks"]["fund_gap"]["verdict"]
 """
 
 from __future__ import annotations
@@ -41,12 +41,13 @@ KEYS = {
     "cb_daily": ("ts_code", "trade_date"),
     "cb_rate": ("ts_code", "rate_start_date"),
 }
-EVENT = 0.005  # 拆分、折算、分红的最小幅度（与面板一致，但这里另写）
-MATCH = 0.002  # 复权因子变化与前收盘缺口的一致容差
+EVENT = 0.005  # 面板事件推出的参考价、持有收益与交易所前收盘、复权因子的容差
 REGISTER_KEYS = {
     "fund_vwap": ("symbol", "date"),
     "cb_vwap": ("symbol", "date"),
-    "fund_adj_vs_gap": ("symbol", "date"),
+    "fund_gap": ("symbol", "date"),
+    "fund_factor": ("symbol", "date"),
+    "fund_factor_missing": ("symbol",),
     "cb_traded_outside_life": ("symbol", "date"),
     "fund_code_not_in_table": ("symbol",),
     "cb_conversion_value_source": ("symbol", "date"),
@@ -282,72 +283,6 @@ def check_zero_rows(daily):
     )
 
 
-def consecutive(daily, days):
-    """每只基金相邻两个交易日都有行情的行：上一日收盘、上一日复权因子。"""
-    index = pl.DataFrame({"trade_date": days.tolist(), "k": np.arange(len(days))})
-    x = daily.join(index, on="trade_date").sort("ts_code", "trade_date")
-    x = x.with_columns(
-        last_close=pl.col("close").shift(1).over("ts_code"),
-        last_k=pl.col("k").shift(1).over("ts_code"),
-        last_adj=pl.col("adj_factor").shift(1).over("ts_code"),
-    )
-    return x.filter(pl.col("last_k") == pl.col("k") - 1)
-
-
-def check_adj_vs_gap(daily, adj, dividend, days, register):
-    """拆分、折算、分红是否体现在复权因子里。
-
-    G = 上一日收盘 / 交易所前收盘（交易所为除权除息给的参考价缺口），R = 复权因子的变化。
-    只看相邻两个交易日都有行情的行；|G−1| 或 |R−1| 超过 0.5% 的行，要求 |R/G − 1| < 0.2%。
-    """
-    frame = daily.select("ts_code", "trade_date", "pre_close", "close").join(
-        adj.select("ts_code", "trade_date", "adj_factor"),
-        on=["ts_code", "trade_date"],
-        how="left",
-    )
-    x = consecutive(frame, days).with_columns(
-        G=pl.col("last_close") / pl.col("pre_close"),
-        R=pl.col("adj_factor") / pl.col("last_adj"),
-    )
-    events = x.filter(
-        ((pl.col("G") - 1).abs() > EVENT) | ((pl.col("R") - 1).abs() > EVENT)
-    )
-    bad = events.filter(
-        ~((pl.col("R") / pl.col("G") - 1).abs() < MATCH).fill_null(False)
-    )
-    problems = [
-        dict(symbol=r[0], date=r[1])
-        for r in bad.select("ts_code", "trade_date").iter_rows()
-    ]
-    div = dividend.select(
-        pl.col("ts_code"), pl.col("ex_date").alias("trade_date")
-    ).unique()
-    matched = events.join(div, on=["ts_code", "trade_date"], how="anti")
-    splits = matched.filter(
-        ((pl.col("R") / pl.col("G") - 1).abs() < MATCH)
-        & ((pl.col("G") - 1).abs() > EVENT)
-    )
-    by_kind = Counter(
-        "structured" if c.startswith(("150", "502")) else "other"
-        for c in splits["ts_code"].to_list()
-    )
-    return _judge(
-        problems,
-        register,
-        "fund_adj_vs_gap",
-        len(events),
-        "前收盘缺口（除权除息）与复权因子变化一致",
-        extra=dict(
-            events=len(events),
-            split_or_conversion_events=len(splits),
-            split_events_by_kind=dict(by_kind),
-            split_events_by_year=dict(
-                Counter(d[:4] for d in splits["trade_date"].to_list())
-            ),
-        ),
-    )
-
-
 def check_code_reuse(
     fund_basic, fund_daily, fund_adj, fund_div, cb_basic, cb_daily, register
 ):
@@ -505,53 +440,107 @@ def check_panel_listing(path, meta, kind):
     )
 
 
-def recompute_fund_split(path, meta, dividend):
-    """面板 split 与按原始规则重算的结果逐格相同（另写一遍：先向前填有效收盘与复权因子）。"""
+def _quote_pairs(has):
+    """每列相邻两个有行情日 (p, t)，跨停牌；返回 (列, p, t) 三个数组。"""
+    cols, ps, ts = [], [], []
+    for j in range(has.shape[1]):
+        q = np.flatnonzero(has[:, j])
+        if len(q) > 1:
+            cols.append(np.full(len(q) - 1, j))
+            ps.append(q[:-1])
+            ts.append(q[1:])
+    if not cols:
+        empty = np.zeros(0, dtype=np.int64)
+        return empty, empty, empty
+    return np.concatenate(cols), np.concatenate(ps), np.concatenate(ts)
+
+
+def check_fund_events(path, meta, register):
+    """面板的拆分、分红能不能解释交易所前收盘和复权因子：两条路径，都跨停牌、覆盖全部有行情日。
+
+    对每只基金相邻两个有行情日 p < t，把 (p, t] 里面板的事件按引擎的规则依次作用：
+    - 参考价：mark = (mark − 分红) / 拆分，从 p 日收盘开始；要求与 t 日交易所前收盘相差不超过 0.5%
+      （``fund_gap``）。漏记拆分、多记分红、事件放错日子都会在这里出现。
+    - 持有收益：1 份从 p 日收盘持有到 t 日收盘，拆分改份数，分红按当时的参考价再投资（与复权因子的口径
+      相同）；要求与复权因子给出的收益 收盘(t)·因子(t) / (收盘(p)·因子(p)) 相差不超过 0.5%
+      （``fund_factor``）。
+    - 两天之一没有复权因子的单列计数（``fund_factor_missing``，按代码登记）。
+    与面板构建的裁决规则是两条独立的路径：这里不读分红表、不看因子比去找事件。
+    """
+    has = _load(path, "has_quote")
     close = _load(path, "close")
     prev = _load(path, "previous_close")
     adj = _load(path, "adj_factor")
-    panel_split = _load(path, "split")
-    t, n = close.shape
+    split = _load(path, "split")
+    cash = _load(path, "cash_dividend")
     dates = np.array(meta["dates"])
     symbols = np.array(meta["symbols"])
+    cols, ps, ts = _quote_pairs(has)
+    mark = close[ps, cols].copy()
+    shares = np.ones(len(cols))
+    span = ts - ps
+    for step in range(1, int(span.max()) + 1 if len(span) else 1):
+        live = span >= step
+        rows = ps[live] + step
+        c = cash[rows, cols[live]]
+        s = split[rows, cols[live]]
+        before = mark[live]
+        after = np.maximum(before - c, 0)
+        with np.errstate(all="ignore"):
+            # 分红按除息后的参考价再投资：份数 × before / after；再按拆分改份数。
+            shares[live] *= np.where(c > 0, before / after, 1.0) * s
+        mark[live] = after / s
+    with np.errstate(all="ignore"):
+        gap_dev = mark / prev[ts, cols] - 1
+        held = shares * close[ts, cols] / close[ps, cols]
+        factor = close[ts, cols] * adj[ts, cols] / (close[ps, cols] * adj[ps, cols])
+        factor_dev = held / factor - 1
+    has_prev = np.isfinite(prev[ts, cols])
+    gap_bad = has_prev & ~(np.abs(gap_dev) <= EVENT)
+    no_factor = ~np.isfinite(factor)
+    factor_bad = ~no_factor & ~(np.abs(factor_dev) <= EVENT)
 
-    def ffill_shift(a):
-        out = np.full_like(a, np.nan)
-        last = np.full(a.shape[1], np.nan)
-        for i in range(a.shape[0]):
-            out[i] = last
-            ok = np.isfinite(a[i])
-            last = np.where(ok, a[i], last)
-        return out
+    def cells(mask):
+        return [
+            dict(symbol=str(symbols[j]), date=str(dates[t]))
+            for j, t in zip(cols[mask], ts[mask], strict=True)
+        ]
 
-    last_close = ffill_shift(close)
-    last_adj = ffill_shift(adj)
-    div = np.zeros((t, n))
-    d = dividend.filter(pl.col("symbol").is_in(symbols.tolist()))
-    for s, day, cash in d.select("symbol", "date", "cash_dividend").iter_rows():
-        i = int(np.searchsorted(dates, day))
-        if i < t:
-            div[i, int(np.searchsorted(symbols, s))] += cash
-    with np.errstate(invalid="ignore", divide="ignore"):
-        g = last_close / prev
-        r = adj / last_adj
-        dfac = np.where(div > 0, last_close / (last_close - div), 1.0)
-        value = g / dfac
-    event = (
-        (np.abs(r - 1) > EVENT)
-        & (np.abs(g - 1) > EVENT)
-        & (dfac > 0)
-        & (np.abs(value - 1) > EVENT)
+    events = (split != 1) | (cash > 0)
+    gap = _judge(
+        cells(gap_bad),
+        register,
+        "fund_gap",
+        int(has_prev.sum()),
+        "相邻两个有行情日之间（跨停牌）面板的拆分、分红把上一收盘推成交易所前收盘（容差 0.5%）",
+        extra=dict(
+            over_two_percent=int((has_prev & (np.abs(gap_dev) > 0.02)).sum()),
+            pairs_across_suspension=int((span > 1).sum()),
+        ),
     )
-    expected = np.where(event, value, 1.0)
-    bad = np.argwhere(~np.isclose(expected, panel_split, rtol=0, atol=1e-12))
-    problems = [dict(symbol=str(symbols[j]), date=str(dates[i])) for i, j in bad[:50]]
-    return _strict(
-        problems if len(bad) else [],
-        t * n,
-        "面板 split 与原始表重算一致",
-        extra=dict(count=int(len(bad)), events=int(event.sum())),
+    fac = _judge(
+        cells(factor_bad),
+        register,
+        "fund_factor",
+        int((~no_factor).sum()),
+        "面板事件给出的持有收益与复权因子给出的收益一致（容差 0.5%，跨停牌）",
+        extra=dict(
+            over_two_percent=int((~no_factor & (np.abs(factor_dev) > 0.02)).sum()),
+            event_cells=int(events.sum()),
+            split_cells=int((split != 1).sum()),
+            dividend_cells=int((cash > 0).sum()),
+        ),
     )
+    missing_symbols = sorted({str(s) for s in symbols[cols[no_factor]]})
+    miss = _judge(
+        [dict(symbol=s) for s in missing_symbols],
+        register,
+        "fund_factor_missing",
+        len(cols),
+        "有行情的日子都有复权因子（按代码登记例外）",
+        extra=dict(cells=int(no_factor.sum())),
+    )
+    return gap, fac, miss
 
 
 def check_fund_limits(path, meta, register):
@@ -727,12 +716,6 @@ def verify_funds(store, *, write=True, known=None):
         cb_daily, register, check="cb_vwap", volume_scale=10, amount_scale=10000
     )
     checks["cb_zero_rows"] = check_zero_rows(cb_daily)
-    implemented = (
-        fund_div.filter(pl.col("div_proc") == "实施") if len(fund_div) else fund_div
-    )
-    checks["fund_adj_vs_gap"] = check_adj_vs_gap(
-        fund_daily, fund_adj, implemented, days, register
-    )
     checks["code_reuse"] = check_code_reuse(
         fund_basic, fund_daily, fund_adj, fund_div, cb_basic, cb_daily, register
     )
@@ -750,8 +733,10 @@ def verify_funds(store, *, write=True, known=None):
         versions[kind] = meta["version"]
         checks[f"{kind}_panel_listing"] = check_panel_listing(path, meta, kind)
         if kind == "fund":
-            dividend = pl.read_parquet(path / "table_dividends.parquet")
-            checks["fund_panel_split"] = recompute_fund_split(path, meta, dividend)
+            gap, fac, miss = check_fund_events(path, meta, register)
+            checks["fund_gap"] = gap
+            checks["fund_factor"] = fac
+            checks["fund_factor_missing"] = miss
             checks["fund_price_limits"] = check_fund_limits(path, meta, register)
         else:
             strict, loose = check_cb_conversion(store, path, meta, register)

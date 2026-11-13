@@ -8,8 +8,8 @@
 稠密矩阵足够，不需要期货那样分块。
 
 时点规则全部在这里落地（`docs/FUND_CB_DATA.md`）：
-- 基金分红按除息日（实施公告早于除息日）；拆分、折算由交易所前收盘反推，只在复权因子也变了的
-  日子认定。
+- 基金的拆分、折算、分红以复权因子为准裁决，落在有行情的日子（停牌期间的事件落在复牌第一天）；
+  代码复用的处理与裁决规则见 `fund_actions.py`。
 - 可转债的转股价、剩余规模、强赎公告都按「公告日的下一交易日」起可知；转股价另不早于生效日。
 """
 
@@ -25,12 +25,12 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from .fund_actions import distributions, reconcile_actions, resolve_reused
 from .fund_schema import CB_FIELDS, FUND_FIELDS
 from .store import atomic_json, lock
 
 FORMAT_VERSION = 1
-CODE_FILES = ("fund_schema.py", "fund_panel.py", "cb_panel.py")
-SPLIT_TOLERANCE = 0.005  # 拆分、折算的最小幅度；小于它的前收盘差异按舍入处理
+CODE_FILES = ("fund_schema.py", "fund_panel.py", "fund_actions.py", "cb_panel.py")
 
 
 def code_version():
@@ -133,19 +133,9 @@ def fund_inputs(store):
             (pl.col("fd_share").cast(pl.Float64) * 10000).alias("total_shares"),
         )
     )
-    dividend = (
-        store.read("fund_div")
-        .filter((pl.col("div_proc") == "实施") & pl.col("ex_date").is_not_null())
-        .unique(["ts_code", "ex_date", "div_cash"], keep="last")
-        .group_by("ts_code", "ex_date")
-        .agg(pl.col("div_cash").cast(pl.Float64).sum())
-        .select(
-            pl.col("ts_code").alias("symbol"),
-            pl.col("ex_date").alias("date"),
-            pl.col("div_cash").alias("cash_dividend"),
-        )
-    )
-    return basic, daily, adj, share, dividend
+    daily, adj, drop, reused = resolve_reused(basic, daily, adj)
+    dividend = distributions(store.read("fund_div"))
+    return basic, daily, adj, share, dividend, drop, reused
 
 
 def fund_securities(basic, symbols):
@@ -167,40 +157,19 @@ def fund_securities(basic, symbols):
     ).sort("symbol")
 
 
-def fund_actions(close, previous_close, adj, dividend):
-    """拆分 / 折算倍数（split）。
-
-    G = 上一有效收盘 / 交易所前收盘，D = 上一有效收盘 / (上一有效收盘 − 分红)，split = G / D。
-    只在复权因子当天也变了（与上一有效值相差超过 SPLIT_TOLERANCE）、且 |G − 1| 超过同一容差的
-    格子认定；其余为 1。交易所没调整前收盘的分红（部分 REITs）只记现金、不当拆分。
-    """
-    t, n = close.shape
-    split = np.ones((t, n))
-    last_close = np.full(n, np.nan)
-    last_adj = np.full(n, np.nan)
-    for row in range(t):
-        g = last_close / previous_close[row]
-        r = adj[row] / last_adj
-        d = np.where(dividend[row] > 0, last_close / (last_close - dividend[row]), 1.0)
-        event = (
-            np.isfinite(g)
-            & np.isfinite(r)
-            & (np.abs(r - 1) > SPLIT_TOLERANCE)
-            & (np.abs(g - 1) > SPLIT_TOLERANCE)
-            & (d > 0)
-        )
-        value = g / d
-        event &= np.abs(value - 1) > SPLIT_TOLERANCE
-        split[row, event] = value[event]
-        ok = np.isfinite(close[row])
-        last_close[ok] = close[row, ok]
-        okadj = np.isfinite(adj[row])
-        last_adj[okadj] = adj[row, okadj]
-    return split
+def stale_bars(arrays):
+    """开高低收是同一个价，而成交额折算的均价不在这个价上（超出一个半价位加成交额截断到 1 元的误差）：
+    这天的价格字段是沿用值，不算行情。"""
+    o, h, low, c = (arrays[k] for k in ("open", "high", "low", "close"))
+    volume = arrays["volume"]
+    with np.errstate(all="ignore"):
+        vwap = arrays["amount"] / volume
+        flat = (o == h) & (h == low) & (low == c)
+        return flat & np.isfinite(vwap) & (np.abs(vwap - c) > 0.0015 + 1.0 / volume)
 
 
 def build_fund_arrays(store, dates):
-    basic, daily, adj, share, dividend = fund_inputs(store)
+    basic, daily, adj, share, dividend, drop, reused = fund_inputs(store)
     traded = set(
         daily.filter(pl.col("date").is_between(pl.lit(dates[0]), pl.lit(dates[-1])))[
             "symbol"
@@ -214,27 +183,19 @@ def build_fund_arrays(store, dates):
         & (pl.col("list_date") <= dates[-1])
         & (pl.col("delist_date").is_null() | (pl.col("delist_date") > dates[0]))
     )["ts_code"].to_list()
-    symbols = np.array(sorted((traded & known) | set(listed)))
+    symbols = np.array(sorted(((traded & known) | set(listed)) - drop))
     diagnostics = dict(
         daily_codes_not_in_basic=sorted(traded - known),
-        reused_code_markers=sorted(
-            {c for c in adj["symbol"].unique().to_list() if "!" in c}
-        ),
+        reused_codes=reused,
     )
     arrays = {}
     for name in ("open", "high", "low", "close", "previous_close", "volume", "amount"):
         arrays[name] = scatter(dates, symbols, daily, name)
     arrays["adj_factor"] = scatter(dates, symbols, adj, "adj_factor")
     arrays["total_shares"] = scatter(dates, symbols, share, "total_shares")
-    # 分红按除息日；除息日不是交易日时落到其后第一个交易日。
-    div = dividend.filter(pl.col("symbol").is_in(list(symbols)))
-    rows = next_trading_day(dates, div["date"].to_list())
-    cols = np.searchsorted(symbols, div["symbol"].to_numpy().astype(symbols.dtype))
-    cash = np.zeros((len(dates), len(symbols)))
-    ok = rows < len(dates)
-    np.add.at(cash, (rows[ok], cols[ok]), div["cash_dividend"].to_numpy()[ok])
-    arrays["cash_dividend"] = cash
-    arrays["has_quote"] = np.isfinite(arrays["close"]) & (arrays["close"] > 0)
+    stale = stale_bars(arrays)
+    arrays["has_quote"] = np.isfinite(arrays["close"]) & (arrays["close"] > 0) & ~stale
+    diagnostics["stale_bars"] = int(stale.sum())
     securities = fund_securities(basic, symbols)
     info = {r["symbol"]: r for r in securities.iter_rows(named=True)}
     listing = [info[s]["listing_date"] if s in info else None for s in symbols]
@@ -259,12 +220,36 @@ def build_fund_arrays(store, dates):
             listing[j] = str(quoted)
     diagnostics["listing_before_table_date"] = moved
     arrays["is_listed"], arrays["delist"] = listing_masks(dates, listing, delisting)
-    arrays["split"] = fund_actions(
-        arrays["close"], arrays["previous_close"], arrays["adj_factor"], cash
+    stop = next_trading_day(dates, delisting)
+    split, cash, source, actions = reconcile_actions(
+        dates,
+        symbols,
+        arrays["close"],
+        arrays["previous_close"],
+        arrays["adj_factor"],
+        arrays["has_quote"],
+        stop,
+        dividend,
     )
-    diagnostics["splits"] = int((arrays["split"] != 1).sum())
+    arrays["split"], arrays["cash_dividend"], arrays["action_source"] = (
+        split,
+        cash,
+        source,
+    )
+    diagnostics["actions"] = actions
+    diagnostics["splits"] = int((split != 1).sum())
     diagnostics["dividends"] = int((cash > 0).sum())
-    tables = {"dividends": div.sort("symbol", "date")}
+    rows, cols = np.nonzero((split != 1) | (cash > 0) | (source == 4))
+    events = pl.DataFrame(
+        dict(
+            symbol=symbols[cols].astype(str),
+            date=dates[rows].astype(str),
+            split=split[rows, cols],
+            cash_dividend=cash[rows, cols],
+            action_source=source[rows, cols].astype(np.int64),
+        )
+    ).sort("symbol", "date")
+    tables = {"actions": events}
     return symbols, arrays, securities, tables, diagnostics
 
 

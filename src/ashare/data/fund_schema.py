@@ -52,15 +52,27 @@ FUND_FIELDS = _table(
             "cash_dividend",
             "元/份",
             "float64",
-            "除息日盘前；无事件为 0，税前；来自分红表（实施）",
+            "盘前；无事件为 0，税前；分红表去重后以复权因子裁决，落在除息日或其后第一个有行情日",
         ),
         (
             "split",
             "倍",
             "float64",
-            "除权日盘前；无事件为 1；由前收盘与上一日收盘反推（拆分、折算），见 docs/FUND_CB_DATA.md",
+            "盘前；无事件为 1；拆分、折算以复权因子为准，停牌期间的事件落在复牌第一天，见 docs/FUND_CB_DATA.md",
         ),
-        ("has_quote", "布尔", "bool", "收盘后；当天有源日线且收盘价有效"),
+        (
+            "action_source",
+            "代码",
+            "uint8",
+            "split / cash_dividend 的来源：0 无，1 分红与因子一致，2 分红加合成折算，3 因子合成拆分，"
+            "4 分红被否决（因子没动），5 因子缺失按前收盘缺口，6 之后没有行情、按公告记",
+        ),
+        (
+            "has_quote",
+            "布尔",
+            "bool",
+            "收盘后；当天有源日线且收盘价有效；开高低收相同而成交均价不在这个价上的沿用价不算",
+        ),
         ("is_listed", "布尔", "bool", "上市日含、退市日不含"),
         ("delist", "布尔", "bool", "退市日或其后首个交易日盘前"),
     ]
@@ -131,7 +143,8 @@ CB_FIELDS = _table(
             "source_conversion_value",
             "元/张",
             "float64",
-            "源（Tushare cb_daily.cb_value）给的转股价值，只作核对",
+            "源（Tushare cb_daily.cb_value）给的转股价值，只作核对；源按生效日换转股价，生效早于公告时"
+            "用到了当时还没公告的转股价（含前视），不要当信号用，信号用 conversion_value",
         ),
         (
             "source_bond_value",

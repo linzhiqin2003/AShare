@@ -63,7 +63,10 @@ def test_risk_parity_singular_covariance():
     a = np.array([[1.0, 0.0], [-1.0, 1.0], [0.0, -1.0]]) * 0.01  # 等权组合方差恰为 0
     signed = a @ a.T
     w, info = solve_risk_parity(signed)
-    assert info["ridge"] > 0 and info["converged"] and np.isfinite(w).all()
+    assert info["ridge"] > 0 and np.isfinite(w).all()
+    # 原协方差上无解：不能报 converged，单列「靠 ridge 解到」。
+    assert not info["converged"] and info["solved_with_ridge"]
+    assert info["status"] == "ridge"
     assert info["residual"] < 1e-8 and abs(w.sum() - 1) < 1e-12
     # 两只完全相同的资产平分。
     x = random_cov(rng, 3)
@@ -347,3 +350,76 @@ def test_trend_filter_direction():
         rebalance=[300],
     )
     np.testing.assert_allclose(spread.weights[0], [0.5, 0.0, 0.5])
+
+
+def test_risk_parity_iteration_limit_is_not_ridge():
+    """迭代次数不够时报 max_iter，不加 ridge、不算收敛；allocate 发警告并计数。"""
+    sigma = random_cov(np.random.default_rng(5), 6)
+    w, info = solve_risk_parity(sigma, max_iter=1)
+    assert info["status"] == "max_iter" and info["ridge"] == 0
+    assert not info["converged"] and not info["solved_with_ridge"]
+    assert np.isfinite(w).all() and abs(w.sum() - 1) < 1e-12
+    r = synthetic(13)
+    with pytest.warns(RuntimeWarning, match="风险平价"):
+        res = aa.allocate(r, aa.RiskParity(max_iter=1), rebalance=126)
+    status = res.settings["risk_parity_status"]
+    assert status.get("max_iter", 0) >= 1 and sum(status.values()) == len(res.rows)
+    quiet = aa.allocate(r, aa.RiskParity(), rebalance=126)
+    assert quiet.settings["risk_parity_status"] == {"converged": len(quiet.rows)}
+
+
+def test_target_volatility_zero_ex_ante_uses_base():
+    """事前波动为 0 时不许直接用满杠杆：退回基础配置并标出。"""
+    r = np.zeros((300, 3))
+    r[0] = np.nan
+    res = aa.allocate(
+        r,
+        aa.TargetVolatility(aa.EqualWeight(), target=0.1, max_leverage=2.0),
+        rebalance=100,
+    )
+    np.testing.assert_allclose(res.weights.sum(axis=1), 1.0)
+    assert all("fallback" in d["target_volatility"] for d in res.diagnostics)
+
+
+def test_risk_budget_aligned_by_symbol():
+    """预算按代码对齐：前面有资产尚未上市时，其余资产的风险贡献仍按各自的预算。"""
+    r = synthetic(14, n=3)
+    r[:500, 0] = np.nan  # 第一个资产第 500 行才上市
+    budget = {"A": 0.6, "B": 0.3, "C": 0.1}
+    res = aa.allocate(
+        r,
+        aa.RiskParity(budget=budget),
+        symbols=["A", "B", "C"],
+        rebalance=[300, 700],
+        covariance=aa.Covariance(half_life=None, shrinkage=0),
+    )
+    before, after = res.diagnostics
+    assert before["available"] == 2 and res.weights[0, 0] == 0
+    np.testing.assert_allclose(before["risk_shares"], [0.75, 0.25], atol=1e-9)
+    np.testing.assert_allclose(after["risk_shares"], [0.6, 0.3, 0.1], atol=1e-9)
+
+
+def test_trend_filter_uses_previous_close():
+    """调仓日 t 用 t−1 日收盘与均线比较：t−1 日一根大阴线跌破均线，就要过滤（用 t−2 收盘则不会）。"""
+    t = 400
+    r = np.full((t, 2), 0.001)
+    r[0] = np.nan
+    row = 300
+    r[row - 1, 0] = -0.2  # t−1 日跌 20%，跌破 100 日均线
+    res = aa.allocate(r, aa.TrendFilter(aa.EqualWeight(), window=100), rebalance=[row])
+    assert res.diagnostics[0]["trend_off"] == [0]
+    assert res.weights[0].tolist() == [0.0, 0.5]
+
+
+def test_sample_volatility_matches_nanstd():
+    from ashare.allocation.covariance import sample_volatility
+
+    rng = np.random.default_rng(15)
+    x = rng.normal(size=(50, 4))
+    x[rng.random(x.shape) < 0.2] = np.nan
+    x[:, 3] = np.nan
+    x[0, 3] = 0.1
+    got = sample_volatility(x)
+    want = np.array([np.nanstd(x[:, j], ddof=1) for j in range(3)])
+    np.testing.assert_allclose(got[:3], want, rtol=1e-12)
+    assert np.isnan(got[3])

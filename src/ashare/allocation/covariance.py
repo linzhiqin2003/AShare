@@ -58,12 +58,12 @@ class Covariance:
 
 
 def sample_volatility(returns):
-    """窗口内每列的样本标准差（ddof=1，忽略 NaN），用来识别零波动资产。"""
+    """窗口内每列的样本标准差（ddof=1，忽略 NaN；有效值少于 2 个为 NaN），用来识别零波动资产。"""
     x = np.asarray(returns, dtype=float)
-    out = np.full(x.shape[1], np.nan)
-    for j in range(x.shape[1]):
-        col = x[:, j]
-        col = col[np.isfinite(col)]
-        if len(col) >= 2:
-            out[j] = float(np.std(col, ddof=1))
-    return out
+    ok = np.isfinite(x)
+    count = ok.sum(axis=0)
+    with np.errstate(all="ignore"):
+        mean = np.where(ok, x, 0.0).sum(axis=0) / count
+        squares = np.where(ok, (x - mean) ** 2, 0.0).sum(axis=0)
+        out = np.sqrt(squares / (count - 1))
+    return np.where(count >= 2, out, np.nan)
