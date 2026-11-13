@@ -10,6 +10,7 @@
 - ``registry_from_module``：从「一个函数一条因子」的模块构造注册表，挂元数据标记。
 """
 
+from . import ops_extra
 from .inputs import PublicSource, load_inputs, reference_frames
 from .known_exceptions import KnownException
 from .plugins import (
@@ -34,6 +35,7 @@ __all__ = [
     "factor_set",
     "load_inputs",
     "load_registry",
+    "ops_extra",
     "reference_frames",
     "registry_from_module",
 ]
