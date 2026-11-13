@@ -99,3 +99,39 @@ def max_workers():
             ),
         ),
     )
+
+
+def _physical_memory():
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def parallel_budget():
+    """整台机器同时计算的变体数上限，按核数和内存自动定（实测依据见 docs/PLATFORM.md）。
+
+    同时跑的变体受内存带宽限制，4 个以后不再变快；每多一个约多占 0.5–0.8 GiB。
+    面板本身约 3.6 GiB，所以按「物理内存 − 6 GiB，每个变体留 1.5 GiB」封顶。
+    `ASHARE_PLATFORM_VARIANTS` 可手动指定。
+    """
+    value = os.environ.get("ASHARE_PLATFORM_VARIANTS")
+    if value:
+        return max(1, min(8, int(value)))
+    cores = os.cpu_count() or 2
+    memory = _physical_memory()
+    by_memory = 4 if memory is None else int((memory / 2**30 - 6) // 1.5)
+    return max(1, min(4, cores // 3, by_memory))
+
+
+def ops_threads():
+    """表达式求值和 Rank IC（panelops）的线程数：默认取核数，最多 8。"""
+    value = os.environ.get("ASHARE_PLATFORM_OPS_THREADS")
+    if value:
+        return max(1, min(64, int(value)))
+    return max(1, min(8, os.cpu_count() or 1))
+
+
+def job_concurrency(budget, variants, others):
+    """一次运行实际同时跑几个变体：与其他正在跑的任务平分预算，不超过变体数。"""
+    return max(1, min(variants, budget // (others + 1)))

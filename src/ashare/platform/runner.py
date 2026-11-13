@@ -21,7 +21,13 @@ from ashare.factor import groupbt
 from ashare.ledger import code_version
 
 from .analysis import evaluate_signal, run_variant
-from .config import expand_settings, max_workers
+from .config import (
+    expand_settings,
+    job_concurrency,
+    max_workers,
+    ops_threads,
+    parallel_budget,
+)
 from .language import parse
 
 LOG = logging.getLogger("ashare.platform")
@@ -179,13 +185,13 @@ def worker_main(incoming, outgoing, data_root, result_root, concurrency, mode):
     configure_logging(result_root)
     import panelops
 
-    panelops.set_num_threads(int(os.environ.get("ASHARE_PLATFORM_OPS_THREADS", "4")))
+    panelops.set_num_threads(ops_threads())
     panel = None
     while True:
         message = incoming.get()
         if message is None:
             break
-        job, runs, children = message
+        job, runs, children, parallel = message
         started = time.perf_counter()
         try:
             if panel is None:
@@ -212,7 +218,7 @@ def worker_main(incoming, outgoing, data_root, result_root, concurrency, mode):
                         outgoing.put((job, "result", future.result()))
             else:
                 with ThreadPoolExecutor(
-                    max_workers=concurrency if mode == "threads" else 1
+                    max_workers=parallel if mode == "threads" else 1
                 ) as executor:
                     futures = [
                         executor.submit(calculate_run, run, panel, job, outgoing)
@@ -269,9 +275,8 @@ class Manager:
     ):
         self.store, self.data_root = store, data_root
         self.limit = max_workers() if limit is None else limit
-        self.concurrency = max(
-            1,
-            min(8, concurrency or int(os.environ.get("ASHARE_PLATFORM_VARIANTS", "2"))),
+        self.concurrency = (
+            max(1, min(8, concurrency)) if concurrency else parallel_budget()
         )
         self.mode = mode or os.environ.get("ASHARE_PLATFORM_EXECUTOR", "threads")
         if self.mode not in ("threads", "processes"):
@@ -363,7 +368,23 @@ class Manager:
                 process.start()
                 state.update(process=process, input=incoming, output=outgoing)
             state["slots"] = 1 + children
-            state["input"].put((state["job"], state["pending"], children))
+            others = sum(
+                1
+                for s in self.tabs.values()
+                if s is not state and s["job"] and not s["pending"]
+            )
+            parallel = job_concurrency(self.concurrency, len(state["pending"]), others)
+            LOG.info(
+                "调度 job=%s variants=%d parallel=%d budget=%d other_jobs=%d ops_threads=%d mode=%s",
+                state["job"],
+                len(state["pending"]),
+                parallel,
+                self.concurrency,
+                others,
+                ops_threads(),
+                self.mode,
+            )
+            state["input"].put((state["job"], state["pending"], children, parallel))
             state["pending"] = None
 
     def _stop_process(self, state):

@@ -32,8 +32,12 @@ def main():
     parser.add_argument("--output", default=".cache/platform/speed-r5")
     parser.add_argument("--port", type=int, default=8779)
     parser.add_argument("--attempts", type=int, default=2)
-    parser.add_argument("--concurrency", type=int, default=2)
+    parser.add_argument("--concurrency", type=int, default=0, help="0 = 平台自动决定")
     parser.add_argument("--modes", nargs="+", default=["threads", "processes"])
+    parser.add_argument(
+        "--source", default="vol = ts_std(returns, [20, 60])\nalpha = -vol"
+    )
+    parser.add_argument("--neutralize", nargs="+", default=["industry", "cap+industry"])
     args = parser.parse_args()
     root = Path(args.output).resolve()
     if not root.is_relative_to(Path(".cache").resolve()):
@@ -46,11 +50,14 @@ def main():
             os.environ,
             ASHARE_PLATFORM_DIR=str(root / mode),
             ASHARE_PLATFORM_EXECUTOR=mode,
-            ASHARE_PLATFORM_VARIANTS=str(args.concurrency),
             ASHARE_PLATFORM_WORKERS="4",
             POLARS_MAX_THREADS="2",
             GIT_OPTIONAL_LOCKS="0",
         )
+        if args.concurrency:
+            env["ASHARE_PLATFORM_VARIANTS"] = str(args.concurrency)
+        else:
+            env.pop("ASHARE_PLATFORM_VARIANTS", None)
         log = (root / f"{mode}.log").open("w")
         server = subprocess.Popen(
             [sys.executable, "-m", "ashare.platform", "--port", str(args.port)],
@@ -91,8 +98,8 @@ def main():
                     response = client.post(
                         f"/api/tabs/{tab}/runs",
                         json=dict(
-                            source="vol = ts_std(returns, [20, 60])\nalpha = -vol",
-                            settings={"group_neutralize": ["industry", "cap+industry"]},
+                            source=args.source,
+                            settings={"group_neutralize": args.neutralize},
                             name="speed",
                         ),
                     )
