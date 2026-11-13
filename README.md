@@ -2,6 +2,8 @@
 
 A 股量化研究框架。回测、因子算子、风险模型、组合优化和模拟盘都是 Rust 内核加 NumPy 数组接口，交易所规则（T+1、涨跌停、停牌、整手、分红送转、退市）内置。
 
+研究层从数据一路做到报告：股票、基金、可转债和境内期货的数据仓库，因子表达式与因子挖掘，机器学习，事件研究，风险模型与组合优化，资产配置，归因与容量。回测引擎另带港股、美股的规则档案和独立的期货回测。
+
 [English](README.en.md)
 
 ![AShare 的架构与成果](docs/assets/architecture.png)
@@ -80,7 +82,7 @@ A 股量化研究框架。回测、因子算子、风险模型、组合优化和
 
 ### 这些数字靠什么守住
 
-- 1395 个测试。回测内核与一份结构独立的纯 Python 参考实现、一份独立账本在几万组随机场景上对拍。
+- 回测内核与一份结构独立的纯 Python 参考实现、一份独立账本在几万组随机场景上对拍。
 - 数据层的公司行为与交易所复权因子在全历史上对账：53,487 个事件，0 个对不上。
 - 每一块工作都经过一次专门挑错的独立复核（副本试验、对抗输入、变异检查），查出的问题修完才合并。
 
@@ -88,13 +90,30 @@ A 股量化研究框架。回测、因子算子、风险模型、组合优化和
 
 | 包 | 做什么 |
 |---|---|
-| [`panelbt`](packages/panelbt/) | 日频组合回测内核：输入目标权重或股数，输出净值、成交和诊断。与市场无关，自带 A 股配置。 |
-| [`panelops`](packages/panelops/) | 因子研究用的面板算子和因子检验（IC、分组收益、换手）。 |
+| [`panelbt`](packages/panelbt/) | 日频组合回测内核：输入目标权重或股数，输出净值、成交和诊断。与市场无关，自带 A 股、港股（本地与港股通）、美股的规则档案，以及独立的期货回测（逐合约的费用、保证金、涨跌停板和换月）。 |
+| [`panelops`](packages/panelops/) | 因子研究用的面板算子和因子检验（IC、分组收益、换手）。滑动求和一族可选逐窗口精确求和（`exact=True`）。 |
 | [`portopt`](packages/portopt/) | 风险模型内核和锥规划求解器绑定。 |
 | [`paperbroker`](packages/paperbroker/) | 确定性的模拟盘引擎：订单、撮合、账户、结算。 |
-| [`src/ashare`](src/ashare/) | 研究层：Tushare 数据仓库与时点面板、因子表达式与缓存、基本面风险模型、组合构建、回测报告、模拟盘。 |
+| [`src/ashare`](src/ashare/) | 研究层，见下表。 |
 
 四个包只依赖 NumPy，不导入 `ashare`。设计说明在 [docs/DESIGN.md](docs/DESIGN.md)。
+
+研究层的各个模块：
+
+| 模块 | 做什么 | 说明 |
+|---|---|---|
+| `ashare.data` | Tushare 数据仓库与时点面板：A 股（公司行为与复权因子对账）、境内期货（合约表、结算参数、连续合约）、基金与可转债；境外期货的 Databento、Bloomberg 适配器（未用真实账号验证） | [数据](docs/DATA_NOTES.md) · [期货](docs/FUTURES_DATA.md) · [基金与可转债](docs/FUND_CB_DATA.md) · [境外期货](docs/FOREIGN_FUTURES.md) |
+| `ashare.factor` | 因子表达式、求值与缓存、因子注册与加载；单因子评估；表达式搜索（枚举、随机、进化），带试验台账、留出段和多重检验（折算夏普、Holm、BH、回测过拟合概率） | [因子挖掘](docs/MINING_NOTES.md) |
+| `ashare.ml` | 样本集构造与防前视、滚动训练、线性模型与 LightGBM（可选依赖）、预测即因子、试验留痕 | [机器学习](docs/ML_NOTES.md) |
+| `ashare.events` | 事件表转目标持仓；事件研究（公告前后的累计超额收益） | [事件](docs/EVENTS_NOTES.md) |
+| `ashare.risk`、`ashare.portfolio` | 基本面风险模型（风格与行业因子、因子协方差、特质风险）；锥规划组合优化 | [风险模型](docs/RISK_NOTES.md) |
+| `ashare.allocation` | 资产配置：风险平价、目标波动 | [资产配置](docs/ALLOCATION_NOTES.md) |
+| `ashare.backtest` | 信号日到成交日的错位、按面板建行情、历史费率；期货回测的入口 | [期货回测](docs/FUTURES_BACKTEST.md) |
+| `ashare.analysis` | 收益与风险归因（市值、行业、风格、选股）、Brinson 归因、按冲击成本估计策略容量 | [归因与容量](docs/ANALYSIS_NOTES.md) |
+| `ashare.report` | 回测报告：自包含 HTML，以及给终端和 AI 代理看的文本与命令行 | [报告](docs/REPORT_NOTES.md) |
+| `ashare.paper` | 模拟盘：实时行情录制、调度、策略对接 | [模拟盘](docs/PAPER_NOTES.md) |
+
+因子公式库不在本仓库：这里只有机制（表达式、算子、注册与加载接口）和几个示例因子。
 
 ## 快速开始
 
@@ -150,11 +169,11 @@ ashare.report.tearsheet(result, market, targets, dates, symbols,
 
 ## 数据
 
-仓库不含任何行情数据。数据层用你自己的 [Tushare](https://tushare.pro) 密钥下载（读环境变量 `TUSHARE_TOKEN`），全部存在不入库的 `data/` 下。Tushare 数据受其条款约束，这里不再分发。
+仓库不含任何行情数据。数据层用你自己的 [Tushare](https://tushare.pro) 密钥下载（读环境变量 `TUSHARE_TOKEN`），全部存在不入库的 `data/` 下。Tushare 数据受其条款约束，这里不再分发。境外期货（WTI、布伦特等）Tushare 取不到，要用你自己的 Databento 或 Bloomberg 账号。
 
 ## 状态
 
-项目还早，变化快：接口可能改，也还没有发布到 PyPI。这是研究软件，不会下真实订单，其中任何内容都不构成投资建议。
+项目还早，变化快：接口可能改，也还没有发布到 PyPI。只做日频，不做分钟级以下的高频内容。这是研究软件，不会下真实订单，其中任何内容都不构成投资建议。路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 ## 许可证
 

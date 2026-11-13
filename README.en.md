@@ -2,6 +2,8 @@
 
 A research framework for China A-share equities. Backtesting, factor operators, risk models, portfolio optimisation and paper trading run on Rust kernels behind plain NumPy arrays, with the exchange rules (T+1, price limits, suspensions, board lots, dividends and splits, delisting) built in.
 
+The research layer runs from data to report: a data store for stocks, funds, convertible bonds and domestic futures; factor expressions and factor mining; machine learning; event studies; a risk model and portfolio optimisation; asset allocation; attribution and capacity. The backtest engine also ships Hong Kong and US rule profiles and a standalone futures backtest.
+
 [中文](README.md)
 
 Every number below comes from a record in this repository and can be re-run. The machine is an Apple M5 Pro laptop.
@@ -78,7 +80,7 @@ The round changed 13 things, one commit each, and none of them was allowed to ch
 
 ### How the numbers are kept honest
 
-- 1,395 tests. The backtest kernel is cross-checked against a structurally independent pure-Python reference and an independent ledger on tens of thousands of random scenarios.
+- The backtest kernel is cross-checked against a structurally independent pure-Python reference and an independent ledger on tens of thousands of random scenarios.
 - Corporate actions in the data layer are reconciled against exchange adjustment factors over the whole history: 53,487 events, 0 failures.
 - Each piece of work was reviewed by an independent pass that tried to break it (copies, adversarial inputs, mutation checks), and the findings were fixed before merging.
 
@@ -86,13 +88,30 @@ The round changed 13 things, one commit each, and none of them was allowed to ch
 
 | Package | What it does |
 |---|---|
-| [`panelbt`](packages/panelbt/) | Daily portfolio backtest kernel: target weights or shares in, NAV, trades and diagnostics out. Market-agnostic, with an A-share profile. |
-| [`panelops`](packages/panelops/) | Panel operators for factor research and factor tests (IC, group returns, turnover). |
+| [`panelbt`](packages/panelbt/) | Daily portfolio backtest kernel: target weights or shares in, NAV, trades and diagnostics out. Market-agnostic, with rule profiles for A-shares, Hong Kong (direct and Stock Connect) and the US, and a standalone futures backtest (per-contract fees, margin, price limits and rolls). |
+| [`panelops`](packages/panelops/) | Panel operators for factor research and factor tests (IC, group returns, turnover). The rolling-sum family can sum each window exactly (`exact=True`). |
 | [`portopt`](packages/portopt/) | Risk-model kernels and conic solver bindings. |
 | [`paperbroker`](packages/paperbroker/) | Deterministic paper-trading engine: orders, matching, accounts, settlement. |
-| [`src/ashare`](src/ashare/) | The research layer: Tushare data store and point-in-time panel, factor expressions and cache, fundamental risk model, portfolio construction, backtest reports, paper trading. |
+| [`src/ashare`](src/ashare/) | The research layer, see the next table. |
 
 The four packages depend only on NumPy and do not import `ashare`. Design notes are in [docs/DESIGN.md](docs/DESIGN.md) (Chinese).
+
+Modules of the research layer (the linked notes are in Chinese):
+
+| Module | What it does | Notes |
+|---|---|---|
+| `ashare.data` | Tushare data store and point-in-time panels: A-shares (corporate actions reconciled against adjustment factors), domestic futures (contract tables, settlement parameters, continuous contracts), funds and convertible bonds; Databento and Bloomberg adapters for foreign futures (not verified with a live account) | [data](docs/DATA_NOTES.md) · [futures](docs/FUTURES_DATA.md) · [funds and convertibles](docs/FUND_CB_DATA.md) · [foreign futures](docs/FOREIGN_FUTURES.md) |
+| `ashare.factor` | Factor expressions, evaluation and cache, factor registration and loading; single-factor evaluation; expression search (enumeration, random, evolutionary) with a trial ledger, a hold-out segment and multiple-testing corrections (deflated Sharpe, Holm, BH, probability of backtest overfitting) | [mining](docs/MINING_NOTES.md) |
+| `ashare.ml` | Sample construction without look-ahead, rolling training, linear models and LightGBM (optional dependency), predictions as factors, trial records | [ML](docs/ML_NOTES.md) |
+| `ashare.events` | Event tables to target holdings; event studies (cumulative abnormal returns around announcements) | [events](docs/EVENTS_NOTES.md) |
+| `ashare.risk`, `ashare.portfolio` | Fundamental risk model (style and industry factors, factor covariance, specific risk); conic portfolio optimisation | [risk](docs/RISK_NOTES.md) |
+| `ashare.allocation` | Asset allocation: risk parity, volatility targeting | [allocation](docs/ALLOCATION_NOTES.md) |
+| `ashare.backtest` | Signal-day to execution-day shift, markets built from panels, historical fee schedules; entry point for futures backtests | [futures backtest](docs/FUTURES_BACKTEST.md) |
+| `ashare.analysis` | Return and risk attribution (size, industry, style, selection), Brinson attribution, capacity estimates from an impact-cost model | [attribution](docs/ANALYSIS_NOTES.md) |
+| `ashare.report` | Backtest reports: self-contained HTML, plus text and command-line output for terminals and AI agents | [report](docs/REPORT_NOTES.md) |
+| `ashare.paper` | Paper trading: live quote recording, scheduling, strategy hookup | [paper](docs/PAPER_NOTES.md) |
+
+The factor formula library is not in this repository: it holds the mechanism (expressions, operators, registration and loading) and a few example factors.
 
 ## Quick start
 
@@ -148,11 +167,11 @@ Targets execute on the row they are given: the engine never shifts signals. Alig
 
 ## Data
 
-No market data is included. The data layer downloads from [Tushare](https://tushare.pro) with your own token, read from the `TUSHARE_TOKEN` environment variable, and stores everything under `data/`, which is not tracked. Tushare data is subject to Tushare's terms and is not redistributed here.
+No market data is included. The data layer downloads from [Tushare](https://tushare.pro) with your own token, read from the `TUSHARE_TOKEN` environment variable, and stores everything under `data/`, which is not tracked. Tushare data is subject to Tushare's terms and is not redistributed here. Foreign futures (WTI, Brent and others) are not available from Tushare and need your own Databento or Bloomberg account.
 
 ## Status
 
-Early and moving fast: interfaces may change, and nothing has been published to PyPI yet. This is research software. It does not place real orders, and nothing in it is investment advice.
+Early and moving fast: interfaces may change, and nothing has been published to PyPI yet. Daily frequency only; nothing below the minute level. This is research software. It does not place real orders, and nothing in it is investment advice. The roadmap is in [docs/ROADMAP.md](docs/ROADMAP.md) (Chinese).
 
 ## License
 
