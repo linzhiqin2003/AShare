@@ -1,0 +1,136 @@
+{
+ "load": [
+  8.1201171875,
+  11.75146484375,
+  13.06201171875
+ ],
+ "threads": 6,
+ "samples": 8527608,
+ "features": 42,
+ "shape": [
+  1906,
+  5923
+ ],
+ "start": "2019-01-01",
+ "preprocess_panelops": {
+  "seconds": 0.316,
+  "peak_rss_gb": 1.747,
+  "peak_delta_gb": 0.593,
+  "peak_footprint_gb": 1.353,
+  "footprint_delta_gb": 0.593,
+  "load_start": [
+   8.12,
+   11.75,
+   13.06
+  ],
+  "load_end": [
+   8.12,
+   11.75,
+   13.06
+  ],
+  "features": 6
+ },
+ "preprocess_pandas": {
+  "seconds": 5.724,
+  "peak_rss_gb": 3.395,
+  "peak_delta_gb": 1.606,
+  "peak_footprint_gb": 2.97,
+  "footprint_delta_gb": 1.577,
+  "load_start": [
+   8.12,
+   11.75,
+   13.06
+  ],
+  "load_end": [
+   7.71,
+   11.61,
+   13.0
+  ],
+  "features": 6
+ },
+ "preprocess_max_abs_diff": 4.440892098500626e-15,
+ "store_build": {
+  "seconds": 0.108,
+  "peak_rss_gb": 0.932,
+  "peak_delta_gb": 0.073,
+  "peak_footprint_gb": 0.464,
+  "footprint_delta_gb": 0.073,
+  "load_start": [
+   7.71,
+   11.61,
+   13.0
+  ],
+  "load_end": [
+   7.71,
+   11.61,
+   13.0
+  ]
+ },
+ "ours_per_fold": {
+  "seconds": 207.127,
+  "peak_rss_gb": 3.844,
+  "peak_delta_gb": 2.732,
+  "peak_footprint_gb": 2.032,
+  "footprint_delta_gb": 1.483,
+  "load_start": [
+   7.71,
+   11.61,
+   13.0
+  ],
+  "load_end": [
+   8.62,
+   10.59,
+   12.3
+  ],
+  "folds": 14,
+  "ic_mean": 0.054931961834183154
+ },
+ "ours_shared": {
+  "seconds": 191.637,
+  "peak_rss_gb": 4.396,
+  "peak_delta_gb": 1.788,
+  "peak_footprint_gb": 2.302,
+  "footprint_delta_gb": 1.568,
+  "load_start": [
+   8.62,
+   10.59,
+   12.3
+  ],
+  "load_end": [
+   10.32,
+   10.59,
+   11.95
+  ],
+  "folds": 14,
+  "ic_mean": 0.05472920918202832
+ },
+ "baseline_pandas": {
+  "seconds": 209.672,
+  "peak_rss_gb": 5.823,
+  "peak_delta_gb": 2.807,
+  "peak_footprint_gb": 3.982,
+  "footprint_delta_gb": 3.063,
+  "load_start": [
+   10.32,
+   10.59,
+   11.95
+  ],
+  "load_end": [
+   14.66,
+   12.44,
+   12.42
+  ],
+  "folds": 14
+ },
+ "bitwise_per_fold": true,
+ "shared_vs_per_fold_max_abs": 0.1506025805653743,
+ "shared_vs_per_fold_ic": [
+  0.05472920918202832,
+  0.054931961834183154
+ ],
+ "load_end": [
+  14.65771484375,
+  12.4384765625,
+  12.4248046875
+ ]
+}

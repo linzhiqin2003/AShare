@@ -21,6 +21,7 @@ class Dataset:
     empty_allowed: bool = True
     drop_check_min_rows: int = 100
     drop_check_ratio: float = 0.65
+    raw_dir: str | None = None
 
 
 def dataset(name, partition, keys, columns, **kwargs):
@@ -594,3 +595,74 @@ for _index in INDEXES:
             FIELDS[_key],
             known_at="月末快照的下一交易日起可用；沿用最近已知快照，实际调样可能早两到三周；日龄见metadata.diagnostics.index_snapshots，超过40天告警",
         )
+
+
+# 境内全部期货交易所（第 1 批期货数据）。与上方中金所对冲腿用的 fut_basic、fut_daily 互不影响：
+# 原始文件按数据集名单独成目录，由 ashare.data.futures_sync 采集。它们不并入 DATASETS：
+# 股票的同步、状态、校验、版本只看 DATASETS，共用清单里多出期货条目时股票侧的输出逐位不变。
+# 只有 Store 这类按名字找声明的地方用 ALL_DATASETS。
+FUTURES_EXCHANGES = ("CFFEX", "SHFE", "DCE", "CZCE", "INE", "GFEX")
+FUTURES_DATASETS = {
+    d.name: d
+    for d in [
+        dataset(
+            "futures_calendar",
+            "fut_exchange",
+            "exchange,cal_date",
+            "exchange,cal_date,is_open,pretrade_date",
+            api="trade_cal",
+            date="cal_date",
+            limit=10000,
+            known_at="交易所提前公布",
+            raw_dir="futures_calendar",
+        ),
+        dataset(
+            "futures_contracts",
+            "fut_exchange",
+            "ts_code",
+            "ts_code,symbol,exchange,name,fut_code,multiplier,trade_unit,per_unit,quote_unit,quote_unit_desc,d_mode_desc,list_date,delist_date,d_month,last_ddate",
+            api="fut_basic",
+            date="list_date",
+            limit=10000,
+            params={"fut_type": "1"},
+            known_at="合约挂牌前公布；交易单位与报价单位为当前值，历史修订见文档",
+            raw_dir="futures_contracts",
+        ),
+        dataset(
+            "futures_daily",
+            "fut_day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,pre_close,pre_settle,open,high,low,close,settle,change1,change2,vol,amount,oi,oi_chg",
+            api="fut_daily",
+            limit=2000,
+            coverage_start="19950417",
+            units={"vol": "手（2020 年前部分交易所为双边）", "amount": "万元"},
+            known_at="交易日日盘收盘后；交易日含前一晚夜盘",
+            raw_dir="futures_daily",
+        ),
+        dataset(
+            "futures_mapping",
+            "fut_day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,mapping_ts_code",
+            api="fut_mapping",
+            limit=5000,
+            coverage_start="19950417",
+            known_at="源未写判定时点；规则由数据反推，见 docs/FUTURES_DATA.md",
+            raw_dir="futures_mapping",
+        ),
+        dataset(
+            "futures_settle",
+            "fut_day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,settle,trading_fee_rate,trading_fee,delivery_fee,b_hedging_margin_rate,s_hedging_margin_rate,long_margin_rate,short_margin_rate,offset_today_fee,exchange",
+            api="fut_settle",
+            limit=1000,
+            coverage_start="20110104",
+            known_at="交易日结算后公布，作用于下一交易日；单位按交易所不同，见 docs/FUTURES_DATA.md",
+            raw_dir="futures_settle",
+        ),
+    ]
+}
+ALL_DATASETS = {**DATASETS, **FUTURES_DATASETS}
+assert not set(DATASETS) & set(FUTURES_DATASETS)

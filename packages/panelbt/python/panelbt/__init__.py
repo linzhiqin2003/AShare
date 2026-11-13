@@ -1,5 +1,6 @@
 """Panel portfolio backtesting with NumPy as the only runtime dependency."""
 
+from . import markets
 from .api import run, run_batch
 from .futures import HedgeRoundingWarning
 from .models import (
@@ -11,13 +12,17 @@ from .models import (
     MarginModel,
     Market,
     Result,
+    Rules,
     Targets,
     Trade,
+    TradeReason,
 )
+from .step import DayRecord, Simulator, State
 
 __all__ = [
     "Config",
     "Costs",
+    "DayRecord",
     "DelistEvent",
     "ExpiryEvent",
     "Futures",
@@ -25,8 +30,13 @@ __all__ = [
     "Market",
     "MarginModel",
     "Result",
+    "Rules",
+    "Simulator",
+    "State",
     "Targets",
     "Trade",
+    "TradeReason",
+    "markets",
     "run",
     "run_batch",
 ]

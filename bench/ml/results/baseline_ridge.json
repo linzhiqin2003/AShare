@@ -1,0 +1,75 @@
+{
+ "samples": 8527608,
+ "features": 42,
+ "threads": 6,
+ "ours": {
+  "median": {
+   "seconds": 4.124,
+   "peak_rss_gb": 2.713,
+   "peak_delta_gb": 0.631,
+   "peak_footprint_gb": 1.152,
+   "footprint_delta_gb": 0.596,
+   "load_start": [
+    11.38,
+    11.31,
+    13.05
+   ],
+   "load_end": [
+    11.99,
+    11.44,
+    13.08
+   ]
+  },
+  "seconds_all": [
+   3.487,
+   4.124,
+   4.347
+  ],
+  "footprint_delta_all": [
+   0.61,
+   0.596,
+   0.592
+  ]
+ },
+ "pandas": {
+  "median": {
+   "seconds": 12.251,
+   "peak_rss_gb": 6.465,
+   "peak_delta_gb": 4.139,
+   "peak_footprint_gb": 5.393,
+   "footprint_delta_gb": 4.732,
+   "load_start": [
+    10.59,
+    11.16,
+    13.02
+   ],
+   "load_end": [
+    11.38,
+    11.31,
+    13.05
+   ]
+  },
+  "seconds_all": [
+   12.251,
+   10.955,
+   12.462
+  ],
+  "footprint_delta_all": [
+   4.732,
+   4.721,
+   4.728
+  ]
+ },
+ "same_mask": true,
+ "max_abs_diff": 2.3253181064691875e-12,
+ "max_rel_diff": 6.595770073505031e-06,
+ "seconds_median": {
+  "ours": 4.124,
+  "pandas": 12.251
+ },
+ "load_end": [
+  15.54736328125,
+  12.41162109375,
+  13.38232421875
+ ]
+}

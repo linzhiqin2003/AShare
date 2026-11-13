@@ -3,14 +3,37 @@
 import json
 import shutil
 
+from .catalog import FUTURES_DATASETS
 from .store import lock
 
 
 def disk_usage(root):
     result = {}
-    for name in ("raw", "panel", "reports", "projections"):
-        paths = list((root / name).rglob("*")) if (root / name).exists() else []
+    futures_dirs = {spec.raw_dir or spec.api for spec in FUTURES_DATASETS.values()}
+    for name in ("raw", "panel", "reports", "projections", "futures"):
+        if name == "futures":
+            # 期货原始库与期货面板单独计，股票部分不随期货变化。
+            paths = [
+                p for d in sorted(futures_dirs) for p in (root / "raw" / d).rglob("*")
+            ] + list((root / "futures_panel").rglob("*"))
+            paths += [
+                p for p in (root / "reports").glob("futures_verify*") if p.exists()
+            ]
+        elif (root / name).exists():
+            paths = [
+                p
+                for p in (root / name).rglob("*")
+                if not (
+                    name == "raw"
+                    and p.relative_to(root / "raw").parts[0] in futures_dirs
+                )
+                and not (name == "reports" and p.name.startswith("futures_verify"))
+            ]
+        else:
+            paths = []
         files = [p for p in paths if p.is_file()]
+        if name == "futures" and not files:
+            continue
         result[name] = {
             "files": len(files),
             "bytes": sum(p.stat().st_size for p in files),
