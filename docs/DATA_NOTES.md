@@ -601,3 +601,63 @@ Fresh copy: make dev && make check passed; default test data root untouched.
 | `reader.py` | `Data.futures()` | 无 |
 | `__main__.py` | 子命令 `sync-futures`、`build-futures`、`verify-futures`（不通过时退出码非零）；`status` 另起一节 `futures`；`sync --datasets` 的可选项仍只有股票数据集 | 无 |
 | `maintenance.py` | `disk_usage` 把期货原始目录、期货面板和期货校验报告单独计入 `futures` | `raw`、`reports` 的统计不再含期货文件（原来没有期货时数字不变） |
+
+## 指数名单与全市场指数日线（2026-11-13）
+
+让研究平台能选任意指数作基准：默认上证指数 `000001.SH`（`catalog.DEFAULT_BENCHMARK`），本地有日线的指数都可选。
+
+### 数据集
+
+| 数据集 | 接口 | 分区 | 内容 |
+|---|---|---|---|
+| `index_basic` | `index_basic` | `all`（不带参数取全表，3 页，每次同步都重抓） | 全部指数名单：代码、简称、全称、市场、发布方、指数风格、类别、基期、基点、发布日期、加权方式、说明、终止日期 |
+| `index_daily_all` | `index_daily` | 按交易日（只带 `trade_date`，每页 8000 行） | 当天全部指数的日线，原始目录 `raw/index_daily_all/` |
+| `index_daily`（不变） | `index_daily` | 逐指数逐月 | 股票池用的 5 个指数（`catalog.INDEXES`） |
+
+- `INDEXES` 仍只表示「股票池用的指数」（成分、权重、面板 `weight_*` / `member_*` 字段），没有改动；`index_daily` 的分区、刷新和定稿规则都不变。全市场日线另存一个数据集，不和它混在一起。
+- 读取：`table("index_daily")` 把两份拼成一张表，字段与单位和原来相同；全市场分区里的那 5 个代码被略去，以逐月分区为准，所以每个（代码，日期）只有一行、原来的 5 个指数逐位不变（测试 `test_pool_rows_identical_with_or_without_wide`）。带 `start` / `end` 时只打开窗口内的按日分区。
+- `table("index_basic")`：公开字段 `symbol`、`name`、`full_name`、`market`、`publisher`、`index_type`、`category`、`base_date`、`base_point`、`listing_date`、`weight_rule`、`description`、`expiry_date`；是静态表，不支持日期过滤。
+- `Data.indexes(query=None)`：本地有日线的指数，列 `symbol`、`name`、`full_name`、`market`、`category`、`first_date`、`last_date`、`has_open`，`query` 按代码、简称、全称做不区分大小写的子串匹配。某个指数的收盘价序列用 `table("index_daily", symbols=[代码])`，不另设入口。
+- 两个新数据集都在 `DAILY_DATASETS` 里：默认的每日 `sync` 会顺带更新名单，按日分区沿用股票日分区的规则（已完成的不重下，只重抓最近 5 个交易日，空表或行数骤降记为可疑、不覆盖旧修订）。
+- `verify` 新增三项：`index_daily_pool_overlap`（全市场分区里的 5 个指数与逐月分区逐值相同）、`index_daily_all_values`（收盘价存在且为正、最高不低于最低）、`index_basic_covers_daily`（有日线的指数都在名单里）；按日分区另有 `partition_coverage_index_daily_all`。
+
+### 各市场指数个数与下载范围
+
+`index_basic` 实测（2026-11-13）：全表 12634 个。按市场：中证 CSI 9065、国证 CNI 1146、申万 SW 961、中信 CI 665、深交所 SZSE 485、上交所 SSE 208、南华 NH 102、北交所 BSE 2；按市场参数查 MSCI、CICC、OTH 均为 0 个。
+
+接口试探的结论：`index_daily` 不带代码、只带 `trade_date` 时一次返回当天全部指数（近期约 1.05 万个，两页）；带日期区间而不带代码时报参数错误。按交易日返回的指数覆盖 SSE、SZSE、CSI、CNI、NH、BSE，**不含申万和中信**（它们走 `sw_daily`、`ci_daily` 两个接口）。
+
+现有分区方式（逐指数逐月）全量下载的估算：2007 年以来有日线的 10978 个指数共约 171 万个「指数 × 月」分区，每个至少一次调用，按每分钟 500 次要约 57 小时，还会留下 171 万个小文件；逐指数逐年也要约 15 万次（5 小时）。按交易日取全市场只要每天 1–2 次调用，所以全市场日线改为按交易日分区。
+
+选定范围：`index_daily` 按交易日返回的全部指数（六个市场，含债券、基金、期货等非股票类）。理由：调用次数只取决于交易日数和每天的行数，只保留股票类指数省不了调用；股票类约占 63%（2007 年以来 6871 个），全留只多约三成空间（单日实测），而且原始响应原样落盘、不做筛选。任务要求必须包含的 6 个（`000001.SH`、`399001.SZ`、`399006.SZ`、`000688.SH`、`000016.SH`、`000922.CSI`）都在，起点分别是 2007 年首个交易日或该指数在源里的首个交易日。
+
+### 实际下载（2026-11-13，真实库）
+
+| 项 | 数 |
+|---|---:|
+| 交易日分区 | 4825（2007-01-04 至 2026-11-12），全部完成、质量检查通过 |
+| 行数 | 34,306,480 |
+| 有日线的指数 | 10978 个（CSI 9045、CNI 1145、SZSE 483、SSE 208、NH 95、BSE 2）；最近一个交易日有 10547 个 |
+| 接口调用 | 7237 次（含 `index_basic` 和一次试跑；2014 年前每天 1 页，之后多为 2 页） |
+| 用时 | 约 16 分钟（分五批，每批 3–4.5 分钟，限速每分钟 480 次） |
+| 空间 | 740.8 MB（4825 个 Parquet 文件），名单 0.3 MB |
+
+此后每天增量约 13 次调用（名单 3 次、最近 5 个交易日各 2 次）。当天收盘后不久抓到的分区可能不全（试跑时当天只有前一天行数的约八成），会在之后 5 次同步内重抓；命令行默认截止到昨天。
+
+### 校验结果（真实库全量 `verify`，用时 74 秒）
+
+- 原有各项的检查数、失败数与这次下载前的报告完全相同；`manifest_files` 46458 → 51284 条，全部完好；`unique_keys` 的失败数不变（新数据集没有重复主键）。
+- `partition_coverage_index_daily_all`：4825 个交易日全部有完成分区，无空表。
+- `index_daily_pool_overlap`：22427 行逐值相同，0 处差异。
+- `index_basic_covers_daily`：10978 个代码全在名单里。
+- `index_daily_all_values`：34,306,480 行中 44,935 行不过，集中在 57 个指数（深交所的其他类、债券、基金指数为主）：42,102 行收盘价为空，2,833 行收盘价不为正；没有最高低于最低的。上面 6 个必选指数和股票池 5 个指数都是 0。这是源数据，原样保留。
+
+注意：约 74% 的指数（8075 个）源里只有收盘价，开、高、低为空；它们作基准时用收盘价算收益，用开盘价的地方（例如因子输入的 `benchmark_open`）会是缺失值。`Data.indexes()` 的 `has_open` 列标出了这一点。上面 6 个必选指数各只有 0–1 天开盘价为空。
+
+读取耗时（真实库，热缓存）：带日期窗口取 3 年约 0.17 秒；不带日期取某个指数的全历史约 0.7 秒（原来只有 5 个指数时约 0.1 秒，多出的是打开 4825 个按日文件）；`Data.indexes()` 约 0.65 秒。
+
+### 怎么扩
+
+- **更早的历史**：同一个数据集，同步时把起点提前，例如 `python -m ashare.data sync --start 1990-12-19 --end 2006-12-31 --datasets index_daily_all --rate 480 --budget 6000`。1990–2006 年约 4000 个交易日，每天一页，约 8 分钟，行数少、空间很小。已完成的分区不会重下。
+- **申万、中信行业指数**：`index_daily` 不返回它们，要另加数据集，照 `index_daily_all` 的写法在 `catalog.DATASETS` 里各声明一个按交易日分区的数据集（接口 `sw_daily`、`ci_daily`，只带 `trade_date`，字段按接口文档，`raw_dir` 各自独立），再在 `indexes.index_daily_frame` 里把它们并进 `index_daily` 长表（字段先映射成 `index_daily` 的原始名）。先只读试探单日行数和分页，按每天的页数估调用次数。
+- **股票池指数**：要给新的指数算成分和权重字段，改 `INDEXES`（它决定 `index_weight`、`index_daily` 的逐月分区和面板字段），这是另一件事，与基准可选范围无关。

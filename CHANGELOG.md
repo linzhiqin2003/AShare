@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-13（指数基准）
+- 研究平台可选任意指数作基准（默认上证指数 `000001.SH`，`catalog.DEFAULT_BENCHMARK`）：新增数据集 `index_basic`（全部指数名单，公开长表用统一字段名）和 `index_daily_all`（`index_daily` 接口按交易日一次取全市场指数，按日分区，默认每日同步顺带增量更新）。`table("index_daily")` 把股票池 5 个指数的逐月分区与全市场日线拼成一张表（那 5 个以原分区为准，行为不变），带日期时只读窗口内的分区；`Data.indexes(query)` 列出本地有日线的指数并可按代码、简称、全称搜索。`verify` 新增三项指数检查。取舍、计数和扩展方法见 `docs/DATA_NOTES.md`「指数名单与全市场指数日线」。
+
 ## 2026-11-13（补充算子）
 - 补充算子表 `ashare.factor.formula.ops_extra`：69 个算子的定义，其中 53 个用现有 `panelops` 算子精确组合成表达式（`build(name, ...)`），16 个需要新内核、调用时明确报错；与内核同名但口径不同的记在 `CONFLICTS`，只在本模块内生效。合入前修正：`vector_neut`、`ts_vector_neut` 改为不带截距的投影（原先算成带截距的回归），`ts_backfill` 的窗口含当天（原先多往回看一天），`sigmoid` 和单账本的 `scale` 改为可构造（`sigmoid` 按符号分两支算，输入很负时不溢出）；`ts_decay_linear(dense=True)` 跳过缺失后窗口里有一个有效值就出数；每个可构造的算子与逐窗口、逐截面的 NumPy 写法逐格对数，口径（标准差分母、偏度峰度、分组字段类型）写进模块说明。
 ## 2026-11-13（分组回测）

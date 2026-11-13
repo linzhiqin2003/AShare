@@ -9,6 +9,7 @@ import polars as pl
 
 from .aliases import CanonicalStore
 from .catalog import FIELDS, PUBLIC_TABLES, SYMBOL_ALIASES, TABLE_DATES
+from .indexes import index_daily_frame, local_indexes
 from .store import Store
 from .sync import compact
 
@@ -168,12 +169,30 @@ class Data:
             pl.col("delist_date").alias("delisting_date"),
         )
 
+    def indexes(self, query=None):
+        """本地有日线的指数名单，供基准下拉框使用；默认基准见 ``catalog.DEFAULT_BENCHMARK``。
+
+        返回 DataFrame：symbol、name（中文简称）、full_name、market、category、
+        first_date、last_date（本地日线首末日期）、has_open（是否有开盘价，
+        多数指数只有收盘价），按代码排序。query 按代码、简称或全称做不区分大小写的
+        子串匹配。某个指数的日线用 ``table("index_daily", symbols=[代码])``。
+        """
+        return local_indexes(self._store, query)
+
     def table(self, name, start=None, end=None, symbols=None):
         if name == "symbol_aliases":
             return pl.DataFrame(SYMBOL_ALIASES).lazy()
         if name not in PUBLIC_TABLES:
             raise KeyError(f"长表 {name!r} 不存在；可用：{list(PUBLIC_TABLES)}")
-        frame = self._store.scan(name)
+        if name == "index_daily":
+            # 股票池 5 个指数（逐月分区）与全市场指数（按日分区）拼成一张表，见 indexes.py。
+            frame = index_daily_frame(
+                self._store,
+                compact(start) if start else None,
+                compact(end) if end else None,
+            )
+        else:
+            frame = self._store.scan(name)
         schema = frame.collect_schema()
         columns = []
         for raw, (public, scale) in PUBLIC_TABLES[name].items():

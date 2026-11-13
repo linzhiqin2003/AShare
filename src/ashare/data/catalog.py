@@ -35,6 +35,8 @@ def dataset(name, partition, keys, columns, **kwargs):
     )
 
 
+# 股票池用的指数：成分、权重（面板 weight_*/member_* 字段）只覆盖这 5 个，日线按逐指数逐月分区。
+# 「可下载的指数」是另一回事：全市场指数日线在 index_daily_all，名单在 index_basic。
 INDEXES = {
     "csi300": "000300.SH",
     "csi500": "000905.SH",
@@ -42,6 +44,8 @@ INDEXES = {
     "csi2000": "932000.CSI",
     "csi_all": "000985.CSI",
 }
+# 研究平台基准下拉框的默认项（上证指数）；可选范围见 Data.indexes()。
+DEFAULT_BENCHMARK = "000001.SH"
 DATASETS = {
     d.name: d
     for d in [
@@ -129,6 +133,27 @@ DATASETS = {
             "ts_code,trade_date",
             "ts_code,trade_date,open,high,low,close,pre_close,vol,amount",
             limit=5000,
+        ),
+        # 全市场指数按交易日一次取齐（接口不带 ts_code、只带 trade_date，每页上限 8000 行）。
+        # 与上面「股票池用的 5 个指数」分开存：那 5 个仍按逐指数逐月分区，行为不变；
+        # 读取时 index_daily 长表把两者拼起来，这里出现的那 5 个代码被略去。范围与取舍见 docs/DATA_NOTES.md。
+        dataset(
+            "index_daily_all",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,open,high,low,close,pre_close,vol,amount",
+            api="index_daily",
+            limit=8000,
+            empty_allowed=False,
+            raw_dir="index_daily_all",
+        ),
+        dataset(
+            "index_basic",
+            "static",
+            "ts_code",
+            "ts_code,name,fullname,market,publisher,index_type,category,base_date,base_point,list_date,weight_rule,desc,exp_date",
+            date="list_date",
+            known_at="当前指数主表（含已终止）；名称、类别、终止日期为现值",
         ),
         dataset(
             "index_weight",
@@ -427,6 +452,21 @@ PUBLIC_TABLES = {
         "in_date": ("effective_from", 1),
         "out_date": ("effective_through", 1),
     },
+    "index_basic": {
+        "ts_code": ("symbol", 1),
+        "name": ("name", 1),
+        "fullname": ("full_name", 1),
+        "market": ("market", 1),
+        "publisher": ("publisher", 1),
+        "index_type": ("index_type", 1),
+        "category": ("category", 1),
+        "base_date": ("base_date", 1),
+        "base_point": ("base_point", 1),
+        "list_date": ("listing_date", 1),
+        "weight_rule": ("weight_rule", 1),
+        "desc": ("description", 1),
+        "exp_date": ("expiry_date", 1),
+    },
     "index_classify": {
         "index_code": ("industry_code", 1),
         "industry_name": ("industry_name", 1),
@@ -440,6 +480,7 @@ TABLE_DATES = {
     "index_member": "effective_from",
     "fut_basic": "listing_date",
     "index_classify": None,
+    "index_basic": None,
 }
 for _name, _mapping in FINANCIAL.items():
     PUBLIC_TABLES[_name] = {
@@ -483,6 +524,9 @@ OBSERVED_FIRST_PARTITIONS = {
     "forecast": "20070331",
     "express": "20070331",
     "index_member": "801010.SI_N",
+    # 2026-11-13 实测：按同步起点下载，源里更早的指数日线（1990 年起）未下载。
+    "index_daily_all": "20070104",
+    "index_basic": "all",
 }
 
 # 本库 daily 实测旧码末个成交日与其后新码首个成交日；新码另有源重述历史。

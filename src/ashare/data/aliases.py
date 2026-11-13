@@ -71,6 +71,8 @@ def canonical(table, name, context):
     if column not in columns or name in (
         "stock_basic",
         "index_daily",
+        "index_daily_all",
+        "index_basic",
         "fut_basic",
         "fut_daily",
     ):
