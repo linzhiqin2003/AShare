@@ -310,7 +310,6 @@ def segments(
     gap_days=60,
     *,
     volume=None,
-    amount=None,
     quiet=None,
     found=None,
 ):
@@ -321,11 +320,12 @@ def segments(
     或「缺口里有没执行的可疑事件」（源因子与价格对不上，如漏记的合股、分位以下价格的合股）时在 b 处
     拆开，不让引擎把这次跳变当成收益。
 
-    ``quiet=(倍数, 成交量倍数, 成交额倍数, 基准天数)``：另一种情形，**疑似源因子漏记的合股**。a 到 b
-    之间没有执行了的事件、价格上跳超过「倍数」、b 当天成交股数不超过前「基准天数」个成交日（含 a）中位数
-    的「成交量倍数」、成交额不超过中位数的「成交额倍数」时也在 b 处拆开：真实的拉升都伴随成交额放大
-    几十到几百倍，合股则是价格 ×N、股数 ÷N、成交额大致不变。只用到 b 当天及以前的数据。``found`` 给出
-    时把这种拆开的 (列, b) 追加进去。
+    ``quiet=(倍数, 成交量倍数, 基准天数)``：另一种情形，**疑似源因子漏记的合股**。a 到 b 之间没有执行了的
+    事件、价格上跳超过「倍数」、b 当天成交股数不超过前「基准天数」个成交日（含 a）中位数的「成交量倍数」时
+    也在 b 处拆开。只看成交股数、不看成交额：成交额 ≈ 价格 × 股数，N 合 1 的合股在交易活跃的一天
+    （活跃度 A）股数约为 A/N、成交额却约为 A，用成交额判断会把「活跃的一天 + 漏记的合股」当成真实拉升；
+    真实的拉升成交股数是前 10 日中位数的几十到几百倍。只用到 b 当天及以前的数据。``found`` 给出时把这种
+    拆开的 (列, b) 追加进去。
 
     返回 [(列, 起始行, 结束行)]，同一列按时间排。
     """
@@ -342,7 +342,7 @@ def segments(
                 cut = not (1 / 3 <= h <= 3)
             else:
                 cut = quiet is not None and _quiet_jump(
-                    h, window, volume, amount, trades[:k], b, j, quiet
+                    h, window, volume, trades[:k], b, j, quiet
                 )
                 if cut and found is not None:
                     found.append((j, b))
@@ -353,18 +353,13 @@ def segments(
     return out
 
 
-def _quiet_jump(h, window, volume, amount, before, b, j, quiet):
-    """没有执行了的事件、价格上跳超过门槛、成交量和成交额都没有放大（疑似漏记的合股）。"""
-    jump, max_volume, max_amount, days = quiet
+def _quiet_jump(h, window, volume, before, b, j, quiet):
+    """没有执行了的事件、价格上跳超过门槛、成交股数没有放大（疑似漏记的合股）。"""
+    jump, max_volume, days = quiet
     if h <= jump or (window != 1).any():
         return False
-    prev = before[-days:]
-    base_volume = float(np.median(volume[prev, j]))
-    base_amount = float(np.median(amount[prev, j]))
-    return bool(
-        volume[b, j] <= max_volume * base_volume
-        and amount[b, j] <= max_amount * base_amount
-    )
+    base_volume = float(np.median(volume[before[-days:], j]))
+    return bool(volume[b, j] <= max_volume * base_volume)
 
 
 def cut_recovery(close, tradable, multiplier, j, b):

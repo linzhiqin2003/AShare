@@ -59,11 +59,11 @@ DELIST_GRACE = 20
 US_ORPHAN_DAYS = 5
 US_GAP_SPLIT = 60
 # 美股疑似漏记的合股（见 overseas_actions.segments 的 quiet）：没有执行了的事件、相邻两次成交价格上跳超过
-# 3 倍、当天成交股数不超过前 10 个成交日中位数的 1.5 倍、成交额不超过 5 倍时在跳变日拆段。开发库近 3 年
-# 命中 12 处（低价股的 ×4 至 ×67），真实拉升的成交额是前 10 日中位数的几十到几百倍，碰不到 5 倍。
+# 3 倍、当天成交股数不超过前 10 个成交日中位数的 1.5 倍时在跳变日拆段。只看股数不看成交额（合股让股数
+# ÷N、成交额不变，活跃的一天成交额会放大）。开发库近 3 年拆前的 389 处上跳，成交股数倍数的中位数约 935、
+# 10 分位约 17，1.5 倍以下的 14 处都是低价股。
 US_QUIET_JUMP = 3.0
 US_QUIET_VOLUME = 1.5
-US_QUIET_AMOUNT = 5.0
 US_QUIET_DAYS = 10
 # 2026-11-13 实测：hk_daily 在这段日期把全部价格四舍五入到 0.01（低价股失真），之外与因子表一致。
 HK_ROUNDED = ("20200702", "20231229")
@@ -479,7 +479,6 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                         [
                             US_QUIET_JUMP,
                             US_QUIET_VOLUME,
-                            US_QUIET_AMOUNT,
                             US_QUIET_DAYS,
                         ],
                         list(HK_ROUNDED),
@@ -600,12 +599,6 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             )
             del ratio
             if market == "us":
-                amount = _fill(daily, coords, "amount", shape)
-                # 成交额缺失（2016 年前多为空）时按收盘价 × 成交量估。
-                dollar = np.where(
-                    np.isfinite(amount) & (amount > 0), amount, close * volume
-                )
-                del amount
                 quiet_cuts = []
                 parts = segments(
                     close,
@@ -614,16 +607,9 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                     actions["action_suspect"],
                     US_GAP_SPLIT,
                     volume=volume,
-                    amount=dollar,
-                    quiet=(
-                        US_QUIET_JUMP,
-                        US_QUIET_VOLUME,
-                        US_QUIET_AMOUNT,
-                        US_QUIET_DAYS,
-                    ),
+                    quiet=(US_QUIET_JUMP, US_QUIET_VOLUME, US_QUIET_DAYS),
                     found=quiet_cuts,
                 )
-                del dollar
                 diagnostics["quiet_jump_cuts"] = [
                     [str(symbols[j]), str(dates[b])] for j, b in quiet_cuts
                 ]

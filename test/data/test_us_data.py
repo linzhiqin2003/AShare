@@ -24,7 +24,7 @@ US_EXCEPTIONS = dict(
     reasons={
         "U1": "代码复用或源重复行",
         "U2": "同一代码几个交易所的因子序列口径不同",
-        "U3": "没有成交额印证的价格跳变",
+        "U3": "没有交易印证的价格跳变",
     },
     cause_unknown=["U1"],
     entries=[
@@ -151,15 +151,21 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "action_source", "CZO#2")[8] == 6
     assert col(p, "has_quote", "CZO").tolist() == [i < 8 for i in range(n)]
     assert col(p, "has_quote", "CZO#2").tolist() == [i >= 8 for i in range(n)]
-    # RSQ：第 14 天价格 ×20、成交量和成交额都没放大（疑似漏记的合股）→ 拆成 RSQ#2，旧列在那天退市，
+    # RSQ：第 14 天价格 ×20、成交股数没放大（疑似漏记的合股）→ 拆成 RSQ#2，旧列在那天退市，
     # 清算价取 min(上一成交日收盘, 当天收盘) = 上一成交日收盘（回收率 1，涨幅不给）。
-    assert meta["diagnostics"]["segments_split"] == 2
-    assert meta["diagnostics"]["quiet_jump_cuts"] == [["RSQ", US_DAYS[14]]]
+    # AUP：价格 ×10、成交额 ×9 但成交股数没放大（活跃的一天加上漏记的合股）→ 同样拆成 AUP#2。
+    assert meta["diagnostics"]["segments_split"] == 3
+    assert sorted(meta["diagnostics"]["quiet_jump_cuts"]) == [
+        ["AUP", US_DAYS[14]],
+        ["RSQ", US_DAYS[14]],
+    ]
+    assert col(p, "has_quote", "AUP#2").tolist() == [i >= 14 for i in range(n)]
+    assert col(p, "delist_recovery", "AUP")[14] == 1.0
     assert col(p, "has_quote", "RSQ#2").tolist() == [i >= 14 for i in range(n)]
     assert col(p, "delist", "RSQ").tolist() == [i == 14 for i in range(n)]
     assert col(p, "delist_recovery", "RSQ")[14] == 1.0
-    # PMP 的拉升成交量 ×100（真实行情）、DRP 的下跳、VUP（成交量放大）、AUP（成交额放大）：都不拆列。
-    assert {"PMP#2", "DRP#2", "VUP#2", "AUP#2"}.isdisjoint(p.symbols)
+    # PMP 的拉升成交股数 ×50（真实行情）、DRP 的下跳、VUP（成交股数 ×3）：都不拆列。
+    assert {"PMP#2", "DRP#2", "VUP#2"}.isdisjoint(p.symbols)
     # STL：因子停了以后只有成交量为 0 的陈旧行，不算无因子成交日，不触发无因子退市。
     assert col(p, "has_quote", "STL").all()
     assert col(p, "tradable", "STL").tolist() == [i <= 10 for i in range(n)]
@@ -236,8 +242,8 @@ def test_us_long_gap_split_into_segments(tmp_path, monkeypatch):
     us = ad.open(tmp_path / "root", market="us")
     p = us.panel(["has_quote", "is_listed", "delist", "close", "delist_recovery"])
     n = len(US_DAYS)
-    # GAP、SHZ 两处长缺口，加上 CZO 与 RSQ 原有的两处。
-    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 4
+    # GAP、SHZ 两处长缺口，加上 CZO、RSQ、AUP 原有的三处。
+    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 5
     assert col(p, "has_quote", "GAP").tolist() == [i <= 5 for i in range(n)]
     assert col(p, "has_quote", "GAP#2").tolist() == [i >= 21 for i in range(n)]
     assert col(p, "is_listed", "GAP").tolist() == [i <= 20 for i in range(n)]
@@ -269,22 +275,20 @@ def test_us_verify(tmp_path):
     }
     assert report["checks"]["unique_keys"]["verdict"] == "explained"
     assert report["known_exceptions"]["cause_unknown"] == 2
-    # 价格跳变：GAP（×50）、SHZ（×0.1）复牌日和 PMP 的拉升，跳变日成交额都在前 10 日中位数 5 倍以上，
-    # 自动归为成交额印证的真实行情（AUP 同样）；DRP 的 ÷3.5、VUP 只放大了成交股数，没有成交额印证，
-    # 必须逐条登记（清单里有）。
-    # ORF 第 17 天的错价不可交易，不算；RSQ 已拆列，不在列内。
+    # 价格跳变：上跳看成交股数、下跳看成交额。GAP（×50）复牌日和 PMP 的拉升成交股数、SHZ（×0.1）复牌日
+    # 的成交额都在前 10 日中位数 5 倍以上，自动归为真实行情；DRP 的 ÷3.5（成交额随价格缩小）、VUP（成交股数
+    # 只 ×3）必须逐条登记（清单里有）。ORF 第 17 天的错价不可交易，不算；RSQ、AUP 已拆列，不在列内。
     jumps = report["checks"]["price_jumps"]
     assert jumps["verdict"] == "explained" and jumps["explained"] == 2
     assert {
         (e["ts_code"], e["trade_date"], e["kind"]) for e in jumps["explained_examples"]
     } == {("DRP", US_DAYS[14], "相邻"), ("VUP", US_DAYS[14], "相邻")}
-    auto = report["checks"]["price_jumps_amount_confirmed"]
+    auto = report["checks"]["price_jumps_confirmed"]
     assert auto["verdict"] == "info"
     assert {(e["ts_code"], e["trade_date"]) for e in auto["examples"]} == {
         ("GAP", US_DAYS[21]),
         ("SHZ", US_DAYS[21]),
         ("PMP", US_DAYS[14]),
-        ("AUP", US_DAYS[14]),
     }
     # 清单里去掉 DRP、VUP 这两条：跳变检查本身判 fail。
     bare = dict(
@@ -518,7 +522,8 @@ def test_us_verify_panel_faults(tmp_path, monkeypatch, field):
 
 
 def test_us_verify_catches_unsplit_quiet_jump(tmp_path, monkeypatch):
-    """构建侧关掉「疑似漏记的合股拆段」时，校验独立重算出 RSQ 第 14 天应拆未拆。"""
+    """构建侧关掉「疑似漏记的合股拆段」时，校验独立重算出 RSQ、AUP 第 14 天应拆未拆；AUP 的成交额虽然
+    放大了，也不能被算成交易印证的真实行情（上跳看成交股数）。"""
     from ashare.data import overseas_panel as op
 
     monkeypatch.setattr(op, "US_QUIET_JUMP", 1e9)
@@ -529,18 +534,114 @@ def test_us_verify_catches_unsplit_quiet_jump(tmp_path, monkeypatch):
     )
     exc = tmp_path / "exc.json"
     exc.write_text(json.dumps(US_EXCEPTIONS, ensure_ascii=False))
-    panel = verify_overseas(store, exceptions_path=exc)["checks"]["panel"]
+    checks = verify_overseas(store, exceptions_path=exc)["checks"]
+    panel = checks["panel"]
     assert panel["verdict"] == "fail"
-    assert any(
-        e.get("ts_code") == "RSQ"
-        and e.get("trade_date") == US_DAYS[14]
-        and "漏记的合股" in e.get("problem", "")
-        for e in panel["examples"]
-    ), panel["examples"]
+    for code in ("RSQ", "AUP"):
+        assert any(
+            e.get("ts_code") == code
+            and e.get("trade_date") == US_DAYS[14]
+            and "漏记的合股" in e.get("problem", "")
+            for e in panel["examples"]
+        ), (code, panel["examples"])
+    confirmed = {e["ts_code"] for e in checks["price_jumps_confirmed"]["examples"]}
+    assert "AUP" not in confirmed and "PMP" in confirmed
+    assert ("AUP", US_DAYS[14]) in {
+        (e["ts_code"], e["trade_date"]) for e in checks["price_jumps"]["examples"]
+    }
+
+
+def test_quiet_split_volume_threshold():
+    """构建侧疑似合股的成交股数门槛是前 10 个成交日中位数的 1.5 倍：上跳 ×4 时 1.4 倍拆、1.6 倍不拆；
+    上跳不到 3 倍（×2.9）时成交股数再小也不拆。门槛写成字面倍数，改动 ``US_QUIET_VOLUME`` 会被抓到。"""
+    from ashare.data import overseas_panel as op
+    from ashare.data.overseas_actions import segments
+
+    T = 30
+    for jump, shares, want in ((4.0, 1.4, 2), (4.0, 1.6, 1), (2.9, 0.1, 1)):
+        close = np.full((T, 1), 5.0)
+        close[15:] *= jump
+        volume = np.full((T, 1), 100.0)
+        volume[15] = 100.0 * shares
+        found = []
+        parts = segments(
+            close,
+            np.ones((T, 1), bool),
+            np.ones((T, 1)),
+            np.zeros((T, 1), bool),
+            op.US_GAP_SPLIT,
+            volume=volume,
+            quiet=(op.US_QUIET_JUMP, op.US_QUIET_VOLUME, op.US_QUIET_DAYS),
+            found=found,
+        )
+        assert len(parts) == want, (jump, shares)
+        assert found == ([(0, 15)] if want == 2 else []), (jump, shares)
+
+
+def test_us_verify_jump_confirmation_thresholds(tmp_path):
+    """校验的跳变门槛逐个贴着边界核：上跳只看成交股数（成交额放大 100 倍也不算印证），下跳只看成交额
+    （成交股数放大 100 倍也不算印证），印证门槛都是前 10 个可交易日中位数的 5 倍；上跳超过 3 倍而成交股数
+    不超过中位数 1.5 倍的要报「应拆未拆」。
+
+    在面板里改 VUP（第 14 天 ×10）、DRP（第 14 天 ÷3.5）那天的成交股数和成交额，倍数取 4.8 / 5.2、
+    1.4 / 1.6 这样贴着门槛的两侧。"""
+    store, _ = make(tmp_path)
+    build_overseas(store, "all")
+    exc = tmp_path / "exc.json"
+    exc.write_text(json.dumps(US_EXCEPTIONS, ensure_ascii=False))
+    path = _us_panel_path(store)
+    meta = json.loads((path / "metadata.json").read_text())
+    volume0 = np.load(path / "volume.npy")
+    amount0 = np.load(path / "amount.npy")
+    b = 14
+    base = {}
+    for code in ("VUP", "DRP"):
+        j = meta["symbols"].index(code)
+        base[code] = (
+            j,
+            float(np.median(volume0[b - 10 : b, j])),
+            float(np.median(amount0[b - 10 : b, j])),
+        )
+    # (VUP 股数倍数, VUP 成交额倍数, DRP 股数倍数, DRP 成交额倍数) → (VUP 归属, VUP 应拆未拆, DRP 归属)
+    cases = [
+        ((1.4, 100.0, 100.0, 4.8), ("jump", True, "jump")),
+        ((1.6, 100.0, 0.5, 5.2), ("jump", False, "confirmed")),
+        ((4.8, 100.0, 100.0, 4.8), ("jump", False, "jump")),
+        ((5.2, 0.5, 0.5, 5.2), ("confirmed", False, "confirmed")),
+    ]
+    for (vs, va, ds, da), (vup_want, vup_quiet, drp_want) in cases:
+        volume, amount = volume0.copy(), amount0.copy()
+        for code, (s, a) in (("VUP", (vs, va)), ("DRP", (ds, da))):
+            j, base_volume, base_amount = base[code]
+            volume[b, j] = s * base_volume
+            amount[b, j] = a * base_amount
+        np.save(path / "volume.npy", volume)
+        np.save(path / "amount.npy", amount)
+        checks = verify_overseas(store, exceptions_path=exc)["checks"]
+        confirmed = {
+            (e["ts_code"], e["trade_date"])
+            for e in checks["price_jumps_confirmed"]["examples"]
+        }
+        jumps = checks["price_jumps"]
+        listed = {
+            (e["ts_code"], e["trade_date"])
+            for e in jumps["examples"] + jumps["explained_examples"]
+        }
+        for code, want in (("VUP", vup_want), ("DRP", drp_want)):
+            key = (code, US_DAYS[b])
+            got = "confirmed" if key in confirmed else "jump" if key in listed else None
+            assert got == want, (code, vs, va, ds, da, got)
+        quiet = any(
+            e.get("ts_code") == "VUP"
+            and e.get("trade_date") == US_DAYS[b]
+            and "漏记的合股" in e.get("problem", "")
+            for e in checks["panel"]["examples"]
+        )
+        assert quiet == vup_quiet, (vs, checks["panel"]["examples"])
 
 
 def test_us_new_jump_without_amount_must_be_registered(tmp_path):
-    """面板里一只正常证券某天收盘 ×10（成交额不变）：没有成交额印证的新跳变，不会被已有登记解释。
+    """面板里一只正常证券某天收盘 ×10（成交额不变）：没有交易印证的新跳变，不会被已有登记解释。
     价格跳变的例外只能逐条（代码、日期）登记，按类别整体豁免的条目直接拒绝。"""
     from ashare.data.overseas_verify import load_exceptions
 

@@ -19,7 +19,9 @@
   "US-JUMP-CRASH": "盘中崩跌：相邻可交易日价格跌到三分之一以下、成交股数放大 3 倍以上，成交额因价格大跌没有放大到前 10 日中位数的 5 倍",
   "US-JUMP-SPLITLIKE": "疑似源因子漏记的拆股：价格开盘即跌到位、之后保持，成交股数约按跌幅反向放大，成交额没有放大；没有事件明细，未核实",
   "US-JUMP-TICK": "低价股（上一收盘低于 1 美元）几分钱价位上的跳格或稀疏成交的错价",
-  "US-JUMP-OTHER": "没有成交额印证的跳变（多为下跌、成交量温和放大），原因未查明"
+  "US-JUMP-UP-THIN": "上跳的成交股数只有前 10 个可交易日中位数的 1.5 到 5 倍（成交额放大了，但成交额随价格上涨，不能单独印证上跳）：有的是盘中拉升、之后成交仍活跃，有的开盘就到位、之后成交股数萎缩，分不清真实拉升与漏记的合股，原因未查明",
+  "US-JUMP-MERGELIKE": "疑似源因子漏记的合股：价格开盘即接近跳到位，之后成交股数降到跳变前的约十分之一；当天成交股数略高于构建拆段门槛（前 10 个成交日中位数的 1.5 倍），没有拆段；没有事件明细，未核实",
+  "US-JUMP-OTHER": "没有交易印证的跳变（上跳成交股数、下跳成交额不到前 10 个可交易日中位数的 5 倍；多为下跌、成交量温和放大），原因未查明"
  },
  "cause_unknown": [
   "HK-PRE-UNKNOWN",
@@ -28,6 +30,8 @@
   "US-DAILY-CONFLICT",
   "US-CLOSE-OTHER",
   "US-JUMP-SPLITLIKE",
+  "US-JUMP-UP-THIN",
+  "US-JUMP-MERGELIKE",
   "US-JUMP-OTHER"
  ],
  "entries": [
@@ -451,6 +455,14 @@
    "market": "us",
    "check": "price_jumps",
    "ts_code": "DFNS",
+   "trade_date": "20260727",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DFNS",
    "trade_date": "20260731",
    "kind": "相邻",
    "reason": "US-JUMP-OTHER"
@@ -494,6 +506,14 @@
    "trade_date": "20251107",
    "kind": "相邻",
    "reason": "US-JUMP-OTHER"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "DVLT",
+   "trade_date": "20240416",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
   },
   {
    "market": "us",
@@ -570,6 +590,14 @@
   {
    "market": "us",
    "check": "price_jumps",
+   "ts_code": "GATE",
+   "trade_date": "20250327",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
    "ts_code": "GDHG",
    "trade_date": "20250401",
    "kind": "相邻",
@@ -582,6 +610,14 @@
    "trade_date": "20250721",
    "kind": "相邻",
    "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "GSIW",
+   "trade_date": "20260309",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
   },
   {
    "market": "us",
@@ -630,6 +666,14 @@
    "trade_date": "20251231",
    "kind": "相邻",
    "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "ILLR",
+   "trade_date": "20260414",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
   },
   {
    "market": "us",
@@ -806,6 +850,14 @@
    "trade_date": "20250606",
    "kind": "相邻",
    "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "NCEL",
+   "trade_date": "20251031",
+   "kind": "相邻",
+   "reason": "US-JUMP-MERGELIKE"
   },
   {
    "market": "us",
@@ -1059,6 +1111,14 @@
    "market": "us",
    "check": "price_jumps",
    "ts_code": "SNYR",
+   "trade_date": "20240628",
+   "kind": "缺口",
+   "reason": "US-JUMP-UP-THIN"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "SNYR",
    "trade_date": "20240802",
    "kind": "缺口",
    "reason": "US-JUMP-TICK"
@@ -1078,6 +1138,14 @@
    "trade_date": "20250820",
    "kind": "相邻",
    "reason": "US-JUMP-CRASH"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "ts_code": "TCGL",
+   "trade_date": "20260129",
+   "kind": "相邻",
+   "reason": "US-JUMP-UP-THIN"
   },
   {
    "market": "us",

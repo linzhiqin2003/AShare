@@ -92,12 +92,15 @@ HK_ROUNDED = ("20200702", "20231229")
 GRACE = 20
 # 美股：连续这么多个「有成交、没有三大交易所因子」的成交日后退市（见 HKUS_DATA.md 第三节）。
 US_ORPHAN = 5
-# 美股价格跳变：跳变日成交额（缺失时用收盘价 × 成交量）达到前 10 个可交易日中位数的这么多倍，算成交额
-# 印证的真实行情，不需要登记；其余逐条登记（代码、日期）。
+# 美股价格跳变：放大到前 10 个可交易日中位数这么多倍的，算交易印证的真实行情，不需要登记；其余逐条登记
+# （代码、日期）。上跳看成交股数：成交额 ≈ 价格 × 股数，漏记的 N 合 1 让股数 ÷N 而成交额照样随活跃度
+# 放大，用成交额会把「活跃的一天 + 漏记的合股」算成真实行情。下跳看成交额（缺失时用收盘价 × 成交量）：
+# 漏记的 1 拆 N 让股数 ×N 而成交额不变。两处都取 5 倍，同一个「交易明显放大」的标准。
+JUMP_SHARES_CONFIRM = 5.0
 JUMP_AMOUNT_CONFIRM = 5.0
 JUMP_BASE_DAYS = 10
-# 疑似漏记的合股（构建侧应已拆段）：上跳超过 3 倍、成交量不超过 1.5 倍、成交额不超过 5 倍。
-QUIET_JUMP, QUIET_VOLUME, QUIET_AMOUNT = 3.0, 1.5, 5.0
+# 疑似漏记的合股（构建侧应已拆段）：上跳超过 3 倍、成交股数不超过前 10 个可交易日中位数的 1.5 倍。
+QUIET_JUMP, QUIET_VOLUME = 3.0, 1.5
 # 必须逐条登记、不许按类别整体豁免的检查项。
 EXCEPTION_REQUIRED = {"price_jumps": {"ts_code", "trade_date"}}
 RATIO_NOISE = 1e-5
@@ -711,15 +714,16 @@ def verify_overseas(
             "price_jumps",
             panel_checked,
             jumps,
-            note="相邻可交易日价格跳出 [1/3, 3]、没有执行了的公司行为、跳变日成交额不到前 10 个可交易日"
-            "中位数的 5 倍：逐条登记",
+            note="相邻可交易日价格跳出 [1/3, 3]、没有执行了的公司行为、交易没有明显放大（上跳看成交股数、"
+            "下跳看成交额，不到前 10 个可交易日中位数的 5 倍）：逐条登记",
         )
         checks.add(
-            "price_jumps_amount_confirmed",
+            "price_jumps_confirmed",
             panel_checked,
             confirmed,
             info=True,
-            note="价格跳出 [1/3, 3]、跳变日成交额达到前 10 个可交易日中位数 5 倍以上：成交额印证的真实行情",
+            note="价格跳出 [1/3, 3]、交易明显放大（上跳成交股数、下跳成交额达到前 10 个可交易日中位数 5 倍）："
+            "交易印证的真实行情",
         )
 
     stale = [
@@ -1391,10 +1395,11 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             if len(trades) and trades[-1] + GRACE + 1 < T and not gone:
                 want_d[trades[-1] + GRACE + 1, j] = True
         # 相邻两个可交易日之间价格跳出 [1/3, 3]、又没有执行了的事件解释的：引擎会把它当成收益。
-        # 跳变日成交额达到前 10 个可交易日中位数的 5 倍以上的，是成交额印证的真实行情（另列计数）；
+        # 交易明显放大的（上跳看成交股数、下跳看成交额，达到前 10 个可交易日中位数的 5 倍）是交易印证的
+        # 真实行情（另列计数）；
         # 其余单列一项检查，必须按代码和日期逐条登记；kind 分「相邻」（中间没有交易日）与「缺口」。
         # 同一代码拆成几列时，基准按整个代码的成交序列取（与构建一致），跳变只看同一列内部。
-        # 另外：上跳超过 3 倍而成交量、成交额都没有放大的（疑似漏记的合股）构建应已拆列，还在列内就报错。
+        # 另外：上跳超过 3 倍而成交股数没有放大的（疑似漏记的合股）构建应已拆列，还在列内就报错。
         amount = load("amount")
         dollar = np.where(np.isfinite(amount) & (amount > 0), amount, close * volume)
         for js in columns.values():
@@ -1422,19 +1427,19 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                     trade_date=dates[b],
                     kind="相邻" if b == a + 1 else "缺口",
                 )
-                if (
-                    h > QUIET_JUMP
-                    and volume[b, j] <= QUIET_VOLUME * base_volume
-                    and dollar[b, j] <= QUIET_AMOUNT * base_amount
-                ):
+                if h > QUIET_JUMP and volume[b, j] <= QUIET_VOLUME * base_volume:
                     problems.append(
                         dict(
                             record,
                             field="split",
-                            problem="成交量、成交额都没有放大的上跳（疑似漏记的合股）没有拆列",
+                            problem="成交股数没有放大的上跳（疑似漏记的合股）没有拆列",
                         )
                     )
-                if dollar[b, j] >= JUMP_AMOUNT_CONFIRM * base_amount:
+                if (
+                    volume[b, j] >= JUMP_SHARES_CONFIRM * base_volume
+                    if h > 1
+                    else dollar[b, j] >= JUMP_AMOUNT_CONFIRM * base_amount
+                ):
                     confirmed.append(record)
                 else:
                     jumps.append(record)
