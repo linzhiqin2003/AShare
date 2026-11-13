@@ -15,9 +15,11 @@
   "US-ZERO-PRICE": "源对没有成交的日子给收盘价 0、开高低价为空；面板把非正价格记为缺失",
   "US-CENT-ROUNDED": "源 us_daily 收盘价只到分，因子表 close_price 保留 4 位小数",
   "US-CLOSE-OTHER": "日线收盘价与因子表 close_price 相差超过半分，原因未查明（可能是两处收盘价口径不同）",
+  "US-PRICE-JUMP": "三大交易所上市期内（两天都有因子、有成交）相邻可交易日价格跳出 [1/3, 3]，又没有执行了的公司行为：统计上落在整数比附近的比例与随机基线相同、跳变日成交量多为放大，随机抽查绝大多数是小盘股和生物科技股的真实暴涨暴跌；不能排除夹杂少量源因子漏记的拆并股（量级不超过几十处）；没有逐个核对，按规则登记，个数见校验报告",
   "US-HOLIDAY-FACTOR": "因子表在美股休市日有行（2014-05-26、2014-09-01）；面板只取开市日，这些行丢弃"
  },
  "cause_unknown": [
+  "US-PRICE-JUMP",
   "HK-PRE-UNKNOWN",
   "HK-PRE-PLAIN",
   "HK-LIST-DATE",
@@ -280,6 +282,18 @@
    "ts_code": "KO",
    "trade_date": "20140901",
    "reason": "US-HOLIDAY-FACTOR"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "kind": "相邻",
+   "reason": "US-PRICE-JUMP"
+  },
+  {
+   "market": "us",
+   "check": "price_jumps",
+   "kind": "缺口",
+   "reason": "US-PRICE-JUMP"
   }
  ]
 }

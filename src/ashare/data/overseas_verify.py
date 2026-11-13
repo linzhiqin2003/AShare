@@ -80,6 +80,7 @@ EXCEPTION_KEYS = {
         "date_to",
     },
     "quotes_vs_listing": {"ts_code", "side"},
+    "price_jumps": {"ts_code", "trade_date", "kind"},
     "hist_vs_day": {"dataset", "ts_code", "trade_date"},
     "calendar": {"cal_date"},
     "rows_on_closed_days": {"dataset", "ts_code", "trade_date", "date_from", "date_to"},
@@ -89,6 +90,8 @@ FACTOR_TOL = 5e-3
 US_MAJOR = ("NYS", "NAS", "ASE")
 HK_ROUNDED = ("20200702", "20231229")
 GRACE = 20
+# 美股：连续这么多个「有成交、没有三大交易所因子」的成交日后退市（见 HKUS_DATA.md 第三节）。
+US_ORPHAN = 5
 RATIO_NOISE = 1e-5
 # 港交所价位表（2025-08-04 前的旧表，较粗的一档；只用来放宽前收取整的容差）。
 HK_TICKS = (
@@ -198,10 +201,18 @@ def _complete(store, name):
     }
 
 
-def _read(store, entries):
-    frames = [pl.read_parquet(store.root / e["file"]) for e in entries if e.get("rows")]
-    if not frames:
+def _read(store, entries, codes=None):
+    """读一批分区。``codes`` 给出时每个文件先过滤代码再读进内存（美股日线大多是场外代码）。"""
+    files = [store.root / e["file"] for e in entries if e.get("rows")]
+    if not files:
         return pl.DataFrame()
+    if codes is None:
+        return pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed")
+    wanted = pl.Series(sorted(codes), dtype=pl.String)
+    frames = [
+        pl.scan_parquet(f).filter(pl.col("ts_code").is_in(wanted.implode())).collect()
+        for f in files
+    ]
     return pl.concat(frames, how="diagonal_relaxed")
 
 
@@ -293,17 +304,19 @@ def verify_overseas(
 
     daily_parts = _complete(store, names["daily"])
     factor_parts = _complete(store, names["factor"])
-    daily = _read(store, daily_parts.values())
     factor = _read(store, factor_parts.values())
     securities = _read(store, _complete(store, names["securities"]).values())
     scope = None
     if market == "us" and len(factor):
         # 美股面板只放三大交易所的普通股与存托凭证：原始库检查也只看这些代码、这些交易所的因子。
+        # 日线按这批代码过滤后再读进内存。
         scope = _us_scope_codes(factor, securities)
-        daily = daily.filter(pl.col("ts_code").is_in(sorted(scope)))
+        daily = _read(store, daily_parts.values(), scope)
         factor = factor.filter(
             pl.col("ts_code").is_in(sorted(scope)) & pl.col("exchange").is_in(US_MAJOR)
         )
+    else:
+        daily = _read(store, daily_parts.values())
 
     # 4. 主键唯一（同一天同一代码多行：美股代码复用、源重复行）。
     #    kind：「同值重复」= 价格量额（因子表为因子，相对差 1e-6 内）相同、只差交易所或估值字段；
@@ -672,15 +685,23 @@ def verify_overseas(
 
     # 13. 面板（不允许例外）：抽查与原始库逐值一致；公司行为、上市、港股通字段按定义独立核对。
     try:
-        panel_problems, panel_checked = _audit_panel(
+        panel_problems, panel_checked, jumps = _audit_panel(
             store, universe, daily, factor, names, securities, days, scope
         )
     except Exception as error:  # 坏数据不许让校验崩溃：记为失败并出报告。
         panel_problems = [
             dict(problem=f"面板核对出错：{type(error).__name__}: {error}")
         ]
-        panel_checked = 0
+        panel_checked, jumps = 0, []
     checks.add("panel", panel_checked, panel_problems, exceptions=False)
+    if market == "us":
+        # 可登记例外：真实的暴涨暴跌（只登记代码与日期，不写数值）。
+        checks.add(
+            "price_jumps",
+            panel_checked,
+            jumps,
+            note="相邻可交易日价格跳出 [1/3, 3] 且没有执行了的公司行为",
+        )
 
     stale = [
         e for i, e in enumerate(checks.exceptions["entries"]) if i not in checks.used
@@ -743,7 +764,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
     不调用构建代码：持有者价值不变式、因子账目、字段之间的约束、上市退市规则、名单与持股。"""
     current = store.root / f"panel_{universe}" / "current.json"
     if not current.exists():
-        return [dict(problem="面板未构建")], 0
+        return [dict(problem="面板未构建")], 0, []
     path = current.parent / json.loads(current.read_text())["version"]
     meta = json.loads((path / "metadata.json").read_text())
     market = meta["market"]
@@ -764,7 +785,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                 dict(field=name, problem=f"形状或类型不符 {array.shape} {array.dtype}")
             )
     if problems:
-        return problems, len(meta["fields"])
+        return problems, len(meta["fields"]), []
 
     def load(name):
         return np.asarray(np.load(path / f"{name}.npy", mmap_mode="r"))
@@ -784,6 +805,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             problems.append(dict(field=field, problem=f"{problem}（另有 {extra} 格）"))
 
     T, N = len(dates), len(symbols)
+    jumps = []
     source_daily, source_factor = daily, factor
     if universe == "sample":
         source_daily = _read(store, _complete(store, names["daily_hist"]).values())
@@ -954,8 +976,43 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                     ts_code=symbols[j], trade_date=row["trade_date"], field="has_quote"
                 )
             )
+    # 美股：当天三大交易所有因子行（同一序列同一天取值冲突的不算）才可交易。
+    raw_trade = quote & (volume > 0)
+    has_f = np.ones((T, N), bool)
+    if market == "us":
+        has_f = np.zeros((T, N), bool)
+        if len(f):
+            g = (
+                f.filter(pl.col("cum_adjfactor") > 0)
+                .group_by("ts_code", "exchange", "trade_date")
+                .agg(
+                    pl.col("cum_adjfactor").min().alias("lo"),
+                    pl.col("cum_adjfactor").max().alias("hi"),
+                )
+                .filter((pl.col("hi") - pl.col("lo")) <= 1e-6 * pl.col("hi"))
+                .select("ts_code", "trade_date")
+                .unique()
+            )
+            where = pl.DataFrame(
+                dict(
+                    ts_code=base,
+                    _col=list(range(N)),
+                    _start=[starts[j] for j in range(N)],
+                )
+            )
+            when = pl.DataFrame(dict(trade_date=list(dates), _row=list(range(T))))
+            hit = (
+                g.join(when, on="trade_date")
+                .join(where, on="ts_code")
+                .filter(pl.col("_start") <= pl.col("_row"))
+                .group_by("ts_code", "_row")
+                .agg(pl.col("_col").max())
+            )
+            has_f[hit["_row"].to_numpy(), hit["_col"].to_numpy()] = True
     flag(
-        "tradable", "不等于 has_quote 且成交量 > 0", tradable != (quote & (volume > 0))
+        "tradable",
+        "不等于 has_quote 且成交量 > 0（美股另要当天有三大交易所因子）",
+        tradable != (raw_trade & has_f),
     )
 
     # ---- 公司行为字段之间的约束。
@@ -1113,8 +1170,10 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                         )
     # 港股等效现金（含停牌缺口之后）：窗口两端口径，参考价从上一个成交日的收盘起，窗口里每个事件之后
     # 除以它的因子比；等效现金 = 当时参考价 × (1 − 1/因子比)。
-    # 港股前收：窗口合计比值 R，前收 × R 与上一成交日收盘相对差 ≤ 0.5% 的窗口必须执行且印证方式为 1；
-    # 记 1 的，前收与 R 的差不超过 0.5% 再加一个价位；记 2、3（价格印证）的，前收必须对不上或缺失。
+    # 没有上一个成交日的窗口，参考价 = 下一个成交日的价格（收盘，没有收盘用开盘）× R。
+    # 港股前收：窗口合计比值 R，|前收 × R − 上一成交日收盘| 不超过上一收盘的 0.5%（大比值窗口 1%）或
+    # 前收半个价位折回去（源日线四舍五入期按 0.01）的，就是前收能印证：必须执行且记 1；记 1 的必须能印证；
+    # 记 2、3（价格印证）的必须印证不了。
     if market == "hk":
         bad = np.zeros((T, N), bool)
         pre_bad = np.zeros((T, N), bool)
@@ -1124,28 +1183,32 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             windows = defaultdict(list)
             for t in np.flatnonzero(src[:, j] > 0):
                 k = int(np.searchsorted(trades, t))
-                if 0 < k < len(trades):
-                    windows[(trades[k - 1], trades[k])].append(t)
+                if k < len(trades):
+                    windows[(trades[k - 1] if k else None, trades[k])].append(t)
             for (a, b), rows in windows.items():
                 R = float(np.prod(ratio[rows, j]))
                 pc = previous[b, j]
-                if math.isfinite(pc) and pc > 0:
-                    gap = abs(pc * R / close[a, j] - 1)
+                if a is not None and math.isfinite(pc) and pc > 0:
                     tick = hk_tick(pc)
                     if any(HK_ROUNDED[0] <= dates[x] <= HK_ROUNDED[1] for x in (a, b)):
                         tick = max(tick, 0.01)  # 源日线四舍五入期，前收只到 0.01
+                    share = 0.01 if max(R, 1 / R) >= 1.25 else 5e-3
+                    room = max(share * close[a, j], 0.5 * tick * R) + 1e-9
+                    near = abs(pc * R - close[a, j]) <= room
                     for t in rows:
-                        if how[t, j] in (2, 3) and gap <= 5e-3:
+                        if how[t, j] in (2, 3) and near:
                             pre_bad[t, j] = True
-                        if how[t, j] == 5 and gap <= 5e-3:
+                        if how[t, j] == 5 and near:
                             pre_miss[t, j] = True
-                        if how[t, j] == 1 and abs(pc * R - close[a, j]) > (
-                            5e-3 * close[a, j] + tick * R
-                        ):
+                        if how[t, j] == 1 and not near:
                             pre_bad[t, j] = True
                 if not np.isin(src[rows, j], (1, 2, 3, 4)).all():
                     continue
-                ref = close[a, j]
+                if a is None:
+                    after = close[b, j] if math.isfinite(close[b, j]) else opens[b, j]
+                    ref = after * R
+                else:
+                    ref = close[a, j]
                 for t in rows:
                     if src[t, j] == 2:
                         want = ref - ref / ratio[t, j]
@@ -1249,6 +1312,45 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
         counts = np.vstack([np.zeros((1, N)), np.cumsum(tradable, axis=0)])
         lag = np.maximum(np.arange(T) - GRACE, 0)
         want_l = (counts[1:] - counts[lag]) > 0
+
+        def liquidation(j, a, b, price_b, whole):
+            # 清算价 min(a 的收盘, b 的价格 × 其间执行了的倍数)，折成引擎股数；除以引擎记账价
+            # （b 之前最后一个收盘，按其后执行的拆并股调整）得回收率。
+            held = float(np.prod(step[a + 1 : b, j]))
+            marks = np.flatnonzero(np.isfinite(close[:b, j]))
+            last = marks[-1]
+            mark = close[last, j] / float(np.prod(step[last + 1 : b, j]))
+            return min(close[a, j], whole * price_b) / held / mark
+
+        # 没有三大交易所因子的成交日：还在上市时连续 US_ORPHAN 个，第 US_ORPHAN 个那天退市，
+        # 到下一个可交易日之前不算上市；按 min(最后可交易日收盘, 当天收盘) 清算。
+        orphan_at = defaultdict(list)
+        for j in range(N):
+            hits = np.flatnonzero(raw_trade[:, j])
+            ok = np.flatnonzero(tradable[:, j])
+            streak, down = 0, None
+            for i in hits:
+                if has_f[i, j]:
+                    if down is not None:
+                        want_l[down:i, j] = False
+                    streak, down = 0, None
+                    continue
+                streak += 1
+                before = ok[ok < i]
+                if (
+                    streak == US_ORPHAN
+                    and down is None
+                    and len(before)
+                    and i - before[-1] <= GRACE
+                ):
+                    down = int(i)
+                    orphan_at[j].append(down)
+                    want_d[i, j] = True
+                    a = before[-1]
+                    whole = float(np.prod(step[a + 1 : i + 1, j]))
+                    want_r[i, j] = liquidation(j, a, i, close[i, j], whole)
+            if down is not None:
+                want_l[down:, j] = False
         # 拆段：同一代码的前一列在后一列第一个行情日起不再上市，并在那天退市；清算价
         # min(前一列最后成交日收盘, 后一列首日收盘 × 缺口里执行了的倍数)，相对引擎记账价的倍数。
         cut_at = {}
@@ -1257,26 +1359,39 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                 cut_at[old] = (new, starts[new])
         for j in range(N):
             trades = np.flatnonzero(tradable[:, j])
+            gone = bool(len(trades)) and any(x > trades[-1] for x in orphan_at[j])
             if j in cut_at:
                 new, b = cut_at[j]
                 want_l[b:, j] = False
-                want_d[b, j] = True
-                if len(trades):
+                if len(trades) and not gone:
+                    want_d[b, j] = True
                     a = trades[-1]
-                    held = float(np.prod(step[a + 1 : b, j]))
-                    whole = held * float(step[b, new])
-                    marks = np.flatnonzero(np.isfinite(close[:b, j]))
-                    last = marks[-1]
-                    mark = close[last, j] / float(np.prod(step[last + 1 : b, j]))
-                    price = min(close[a, j], whole * close[b, new]) / held
-                    want_r[b, j] = price / mark
+                    whole = float(np.prod(step[a + 1 : b, j])) * float(step[b, new])
+                    want_r[b, j] = liquidation(j, a, b, close[b, new], whole)
                 continue
-            if len(trades) and trades[-1] + GRACE + 1 < T:
+            if len(trades) and trades[-1] + GRACE + 1 < T and not gone:
                 want_d[trades[-1] + GRACE + 1, j] = True
+        # 相邻两个可交易日之间价格跳出 [1/3, 3]、又没有执行了的事件解释的：引擎会把它当成收益。
+        # 单列一项检查（可按代码和日期登记例外），kind 分「相邻」（中间没有交易日）与「缺口」。
+        for j in range(N):
+            ok = np.flatnonzero(tradable[:, j])
+            for a, b in zip(ok[:-1], ok[1:], strict=True):
+                if executed[a + 1 : b + 1, j].any():
+                    continue
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    h = close[b, j] / close[a, j]
+                if not (1 / 3 <= h <= 3):
+                    jumps.append(
+                        dict(
+                            ts_code=symbols[j],
+                            trade_date=dates[b],
+                            kind="相邻" if b == a + 1 else "缺口",
+                        )
+                    )
         recovery = load("delist_recovery")
         flag(
             "delist_recovery",
-            "与拆段清算价不符",
+            "与拆段或无因子退市的清算价不符",
             ~(
                 (np.isnan(recovery) & np.isnan(want_r))
                 | (np.abs(recovery - want_r) <= 1e-9 * np.abs(want_r))
@@ -1336,7 +1451,7 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                 "与「四舍五入期、有行情、收盘价 < 0.5」不符",
                 load("price_rounded") != (period & quote & (close < 0.5)),
             )
-    return problems, checked
+    return problems, checked, jumps
 
 
 def _markdown(report):

@@ -14,6 +14,10 @@
 - 00003.HK 新公司第 20 天因子比 1.37（供股类大比值，按股数调整）。
 - 08009.HK：第 12 天 20 合 1（因子比 0.05），合股当天开盘、收盘都只有隐含价位的 0.385 倍（市场同时
   打压，价格印证不了），但交易所前收已按 20 合 1 调整：以前收为准，执行。
+- 00009.HK：第 14 天派息（因子比 1.05），前收按价位取整到 0.01：与 1/R 相差略超 0.5%，只靠半个价位的
+  放宽才能印证。
+- 00010.HK：第 0–2 天没有日线（因子照常），第 2 天派息（因子比 1.03）：没有上一个成交日的窗口，等效现金按
+  第 3 天收盘 × R 算。
 - 00005.HK 停牌后复牌那天的前收是停牌前收盘按窗口合计比值调整后的价位（交易所口径）。
 港股通名单从第 20 天起才有（之前的分区为空）。
 
@@ -38,6 +42,8 @@
 - HLT：第 4–26 天停牌（没有日线，因子照常有行），停牌期内第 15 天 10 合 1，复牌价已按合股调整：执行。
   截到停牌期内构建时这次合股还看不到复牌价（记 7），满 20 天后记退市，复牌后不再记（截断不变性用）。
 - HOL：第 10–12 天因子表没有行（日线照常）：行情不按「截至当天的最后一个因子日」截断（截断不变性用）。
+- ORF：三大交易所因子到第 15 天为止（转到场外），日线照常有成交，第 17 天有一笔错价（×0.01）：第 16 天起
+  不可交易，第 20 天（第 5 个没有因子的成交日）退市，按偏悲观的清算价了结。
 - SPX：第 10 天因子 ×0.85（非整数下调，小窗口）而价格不动：不执行（5）。
 - STK：第 14 天 6 拆 5（因子比 1.2，小窗口里的整数比）：照常执行。
 - SMC：第 16 天因子比 1.15、价格同步调整：小窗口里的非整数比被价格印证，执行（4）。
@@ -88,6 +94,8 @@ HK_EVENTS = {
     "08001.HK": (0.045, {}),
     "00005.HK": (60.0, {9: 0.1, 11: 1.02}),
     "08009.HK": (0.2, {12: 0.05}),
+    "00009.HK": (0.5251, {14: 1.05}),
+    "00010.HK": (7.0, {2: 1.03}),
 }
 # 代码 → (第几天, 当天开盘、收盘相对隐含价位的倍数)；前收不受影响。
 HK_SHOCK = {"08009.HK": (12, 0.385)}
@@ -109,6 +117,7 @@ US_EVENTS = {
     "SHZ": (6.0, {}),
     "HLT": (8.0, {15: 0.1}),
     "HOL": (14.0, {}),
+    "ORF": (9.0, {}),
     "SPX": (35.0, {}),
     "STK": (20.0, {14: 1.2}),
     "SMC": (25.0, {16: 1.15}),
@@ -159,11 +168,15 @@ def hk_tables():
             listed = True
             if code == "00002.HK" and t >= 15:
                 listed = False
-            suspended = code == "00005.HK" and 8 <= t <= 12
+            suspended = (code == "00005.HK" and 8 <= t <= 12) or (
+                code == "00010.HK" and t <= 2
+            )
             if listed and not suspended:
                 if last_shown is not None:
                     # 交易所的前收：上一个成交日收盘按其后全部除权调整（停牌复牌时跨整个缺口）。
                     pre = last_shown / window
+                if code == "00009.HK":
+                    pre = round(pre, 2)  # 按价位（0.01）取整
                 opening = pre * shock[1] if shock and t == shock[0] else pre
                 shown = 0.05 if (code == "08001.HK" and t == 5) else round(close, 3)
                 last_shown, window = close, 1.0
@@ -250,6 +263,26 @@ def hk_tables():
                 market="创业板",
             ),
             dict(
+                ts_code="00009.HK",
+                name="庚",
+                list_status="L",
+                list_date="20100101",
+                delist_date=None,
+                trade_unit=2000.0,
+                curr_type="HKD",
+                market="主板",
+            ),
+            dict(
+                ts_code="00010.HK",
+                name="辛",
+                list_status="L",
+                list_date="20100101",
+                delist_date=None,
+                trade_unit=1000.0,
+                curr_type="HKD",
+                market="主板",
+            ),
+            dict(
                 ts_code="08009.HK",
                 name="己",
                 list_status="L",
@@ -329,6 +362,8 @@ def _us_series(code, t):
         return [("OTC", 1.0)]
     if code == "TOP":
         return ([("NAS", 1.0)] if t <= 8 else []) + [("ASE", 10.0 if t >= 9 else 1.0)]
+    if code == "ORF":
+        return [("NAS", 1.0)] if t <= 15 else []
     if code == "TRF":
         return [("NAS", 1.0)] if t <= 14 else [("NYS", 1.0)]
     if code == "WMX":
@@ -365,6 +400,8 @@ def us_tables():
             scale = 50.0 if code == "GAP" and t > 20 else 1.0
             if code == "SHZ" and t > 20:
                 scale = 0.1
+            if code == "ORF" and t == 17:
+                scale = 0.01
             if code == "CZO" and t >= 8:
                 scale = 80.0
             halted = code == "HLT" and 4 <= t <= 26

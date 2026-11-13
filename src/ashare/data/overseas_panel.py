@@ -53,6 +53,10 @@ CODE_FILES = (
     "overseas_sync.py",
 )
 DELIST_GRACE = 20
+# 美股：当天有成交却没有三大交易所因子（多为转到场外）的日子不可交易；连续这么多个这样的成交日后退市。
+# 开发库近 3 年：因子覆盖期内这样的成交格偶发、连续不超过 4 个成交日后因子恢复（36 次 1 天、
+# 2 次 4 天），再长的（22 天起）都是转到场外后的长段；取 5，偶发缺失不会退市。
+US_ORPHAN_DAYS = 5
 US_GAP_SPLIT = 60
 # 2026-11-13 实测：hk_daily 在这段日期把全部价格四舍五入到 0.01（低价股失真），之外与因子表一致。
 HK_ROUNDED = ("20200702", "20231229")
@@ -464,6 +468,7 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                     params=[
                         US_GAP_SPLIT,
                         DELIST_GRACE,
+                        US_ORPHAN_DAYS,
                         list(HK_ROUNDED),
                         HK_FINE_TICK_BELOW,
                     ],
@@ -561,6 +566,13 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             has_quote = np.isfinite(close)
             tradable = has_quote & (volume > 0)
             ratio = _fill(chosen, _coordinates(chosen, dates, symbols), "ratio", shape)
+            orphan = np.zeros(shape, dtype=bool)
+            if market == "us":
+                # 当天有成交却没有三大交易所因子：已不在三大交易所（多为转到场外，报价常有错价），当天就能
+                # 判断。这些日子不可交易（行情保留在 has_quote、close 里），不算成交。
+                orphan = tradable & ~np.isfinite(ratio)
+                tradable = tradable & ~orphan
+                diagnostics["trades_without_major_factor"] = int(orphan.sum())
             pre_close = _fill(daily, coords, "pre_close", shape)
             pre_close[pre_close <= 0] = np.nan
             coarse = (dates >= HK_ROUNDED[0]) & (dates <= HK_ROUNDED[1])
@@ -593,8 +605,8 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             names, seen = [], {}
             for j, _, _ in parts:
                 seen[j] = seen.get(j, 0) + 1
-                code = str(symbols[j])
-                names.append(code if seen[j] == 1 else f"{code}#{seen[j]}")
+                symbol = str(symbols[j])
+                names.append(symbol if seen[j] == 1 else f"{symbol}#{seen[j]}")
             diagnostics["segments_split"] = len(parts) - len(symbols)
             # 拆段处旧列在复牌日（新列第一行）退市，按偏悲观的清算价了结（见 cut_recovery）。
             cuts = {}
@@ -648,6 +660,7 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 ((check == 3) & np.isin(source, (1, 2, 3, 4))).sum()
             )
             del check
+            multiplier = actions["multiplier"]
             put("close", close)
             put("open", open_)
             put("volume", volume)
@@ -676,6 +689,8 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             del vwap, amount
             final_quote = seg(has_quote, False)
             final_trade = seg(tradable, False)
+            final_orphan = seg(orphan, False)
+            final_close = seg(close, np.nan)
             securities = _securities(store, market, sample, exchanges, cash_info)
             table = _column_table(
                 names, parts, symbols, dates, final_quote, source, securities
@@ -684,9 +699,14 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             if market == "hk":
                 listed, delist = _listing_hk(table, dates)
             else:
-                listed, delist = _listing_us(final_trade, cuts=cuts)
-                for k, (row, value) in cuts.items():
-                    recovery[row, k] = value
+                listed, delist, recovery, gone = _listing_us(
+                    final_trade,
+                    cuts=cuts,
+                    orphan=final_orphan,
+                    close=final_close,
+                    multiplier=seg(multiplier, 1.0),
+                )
+                diagnostics["orphan_delists"] = gone
             diagnostics["cut_delists"] = len(cuts)
             diagnostics["quotes_outside_listing"] = int((final_quote & ~listed).sum())
             np.save(staging / "is_listed.npy", listed)
@@ -695,7 +715,7 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             if "delist_recovery" in specs:
                 np.save(staging / "delist_recovery.npy", recovery)
                 written.add("delist_recovery")
-            del listed, delist, final_trade, source, recovery
+            del listed, delist, final_trade, final_orphan, final_close, source, recovery
             if market == "hk":
                 for name, array in _connect(
                     store, m, dates, symbols, diagnostics
@@ -943,35 +963,79 @@ def _listing_hk(table, dates):
     return listed, delist
 
 
-def _listing_us(tradable, grace=DELIST_GRACE, cuts=None):
+def _listing_us(
+    tradable,
+    grace=DELIST_GRACE,
+    cuts=None,
+    orphan=None,
+    close=None,
+    multiplier=None,
+    days=None,
+):
     """美股没有可靠的上市退市日，按成交推断，只用当时可知的信息：
 
     第一次成交起为上市；连续 ``grace`` 个交易日没有成交后的下一天起不算上市（之前那 grace 天还不知道
     停多久，仍为真），再有成交又算上市。最后一次成交后满 grace 个交易日的下一天 delist 为真（之后再
     没有成交时；引擎按那时的最后价格了结）。
 
+    ``orphan``：当天有成交却没有三大交易所因子的格（不可交易，不算成交）。还在上市时连续 ``days``
+    （默认 ``US_ORPHAN_DAYS``）个这样的成交日，第 ``days`` 个那天退市：从那天起不算上市，直到再有
+    （带因子的）成交；按与拆段相同的偏悲观口径清算，回收率见 ``cut_recovery``（清算价 =
+    min(最后一个可交易日收盘, 当天收盘 × 其间执行了的倍数)）。
+
     ``cuts``：{列: (新列开始行, 回收率)}，拆段处的旧列：从新列开始那天起不算上市（新旧两列不重叠），
-    delist 放在那一天，不再按「满 grace 天」另记。
+    delist 放在那一天，不再按「满 grace 天」另记；最后一次成交之后已因无因子退市的不再记。
+
+    返回 (is_listed, delist, delist_recovery, 无因子退市次数)。
     """
+    days = US_ORPHAN_DAYS if days is None else days
     T, N = tradable.shape
     listed = np.zeros((T, N), dtype=bool)
     delist = np.zeros((T, N), dtype=bool)
+    recovery = np.full((T, N), np.nan)
     rows = np.arange(T)
+    gone = 0
     for j in range(N):
         trades = np.flatnonzero(tradable[:, j])
         if not len(trades):
             continue
         last = np.maximum.accumulate(np.where(tradable[:, j], rows, -1))
         listed[:, j] = (last >= 0) & (rows - last <= grace)
+        downs = []
+        if orphan is not None and orphan[:, j].any():
+            run, down = 0, None
+            for t in np.flatnonzero(tradable[:, j] | orphan[:, j]):
+                if tradable[t, j]:
+                    if down is not None:
+                        listed[down:t, j] = False
+                    run, down = 0, None
+                    continue
+                run += 1
+                if (
+                    run == days
+                    and down is None
+                    and 0 <= last[t]
+                    and t - last[t] <= grace
+                ):
+                    down = int(t)
+                    downs.append(down)
+                    delist[t, j] = True
+                    recovery[t, j] = cut_recovery(close, tradable, multiplier, j, t)
+                    gone += 1
+            if down is not None:
+                listed[down:, j] = False
+        final_down = bool(downs) and downs[-1] > trades[-1]
         if cuts and j in cuts:
-            cut = cuts[j][0]
+            cut, value = cuts[j]
             listed[cut:, j] = False
-            delist[cut, j] = True
+            if not final_down:
+                delist[cut, j] = True
+                recovery[cut, j] = value
             continue
         end = trades[-1] + grace + 1
-        if end < T:
+        if end < T and not final_down:
             delist[end, j] = True
-    return listed, delist
+    return listed, delist, recovery, gone
 
 
 def _connect(store, m, dates, symbols, diagnostics):

@@ -21,9 +21,15 @@ assert (
 )
 
 US_EXCEPTIONS = dict(
-    reasons={"U1": "代码复用或源重复行", "U2": "同一代码几个交易所的因子序列口径不同"},
+    reasons={
+        "U1": "代码复用或源重复行",
+        "U2": "同一代码几个交易所的因子序列口径不同",
+        "U3": "停牌后复牌价格大幅变化（缺口不够长，没有拆段）",
+    },
     cause_unknown=["U1"],
     entries=[
+        dict(market="us", check="price_jumps", ts_code="GAP", kind="缺口", reason="U3"),
+        dict(market="us", check="price_jumps", ts_code="SHZ", kind="缺口", reason="U3"),
         dict(
             market="us",
             check="unique_keys",
@@ -151,6 +157,22 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert (
         col(p, "action_check", "MRG")[11] == 6 and col(p, "action_check", "ZZZ")[6] == 5
     )
+    # ORF：因子第 15 天后停了（转到场外）。第 16 天起有成交也不可交易；第 20 天（第 5 个没有因子的
+    # 成交日）退市，之后不再上市；回收率 = min(1, 当天收盘 / 最后一个可交易日收盘)。第 17 天的错价
+    # 不进入可交易的价格。
+    assert col(p, "tradable", "ORF").tolist() == [i <= 15 for i in range(n)]
+    assert col(p, "has_quote", "ORF").all()
+    assert col(p, "delist", "ORF").tolist() == [i == 20 for i in range(n)]
+    assert col(p, "is_listed", "ORF").tolist() == [i < 20 for i in range(n)]
+    # 引擎在第 20 天按记账价（最后一个有行情的收盘，第 19 天）× 回收率清算，结果等于
+    # min(最后一个可交易日收盘, 当天收盘)。
+    orf = col(p, "close", "ORF")
+    paid = col(p, "delist_recovery", "ORF")[20] * orf[19]
+    assert paid == pytest.approx(min(orf[15], orf[20]))
+    # HOL：因子偶发缺 3 天（第 10–12 天）：那 3 天不可交易，但不退市。
+    assert col(p, "tradable", "HOL").tolist() == [not 10 <= i <= 12 for i in range(n)]
+    assert col(p, "is_listed", "HOL").all() and not col(p, "delist", "HOL").any()
+    assert meta["diagnostics"]["orphan_delists"] == 1
     # TRF：转板，拼接处（第 15 天）不算事件；NYS 序列里的 2 拆 1 照常执行。
     trf = col(p, "action_source", "TRF")
     assert trf[15] == 0 and trf[20] == 1 and col(p, "split", "TRF")[20] == 2.0
@@ -220,6 +242,26 @@ def test_us_verify(tmp_path):
     }
     assert report["checks"]["unique_keys"]["verdict"] == "explained"
     assert report["known_exceptions"]["cause_unknown"] == 2
+    # 价格跳变：GAP（×50）、SHZ（×0.1）复牌那天跨过缺口跳出 [1/3, 3]、没有事件解释，按清单登记；
+    # ORF 第 17 天的错价不可交易，不算。
+    jumps = report["checks"]["price_jumps"]
+    assert jumps["verdict"] == "explained" and jumps["explained"] == 2
+    assert {
+        (e["ts_code"], e["trade_date"], e["kind"]) for e in jumps["explained_examples"]
+    } == {
+        ("GAP", US_DAYS[21], "缺口"),
+        ("SHZ", US_DAYS[21], "缺口"),
+    }
+    # 清单里去掉这两条：跳变检查本身判 fail。
+    bare = dict(
+        US_EXCEPTIONS,
+        entries=[e for e in US_EXCEPTIONS["entries"] if e["check"] != "price_jumps"],
+    )
+    bare_path = tmp_path / "exceptions_bare.json"
+    bare_path.write_text(json.dumps(bare, ensure_ascii=False))
+    unexplained = verify_overseas(store, exceptions_path=bare_path)["checks"]
+    assert unexplained["price_jumps"]["verdict"] == "fail"
+    assert unexplained["price_jumps"]["failed"] == 2
     # 源里因子与价格矛盾的事件只列为信息（面板必须不执行它们）。
     info = report["checks"]["factor_vs_previous_close"]
     assert info["verdict"] == "info"
@@ -244,6 +286,57 @@ def test_us_verify(tmp_path):
     assert bad["checks"]["panel"]["verdict"] == "fail"
     problems = {e.get("problem", "") for e in bad["checks"]["panel"]["examples"]}
     assert any("持有者价值" in x for x in problems)
+
+
+def test_listing_us_orphan_delist_not_repeated():
+    """无因子退市只记一次：退市之后再没有带因子的成交时，不再按「最后一次成交后满 20 天」另记一次。"""
+    from ashare.data.overseas_panel import _listing_us
+
+    T = 40
+    tradable = np.zeros((T, 2), bool)
+    orphan = np.zeros((T, 2), bool)
+    tradable[:10, :] = True
+    orphan[10:15, 0] = True  # 第 0 列：第 10–14 天连续 5 个无因子成交日 → 第 14 天退市
+    close = np.full((T, 2), 10.0)
+    close[14, 0] = 4.0
+    listed, delist, recovery, gone = _listing_us(
+        tradable, orphan=orphan, close=close, multiplier=np.ones((T, 2))
+    )
+    assert gone == 1
+    assert delist[:, 0].tolist() == [t == 14 for t in range(T)]
+    assert listed[:, 0].tolist() == [t < 14 for t in range(T)]
+    assert recovery[14, 0] == pytest.approx(0.4)
+    assert np.isnan(np.delete(recovery[:, 0], 14)).all()
+    # 对照列：没有无因子成交，照常在最后一次成交（第 9 天）后满 20 天的下一天（第 30 天）退市。
+    assert delist[:, 1].tolist() == [t == 30 for t in range(T)]
+    assert listed[:, 1].tolist() == [t <= 29 for t in range(T)]
+    # 无因子退市后第 20 天又有带因子的成交：重新上市，之后按 20 天规则在第 41 天再退市一次。
+    T = 50
+    again = np.zeros((T, 1), bool)
+    again[:10, 0] = again[20, 0] = True
+    lone = np.zeros((T, 1), bool)
+    lone[10:15, 0] = True
+    listed, delist, _, gone = _listing_us(
+        again, orphan=lone, close=np.full((T, 1), 10.0), multiplier=np.ones((T, 1))
+    )
+    assert gone == 1
+    assert delist[:, 0].tolist() == [t in (14, 41) for t in range(T)]
+    assert listed[:, 0].tolist() == [t < 14 or 20 <= t <= 40 for t in range(T)]
+
+
+def test_us_version_key_and_code_version(tmp_path, monkeypatch):
+    """元数据记的 code_version 是源码哈希（不是某个代码名）；无因子退市的天数进版本键，改了就换代。"""
+    from ashare.data import overseas_panel as op
+
+    store, _ = make(tmp_path)
+    first = build_overseas(store, "all")
+    assert first["code_version"] == op.code_version()
+    monkeypatch.setattr(op, "US_ORPHAN_DAYS", 3)
+    second = build_overseas(store, "all")
+    assert second["version"] != first["version"]
+    # 换代后的面板确实按 3 天建：ORF 第 18 天（第 3 个没有因子的成交日）退市。
+    p = ad.open(tmp_path / "root", market="us").panel(["delist"])
+    assert col(p, "delist", "ORF").tolist() == [i == 18 for i in range(len(US_DAYS))]
 
 
 def test_us_sample_panel(tmp_path):
@@ -368,6 +461,8 @@ US_PANEL_FAULTS = {
     "is_listed": lambda p: _set(p, "is_listed", "CZO", 8, True),
     # 美股记成「交易所前收印证」（美股前收不除权，不能用）。
     "action_check": lambda p: _set(p, "action_check", "AAA", 12, 1),
+    # ORF 第 17 天有成交、没有三大交易所因子（错价那天）被记成可交易。
+    "tradable": lambda p: _set(p, "tradable", "ORF", 17, True),
 }
 
 
