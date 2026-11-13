@@ -313,6 +313,7 @@ def test_top1800_starts_in_2015():
     res = groupbt.run(factor, panel, "TOP1800", n_groups=5)
     first = lambda r: int(np.flatnonzero(~np.isnan(r.pnl["long_short"]))[0])  # noqa: E731
     assert first(res) == 31 and first(res.subs["TOP800"]) == 31  # 信号日 30，成交日 31
+    assert res.table()["period"].to_list() == ["2015", "ALL"]  # 2014 年没有结果，不列
     whole = groupbt.run(factor, panel, "ALL", n_groups=5)
     assert first(whole) == 1 and first(whole.subs["TOP800"]) == 1
     assert first(whole.subs["TOP1800"]) == 31

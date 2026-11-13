@@ -109,7 +109,7 @@ def performance(pnl, turnover, periods=240):
 
 
 def summary_table(pnl, turnover, dates, by="year", periods=240):
-    """按年份或季度分段汇总，最后一行 ALL 用全部日子。"""
+    """按年份或季度分段汇总，最后一行 ALL 用全部日子；整段没有盈亏的时间段不列。"""
     p = np.asarray(pnl, dtype=np.float64)
     t = np.asarray(turnover, dtype=np.float64)
     labels = period_labels(dates, by)
@@ -117,6 +117,8 @@ def summary_table(pnl, turnover, dates, by="year", periods=240):
     rows = []
     for label in sorted(set(labels.tolist())):
         mask = labels == label
+        if np.isnan(p[mask]).all():
+            continue  # 这一段还没开始回测
         rows.append((label, performance(p[mask], t[mask], periods)))
     rows.append(("ALL", performance(p, t, periods)))
 
