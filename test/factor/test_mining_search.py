@@ -447,3 +447,18 @@ def test_ledger_tolerates_torn_line(tmp_path):
     ids = [r["trial_id"] for r in again.records()]
     assert ids == ["a", "b"] and again.skipped_lines == 1
     assert again.trials() == 2
+
+
+def test_standard_split_matches_shared_windows():
+    """统一切分与分组回测共用一套日期。"""
+    from ashare.factor import groupbt, windows
+
+    s = Split.standard()
+    assert (s.train_start, s.valid_start, s.holdout_start) == (
+        "20160101",
+        "20250101",
+        "20260101",
+    )
+    assert groupbt.IS == windows.IS == (s.train_start, s.valid_start)
+    assert groupbt.VALIDATION == windows.VALIDATION == (s.valid_start, s.holdout_start)
+    assert groupbt.TEST[0] == s.holdout_start

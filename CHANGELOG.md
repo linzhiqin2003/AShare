@@ -3,6 +3,7 @@
 ## 2026-11-13（补充算子）
 - 补充算子表 `ashare.factor.formula.ops_extra`：69 个算子的定义，其中 53 个用现有 `panelops` 算子精确组合成表达式（`build(name, ...)`），16 个需要新内核、调用时明确报错；与内核同名但口径不同的记在 `CONFLICTS`，只在本模块内生效。合入前修正：`vector_neut`、`ts_vector_neut` 改为不带截距的投影（原先算成带截距的回归），`ts_backfill` 的窗口含当天（原先多往回看一天），`sigmoid` 和单账本的 `scale` 改为可构造（`sigmoid` 按符号分两支算，输入很负时不溢出）；`ts_decay_linear(dense=True)` 跳过缺失后窗口里有一个有效值就出数；每个可构造的算子与逐窗口、逐截面的 NumPy 写法逐格对数，口径（标准差分母、偏度峰度、分组字段类型）写进模块说明。
 ## 2026-11-13（分组回测）
+- 研究窗口统一：日期定义挪到 `ashare.factor.windows`（样本内 2016-01-01 至 2025-01-01，验证 2025 年，测试 2026 年起）；因子挖掘新增 `Split.standard()`，与分组回测的 `window` 共用同一套日期。
 - 回测窗口：`run(..., window=groupbt.IS)` 默认只用样本内 2016-01-01 至 2025-01-01，止日及以后的行情和因子不读（面板先截断再计算，有测试守住）；样本外 `VALIDATION`（2025 年）、`TEST`（2026 年起）要显式传入。涉及 `TOP1800` 的回测从 2015-01-01 起；绩效表不列没有结果的时间段。
 - 新增 `ashare.factor.groupbt`（`docs/GROUP_BACKTEST.md`）：全市场因子矩阵 → 股票池（`TOP800` / `TOP1800` / `ALL`，大池自动带嵌套小池）→ 中性化（行业、市值分组、`vector_neut` 截面正交）与归一化权重 → 5 或 10 组等权分组和 top − bottom 多空组合 → 分组累计盈亏图（SVG）、多空与 top 组两张按年或按季的绩效表（return、sharpe、turnover、maxdrawdown、margin）和四个风险因子的暴露。成交时点 `open` / `close`（信号日的下一个交易日），涨跌停与停牌限制（冻结的持仓占着额度，其余按剩余额度缩放）。口径参照 WorldQuant BRAIN，一年按 240 个交易日，不扣成本。与逐日逐股循环的参考实现对拍，十二处变异全部抓到。
 

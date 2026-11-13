@@ -88,6 +88,7 @@ print(report.text())                              # report.to_dict() 只有基�
 
 ### 切分与留出（硬规矩）
 
+- 项目统一的切分是 `Split.standard()`：训练段 2016-01-01 至 2025-01-01（样本内），验证段 2025 年，留出段 2026 年起；日期定义在 `ashare.factor.windows`，与分组回测（`docs/GROUP_BACKTEST.md`）共用。正式研究一律用它。
 - `mine(..., split=Split(...))` 的 `split` 没有默认值；`Split.recent(dates, holdout_years=2, valid_years=2)` 给出「最近两年留出、再往前两年验证、其余训练」。
 - 搜索只在 `Truncated(panel, 留出段起点)` 上进行：取任何字段都先截掉留出段的行，标签、行情、基准、股票池、`market=` 给的 `BacktestMarket` 都从截断的视图重建，留出段在搜索和挑选的任何代码路径上都读不到。
 - 训练段算适应度；验证段只用来挑选（按验证段信息比率排序，取 `select` 个）。段内 IC 只用标签完整落在段内的信号日，训练段的标签不跨进验证段。

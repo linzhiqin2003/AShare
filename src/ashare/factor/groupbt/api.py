@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ..windows import IS, TEST, VALIDATION  # noqa: F401
 from . import metrics, plot, portfolio, weights
 
 UNIVERSES = {
@@ -36,10 +37,6 @@ FIELDS = (
 )
 # 中证1000 的成分数据从 2014 年 11 月才有；涉及 TOP1800 的回测统一从这一天起算。
 TOP1800_START = "20150101"
-# 回测只许用样本内窗口 [起, 止)；之后的数据是样本外（2025 年验证、2026 年起测试），默认读不到。
-IS = ("20160101", "20250101")
-VALIDATION = ("20250101", "20260101")
-TEST = ("20260101", "99991231")
 PRICE_TOL = 0.005  # 与数据层开盘口径相同
 PERIODS = 240  # 一年按 240 个交易日
 

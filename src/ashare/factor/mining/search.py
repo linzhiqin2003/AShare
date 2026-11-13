@@ -81,6 +81,14 @@ class Split:
         valid = str(dates[np.searchsorted(dates, valid, side="left")])
         return cls(valid, holdout, train_start)
 
+    @classmethod
+    def standard(cls):
+        """项目统一的切分（`ashare.factor.windows`）：训练 = 样本内 2016-01-01 起，
+        验证 = 2025 年，留出 = 2026 年起。与分组回测的窗口是同一套日期。"""
+        from ..windows import IS, TEST, VALIDATION
+
+        return cls(VALIDATION[0], TEST[0], IS[0])
+
     def rows(self, dates):
         """(训练起始行, 验证起始行, 留出起始行)。"""
         dates = np.asarray(dates).astype(str)
