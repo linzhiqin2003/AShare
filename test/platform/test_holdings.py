@@ -129,3 +129,58 @@ def test_holdings_archive_is_written_in_background(tmp_path, monkeypatch):
     assert final.exists() and days
     assert not list(final.parent.glob("*.tmp"))
     store.close()
+
+
+def _mean_days_reference(snapshot, stop):
+    """原逐快照集合运算写法，留作对照。"""
+    totals, intervals = [0, 0], [0, 0]
+    previous = [set(), set()]
+    days, offsets = snapshot["days"], snapshot["offsets"]
+    for i, day in enumerate(days):
+        columns = snapshot["columns"][offsets[i] : offsets[i + 1]]
+        weights = snapshot["weights"][offsets[i] : offsets[i + 1]]
+        duration = int(days[i + 1] if i + 1 < len(days) else stop) - int(day)
+        for side, mask in enumerate((weights > 0, weights < 0)):
+            current = set(columns[mask].tolist())
+            totals[side] += len(current) * duration
+            intervals[side] += len(current - previous[side])
+            previous[side] = current
+    return tuple(
+        total / count if count else None
+        for total, count in zip(totals, intervals, strict=True)
+    )
+
+
+@pytest.mark.parametrize("seed", range(200))
+def test_mean_days_matches_set_reference(seed):
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(0, 12))
+    days = np.sort(rng.choice(60, size=n, replace=False)).astype(np.int32)
+    sizes = rng.integers(0, 8, size=n)
+    offsets = np.concatenate([[0], np.cumsum(sizes)]).astype(np.int64)
+    # 股票编号取值范围小，制造跨快照的留存、调出再调入和同快照重复。
+    columns = rng.integers(0, 6, size=int(offsets[-1])).astype(np.int32)
+    weights = rng.choice([-1.0, 0.0, 1.0, -0.0], size=int(offsets[-1]))
+    snapshot = dict(days=days, offsets=offsets, columns=columns, weights=weights)
+    stop = int(days[-1]) + int(rng.integers(1, 5)) if n else 0
+    assert mean_days(snapshot, stop) == _mean_days_reference(snapshot, stop)
+
+
+@pytest.mark.parametrize("seed", range(200))
+def test_mean_days_sorted_snapshots_match_reference(seed):
+    """真实快照按股票编号升序、不重复：走免排序的路径，结果仍与集合写法相同。"""
+    rng = np.random.default_rng(1000 + seed)
+    n = int(rng.integers(1, 12))
+    days = np.sort(rng.choice(60, size=n, replace=False)).astype(np.int32)
+    parts = [
+        np.sort(rng.choice(8, size=int(rng.integers(0, 8)), replace=False))
+        for _ in range(n)
+    ]
+    offsets = np.concatenate([[0], np.cumsum([len(p) for p in parts])]).astype(np.int64)
+    columns = (
+        np.concatenate(parts).astype(np.int32) if offsets[-1] else np.zeros(0, np.int32)
+    )
+    weights = rng.choice([-1.0, 1.0], size=int(offsets[-1]))
+    snapshot = dict(days=days, offsets=offsets, columns=columns, weights=weights)
+    stop = int(days[-1]) + int(rng.integers(1, 5))
+    assert mean_days(snapshot, stop) == _mean_days_reference(snapshot, stop)

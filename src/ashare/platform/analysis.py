@@ -2,6 +2,7 @@
 
 import base64
 import math
+import threading
 import time
 from statistics import NormalDist
 
@@ -61,6 +62,40 @@ def evaluate_signal(expression, panel):
     return alpha
 
 
+_IC_LOCK = threading.Lock()
+
+
+def _ic_inputs(panel, cut, universe, start, trade_at):
+    """覆盖率和 IC 里与信号无关的部分：股票池、前移一天的股票池、未来收益。
+
+    平台的面板缓存（`PanelCache.diagnostics`，每个任务开始时清空）里按截断和设置只算一次，
+    同一任务的其他信号直接复用；只读，防止被下游改写。没有缓存的面板照常现算。
+    """
+    cache = getattr(panel, "diagnostics", None)
+    if cache is None:
+        return _compute_ic_inputs(cut, universe, start, trade_at)
+    key = ("ic-inputs", cut.stop, universe, start, trade_at)
+    # 同一任务的变体并发启动：第一个算，其余等它算完直接用，不各算一遍。
+    with _IC_LOCK:
+        entry = cache.get(key)
+        if entry is None:
+            entry = cache[key] = [threading.Lock(), None]
+    with entry[0]:
+        if entry[1] is None:
+            entry[1] = _compute_ic_inputs(cut, universe, start, trade_at)
+    return entry[1]
+
+
+def _compute_ic_inputs(cut, universe, start, trade_at):
+    pool = groupbt.universe_mask(cut, universe, start)
+    shifted_pool = np.zeros_like(pool)
+    shifted_pool[1:] = pool[:-1]
+    forward = _forward_return(_adjusted(cut, trade_at))
+    for array in (pool, shifted_pool, forward):
+        array.flags.writeable = False
+    return pool, shifted_pool, forward
+
+
 def run_variant(
     expression,
     panel,
@@ -102,7 +137,9 @@ def run_variant(
         if diagnostics is not None and part in diagnostics:
             coverage, ic = diagnostics[part]
         else:
-            pool = groupbt.universe_mask(cut, settings["universe"], window[0])
+            pool, shifted_pool, forward = _ic_inputs(
+                panel, cut, settings["universe"], window[0], settings["trade_at"]
+            )
             count = pool.sum(axis=1)
             covered = (pool & np.isfinite(alpha)).sum(axis=1)
             coverage = np.divide(
@@ -110,13 +147,7 @@ def run_variant(
             )
             shifted = np.full_like(alpha, np.nan)
             shifted[1:] = alpha[:-1]
-            shifted_pool = np.zeros_like(pool)
-            shifted_pool[1:] = pool[:-1]
-            ic = panelops.rank_ic(
-                shifted,
-                _forward_return(_adjusted(cut, settings["trade_at"])),
-                mask=shifted_pool,
-            )
+            ic = panelops.rank_ic(shifted, forward, mask=shifted_pool)
             if diagnostics is not None:
                 diagnostics[part] = coverage, ic
         summary["ic"] = finite(np.nanmean(ic[keep]))

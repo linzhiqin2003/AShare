@@ -179,7 +179,7 @@ def worker_main(incoming, outgoing, data_root, result_root, concurrency, mode):
     configure_logging(result_root)
     import panelops
 
-    panelops.set_num_threads(1)
+    panelops.set_num_threads(int(os.environ.get("ASHARE_PLATFORM_OPS_THREADS", "4")))
     panel = None
     while True:
         message = incoming.get()
