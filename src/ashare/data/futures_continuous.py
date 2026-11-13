@@ -72,6 +72,11 @@ def adjust_prices(held, price, mode):
         raise ValueError(f"adjust 只能是 {ADJUSTS}")
     t_count = len(held)
     raw = np.array([price[t, h] if h >= 0 else np.nan for t, h in enumerate(held)])
+    if mode == "ratio" and np.any(raw[np.isfinite(raw)] <= 0):
+        raise ValueError(
+            "ratio 复权遇到非正价格（如 2020-04-20 WTI 负结算价）：比例因子会变号，整段历史的符号被翻过来；"
+            '改用 adjust="difference"'
+        )
     adjusted = raw.copy()
     offset, factor = 0.0, 1.0
     rolls = []
@@ -88,6 +93,16 @@ def adjust_prices(held, price, mode):
             else:
                 old_price, new_price = price[day, old], price[day, new]
             rolls.append((t, old, new, old_price, new_price, day))
+            if (
+                mode == "ratio"
+                and np.isfinite(old_price)
+                and np.isfinite(new_price)
+                and min(old_price, new_price) <= 0
+            ):
+                raise ValueError(
+                    f"ratio 复权的换月价格非正（{old_price}、{new_price}）：比例因子会变号；"
+                    '改用 adjust="difference"'
+                )
             if np.isfinite(old_price) and np.isfinite(new_price):
                 offset += old_price - new_price
                 if new_price != 0:
