@@ -581,11 +581,27 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 - **校验**（`futures_verify`，原始库部分与同步、适配器不共用代码）：每项判 pass / explained / fail，「已解释」只认已知例外清单（`futures_known_exceptions.json`，逐条写合约、日期、原因）里的条目，清单外的不符一律 fail，命令行以非零状态退出。清单只放匹配键和原因（不放由行情算出的数值，测试按白名单核对键集合）；「不符已确认、原因未查明」的原因单列在 `cause_unknown`，报告里单独计数。检查项：清单对文件、日分区覆盖与截断、主键唯一、日历对照与「休市日有日线」、合约覆盖、前结算连续、日线取值范围（价格为正、最高 ≥ 最低等）、结算参数取值范围、整天零手续费、单双边奇偶（含单边以后的双边复发）、合约表单位对成交额、代码对齐、按日乘数逐行核对成交额；面板部分（不允许例外）：统一参数取值范围、引用完整性。
 - 只做日频；分钟线、涨跌停幅度（Tushare 没有，以后取交易所每日交易参数文件）、交割结算价（商品期货）不在这一批。
 
+#### 6.1.2 境外期货的来源适配（Databento、Bloomberg，2026-11-13 第 2 批）
+
+用户的 Tushare 取不到境外期货（WTI、布伦特）。先把两个适配器写好，有了账号装上可选依赖就能用；**两个都未用真实账号验证**。口径、字段映射、出处、未核实清单和首次核对清单见 `docs/FOREIGN_FUTURES.md`。
+
+- **分层**照境内：取数层在 `ashare.data.sources.databento`、`ashare.data.sources.bloomberg`（只用官方客户端 `databento`、`blpapi`，不自己拼请求，不导入其他 ashare 模块）；换算层 `futures_foreign`（品种表、代码解析、交易日归属、分钟线字段、落盘、接面板）、`futures_foreign_databento`、`futures_foreign_bloomberg`，交出 `futures_schema` 的统一字段，面板、连续合约、`panelbt_inputs` 都不改。
+- **可选依赖**：`ashare[databento]`，默认不装。`blpapi` 只在 Bloomberg 的包索引上，不作可选依赖（锁文件不依赖那台主机），需要时手动 `uv pip install --index-url https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi`。没装时报错并给出安装命令；换算层不依赖官方库（测试用假客户端）。
+- **费用闸门**：Databento 按量计费。取第一个请求前先对**整份请求计划**逐个调 `metadata.get_cost`（免费），累计已批准额加计划总价超过调用方给的预算就一个都不取，报出计划总价、已花和差额；已取到的原始表在会话内缓存，重试不重取。预算、估价都必须是有限的非负数。默认预算 0，即默认只估不取。密钥只从环境变量 `DATABENTO_API_KEY` 读；Bloomberg 桌面 API 走本机终端，不要密钥。
+- **交易日**：CME 本地 17:00（芝加哥）、ICE 布伦特 23:00（伦敦）以后的成交归下一个交易日，再顺延过周末和休市日；开市日（由结算价推出）要覆盖整个取数窗口，窗口两端归不进已知日历的成交丢掉，不顺延进区间；有成交却没有结算价的工作日默认报错，真正的休市日由调用方用 `closed_days` 声明（不内置节假日表）；日线不用 Databento 的 `ohlcv-1d`（按 UTC 日切分），用小时线按交易日聚合，结算价、持仓量取 `statistics`。
+- **合约标识**：两家的代码（`CLZ6`、`BRN FMZ0026!`、`CLZ6 Comdty`、`COZ6 Comdty`）解析成 `CL2612.NYMEX`、`B2612.ICE`；一位、两位年份按最后交易日解十年回绕。
+- **连续合约**：适配器只取具体合约，连续合约由 `futures_continuous` 用同一套换月规则拼；两家自带的连续序列（Databento `CL.c.0`/`n.0`/`v.0`、Bloomberg `CL1 Comdty`）只作对账参照。
+- **分钟线**：统一字段新增分钟线表（`futures_foreign.MINUTE`：K 线开始时刻 UTC、所属交易日、合约、开高低收、成交量），暂时定义在 `futures_foreign` 里；境内以后加分钟线时挪进 `futures_schema`。
+- **面板**：`build_panel(adapter, root)` 走 `build_futures`。境外没有原始库清单，适配器名字带输出内容的哈希，使面板版本随数据变化；境外用单独的数据根。
+- **完整性**：结算价缺失不往下传（整个品种没有结算价总是报错；有成交的合约日缺结算价默认报错，`require_settlement=False` 放行）；Bloomberg 的 `fieldExceptions`、合约表必需字段缺失都报错，不回退到品种表。负价格按真实值保留，`ratio` 复权遇到非正价格报错（改用 `difference`）。
+- 不做：原始分区 + 清单的落盘（另一条线），只到「取数 → 统一字段的表 → parquet」；保证金、费用来源没有，`params` 只有调用方给的保证金率，费用留空。分钟线表并入 `futures_schema`、`Store` 的 `market="intl"`、`build_futures` 的版本来源留作后续（见 `docs/FOREIGN_FUTURES.md`「后续」）。
+
 ### 6.2 因子与检验
 
 - 因子用算子组合定义，登记名字、所需字段和说明；结果按「定义的哈希 + 数据版本」缓存。
 - 第一批：市值、短期反转、动量、波动率、换手率、估值（EP、BP）、股息率，以及 Alpha158 的量价部分。
 - 单因子报告：IC 与 ICIR、分组收益、**多头组扣成本后相对基准的超额**（调用 panelbt）、换手、分年度、分市值段、与已有因子的相关性。评价以多头端为准，因为做不了空。
+- 算子精度：滑动求和一族（`ts_sum`、`ts_mean`、`ts_sumif`）在退化窗口上给精确值（窗口有效值全为 0 时恰为正零，全相等时均值恰为该值）；窗口不超过 3 行时逐窗口直接求和并正确舍入，结果只取决于窗口内容；更长的窗口默认仍是增量算法，最后一位可能随窗口之外的历史变化。逐格核对因子、或因子里拿两个窗口和比相等（例如对窗口和求相关）时用 `exact=True`：每格是窗口内数值的正确舍入和（均值是这个和除以个数），与顺序和历史无关，代价约为默认的 8–17 倍，窗口到 20 行后不再随窗口变长。细节与测量见 `docs/PANELOPS_BENCHMARKS.md`「滑动求和的退化窗口与历史无关」。
 
 #### 6.2.1 外部因子包
 
@@ -718,6 +734,23 @@ REFERENCES = {"my_range": my_range}
 - **文本版**：`Tearsheet.text(sections, fmt, lang, start, end)`、`print(tearsheet)`，命令行 `python -m ashare.report show / html`，报告数据用 `save_json` / `load` 存取。默认摘要一屏（40 行内），其余按小节取；`text`（等宽、行宽 ≤ 100 列、中文按两列）、`markdown`、`json` 三种格式；`--lang en` 表头用 JSON 键名。文本版不另算指标：每个数取自报告数据，格式与页面相同；自选区间的指标用页面「切换区间」的同一套公式（Python 逐行照搬页面的 JS，测试里用 node 跑页面那段 JS 对拍）。
 - **提醒**：把看图能看出、只读数字容易漏的问题（基准不含分红、首末月年不完整、未成交多、现金高、持仓不足、回撤未修复、历史太短等）按保守阈值写成带数字的句子。
 - **补充内容**：对比指数、胜率（按年、滚动 1/3/5 年）、个股贡献（用持仓和价格重建，与引擎的 `result.contribution` 和权益恒等式核对）、收益分布与尾部、集中度；`compare()` 把几份报告放在共同区间上并排。这些只进数据层和文本版，页面先出设计稿、经用户选定后再改；在那之前不嵌入页面，HTML 逐字节不变。
+
+### 6.9 机器学习（`ashare.ml`）
+
+把「因子当特征 → 滚动训练 → 预测值当新因子」这一圈封装好；模型本身用成熟的库（树模型 LightGBM，线性模型 NumPy 正规方程 + scikit-learn），框架负责模型外面那一圈：样本对齐、间隔、滚动重训、特征库、留痕。细节与实测见 `docs/ML_NOTES.md`。
+
+- **依赖**：可选依赖组 `ml`（`lightgbm`、`scikit-learn`），只有 `import ashare.ml` 时才需要，缺了报出中文的安装方法；框架其余部分不受影响（不装这个组时其余测试照常通过，`test/ml` 整体跳过）。`make dev` 默认装上它，`make check` 会跑 `test/ml`。神经网络（PyTorch）这一轮不做，以后走单独的可选组 `nn`，默认不装；`mlp`、`lstm`、`gru`、`transformer` 这几个名字预留给它，没装时用到会提示装 `nn` 组。不引入 Qlib。
+- **标签**（`Label`）：按回测的成交约定实际拿得到的未来收益。信号日 t 收盘后算特征，t+lag 行按成交价买入、再过 h 行按成交价卖出，`label[t] = P[t+lag+h]/P[t+lag] − 1`（P = 成交价 × 复权因子），与 `ashare.backtest.execution_days` 同一口径；可买可卖与 `market_from_panel` 同一口径。预设 `ret1/ret5/ret10/ret20`，可扣市场或行业均值；训练目标默认是原始收益，可选截面排名（`rank=True`）或截面标准分（`zscore=True`），评估始终用原始收益。买入日不可买的样本默认不进训练集但照样给预测值。卖出日不可卖默认仍按当日价算（`sell_blocked="price"`），可选 `"drop"`（置缺失）或 `"carry"`（顺延到第一个可卖日、最多 `max_carry` 天；标签跨度随之加 `max_carry`，最小间隔一起变大，防前视按逐样本的实际卖出日核对）。默认值以后要改，必须作为新的一组入账并注明是看过结果之后改的。
+- **截面预处理**（`Preprocess`）：去极值 → 行业/市值中性化 → 标准化或排名化 → 缺失值处理，全用 `panelops` 截面算子、按日在股票池内做；预处理结果存在特征库里，训练和预测读同一份。
+- **特征库**（`FeatureStore`）：只存股票池内的样本，float32，按特征列存成磁盘映射文件，样本按（信号日，证券）排序、`day_ptr` 索引，一折取一段连续样本。缓存键 = 特征表达式哈希 + 预处理 + 股票池 + 面板版本 + 代码哈希 + 求值依赖版本（numpy、panelops 构建号、因子求值器代码哈希）；建库时某个特征在股票池内全部缺失直接报错；新特征只算新列；`incremental=True` 时新日期只追加尾部（追加前重算最后几天逐位核对）。
+- **切分**（`schedule`）：滚动或扩展窗口，按月/季/半年/年或每 k 个交易日重训；训练 → 间隔 → 验证 → 间隔 → 预测。间隔 `gap` 默认等于标签跨度 `lag + h`，只能加大，保证任一训练/验证样本的标签结束日严格早于下一段第一天；`describe()` 打印日程表。
+- **防前视**：特征表达式只看信号日及以前；标签结束日 < 预测期首日由 `check_lookahead` 逐折核对（最晚信号日 + 跨度，以及训练样本的实际卖出日两道）；LightGBM 跨折复用的分箱边界只用第一折训练集定（第一折训练集早于所有预测期）。测试：改动第 D 日及以后的全部数据，D 之前的预测逐位不变；D 取在第一折中间、第二折中间（不在任何折边界上）和折边界三处，前两处才抓得到「分箱用了较晚一折的训练集」。
+- **模型协议**：`fit(train, valid)`、`predict(batch)`、`save(path)`、`load(path)`，可选 `feature_importance()`、`get_params()`；`Batch` 带 X（用时才读盘）、y、日、列。内置 `ridge`、`lasso`、`elasticnet`、`lgbm`、`lgbm_rank`（lambdarank，按日分组）、`ensemble`（多模型多种子，平均或按截面排名平均）。提前停止看验证集逐日 Rank IC 均值。第三方模型 `register_model("名字", 类或 "模块:属性", group=...)` 或入口点组 `ashare.ml.models` 登记后即可 `model="名字"`，不改核心代码。
+- **预测即因子**：`walk_forward(...)` 返回 `WalkResult`，`.pred` 是 T×N 面板，直接交给 `panelops.rank_ic` / `group_returns`、合成或组合构建；`to_targets(res, top=50)` 按标签持有期调仓、经 `execution_targets` 错位后交给 `panelbt.run`。
+- **留痕**：每次训练往 JSONL 账本追加一行（数据版本、特征与哈希、标签、预处理、股票池、切分日程、模型参数、种子、代码版本、库版本、各折与汇总指标、耗时），失败的训练也记（`status: failed`，只记异常类型）。同样的定义重跑命中运行缓存直接返回，记一条 `cache_hit`，不算新试验；`Ledger.trials()` 数不同定义的组数，含失败的。定义的规范形式：种子只认实际传给模型的那个（`seed=7` 与 `params={"seed": 7}` 是同一组，不接受 seed 的模型记 None）；自定义模型按类的 qualname + 类源码哈希识别，不看模块路径，取不到源码时只用 qualname 并标 `unavailable`。定义不含框架代码版本、库版本和线程数；运行缓存按这三者区分。某折没有可训练样本、或预测是常数时报错；被跳过的折打日志。默认目录 `ASHARE_ML_DIR`，否则数据根目录下的 `ml/`（不入库）。
+- **超参搜索**：网格或随机，同一套切分评估，每组都入账；`end` 必填，留出最后一段作最终检验；结果给 Bonferroni 折算（门槛 α / 账本累计组数）。更精细的多重检验校正留到因子挖掘那条线。
+- **解释**：各折特征重要性（及随时间变化）、验证集上按 Rank IC 的截面内置换重要性。不做 SHAP。
+- **性能**：逐日运算用 `panelops` 或 NumPy 向量化；训练线程数可配，默认核数的一半；各折可并行（`fold_workers`）。LightGBM 默认 `bins="shared"`（全部样本按第一折的分箱边界分一次，各折取子集）；`bins="per_fold"` 每折重新分箱，与最直白的写法逐位一致。
 
 ## 7. 实施步骤
 

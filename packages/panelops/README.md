@@ -106,6 +106,17 @@ with relative errors up to 1e23 even without the 2^200 column; panelops exceeds 
 in none. After 200 rows of 1e6 followed by 0.1, bottleneck reports a standard
 deviation of 0.014 on windows of exact 0.1 values; panelops reports 0.
 
+**Exact rolling sums.** `ts_sum`, `ts_mean` and `ts_sumif` return exact results on
+degenerate windows (all-zero windows give positive zero; all-equal windows give that
+value as the mean). Windows of up to 3 rows are summed directly and correctly
+rounded, so they depend only on their own rows. For longer windows the default stays incremental and its last bit
+can depend on earlier rows; pass `exact=True` when two equal windows must give
+bit-identical sums (for example before correlating two window sums):
+
+```python
+s = po.ts_sum(x, 20, exact=True)   # correctly rounded sum of each window
+```
+
 <!-- BENCHMARK_SUMMARY:START -->
 ## Measured snapshot
 

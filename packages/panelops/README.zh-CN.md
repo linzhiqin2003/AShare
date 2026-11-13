@@ -32,6 +32,12 @@ targets = po.targets(score, k=1)
 
 **与 bottleneck 的精度对比。** `ts_sum`、`ts_mean`、`ts_std`、`ts_var`、`ts_sumif` 保留补偿求和、事件重建和误差界；把依赖数据的分支改为位选择后，单线程速度与 bottleneck 持平（4000×5500、W=20、缺失 5%，忙机交替测：sum 76.3 对 76.3 ms，std 89.0 对 92.0 ms，sumif 94–98 对 113.6 ms；默认线程 12–17 ms）。在 `test/panelops/test_exact_reference.py` 的对抗语料上与精确有理数比较，约 5.3 万个有值格子里 bottleneck 超出 2e-10 容差的：sum 7344、std 12808、var 11733、sumif 7271 格，去掉 2^200 那一列后相对误差仍可达 1e23；panelops 为 0。1e6 连续 200 行后转为 0.1，bottleneck 在全是 0.1 的窗口上给出 0.014 的标准差，panelops 给 0。
 
+**精确的滑动求和。** `ts_sum`、`ts_mean`、`ts_sumif` 在退化窗口上给精确值（全为 0 的窗口给正零，全相等的窗口均值恰为该值）。不超过 3 行的窗口逐窗口直接求和并正确舍入，结果只取决于窗口本身。更长的窗口默认仍是增量算法，最后一位可能随更早的行变化；需要两个相同的窗口给出逐位相同的和时（例如对两个窗口和求相关之前）传 `exact=True`：
+
+```python
+s = po.ts_sum(x, 20, exact=True)   # 每个窗口的正确舍入和
+```
+
 <!-- BENCHMARK_SUMMARY:START -->
 ## 实测摘要
 

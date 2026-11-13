@@ -98,8 +98,11 @@ def _ts(
     ties="latest",
     backend=None,
     layout=None,
+    exact=False,
 ):
     panel(x)
+    if type(exact) not in (bool, np.bool_):
+        raise TypeError("exact must be a bool")
     if ties not in ("latest", "earliest"):
         raise ValueError("ties must be 'latest' or 'earliest'")
     yy, mm = optional(y, x, "y"), optional(mask, x, "mask", bool)
@@ -151,6 +154,7 @@ def _ts(
         _THREADS,
         0 if layout is None else integer(layout, "layout", 0),
         ties == "earliest",
+        bool(exact),
     )
 
 
@@ -164,14 +168,45 @@ def ts_delta(x, periods=1, *, mask=None, backend=None):
     return _ts("delta", x, periods=periods, mask=mask, backend=backend)
 
 
-def ts_sum(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing sum; see SPEC.md for validity and degeneracy rules."""
-    return _ts("sum", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_sum(x, window=20, *, min_periods=None, mask=None, exact=False, backend=None):
+    """Trailing sum; see SPEC.md for validity and degeneracy rules.
+
+    By default windows longer than 3 rows are summed incrementally, so the last bit can
+    depend on earlier rows. ``exact=True`` returns the correctly rounded sum of each
+    window, so equal windows (as multisets) give bit-identical results whatever came
+    before them.
+
+    >>> import numpy as np, panelops as po
+    >>> x = np.array([[0.1], [0.2], [0.3], [0.1]])
+    >>> s = po.ts_sum(x, 3, exact=True)
+    >>> bool(s[2, 0] == s[3, 0])
+    True
+    """
+    return _ts(
+        "sum",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        backend=backend,
+        exact=exact,
+    )
 
 
-def ts_mean(x, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing mean; see SPEC.md for validity and degeneracy rules."""
-    return _ts("mean", x, window, min_periods=min_periods, mask=mask, backend=backend)
+def ts_mean(x, window=20, *, min_periods=None, mask=None, exact=False, backend=None):
+    """Trailing mean; history dependent for windows over 3 rows by default.
+
+    ``exact=True`` divides the correctly rounded window sum by the count.
+    """
+    return _ts(
+        "mean",
+        x,
+        window,
+        min_periods=min_periods,
+        mask=mask,
+        backend=backend,
+        exact=exact,
+    )
 
 
 def ts_std(x, window=20, *, min_periods=None, mask=None, ddof=1, backend=None):
@@ -383,8 +418,13 @@ def ts_count(x, window=20, *, min_periods=None, mask=None, backend=None):
     return _ts("count", x, window, min_periods=min_periods, mask=mask, backend=backend)
 
 
-def ts_sumif(x, condition, window=20, *, min_periods=None, mask=None, backend=None):
-    """Trailing sumif; see SPEC.md for validity and degeneracy rules."""
+def ts_sumif(
+    x, condition, window=20, *, min_periods=None, mask=None, exact=False, backend=None
+):
+    """Trailing sumif; history dependent for windows over 3 rows by default.
+
+    ``exact=True`` returns the correctly rounded window sum, as in ``ts_sum``.
+    """
     return _ts(
         "sumif",
         x,
@@ -393,6 +433,7 @@ def ts_sumif(x, condition, window=20, *, min_periods=None, mask=None, backend=No
         mask=mask,
         backend=backend,
         y=condition,
+        exact=exact,
     )
 
 
