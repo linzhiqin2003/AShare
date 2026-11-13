@@ -164,8 +164,9 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "has_quote", "RSQ#2").tolist() == [i >= 14 for i in range(n)]
     assert col(p, "delist", "RSQ").tolist() == [i == 14 for i in range(n)]
     assert col(p, "delist_recovery", "RSQ")[14] == 1.0
-    # PMP 的拉升成交股数 ×50（真实行情）、DRP 的下跳、VUP（成交股数 ×3）：都不拆列。
-    assert {"PMP#2", "DRP#2", "VUP#2"}.isdisjoint(p.symbols)
+    # PMP 的拉升成交股数 ×50（真实行情）、DRP 的下跳、VUP（成交股数 ×3）、EEE 合股后的真实拉升（基准换算成
+    # 新单位后 6.7 倍）、CZO#2 第 12 天的拉升（整个代码的基准下 12 倍）：都不拆列。
+    assert {"PMP#2", "DRP#2", "VUP#2", "EEE#2", "CZO#3"}.isdisjoint(p.symbols)
     # STL：因子停了以后只有成交量为 0 的陈旧行，不算无因子成交日，不触发无因子退市。
     assert col(p, "has_quote", "STL").all()
     assert col(p, "tradable", "STL").tolist() == [i <= 10 for i in range(n)]
@@ -285,10 +286,14 @@ def test_us_verify(tmp_path):
     } == {("DRP", US_DAYS[14], "相邻"), ("VUP", US_DAYS[14], "相邻")}
     auto = report["checks"]["price_jumps_confirmed"]
     assert auto["verdict"] == "info"
+    # EEE 第 21 天：基准里有第 18 天 10 合 1 之前的旧单位股数，换算成新单位后才是 6.7 倍；CZO#2 第 12 天：
+    # 基准按整个代码取（含 CZO 那一列的低成交日）是 12 倍，只按 CZO#2 一列取是 1.2 倍。
     assert {(e["ts_code"], e["trade_date"]) for e in auto["examples"]} == {
         ("GAP", US_DAYS[21]),
         ("SHZ", US_DAYS[21]),
         ("PMP", US_DAYS[14]),
+        ("EEE", US_DAYS[21]),
+        ("CZO#2", US_DAYS[12]),
     }
     # 清单里去掉 DRP、VUP 这两条：跳变检查本身判 fail。
     bare = dict(
@@ -553,7 +558,8 @@ def test_us_verify_catches_unsplit_quiet_jump(tmp_path, monkeypatch):
 
 def test_quiet_split_volume_threshold():
     """构建侧疑似合股的成交股数门槛是前 10 个成交日中位数的 1.5 倍：上跳 ×4 时 1.4 倍拆、1.6 倍不拆；
-    上跳不到 3 倍（×2.9）时成交股数再小也不拆。门槛写成字面倍数，改动 ``US_QUIET_VOLUME`` 会被抓到。"""
+    上跳不到 3 倍（×2.9）时成交股数再小也不拆。门槛写成字面倍数，改动 ``US_QUIET_VOLUME`` 会被抓到。
+    基准里的股数按其后执行了的拆并股换算成跳变日的单位。"""
     from ashare.data import overseas_panel as op
     from ashare.data.overseas_actions import segments
 
@@ -576,6 +582,27 @@ def test_quiet_split_volume_threshold():
         )
         assert len(parts) == want, (jump, shares)
         assert found == ([(0, 15)] if want == 2 else []), (jump, shares)
+    # 窗口里第 10 天执行了 1:100 的合股（multiplier 0.01，之前的股数按旧单位大 100 倍）、第 15 天真实拉升
+    # （新单位下平常的 6 倍）：基准换算成新单位后不拆；不换算时旧单位抬高中位数，会误拆。
+    close = np.full((T, 1), 5.0)
+    close[10:] *= 100
+    close[15:] *= 4
+    multiplier = np.ones((T, 1))
+    multiplier[10] = 0.01
+    volume = np.where(np.arange(T)[:, None] < 10, 100.0, 1.0)
+    volume[15] = 6.0
+    found = []
+    parts = segments(
+        close,
+        np.ones((T, 1), bool),
+        multiplier,
+        np.zeros((T, 1), bool),
+        op.US_GAP_SPLIT,
+        volume=volume,
+        quiet=(op.US_QUIET_JUMP, op.US_QUIET_VOLUME, op.US_QUIET_DAYS),
+        found=found,
+    )
+    assert len(parts) == 1 and found == []
 
 
 def test_us_verify_jump_confirmation_thresholds(tmp_path):

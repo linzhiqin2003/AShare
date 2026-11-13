@@ -1399,11 +1399,15 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
         # 真实行情（另列计数）；
         # 其余单列一项检查，必须按代码和日期逐条登记；kind 分「相邻」（中间没有交易日）与「缺口」。
         # 同一代码拆成几列时，基准按整个代码的成交序列取（与构建一致），跳变只看同一列内部。
+        # 成交股数的基准按其后执行了的拆并股（面板的 split）换算成跳变日的股数单位。
         # 另外：上跳超过 3 倍而成交股数没有放大的（疑似漏记的合股）构建应已拆列，还在列内就报错。
         amount = load("amount")
         dollar = np.where(np.isfinite(amount) & (amount > 0), amount, close * volume)
         for js in columns.values():
             seq = []
+            # 这个代码逐日执行了的拆并股（取当天所在那一列的 split），用来把基准的成交股数换算成
+            # 跳变日的单位：成交额不受拆并股影响，成交股数受。
+            code_split = np.ones(T)
             for k, j in enumerate(js):
                 stop = starts[js[k + 1]] if k + 1 < len(js) else T
                 seq += [
@@ -1411,6 +1415,8 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                     for t in np.flatnonzero(tradable[:, j])
                     if starts[j] <= t < stop
                 ]
+                part = split[starts[j] : stop, j]
+                code_split[starts[j] : stop] = np.where(np.isfinite(part), part, 1.0)
             for k in range(1, len(seq)):
                 (a, ja), (b, j) = seq[k - 1], seq[k]
                 if ja != j or executed[a + 1 : b + 1, j].any():
@@ -1421,7 +1427,14 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                     continue
                 prev = [(t, c) for t, c in seq[max(0, k - JUMP_BASE_DAYS) : k]]
                 base_amount = float(np.median([dollar[t, c] for t, c in prev]))
-                base_volume = float(np.median([volume[t, c] for t, c in prev]))
+                base_volume = float(
+                    np.median(
+                        [
+                            volume[t, c] * float(np.prod(code_split[t + 1 : b + 1]))
+                            for t, c in prev
+                        ]
+                    )
+                )
                 record = dict(
                     ts_code=symbols[j],
                     trade_date=dates[b],

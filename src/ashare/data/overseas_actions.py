@@ -321,8 +321,8 @@ def segments(
     拆开，不让引擎把这次跳变当成收益。
 
     ``quiet=(倍数, 成交量倍数, 基准天数)``：另一种情形，**疑似源因子漏记的合股**。a 到 b 之间没有执行了的
-    事件、价格上跳超过「倍数」、b 当天成交股数不超过前「基准天数」个成交日（含 a）中位数的「成交量倍数」时
-    也在 b 处拆开。只看成交股数、不看成交额：成交额 ≈ 价格 × 股数，N 合 1 的合股在交易活跃的一天
+    事件、价格上跳超过「倍数」、b 当天成交股数不超过前「基准天数」个成交日（含 a，各天股数按其后执行了的
+    拆并股换算成 b 当天的单位）中位数的「成交量倍数」时也在 b 处拆开。只看成交股数、不看成交额：成交额 ≈ 价格 × 股数，N 合 1 的合股在交易活跃的一天
     （活跃度 A）股数约为 A/N、成交额却约为 A，用成交额判断会把「活跃的一天 + 漏记的合股」当成真实拉升；
     真实的拉升成交股数是前 10 日中位数的几十到几百倍。只用到 b 当天及以前的数据。``found`` 给出时把这种
     拆开的 (列, b) 追加进去。
@@ -342,7 +342,7 @@ def segments(
                 cut = not (1 / 3 <= h <= 3)
             else:
                 cut = quiet is not None and _quiet_jump(
-                    h, window, volume, trades[:k], b, j, quiet
+                    h, window, volume, multiplier, trades[:k], b, j, quiet
                 )
                 if cut and found is not None:
                     found.append((j, b))
@@ -353,12 +353,19 @@ def segments(
     return out
 
 
-def _quiet_jump(h, window, volume, before, b, j, quiet):
-    """没有执行了的事件、价格上跳超过门槛、成交股数没有放大（疑似漏记的合股）。"""
+def _quiet_jump(h, window, volume, multiplier, before, b, j, quiet):
+    """没有执行了的事件、价格上跳超过门槛、成交股数没有放大（疑似漏记的合股）。
+
+    基准前的各天成交股数先换算成 b 当天的股数单位：乘上 t 之后到 b（含）执行了的拆并股倍数
+    （美股的 ``multiplier`` 只含执行了的拆并股）。成交额不受拆并股影响，成交股数受：窗口里执行过 1:N
+    的合股，合股前那几天按旧单位大 N 倍，不换算就会抬高中位数、把真实拉升的倍数算小；拆股反之。
+    """
     jump, max_volume, days = quiet
     if h <= jump or (window != 1).any():
         return False
-    base_volume = float(np.median(volume[before[-days:], j]))
+    prev = before[-days:]
+    units = np.array([np.prod(multiplier[t + 1 : b + 1, j]) for t in prev])
+    base_volume = float(np.median(volume[prev, j] * units))
     return bool(volume[b, j] <= max_volume * base_volume)
 
 
