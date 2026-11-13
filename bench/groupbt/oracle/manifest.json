@@ -1,0 +1,12 @@
+{
+  "revision": "86f0b74abb28c23e6ac9e449e8877b527df8aed4",
+  "files": {
+    "src/ashare/factor/groupbt/__init__.py": "a651874a12ecc1c95508afbc52968e9378057c186546089cea9d9256f1ffc2d7",
+    "src/ashare/factor/groupbt/api.py": "9329921d6d157346f7d6b0e691d4632ef1240debbb66d5838f974a3d189d8994",
+    "src/ashare/factor/groupbt/metrics.py": "f2983f5dfc6dd15193c19a066a9efd438182d3ba038b13968a1b7ec3a0a0b045",
+    "src/ashare/factor/groupbt/plot.py": "d894920eeecefe04db95863f7c25154e464f0458467d40e2708c7a73dac1a167",
+    "src/ashare/factor/groupbt/portfolio.py": "30ad4b0066f270d5125585c55a62dfc84615ebf91c7be94b3bd88e22c6a507f3",
+    "src/ashare/factor/groupbt/weights.py": "857b8f9f12429a1adae63902cd626e217dbaf540aa2abb7f94cde7dee7798346",
+    "src/ashare/factor/windows.py": "f4998154619d7c2685ca650c0e96bdcc45a6fd1a660568a3860fd71b6965b24d"
+  }
+}

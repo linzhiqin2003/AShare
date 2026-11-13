@@ -3,6 +3,11 @@
 //! one currency. No arrays, clock, I/O, Python, or exchange-specific rules.
 #![forbid(unsafe_code)]
 
+/// Shared directional permission for both share and pure-weight accounting.
+pub fn direction_allowed(increasing: bool, can_buy: bool, can_sell: bool) -> bool {
+    if increasing { can_buy } else { can_sell }
+}
+
 /// Broker commission plus directional tax and other fees.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FeeTerms {

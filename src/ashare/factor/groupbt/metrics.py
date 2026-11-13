@@ -14,9 +14,9 @@ def ts_delay(x, d):
     d = int(d)
     if d < 0:
         raise ValueError("d 必须是非负整数")
-    a = np.array(x, dtype=np.float64, copy=True)
+    a = np.asarray(x, dtype=np.float64)
     if d == 0:
-        return a
+        return a.copy()
     out = np.full_like(a, np.nan)
     if d < a.shape[0]:
         out[d:] = a[:-d]
@@ -43,6 +43,17 @@ def risk_factors(close_adj, total_mv):
 
 def risk_exposure(weights, risk, universe):
     """每行截面去均值后的风险因子按权重加总；整行无有效权重的暴露为 NaN。"""
+    # 只分时间块，完整保留每行的列序及 NumPy 归约路径。
+    if len(weights) > 32:
+        out = {k: np.empty(len(weights)) for k in risk}
+        for first in range(0, len(weights), 32):
+            s = slice(first, first + 32)
+            part = risk_exposure(
+                weights[s], {k: v[s] for k, v in risk.items()}, universe[s]
+            )
+            for k in risk:
+                out[k][s] = part[k]
+        return out
     w = np.array(weights, dtype=np.float64, copy=True)
     w = np.where(np.isnan(w), 0.0, w)
     active = np.any(w != 0.0, axis=1)
@@ -59,6 +70,40 @@ def risk_exposure(weights, risk, universe):
         exposure = (w * demeaned).sum(axis=1)
         exposure = np.where(active, exposure, np.nan)
         out[name] = exposure
+    return out
+
+
+def risk_exposure_from_prices(weights, close, total_mv, universe, first):
+    """分块算风险因子并立即归约；只保留最终日序列，不保存四张风险面板。
+
+    close 是截至止日的完整前填复权价；first 是持仓面板首行的全历史行号。
+    成交行 t 对应信号行 t-1，四个风险因子的运算及每行求和顺序均不变。
+    """
+    names = ("size", "reversal_20", "reversal_60", "momentum")
+    out = {name: np.full(len(weights), np.nan) for name in names}
+    for begin in range(1, len(weights), 32):
+        end = min(begin + 32, len(weights))
+        lo, hi = first + begin - 1, first + end - 1
+
+        def delayed(d, lo=lo, hi=hi):
+            values = np.full((hi - lo, close.shape[1]), np.nan)
+            start = max(lo, d)
+            if start < hi:
+                values[start - lo :] = close[start - d : hi - d]
+            return values
+
+        current = close[lo:hi]
+        cap = np.asarray(total_mv[lo:hi], dtype=np.float64)
+        delay20 = delayed(20)
+        risk = {
+            "size": np.log(np.where(cap > 0, cap, np.nan)),
+            "reversal_20": 1.0 - current / delay20,
+            "reversal_60": 1.0 - current / delayed(60),
+            "momentum": delay20 / delayed(240) - 1.0,
+        }
+        part = risk_exposure(weights[begin:end], risk, universe[begin - 1 : end - 1])
+        for name in names:
+            out[name][begin:end] = part[name]
     return out
 
 

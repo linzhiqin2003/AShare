@@ -30,6 +30,12 @@ def group_demean(x, groups):
         g = np.broadcast_to(g, x.shape)
     if g.shape != x.shape:
         raise ValueError("groups 形状必须是 (T, N) 或 (N,)")
+    if len(x) > 32:
+        out = np.empty_like(x)
+        for first in range(0, len(x), 32):
+            s = slice(first, first + 32)
+            out[s] = group_demean(x[s], g[s])
+        return out
     valid = (~np.isnan(x)) & (g >= 0)
     out = np.full(x.shape, np.nan)
     if not valid.any():
@@ -123,6 +129,29 @@ def build_weights(
     decay=0,
 ):
     """按固定顺序构造池内权重：全市场中性化、抽池、池内去均值、归一化、衰减。"""
+    alpha = build_alpha(
+        factor,
+        universe,
+        industry=industry,
+        logcap=logcap,
+        group_neutralize=group_neutralize,
+        n_cap_buckets=n_cap_buckets,
+        vector=vector,
+    )
+    return {"alpha": alpha, "weights": decay_linear(normalize(alpha), decay)}
+
+
+def build_alpha(
+    factor,
+    universe=None,
+    *,
+    industry=None,
+    logcap=None,
+    group_neutralize=None,
+    n_cap_buckets=10,
+    vector=None,
+):
+    """只计算分组需要的因子；不申请随后会被丢弃的归一化权重。"""
     x = np.asarray(factor, dtype=np.float64)
     if group_neutralize is None:
         pass
@@ -148,7 +177,6 @@ def build_weights(
         for y in ys:
             x = vector_neut(x, y)
 
-    x = np.where(np.asarray(universe, dtype=bool), x, np.nan)
-    alpha = cs_demean(x)
-    weights = decay_linear(normalize(alpha), decay)
-    return {"alpha": alpha, "weights": weights}
+    if universe is not None:
+        x = np.where(np.asarray(universe, dtype=bool), x, np.nan)
+    return cs_demean(x)

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 pub mod element;
 pub mod evaluation;
+pub mod numpy_exact;
 
 pub const VERSION: &str = "0.1.0";
 
