@@ -293,3 +293,84 @@ def test_nothing_is_reopened_after_a_liquidation(cash):
     assert (r.positions[4:, 1] == q).all()
     assert not [f for f in fills(r) if f[0] > 4]
     assert r.diagnostics["futures_portfolio"]["liquidation_rows"] >= 1
+
+
+@pytest.mark.parametrize("cash, left", [(4.2e4, 14.0), (4.5e4, 17.0)])
+def test_liquidation_on_an_end_row_carries_what_is_left(cash, left):
+    # 20 手，第 3 行大跌记追保；第 4 行既是强平行、又是旧合约的结束行：强平掉一部分，剩下的
+    # 在收盘按结算价了结，第 5 行接到新合约（和追保早一天发生时一样）。
+    t = 8
+    s = np.column_stack([np.r_[100.0, 100, 100, 85, 85, 85, 85, 85], np.full(t, 80.0)])
+    held = np.array([[0]] * 5 + [[1]] * 3)
+    pf = portfolio(s, [100.0, 100.0], [4, t], held, ["A"], cash=cash)
+    w = np.full((t, 1), np.nan)
+    w[0] = 20.0
+    r = pf.run(w, "lots")
+    assert [(e.day, e.qty) for e in r.liquidation_events] == [(4, left - 20)]
+    assert [(e.day, e.qty) for e in r.expiry_events] == [(4, left)]
+    assert r.positions[5:, 1].tolist() == [left] * 3
+
+
+def test_liquidation_drops_what_was_waiting_before_it():
+    # B 第 0 行给了目标，但它的合约第 5 行才有成交价（挂起）；A 第 3 行大跌、第 4 行强平：
+    # 强平之前就在等的 B 不再开仓，计入诊断。
+    t = 8
+    s = np.column_stack([np.r_[100.0, 100, 100, 85, 85, 85, 85, 85], np.full(t, 50.0)])
+    price = s.copy()
+    price[:5, 1] = np.nan
+    held = np.array([[0, 1]] * t)
+    pf = portfolio(s, [100.0, 10.0], [t, t], held, ["A", "B"], price=price, cash=4.2e4)
+    w = np.full((t, 2), np.nan)
+    w[0] = [20.0, 3.0]
+    r = pf.run(w, "lots")
+    assert r.margin_call[3] and not r.positions[:, 1].any()
+    d = r.diagnostics["futures_portfolio"]
+    assert d["liquidation_dropped_waits"] == 1 and d["liquidation_rows"] == 1
+
+
+def test_rebalance_on_an_end_row_carries_with_the_multiplier_ratio():
+    # 调仓行同时是旧合约（乘数 25）的结束行：当行成交 2 手、收盘了结，下一合约（乘数 5）按
+    # 「2 × 25 / 5」接上 10 手。
+    t = 5
+    s = np.full((t, 2), 100.0)
+    held = np.array([[0]] * 3 + [[1]] * 2)
+    pf = portfolio(s, [25.0, 5.0], [2, t], held, ["A"])
+    w = np.full((t, 1), np.nan)
+    w[2] = 2.0
+    r = pf.run(w, "lots")
+    assert fills(r)[0] == (2, 0, 2.0)
+    assert r.positions[3:, 1].tolist() == [10.0, 10.0]
+
+
+def test_landing_waits_for_the_products_order_in_flight():
+    # 第 1 行改目标为新合约 3 手（新合约第 2 行才有价，挂起）；旧合约 5 手第 1–2 行没价，平仓由引擎
+    # 顺延。落地要等这个品种在途的平仓做完（第 3 行），第 4 行再开新合约，不同时挂两张单。
+    t = 6
+    s = np.column_stack([100 + np.arange(t), 101 + np.arange(t)]).astype(float)
+    price = s.copy()
+    price[1:3, 0] = np.nan
+    price[:2, 1] = np.nan
+    held = np.array([[0]] + [[1]] * 5)
+    pf = portfolio(s, [10.0, 10.0], [t, t], held, ["A"], price=price)
+    w = np.full((t, 1), np.nan)
+    w[0] = 5.0
+    w[1] = 3.0
+    r = pf.run(w, "lots")
+    assert fills(r) == [(0, 0, 5.0), (3, 0, -5.0), (4, 1, 3.0)]
+
+
+def test_roll_respects_the_callers_order_in_flight_on_the_new_contract():
+    # 第 2 行既换月又调仓：调用方要新合约 4 手，新合约第 2–3 行没价、由引擎顺延；旧合约 5 手第 2 行
+    # 没价、平仓也顺延。第 3 行品种还拿着旧合约：不能按旧手数（5 手）「换月」盖掉调用方的 4 手。
+    t = 7
+    s = np.column_stack([100 + np.arange(t), 101 + np.arange(t)]).astype(float)
+    price = s.copy()
+    price[2, 0] = np.nan
+    price[2:4, 1] = np.nan
+    held = np.array([[0]] * 2 + [[1]] * 5)
+    pf = portfolio(s, [10.0, 10.0], [t, t], held, ["A"], price=price)
+    w = np.full((t, 1), np.nan)
+    w[0] = 5.0
+    w[2] = 4.0
+    r = pf.run(w, "lots")
+    assert fills(r) == [(0, 0, 5.0), (3, 0, -5.0), (4, 1, 4.0)]

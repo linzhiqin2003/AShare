@@ -33,12 +33,16 @@ import numpy as np
 #     row on which the driver touched k comes from the engine alone: an order
 #     pending at the start of the row, a margin-call liquidation or an end-row
 #     close.
-# I4  wait[k] is cleared by every rebalance row, on landing and on every
-#     margin-call liquidation row (the engine suspends the plan until the next
-#     rebalance, so nothing liquidated may be reopened). A leftover old
-#     contract closed on its end row after a roll sets wait[k] to the lots the
-#     roll already opened, so its landing changes nothing unless the roll was
-#     only partly filled, in which case it completes the roll.
+# I4  wait[k] is cleared by every rebalance row and on landing. On a
+#     margin-call liquidation row every wait that existed before the row is
+#     dropped (the engine suspends the plan until the next rebalance, so
+#     nothing liquidated may be reopened); what the engine closes on that same
+#     row because a contract ends is the position left after the liquidation,
+#     and that is carried like on any other end row (the same result as a call
+#     one row earlier). A leftover old contract closed on its end row after a
+#     roll sets wait[k] to the lots the roll already opened, so its landing
+#     changes nothing unless the roll was only partly filled, in which case it
+#     completes the roll.
 
 
 def simulate(pf, w, kind, trace=None):
@@ -73,6 +77,8 @@ def simulate(pf, w, kind, trace=None):
         roll_overlap_events=0,
         landings=0,
         liquidation_rows=0,
+        liquidation_dropped_waits=0,
+        liquidation_dropped_units=0.0,
     )
 
     def tradable(day, h):
@@ -107,39 +113,68 @@ def simulate(pf, w, kind, trace=None):
         # 名义 / 保证金：按落地这一行的权益和价格定手数（这一行开盘前已知，不是前视）。
         return goal_value(day, h, amount)
 
+    def remaining_at_close(day, target):
+        """追保强平行收盘前（强平之后、结束行了结之前）各列的手数。
+
+        模拟器不在行内给出这个数，所以从行首存档复制一份，同一行同样的目标推进到底，读这一行的到期
+        事件（只在「既是强平行又是结束行」时用到，很少见）。
+        """
+        from panelbt.step import Simulator
+
+        probe = Simulator.restore(
+            sim.snapshot(), book.market, book.costs, book.config, kind=sim.kind
+        )
+        probe.step(target)
+        while probe.day < t:
+            probe.step(None)
+        out = np.zeros(n)
+        for e in probe.result().expiry_events:
+            if e.day == day:
+                out[e.col] = e.qty
+        return out
+
     def submit(day, cols, vals, rebalance):
-        # 追保强平行：引擎丢弃这一行的加仓、暂停原计划直到下一次调仓；这里同样丢掉所有等待中的
-        # 开仓和接续，否则强平掉的仓位会在之后被加回去。
         call = sim.state.margin_call
+        if call:
+            # 追保强平行：引擎丢弃这一行的加仓、暂停原计划直到下一次调仓；强平之前就在等的开仓和
+            # 接续同样丢掉（计入诊断），否则强平掉的仓位会在之后被加回去。
+            for k in range(p):
+                if wait[k] is not None:
+                    stats["liquidation_dropped_waits"] += 1
+                    if wait[k][0] == "units":
+                        stats["liquidation_dropped_units"] += abs(wait[k][1])
+                    wait[k] = None
+            stats["liquidation_rows"] += 1
         ends = ending_on.get(day)
+        target = None
+        if cols is not None:
+            idx = np.asarray(cols, dtype=np.int64)
+            o = np.argsort(idx, kind="stable")
+            target = (idx[o], np.asarray(vals, dtype=float)[o])
         if ends is not None:
             q0 = np.array(sim.state.shares, dtype=float)
             kept = q0 != 0
             if cols is not None:
                 kept = np.zeros(n, dtype=bool)
-                kept[np.asarray(cols, dtype=np.int64)[np.asarray(vals) != 0]] = True
-        if cols is None:
-            sim.step(None)
-        else:
-            idx = np.asarray(cols, dtype=np.int64)
-            o = np.argsort(idx, kind="stable")
-            sim.step((idx[o], np.asarray(vals, dtype=float)[o]))
-        if call:
-            wait[:] = [None] * p
-            stats["liquidation_rows"] += 1
+                kept[target[0][target[1] != 0]] = True
+            if call and (q0[ends] != 0).any():
+                q0 = remaining_at_close(day, target)
+                kept &= q0 != 0
+        sim.step(target)
+        if ends is None:
             return
-        if ends is not None:
-            shares = sim.state.shares
-            for c in ends[kept[ends]]:
-                k = owner[c]
-                if k < 0 or shares[c] != 0:
-                    continue
-                if rebalance:
-                    wait[k] = ("goal", goal_now[k], mult[c])
-                elif wait[k] is None or wait[k][0] != "units":
-                    wait[k] = ("units", q0[c] * mult[c], None)
-                else:
-                    wait[k] = ("units", wait[k][1] + q0[c] * mult[c], None)
+        shares = sim.state.shares
+        for c in ends[kept[ends]]:
+            k = owner[c]
+            if k < 0 or shares[c] != 0:
+                continue
+            # 本行因合约结束而了结的仓位（追保行是强平后剩下的部分）接到品种的下一个合约。
+            if rebalance and not call:
+                wait[k] = ("goal", goal_now[k], mult[c])
+            elif wait[k] is None or wait[k][0] != "units":
+                wait[k] = ("units", q0[c] * mult[c], None)
+            else:
+                wait[k] = ("units", wait[k][1] + q0[c] * mult[c], None)
 
     def pending_now():
         st = sim.state
@@ -201,7 +236,7 @@ def simulate(pf, w, kind, trace=None):
                         fresh[k] = landing_value(day, h, wait[k], equity, basis)
                         wait[k] = None
                         stats["landings"] += 1
-                    elif own and h not in own and h not in pend:
+                    elif wait[k] is None and own and h not in own and h not in pend:
                         # 换月：平旧开新，保持「手数 × 乘数」，向零取整。
                         units = float(sum(shares[c] * mult[c] for c in own))
                         lots = np.trunc(units / mult[h])

@@ -156,8 +156,38 @@ MUTANTS = [
     (
         "waiting entries kept through a margin-call liquidation",
         STEP,
-        "        if call:\n            wait[:] = [None] * p",
-        "        if False:\n            wait[:] = [None] * p",
+        '                if wait[k] is not None:\n                    stats["liquidation_dropped_waits"] += 1',
+        '                if False:\n                    stats["liquidation_dropped_waits"] += 1',
+    ),
+    (
+        "end-row rebalance carry drops the multiplier reference",
+        STEP,
+        'wait[k] = ("goal", goal_now[k], mult[c])',
+        'wait[k] = ("goal", goal_now[k], None)',
+    ),
+    (
+        "landing ignores the product's orders in flight",
+        STEP,
+        "if wait[k] is not None and not pend_by.get(k):",
+        "if wait[k] is not None:",
+    ),
+    (
+        "roll ignores the caller's order in flight on the new contract",
+        STEP,
+        "elif wait[k] is None and own and h not in own and h not in pend:",
+        "elif wait[k] is None and own and h not in own:",
+    ),
+    (
+        "roll overrides a waiting caller target",
+        STEP,
+        "elif wait[k] is None and own and h not in own and h not in pend:",
+        "elif own and h not in own and h not in pend:",
+    ),
+    (
+        "liquidation on an end row drops the remainder",
+        STEP,
+        "            if call and (q0[ends] != 0).any():",
+        "            if call:\n                kept[:] = False\n            if call and (q0[ends] != 0).any():",
     ),
     (
         "personal lead ignored",
