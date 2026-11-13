@@ -7,7 +7,7 @@ Usage:
 ``--old`` names a directory holding a copy of an earlier ``panelops`` package
 (``panelops/__init__.py`` plus its compiled ``_core``); the current build is whatever
 ``import panelops`` resolves to. Each measurement is the minimum of several calls in a
-fresh single-threaded process; old and new alternate within every round.
+fresh single-threaded process; old and new alternate within every round, and the\nreport gives the minimum over rounds (median ratio alongside).
 """
 
 import argparse
@@ -119,10 +119,12 @@ def main():
                     statistics.median(pair["A"]),
                     statistics.median(pair["B"]),
                 )
+                a_min, b_min = min(pair["A"]), min(pair["B"])
                 label = "default ms, exact ms" if args.exact else "old ms, new ms"
                 print(
                     f"{op:16s} w={window:3d} {'nan5%' if sparse else 'dense'} "
-                    f"{label}: {a_med * 1e3:8.2f} {b_med * 1e3:8.2f} ratio {b_med / a_med:5.3f}",
+                    f"{label} (min): {a_min * 1e3:8.2f} {b_min * 1e3:8.2f} "
+                    f"ratio {b_min / a_min:5.3f}  (median ratio {b_med / a_med:5.3f})",
                     flush=True,
                 )
     print("load", os.getloadavg(), flush=True)

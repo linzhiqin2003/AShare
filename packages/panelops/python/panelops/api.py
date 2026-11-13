@@ -101,6 +101,8 @@ def _ts(
     exact=False,
 ):
     panel(x)
+    if type(exact) not in (bool, np.bool_):
+        raise TypeError("exact must be a bool")
     if ties not in ("latest", "earliest"):
         raise ValueError("ties must be 'latest' or 'earliest'")
     yy, mm = optional(y, x, "y"), optional(mask, x, "mask", bool)
@@ -169,8 +171,10 @@ def ts_delta(x, periods=1, *, mask=None, backend=None):
 def ts_sum(x, window=20, *, min_periods=None, mask=None, exact=False, backend=None):
     """Trailing sum; see SPEC.md for validity and degeneracy rules.
 
-    ``exact=True`` returns the correctly rounded sum of each window, so equal windows
-    (as multisets) give bit-identical results whatever came before them.
+    By default windows longer than 3 rows are summed incrementally, so the last bit can
+    depend on earlier rows. ``exact=True`` returns the correctly rounded sum of each
+    window, so equal windows (as multisets) give bit-identical results whatever came
+    before them.
 
     >>> import numpy as np, panelops as po
     >>> x = np.array([[0.1], [0.2], [0.3], [0.1]])
@@ -190,7 +194,10 @@ def ts_sum(x, window=20, *, min_periods=None, mask=None, exact=False, backend=No
 
 
 def ts_mean(x, window=20, *, min_periods=None, mask=None, exact=False, backend=None):
-    """Trailing mean; ``exact=True`` divides the correctly rounded window sum."""
+    """Trailing mean; history dependent for windows over 3 rows by default.
+
+    ``exact=True`` divides the correctly rounded window sum by the count.
+    """
     return _ts(
         "mean",
         x,
@@ -414,7 +421,10 @@ def ts_count(x, window=20, *, min_periods=None, mask=None, backend=None):
 def ts_sumif(
     x, condition, window=20, *, min_periods=None, mask=None, exact=False, backend=None
 ):
-    """Trailing sumif; ``exact=True`` as in ``ts_sum``."""
+    """Trailing sumif; history dependent for windows over 3 rows by default.
+
+    ``exact=True`` returns the correctly rounded window sum, as in ``ts_sum``.
+    """
     return _ts(
         "sumif",
         x,

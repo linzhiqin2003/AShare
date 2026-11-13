@@ -242,7 +242,10 @@ def test_exact_path_is_correctly_rounded(seed, w):
                     want = np.nan
                 assert same(got[r, k], want), (op, r, k, got[r, k], want)
                 hard += not same(default[r, k], want)
-    if w > 1:
+    if w <= SHORT:
+        # Short windows are correctly rounded on the default path as well.
+        assert hard == 0
+    else:
         # The data defeat plain float sums somewhere, so the test can tell paths apart.
         assert hard > 0
 
@@ -304,3 +307,124 @@ def test_short_default_path_survives_cancellation(op):
             exact /= len(window)
         want = float(exact)
         assert abs(got[t, 0] - want) <= 2e-10 * (1 + abs(want)), (t, got[t, 0], want)
+
+
+# The incremental path after a constant window: its state is reset to the exact sum
+# (rounded product plus its exact rounding error), never to the rounded product alone.
+
+
+@pytest.mark.parametrize("value", (1 / 3, 0.1, 2 / 3, -7.3, 123456.789))
+@pytest.mark.parametrize("w", (SHORT + 1, 5, 12, 20))
+@pytest.mark.parametrize("tail", ("zeros", "small"))
+@pytest.mark.parametrize("history", (False, True))
+def test_cells_right_after_a_constant_window(value, w, tail, history):
+    head = np.full(w + 3, value)
+    if history:
+        # Earlier rows leave a residue in the state; the constant window must drop it.
+        noise = (
+            np.random.default_rng(w).normal(0, 1, 40)
+            * 10.0 ** np.arange(-3, 5)[:, None].repeat(5, 1).ravel()
+        )
+        head = np.concatenate([noise, head])
+    after = np.zeros(w + 5) if tail == "zeros" else np.full(w + 5, 0.25)
+    x = np.concatenate([head, after])[:, None]
+    for op in ("sum", "mean"):
+        got = call(op, x, w)
+        for t in range(len(head), len(x)):
+            window = x[t - w + 1 : t + 1, 0]
+            want = rounded(window)
+            if op == "mean":
+                want /= w
+            if tail == "zeros":
+                assert got[t, 0] == want, (op, t, got[t, 0], want)
+            else:
+                # Later sums carry ordinary compensated-sum error: one ulp of the
+                # largest magnitude the window passes through.
+                scale = np.abs(window).sum() / (w if op == "mean" else 1)
+                assert abs(got[t, 0] - want) <= np.spacing(scale), (op, t, got[t, 0])
+
+
+def test_residue_does_not_reach_windows_after_an_all_zero_window():
+    x = np.zeros((40, 1))
+    x[:10, 0] = [171.2, 3.3, 0.1, 55.5, 12.25, 7.7, 0.33, 99.9, 1e3, 2.2]
+    x[30:, 0] = 0.7
+    got = po.ts_sum(x, 12)
+    for t in range(30, 40):
+        assert got[t, 0] == rounded(x[t - 11 : t + 1, 0]), t
+
+
+@pytest.mark.parametrize("w", (5, 20))
+def test_constant_detection_across_the_periodic_rebuild_row(w):
+    # The equal run must advance on the row where the state is rebuilt (t % 512 == 0):
+    # a stale run would call [5, 5, 5, 5, 7] constant.
+    x = np.full((560, 1), 3.0)
+    x[480:512, 0] = 5.0
+    x[512:, 0] = 7.0
+    got = po.ts_sum(x, w)
+    for t in range(505, 520):
+        assert got[t, 0] == rounded(x[t - w + 1 : t + 1, 0]), t
+
+
+# Short windows are correctly rounded by default.
+
+
+@pytest.mark.parametrize("seed", range(3))
+@pytest.mark.parametrize("w", (1, 2, 3))
+def test_short_default_path_is_correctly_rounded(seed, w):
+    rng = np.random.default_rng(seed)
+    h = 2.0**-53
+    x = rng.choice(
+        [1.0, -1.0, h, -h, h * h, 0.1, 0.3, -0.4, 1e16, -1e16, 3.0], (300, 6)
+    )
+    x = x * rng.choice([1.0, 1.0000001, 2.0**-1000, 2.0**1000], x.shape)
+    x[rng.random(x.shape) < 0.1] = np.nan
+    cond = (rng.random(x.shape) < 0.7).astype(float)
+    for op in SUMS:
+        got = call(op, x, w, cond=cond, mp=1)
+        for t in range(len(x)):
+            for k in range(x.shape[1]):
+                assert same(got[t, k], reference(op, x, cond, w, 1, t, k)), (op, t, k)
+    assert po.ts_sum(np.array([[1.0], [h], [-1.0]]), 3)[-1, 0] == h
+
+
+# exact=True near the top of the float range: correctly rounded, independent of order.
+
+
+def test_exact_is_correctly_rounded_when_partial_sums_overflow():
+    big = np.finfo(float).max
+    rng = np.random.default_rng(3)
+    pool = [1e308, -1e308, big, -big, 2.0**970, 1.0, -0.5, 2.0**-1074, 1e-300, 2.0**-53]
+    for _ in range(400):
+        window = rng.choice(pool, 4)
+        want = sum(map(Fraction, window), Fraction(0))
+        limit = Fraction(2) ** 1024 - Fraction(2) ** 970
+        want = (
+            np.inf
+            if want >= limit
+            else -np.inf
+            if want <= -limit
+            else float(want) + 0.0
+        )
+        for order in (window, window[::-1], rng.permutation(window)):
+            got = po.ts_sum(np.array(order)[:, None].copy(), 4, exact=True)[-1, 0]
+            assert got == want, (order, got, want)
+
+
+def test_exact_rebuilds_after_an_overflowing_window():
+    big = np.finfo(float).max
+    x = np.array([big, big, -big, 1.0, 2.0, 3.0, 4.0])[:, None]
+    got = po.ts_sum(x, 2, exact=True)
+    assert got[1, 0] == np.inf
+    assert list(got[2:, 0]) == [0.0, -big, 3.0, 5.0, 7.0]
+
+
+# Parameter types.
+
+
+@pytest.mark.parametrize("value", ("no", 0, 1, None, 1.0))
+def test_exact_accepts_only_bool(value):
+    x = np.ones((5, 1))
+    for op in SUMS:
+        with pytest.raises(TypeError, match="exact"):
+            call(op, x, 3, cond=x, exact=value)
+    assert po.ts_sum(x, 3, exact=np.bool_(True))[-1, 0] == 3.0

@@ -2,9 +2,9 @@
 
 ## 2026-11-13（panelops 滑动求和精度）
 - 退化窗口给精确值：`ts_sum`、`ts_mean`、`ts_sumif` 的窗口有效值全相等（含全为 0、`sumif` 条件全假）时，和为正确舍入的「个数 × 值」、均值恰为该值、零一律是正零；由整数的连续相等计数判定，不靠容差。修掉「整窗为 0 时残差 −6.8e-14」（开平方得 NaN、取对数得 43.7、比值得 3.75e13）。
-- 窗口不超过 3 行时 `ts_sum`、`ts_mean`、`ts_sumif` 逐窗口直接求和，结果只取决于窗口内容。
-- 新增 `exact=True`（`ts_sum`、`ts_mean`、`ts_sumif`，Rust 层 `Options::exact`，默认关闭）：每格是窗口内数值的正确舍入和，与顺序、历史无关；修掉「同一组数给出相差 1 ulp 的和」（对两个窗口和求相关时零方差格子得 ±1）。代价与窗口长度无关，见 `docs/PANELOPS_BENCHMARKS.md`。
-- 默认路径速度不退（新旧构建交替计时）。已有输出只在退化窗口及其后的若干行变化（更接近精确值）；`panelops.build_id` 随之改变，因子缓存自动重算。`ashare.factor` 的表达式规范形式不收录 `exact=False`，已有表达式的摘要不变。
+- 窗口不超过 3 行时 `ts_sum`、`ts_mean`、`ts_sumif` 逐窗口做无误差的补偿求和（证明不了精确时改算正确舍入的和），和是正确舍入的，只取决于窗口内容。更长的窗口默认仍是增量算法，最后一位依赖窗口之前的行。
+- 新增 `exact=True`（`ts_sum`、`ts_mean`、`ts_sumif`，Rust 层 `Options::exact`，默认关闭）：每格是窗口内数值的正确舍入和，与顺序、历史无关（均值是这个和除以个数）；部分和溢出时改用定点累加，结果仍正确舍入；只收 bool。修掉「同一组数给出相差 1 ulp 的和」（对两个窗口和求相关时零方差格子得 ±1）。代价与窗口长度无关，见 `docs/PANELOPS_BENCHMARKS.md`。
+- 默认路径速度（新旧构建交替计时）：w ≤ 3 比改前快，更长的窗口几何平均与改前持平，单格见 `docs/PANELOPS_BENCHMARKS.md`。已有输出在 w ≤ 3 的格子、退化窗口及其后到下一次定期重建之间的格子变化（变化的格子大多更接近精确值，个别更远，统计见 `docs/PANELOPS_BENCHMARKS.md`）；`panelops.build_id` 随之改变，因子缓存自动重算。`ashare.factor` 的表达式规范形式不收录 `exact=False`，已有表达式的摘要不变。
 
 ## 2026-11-13（事件驱动）
 - 新增 `ashare.events`（`docs/DESIGN.md` 6.6、`docs/EVENTS_NOTES.md`）：事件表与可知时点、四类内置事件提取（业绩预告、业绩快报、分红、指数成分调整）、事件转 `panelbt.Targets`、事件研究（三种异常收益口径；首选日历时间组合 Newey–West 检验，另并排朴素、按月聚类与自助法；窗口不完整与上市不足的事件剔除并计数）；两个真实例子 `python -m ashare.events.examples`，性能基线 `python -m ashare.events.bench`。错位、回测行情与费用用主干公共的 `execution_days`、`market_from_panel`。

@@ -29,7 +29,7 @@ current mask always does). No operation reads future rows.
 |---|---|
 | ts_delay(x, periods=1) | x[t-periods]; periods >= 0; insufficient history NaN |
 | ts_delta(x, periods=1) | x[t]-x[t-periods]; both observations required |
-| ts_sum / ts_mean | Sum / arithmetic mean of valid window observations; `exact=True` gives the correctly rounded window sum (see below) |
+| ts_sum / ts_mean | Sum / arithmetic mean of valid window observations; `exact=True` gives the correctly rounded window sum, and the mean divides that sum by the count (see below) |
 | ts_std | sqrt(sum((x-mean)^2)/(count-ddof)); ddof=1 default, nonnegative integer; count <= ddof gives NaN |
 | ts_min / ts_max | Minimum / maximum of valid observations |
 | ts_rank | Average one-based rank of today's value in valid window; missing today NaN; normalize=True maps (rank-1)/(count-1), singleton 0.5; default False |
@@ -78,15 +78,25 @@ every valid contribution in the window is equal (an all-zero window, or an all-f
 sumif window, included), sum and sumif return the correctly rounded `count*value`
 and mean returns that value itself, always as positive zero for zero. An
 integer run counter proves the equality, so no tolerance is involved, and the
-incremental state is reset there. ts_count is an integer sum and needs no check. Windows of at most 3 rows are summed directly
-(a plain sum in time order, falling back to a correctly rounded sum on
-cancellation), so their results depend only on the window and not on earlier rows.
-`exact=True` (ts_sum, ts_mean, ts_sumif; default False) keeps each window's sum as
-an exact floating expansion and rounds it correctly at every row: a cell then
-depends only on the multiset of valid values in its window, so equal windows give
-bit-identical results in any order and after any history; the mean is that sum
-divided by the count. It costs roughly 7-11 times the default, independent of the
-window length; partial-sum overflow falls back to the plain window sum.
+incremental state is reset there to the exact sum (the rounded product plus its
+rounding error, from a fused multiply-add). ts_count is an integer sum and needs no
+check.
+Windows of at most 3 rows are summed directly: two rows round once, three rows use
+error-free transformations and fall back to a correctly rounded sum when the
+compensated sum is not provably exact. On the default path their sums are therefore
+correctly rounded and depend only on the window.
+For windows longer than 3 rows the default path is incremental: a cell's last bits
+depend on rows before its window, so equal windows can differ in the last bit.
+`exact=True` (ts_sum, ts_mean, ts_sumif; default False) is the way to get results
+that depend only on the window: it keeps each window's sum as an exact floating
+expansion and rounds it correctly at every row, so equal windows give bit-identical
+sums in any order and after any history. The exact mean is that correctly rounded
+sum divided by the count (two roundings, not a correctly rounded mean). It costs
+roughly 8-17 times the default (about 14 ns per cell at 2 rows, 23-33 ns from 20
+rows on, as the expansion grows to 2-4 parts and then stays there); see
+docs/PANELOPS_BENCHMARKS.md. When partial sums overflow, the sum is computed in
+fixed point and is still correctly rounded (+/-inf only when the exact sum rounds
+beyond the float64 range).
 Other incremental operators (std, var, cov, corr, decay_linear, skew, kurt,
 regressions, ema) still depend on history at the last-bit level; their constant
 windows are exact as stated above, except ts_decay_linear, whose all-equal nonzero
