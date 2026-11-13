@@ -31,7 +31,7 @@ import panelops
 
 TRADING_DAYS = 252
 DEFAULT_HORIZONS = (1, 5, 20)
-VR_LAGS = 10
+VR_LAGS = 20  # 方差比的 Bartlett 阶数，取值依据见 `stats.variance_ratio`
 # 默认账户规模（元）。基准持有全部约 5000 只、每次调仓把权重拉回等权，单笔调整很小；
 # 1 亿元的账户里最低佣金 5 元会让基准每年多扣约 0.65–0.8%，零假设下多头端超额偏正。
 # 100 亿元时基准单只约 200 万元，典型的再平衡单笔在万元以上，最低佣金基本不起作用。
@@ -322,6 +322,7 @@ class FactorEvaluator:
       段内的信号日（t + lag + h < 结束行），多头端用段内每天的日收益。
     - market / costs / config：`panelbt` 的行情（或 `ashare.backtest.BacktestMarket`）、
       费用、账户；默认由面板建行情、按 A 股历史印花税和过户费算费用、整手 100 股。
+    - var_ratio_lags：超额日序列方差比（折算夏普的序列相关修正）的 Bartlett 阶数，默认 20。
     - capital：没给 config 时的初始资金，默认 `CAPITAL`（100 亿元，让最低佣金不起作用；
       成本模型本身不变）。想看自己账户规模下的结果就传小的——注意小账户下最低佣金会让
       持有全体的基准多扣成本（1 亿元时约 0.65–0.8%/年），超额偏正。
@@ -351,6 +352,7 @@ class FactorEvaluator:
         costs=None,
         config=None,
         capital=CAPITAL,
+        var_ratio_lags=VR_LAGS,
         benchmark=None,
         existing=None,
         size_buckets=3,
@@ -404,6 +406,9 @@ class FactorEvaluator:
             k: _RankIC(self.returns[self.screen_horizon], m)
             for k, m in self._size_masks.items()
         }
+        self.var_ratio_lags = int(var_ratio_lags)
+        if self.var_ratio_lags < 1:
+            raise ValueError("var_ratio_lags: 需要正整数")
         self.capital = float(capital)
         if not (self.capital > 0 and math.isfinite(self.capital)):
             raise ValueError("capital: 需要正数")
@@ -645,6 +650,7 @@ class FactorEvaluator:
                 self.benchmark[d],
                 turnover=long["turnover"][d],
                 cost=long["cost"][d],
+                lags=self.var_ratio_lags,
             )
         return out
 

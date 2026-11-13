@@ -296,6 +296,12 @@ def test_variance_ratio_reference():
         y[i] = phi * y[i - 1] + z[i]
     assert stats.variance_ratio(y, 200) == pytest.approx(3.0, rel=0.05)
     assert stats.variance_ratio([1.0, 1.0, 1.0]) == 1.0
+    # 负自相关：原始比值小于 1，默认截在 1（不拿来放松检验）
+    z = rng.standard_normal(5000)
+    neg = z[1:] - 0.8 * z[:-1]
+    assert stats.variance_ratio(neg, 20, floor=False) < 0.5
+    assert stats.variance_ratio(neg, 20) == 1.0
+    assert stats.variance_ratio(neg) == 1.0
 
 
 def test_sharpe_with_variance_ratio():

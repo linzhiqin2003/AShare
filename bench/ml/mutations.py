@@ -230,6 +230,19 @@ MUTATIONS = [
 ]
 
 
+def _merge(path, results):
+    """把这次跑过的条目并进已有结果：同名的替换，其余保留（--only 只重跑一部分时不丢留档），
+    按 MUTATIONS 的顺序排，清单里已删掉的条目不再保留。"""
+    old = {}
+    if path.exists():
+        try:
+            old = {r["name"]: r for r in json.loads(path.read_text())}
+        except (ValueError, KeyError, TypeError):
+            old = {}
+    old.update({r["name"]: r for r in results})
+    return [old[m[0]] for m in MUTATIONS if m[0] in old]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only")
@@ -289,7 +302,8 @@ def main():
         print(json.dumps(results[-1], ensure_ascii=False), flush=True)
     out = ROOT / "bench" / "ml" / "results" / "mutations.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    merged = _merge(out, results)
+    out.write_text(json.dumps(merged, ensure_ascii=False, indent=1))
     missed = [r["name"] for r in results if not r["caught"]]
     print("没抓到：", missed or "无")
     sys.exit(1 if missed else 0)

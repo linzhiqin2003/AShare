@@ -375,7 +375,10 @@ def test_long_summary_var_ratio():
     for i in range(1, len(e)):
         x[i] = 0.5 * x[i - 1] + e[i]
     lo = long_summary(x + 0.001, np.zeros_like(x))
-    assert lo["var_ratio"] == pytest.approx(stats.variance_ratio(x, 10), rel=1e-12)
+    assert lo["var_ratio"] == pytest.approx(stats.variance_ratio(x, 20), rel=1e-12)
+    assert long_summary(x, np.zeros_like(x), lags=5)["var_ratio"] == pytest.approx(
+        stats.variance_ratio(x, 5), rel=1e-12
+    )
     assert lo["var_ratio"] > 2
 
 
@@ -437,3 +440,59 @@ def test_random_scores_not_positive_with_default_costs():
         for k in range(60)
     ]
     assert np.mean(irs) < 0.25  # 60 次的标准误约 0.09
+
+
+def test_rebalance_days_follow_fixed_grid(panel):
+    """因子第 7 行才有值、每 5 天调仓：信号日是固定日表上的 10、15、20…（与基准同一天），
+    不是从第 7 行起每 5 行。"""
+    t = panel.shape[0]
+    x = np.random.default_rng(3).standard_normal(panel.shape)
+    x[:7] = np.nan
+    fe = FactorEvaluator(panel, horizons=(1,), rebalance=5, size_buckets=1)
+    days = fe.rebalance_days(fe._scores(x))
+    np.testing.assert_array_equal(days, np.arange(10, t, 5))
+    np.testing.assert_array_equal(
+        fe.targets(fe._scores(x)).days, days[days + 1 < t] + 1
+    )
+    rep = fe.evaluate(x)
+    assert rep.metric("all", "long.days") == t - 11  # 从第一次成交（第 11 行）算起
+
+
+def test_user_config_wins_over_capital(panel):
+    """传 BacktestMarket 和 config= 时用用户的账户，不被默认规模覆盖。"""
+    from panelbt.markets import Board
+
+    from ashare.backtest.market import BacktestMarket, market_inputs
+    from ashare.factor.evaluate import CAPITAL
+
+    board = np.full(len(panel.symbols), int(Board.MAIN), dtype=np.int64)
+    bm = BacktestMarket(panelbt.Market(**market_inputs(panel)), np.asarray(panel.dates),
+                        np.asarray(panel.symbols), board, panel)  # fmt: skip
+    fe = FactorEvaluator(panel, horizons=(1,), market=bm, size_buckets=1,
+                         config=bm.config(initial_cash=3e7))  # fmt: skip
+    assert fe.config.initial_cash == 3e7
+    assert (
+        FactorEvaluator(
+            panel, horizons=(1,), market=bm, size_buckets=1
+        ).config.initial_cash
+        == CAPITAL
+    )
+    assert FactorEvaluator(panel, horizons=(1,), market=bm, size_buckets=1,
+                           capital=5e8).config.initial_cash == 5e8  # fmt: skip
+
+
+def test_old_benchmark_uses_previous_day_universe(panel):
+    """旧基准（benchmark="close"）第 d 日用 d−1 日在池内的股票：股票池逐日变化时与参考一致。"""
+    rng = np.random.default_rng(11)
+    uni = rng.random(panel.shape) < 0.6
+    b = equal_weight_benchmark(panel, uni)
+    c = np.asarray(panel["close"]) * np.asarray(panel["adj_factor"])
+    for d in range(1, panel.shape[0]):
+        vals = [
+            c[d, j] / c[d - 1, j] - 1 for j in range(panel.shape[1]) if uni[d - 1, j]
+        ]
+        assert b[d] == pytest.approx(sum(vals) / len(vals), rel=1e-12)
+    fe = FactorEvaluator(
+        panel, horizons=(1,), universe=uni, benchmark="close", size_buckets=1
+    )
+    np.testing.assert_array_equal(fe.benchmark, b)

@@ -38,8 +38,8 @@
    "rate": 0.0
   },
   "psr_any": {
-   "hits": 49,
-   "rate": 0.245
+   "hits": 48,
+   "rate": 0.24
   },
   "dsr_null": {
    "hits": 0,
@@ -54,7 +54,7 @@
    "rate": 0.0
   },
   "per_candidate_ic_raw_rate": 0.0209375,
-  "per_candidate_psr_rate": 0.003625,
+  "per_candidate_psr_rate": 0.0035625,
   "mean_candidates": 80.0,
   "binomial_upper_3sd": 0.09623310502226733
  },
@@ -78,8 +78,8 @@
    "rate": 0.005
   },
   "psr_any": {
-   "hits": 120,
-   "rate": 0.6
+   "hits": 116,
+   "rate": 0.58
   },
   "dsr_null": {
    "hits": 0,
@@ -94,7 +94,7 @@
    "rate": 0.0
   },
   "per_candidate_ic_raw_rate": 0.0190625,
-  "per_candidate_psr_rate": 0.0121875,
+  "per_candidate_psr_rate": 0.012,
   "mean_candidates": 80.0,
   "binomial_upper_3sd": 0.09623310502226733
  },
@@ -151,8 +151,8 @@
     "rate": 0.9
    },
    "dsr_null": {
-    "hits": 4,
-    "rate": 0.4
+    "hits": 5,
+    "rate": 0.5
    },
    "dsr_empirical": {
     "hits": 0,
@@ -169,5 +169,5 @@
    "reps": 10
   }
  },
- "seconds": 370.3818361759186
+ "seconds": 484.9535639286041
 }

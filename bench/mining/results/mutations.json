@@ -6,7 +6,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
   ],
-  "seconds": 22.7
+  "seconds": 6.6
  },
  {
   "name": "label_one_day_late",
@@ -15,7 +15,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_ic_and_groups_match_reference"
   ],
-  "seconds": 1.8
+  "seconds": 2.0
  },
  {
   "name": "execution_lag_wrong",
@@ -24,7 +24,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
   ],
-  "seconds": 2.9
+  "seconds": 3.4
  },
  {
   "name": "segment_not_purged",
@@ -33,7 +33,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_batch_equals_single_and_segments"
   ],
-  "seconds": 2.9
+  "seconds": 3.5
  },
  {
   "name": "costs_not_charged",
@@ -42,7 +42,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
   ],
-  "seconds": 2.9
+  "seconds": 3.5
  },
  {
   "name": "duplicates_not_ledgered",
@@ -51,7 +51,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_duplicates_still_count_as_trials"
   ],
-  "seconds": 5.5
+  "seconds": 6.8
  },
  {
   "name": "screened_not_ledgered",
@@ -60,7 +60,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
   ],
-  "seconds": 5.8
+  "seconds": 6.7
  },
  {
   "name": "dsr_uses_search_count",
@@ -69,7 +69,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_dsr_uses_cumulative_trials - a..."
   ],
-  "seconds": 6.5
+  "seconds": 7.7
  },
  {
   "name": "evolution_unseeded",
@@ -78,7 +78,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_strategies_deterministic - Asse..."
   ],
-  "seconds": 4.8
+  "seconds": 5.7
  },
  {
   "name": "dedup_key_keeps_rank",
@@ -87,7 +87,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_canonical_and_dedup_key - Asser..."
   ],
-  "seconds": 4.5
+  "seconds": 5.5
  },
  {
   "name": "commutative_not_sorted",
@@ -96,7 +96,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_enumerate_is_complete_and_valid"
   ],
-  "seconds": 4.6
+  "seconds": 5.6
  },
  {
   "name": "units_not_checked",
@@ -105,7 +105,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_units - AssertionError: Regex p..."
   ],
-  "seconds": 4.6
+  "seconds": 5.3
  },
  {
   "name": "unlock_twice",
@@ -114,7 +114,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_unlock_holdout_once - Failed: ..."
   ],
-  "seconds": 6.9
+  "seconds": 8.4
  },
  {
   "name": "student_p_to_normal",
@@ -123,7 +123,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
   ],
-  "seconds": 2.9
+  "seconds": 3.4
  },
  {
   "name": "ic_t_ignores_overlap",
@@ -132,7 +132,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
   ],
-  "seconds": 2.0
+  "seconds": 2.5
  },
  {
   "name": "ic_df_not_blocks",
@@ -141,7 +141,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_overlap_bound - a..."
   ],
-  "seconds": 2.0
+  "seconds": 2.3
  },
  {
   "name": "screen_not_purged",
@@ -150,7 +150,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_valid_perturbation_keeps_train_side"
   ],
-  "seconds": 13.9
+  "seconds": 20.1
  },
  {
   "name": "bench_same_day_universe",
@@ -159,7 +159,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_benchmark_uses_signal_day_universe"
   ],
-  "seconds": 3.5
+  "seconds": 4.6
  },
  {
   "name": "bench_close_default",
@@ -168,7 +168,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
   ],
-  "seconds": 2.8
+  "seconds": 3.5
  },
  {
   "name": "capital_small_default",
@@ -177,7 +177,52 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_default_capital_makes_minimum_commission_irrelevant"
   ],
-  "seconds": 3.8
+  "seconds": 4.7
+ },
+ {
+  "name": "grid_not_aligned",
+  "desc": "因子调仓日不对齐固定日表（从第一个有值的行起每 rebalance 行）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_rebalance_days_follow_fixed_grid"
+  ],
+  "seconds": 5.2
+ },
+ {
+  "name": "capital_overrides_config",
+  "desc": "传 BacktestMarket 时忽略用户的 config=",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_user_config_wins_over_capital"
+  ],
+  "seconds": 5.1
+ },
+ {
+  "name": "q_no_floor",
+  "desc": "方差比去掉「不低于 1」的下限（负自相关放松检验）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_variance_ratio_reference - asse..."
+  ],
+  "seconds": 5.5
+ },
+ {
+  "name": "old_bench_same_day_universe",
+  "desc": "旧基准（benchmark=\"close\"）用当天的股票池",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_old_benchmark_uses_previous_day_universe"
+  ],
+  "seconds": 5.3
+ },
+ {
+  "name": "long_start_ignored",
+  "desc": "多头端指标不从第一次成交那天算起",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.4
  },
  {
   "name": "exec_not_checked",
@@ -186,7 +231,7 @@
   "by": [
    "FAILED test/factor/test_factor_evaluate.py::test_exec_price_must_match_market"
   ],
-  "seconds": 3.4
+  "seconds": 4.1
  },
  {
   "name": "evaluate_needs_ml",
@@ -195,7 +240,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_import_without_ml_group - Asse..."
   ],
-  "seconds": 15.1
+  "seconds": 16.1
  },
  {
   "name": "trial_id_no_definition",
@@ -204,7 +249,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_evaluation_definition_enters_trial_id"
   ],
-  "seconds": 13.0
+  "seconds": 16.5
  },
  {
   "name": "reuse_ignores_threshold",
@@ -213,7 +258,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_screen_threshold_is_rejudged_on_reuse"
   ],
-  "seconds": 11.5
+  "seconds": 17.7
  },
  {
   "name": "holm_not_padded",
@@ -222,7 +267,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_holm_denominator_is_ledger_total"
   ],
-  "seconds": 11.6
+  "seconds": 18.0
  },
  {
   "name": "sharpe_ignores_autocorr",
@@ -231,7 +276,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_dsr_uses_cumulative_trials - a..."
   ],
-  "seconds": 5.8
+  "seconds": 19.6
  },
  {
   "name": "evolution_same_stream",
@@ -240,7 +285,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_evolution_draws_fresh_randomness_each_generation"
   ],
-  "seconds": 5.0
+  "seconds": 5.8
  },
  {
   "name": "level_ranks_allowed",
@@ -249,7 +294,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_level_ranks_excluded_by_default"
   ],
-  "seconds": 4.8
+  "seconds": 5.6
  },
  {
   "name": "ts_corr_key_ordered",
@@ -258,7 +303,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_dedup_key_symmetry_and_nonnegative_abs"
   ],
-  "seconds": 4.8
+  "seconds": 5.8
  },
  {
   "name": "abs_kept_on_nonneg",
@@ -267,7 +312,7 @@
   "by": [
    "FAILED test/factor/test_mining_space.py::test_dedup_key_symmetry_and_nonnegative_abs"
   ],
-  "seconds": 4.8
+  "seconds": 5.8
  },
  {
   "name": "ledger_torn_line",
@@ -276,7 +321,7 @@
   "by": [
    "FAILED test/factor/test_mining_search.py::test_ledger_tolerates_torn_line - A..."
   ],
-  "seconds": 12.5
+  "seconds": 21.0
  },
  {
   "name": "holm_multiplier",
@@ -285,7 +330,7 @@
   "by": [
    "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
   ],
-  "seconds": 4.5
+  "seconds": 5.3
  },
  {
   "name": "bh_wrong_direction",
@@ -294,7 +339,7 @@
   "by": [
    "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
   ],
-  "seconds": 4.4
+  "seconds": 5.2
  },
  {
   "name": "psr_kurtosis_sign",
@@ -303,7 +348,7 @@
   "by": [
    "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
   ],
-  "seconds": 4.6
+  "seconds": 5.0
  },
  {
   "name": "emax_no_gamma",
@@ -312,6 +357,6 @@
   "by": [
    "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
   ],
-  "seconds": 4.4
+  "seconds": 5.2
  }
 ]

@@ -396,6 +396,7 @@ def mine(
         "lag": fe.lag,
         "exec": fe.exec,
         "benchmark_mode": fe.benchmark_mode,
+        "var_ratio_lags": fe.var_ratio_lags,
         "groups": fe.groups,
         "top": fe.top,
         "top_fraction": fe.top_fraction,

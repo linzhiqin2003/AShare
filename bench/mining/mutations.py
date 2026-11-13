@@ -171,6 +171,41 @@ MUTATIONS = [
         "默认账户规模退回 1 亿元（最低佣金让持有全体的基准多扣成本）",
     ),
     (
+        "grid_not_aligned",
+        "evaluate.py",
+        "return days[days >= int(rows[0])]",
+        "return np.arange(int(rows[0]), self.shape[0], self.rebalance, dtype=np.int64)",
+        "因子调仓日不对齐固定日表（从第一个有值的行起每 rebalance 行）",
+    ),
+    (
+        "capital_overrides_config",
+        "evaluate.py",
+        "config = config or market.config(initial_cash=self.capital)",
+        "config = market.config(initial_cash=self.capital)",
+        "传 BacktestMarket 时忽略用户的 config=",
+    ),
+    (
+        "q_no_floor",
+        "stats.py",
+        "return max(q, 1.0) if floor else q",
+        "return q",
+        "方差比去掉「不低于 1」的下限（负自相关放松检验）",
+    ),
+    (
+        "old_bench_same_day_universe",
+        "evaluate.py",
+        "ok = np.asarray(universe, dtype=bool)[:-1] & np.isfinite(ret)",
+        "ok = np.asarray(universe, dtype=bool)[1:] & np.isfinite(ret)",
+        '旧基准（benchmark="close"）用当天的股票池',
+    ),
+    (
+        "long_start_ignored",
+        "evaluate.py",
+        'first = a if long is None else max(a, int(long.get("start", 0)))',
+        "first = a",
+        "多头端指标不从第一次成交那天算起",
+    ),
+    (
         "exec_not_checked",
         "evaluate.py",
         "            if not np.array_equal(want, got, equal_nan=True):\n",
@@ -279,6 +314,19 @@ MUTATIONS = [
 ]
 
 
+def _merge(path, results):
+    """把这次跑过的条目并进已有结果：同名的替换，其余保留（--only 只重跑一部分时不丢留档），
+    按 MUTATIONS 的顺序排，清单里已删掉的条目不再保留。"""
+    old = {}
+    if path.exists():
+        try:
+            old = {r["name"]: r for r in json.loads(path.read_text())}
+        except (ValueError, KeyError, TypeError):
+            old = {}
+    old.update({r["name"]: r for r in results})
+    return [old[m[0]] for m in MUTATIONS if m[0] in old]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only")
@@ -322,8 +370,8 @@ def main():
         print(json.dumps(results[-1], ensure_ascii=False), flush=True)
     out = ROOT / "bench" / "mining" / "results" / "mutations.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    if not chosen:
-        out.write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    merged = _merge(out, results)
+    out.write_text(json.dumps(merged, ensure_ascii=False, indent=1))
     missed = [r["name"] for r in results if not r["caught"]]
     print("没抓到：", missed or "无")
     sys.exit(1 if missed else 0)
