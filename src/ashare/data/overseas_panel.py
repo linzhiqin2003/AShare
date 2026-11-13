@@ -30,11 +30,13 @@ import numpy as np
 import polars as pl
 
 from .overseas_actions import (
+    CHECKS,
     RULE,
     SOURCES,
     SUSPECT,
     classify_ratio,
     corporate_actions,
+    cut_recovery,
     segments,
 )
 from .overseas_fields import describe, fields_for
@@ -56,6 +58,21 @@ US_GAP_SPLIT = 60
 HK_ROUNDED = ("20200702", "20231229")
 HK_FINE_TICK_BELOW = 0.5
 US_KINDS = ("EQ", "ADR", "GDR")
+# 截断不变性：以 end=D 构建与全量构建相比，D 及以前的格逐位相同，只有下面这些字段可以不同，而且只在
+# 「这一列在 D 及以前最后一次成交之后」的格（停牌或退市后、下一个成交日还没到的那段）。test 里有测试守住。
+LOOKAHEAD_FIELDS = {
+    "action_source": "事件之后的下一个成交日在 D 之后：截到 D 时只能记 7（最后成交日之后，不执行）；"
+    "全量构建要看那天的前收或价格才定执行还是 6",
+    "action_suspect": "随 action_source（6、7）",
+    "action_check": "随 action_source：截到 D 时是 6（最后成交日之后）",
+    "split": "同上：执行与否要看下一个成交日",
+    "equivalent_cash": "同上（港股等效现金）",
+    "adj_factor": "从那个事件起累乘的倍数随执行与否变化",
+    "delist": "美股退市要知道以后再没有成交：截到 D 时最后一次成交后满 20 个交易日就记退市，"
+    "全量构建里之后又有成交则不记",
+}
+# 同一天有几条交易所序列时的优先顺序（只用当天可知的信息：序列开始日、交易所）。
+US_EXCHANGE_PRIORITY = ("NYS", "NAS", "ASE")
 
 
 def code_version():
@@ -118,9 +135,10 @@ def _choose_series(factor, allowed, diagnostics):
     """每只证券每天取一条因子序列，并算出当天的因子比 ``ratio``。
 
     美股同一代码常有几个交易所的因子序列（转板、源回填、口径不同：实测 WMT 的纽交所序列含现金分红、
-    纳斯达克序列只含拆股）。规则：只用 ``allowed`` 里的交易所；某天有几条序列时，取结束日最早的那条
-    （转板前还挂在旧交易所，源在新交易所回填的历史不用），一样早取天数多的，再一样按交易所字母序。
-    因子比只在同一条序列内部算：r = 当天值 / 该序列上一行的值，而且该序列上一行必须正好是这只证券
+    纳斯达克序列只含拆股）。规则：只用 ``allowed`` 里的交易所；某天有几条序列时，取开始日最早的那条
+    （先有的序列；开始日不晚于当天，当天可知），一样早按交易所优先顺序 ``US_EXCHANGE_PRIORITY``（纽交所、
+    纳斯达克、美交所）。不看序列在哪天结束、有多少天：那要用到以后的数据。转板时旧交易所的序列先有、
+    先用，它结束后换到新交易所的序列。因子比只在同一条序列内部算：r = 当天值 / 该序列上一行的值，而且该序列上一行必须正好是这只证券
     上一个取用的日子；换序列的那天（拼接处）记 1，不算事件。同一序列同一天多行相对差不超过 1e-6 的
     合并，其余整组丢弃并计数。港股没有交易所列，只有一条序列。
     """
@@ -156,14 +174,17 @@ def _choose_series(factor, allowed, diagnostics):
         )
     )
     span = factor.group_by("ts_code", "exchange").agg(
-        pl.col("trade_date").max().alias("_end"), pl.len().alias("_days")
+        pl.col("trade_date").min().alias("_start")
+    )
+    rank = {e: k for k, e in enumerate(US_EXCHANGE_PRIORITY)}
+    span = span.with_columns(
+        _rank=pl.col("exchange").replace_strict(
+            rank, default=len(rank), return_dtype=pl.Int64
+        )
     )
     chosen = (
         factor.join(span, on=["ts_code", "exchange"])
-        .sort(
-            ["ts_code", "trade_date", "_end", "_days", "exchange"],
-            descending=[False, False, False, True, False],
-        )
+        .sort(["ts_code", "trade_date", "_start", "_rank", "exchange"])
         .unique(keys, keep="first", maintain_order=True)
         .sort(keys)
         .with_columns(_prev_used=pl.col("trade_date").shift(1).over("ts_code"))
@@ -540,7 +561,18 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             has_quote = np.isfinite(close)
             tradable = has_quote & (volume > 0)
             ratio = _fill(chosen, _coordinates(chosen, dates, symbols), "ratio", shape)
-            actions = corporate_actions(market, ratio, close, open_, tradable)
+            pre_close = _fill(daily, coords, "pre_close", shape)
+            pre_close[pre_close <= 0] = np.nan
+            coarse = (dates >= HK_ROUNDED[0]) & (dates <= HK_ROUNDED[1])
+            actions = corporate_actions(
+                market,
+                ratio,
+                close,
+                open_,
+                tradable,
+                previous_close=pre_close if market == "hk" else None,
+                coarse=coarse,
+            )
             del ratio
             if market == "us":
                 parts = segments(
@@ -564,6 +596,14 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 code = str(symbols[j])
                 names.append(code if seen[j] == 1 else f"{code}#{seen[j]}")
             diagnostics["segments_split"] = len(parts) - len(symbols)
+            # 拆段处旧列在复牌日（新列第一行）退市，按偏悲观的清算价了结（见 cut_recovery）。
+            cuts = {}
+            for k, (j, _, end) in enumerate(parts):
+                if end < len(dates):
+                    cuts[k] = (
+                        end,
+                        cut_recovery(close, tradable, actions["multiplier"], j, end),
+                    )
 
             def seg(array, fill):
                 if not split_any:
@@ -581,7 +621,11 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 written.add(name)
 
             fills = dict(
-                split=1.0, equivalent_cash=0.0, action_source=0, action_suspect=False
+                split=1.0,
+                equivalent_cash=0.0,
+                action_source=0,
+                action_suspect=False,
+                action_check=0,
             )
             for name in (
                 "adj_factor",
@@ -590,23 +634,31 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 "equivalent_cash",
                 "action_source",
                 "action_suspect",
+                "action_check",
             ):
                 put(name, actions[name], fills.get(name, np.nan))
             source = seg(actions["action_source"], 0)
-            del actions
             diagnostics["actions"] = {str(k): int((source == k).sum()) for k in SOURCES}
+            check = seg(actions["action_check"], 0)
+            diagnostics["action_checks"] = {
+                str(k): int((check == k).sum()) for k in CHECKS
+            }
+            # 只靠当日收盘价才印证、而且执行了的事件格（日内前视）。
+            diagnostics["executed_close_only"] = int(
+                ((check == 3) & np.isin(source, (1, 2, 3, 4))).sum()
+            )
+            del check
             put("close", close)
             put("open", open_)
             put("volume", volume)
             put("has_quote", has_quote, False)
             put("tradable", tradable, False)
             del volume
-            for name, raw in (
-                ("high", "high"),
-                ("low", "low"),
-                ("previous_close", "pre_close"),
-            ):
-                values = _fill(daily, coords, raw, shape)
+            del actions
+            put("previous_close", pre_close)
+            del pre_close
+            for name in ("high", "low"):
+                values = _fill(daily, coords, name, shape)
                 values[values <= 0] = np.nan
                 put(name, values)
             amount = _fill(daily, coords, "amount", shape)
@@ -628,15 +680,22 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
             table = _column_table(
                 names, parts, symbols, dates, final_quote, source, securities
             )
+            recovery = np.full((len(dates), len(names)), np.nan)
             if market == "hk":
                 listed, delist = _listing_hk(table, dates)
             else:
-                listed, delist = _listing_us(final_trade)
+                listed, delist = _listing_us(final_trade, cuts=cuts)
+                for k, (row, value) in cuts.items():
+                    recovery[row, k] = value
+            diagnostics["cut_delists"] = len(cuts)
             diagnostics["quotes_outside_listing"] = int((final_quote & ~listed).sum())
             np.save(staging / "is_listed.npy", listed)
             np.save(staging / "delist.npy", delist)
             written |= {"is_listed", "delist"}
-            del listed, delist, final_trade, source
+            if "delist_recovery" in specs:
+                np.save(staging / "delist_recovery.npy", recovery)
+                written.add("delist_recovery")
+            del listed, delist, final_trade, source, recovery
             if market == "hk":
                 for name, array in _connect(
                     store, m, dates, symbols, diagnostics
@@ -663,6 +722,7 @@ def build_overseas(store, universe="all", start=None, end=None, *, keep=1):
                 diagnostics=diagnostics,
                 action_rule=RULE,
                 action_sources={str(k): v for k, v in SOURCES.items()},
+                action_checks={str(k): v for k, v in CHECKS.items()},
                 sample=sample if universe == "sample" else None,
             )
             table.write_parquet(staging / "securities.parquet")
@@ -702,7 +762,11 @@ def _calendar_check(frame, dates, what):
 
 
 def _us_scope(store, m, daily, chosen, diagnostics):
-    """美股面板只放三大交易所的普通股与存托凭证（见 ``us_code_kept``），行情只取有三大交易所因子的日期段。"""
+    """美股面板只放三大交易所的普通股与存托凭证（见 ``us_code_kept``）。
+
+    行情从第一次有三大交易所因子的那天起取（当天可知），之后一直取到日线自身的范围为止：不用因子序列的
+    结束日截断（那要用到以后的数据）。因子结束后的行情（多为转到场外）没有因子，不会生成公司行为。
+    """
     basic = store.read(m["securities"])
     kinds = (
         basic.sort("ts_code", "classify", nulls_last=True)
@@ -711,10 +775,7 @@ def _us_scope(store, m, daily, chosen, diagnostics):
     )
     cover = (
         chosen.group_by("ts_code")
-        .agg(
-            pl.col("trade_date").min().alias("_lo"),
-            pl.col("trade_date").max().alias("_hi"),
-        )
+        .agg(pl.col("trade_date").min().alias("_lo"))
         .join(kinds, on="ts_code", how="left")
     )
     kept = cover.filter(
@@ -731,9 +792,9 @@ def _us_scope(store, m, daily, chosen, diagnostics):
     )
     before = daily.height
     daily = (
-        daily.join(kept.select("ts_code", "_lo", "_hi"), on="ts_code")
-        .filter(pl.col("trade_date").is_between(pl.col("_lo"), pl.col("_hi")))
-        .drop("_lo", "_hi")
+        daily.join(kept.select("ts_code", "_lo"), on="ts_code")
+        .filter(pl.col("trade_date") >= pl.col("_lo"))
+        .drop("_lo")
     )
     diagnostics["us_scope"]["daily_rows_dropped"] = before - daily.height
     chosen = chosen.filter(pl.col("ts_code").is_in(kept["ts_code"].implode()))
@@ -882,12 +943,15 @@ def _listing_hk(table, dates):
     return listed, delist
 
 
-def _listing_us(tradable, grace=DELIST_GRACE):
+def _listing_us(tradable, grace=DELIST_GRACE, cuts=None):
     """美股没有可靠的上市退市日，按成交推断，只用当时可知的信息：
 
     第一次成交起为上市；连续 ``grace`` 个交易日没有成交后的下一天起不算上市（之前那 grace 天还不知道
     停多久，仍为真），再有成交又算上市。最后一次成交后满 grace 个交易日的下一天 delist 为真（之后再
     没有成交时；引擎按那时的最后价格了结）。
+
+    ``cuts``：{列: (新列开始行, 回收率)}，拆段处的旧列：从新列开始那天起不算上市（新旧两列不重叠），
+    delist 放在那一天，不再按「满 grace 天」另记。
     """
     T, N = tradable.shape
     listed = np.zeros((T, N), dtype=bool)
@@ -899,6 +963,11 @@ def _listing_us(tradable, grace=DELIST_GRACE):
             continue
         last = np.maximum.accumulate(np.where(tradable[:, j], rows, -1))
         listed[:, j] = (last >= 0) & (rows - last <= grace)
+        if cuts and j in cuts:
+            cut = cuts[j][0]
+            listed[cut:, j] = False
+            delist[cut, j] = True
+            continue
         end = trades[-1] + grace + 1
         if end < T:
             delist[end, j] = True
@@ -963,4 +1032,4 @@ def _connect(store, m, dates, symbols, diagnostics):
     )
 
 
-__all__ = ["build_overseas", "classify_ratio", "us_code_kept"]
+__all__ = ["LOOKAHEAD_FIELDS", "build_overseas", "classify_ratio", "us_code_kept"]

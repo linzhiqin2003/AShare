@@ -205,6 +205,15 @@ def test_hk_panel_events_listing_connect(tmp_path):
     assert col(p, "split", "00003.HK")[20] == pytest.approx(1.37, rel=1e-5)
     assert col(p, "equivalent_cash", "00003.HK")[20] == 0
     assert not np.asarray(p["action_suspect"]).any()
+    # 08009.HK 第 12 天 20 合 1：开盘、收盘都只有隐含价位的 0.385 倍，前收已除权 → 以前收为准执行。
+    assert col(p, "action_source", "08009.HK")[12] == 1
+    assert col(p, "split", "08009.HK")[12] == pytest.approx(0.05)
+    assert col(p, "action_check", "08009.HK")[12] == 1
+    held = 0.05 * col(p, "close", "08009.HK")[12] / col(p, "close", "08009.HK")[11]
+    assert held == pytest.approx(0.385 * 1.005, rel=5e-3)  # 价格只留 3 位小数
+    # 停牌窗口（00005.HK）复牌那天的前收已按合计比值调整：也以前收印证。
+    assert col(p, "action_check", "00005.HK")[9] == 1
+    assert col(p, "action_check", "00005.HK")[11] == 1
     sec = hk.securities().collect()
     assert set(sec["primary_symbol"]) == set(p.symbols)  # 没有人民币柜台
     assert set(sec["factor_includes_cash"]) == {"含"}
@@ -337,7 +346,7 @@ def test_random_ratio_false_split_rate():
     print("误判为拆并股的比例", rates)
 
 
-def _one(market, ratio, close, open_=None, tradable=None):
+def _one(market, ratio, close, open_=None, tradable=None, pre=None):
     ratio = np.array(ratio, dtype=float)[:, None]
     close = np.array(close, dtype=float)[:, None]
     open_ = close if open_ is None else np.array(open_, dtype=float)[:, None]
@@ -345,7 +354,9 @@ def _one(market, ratio, close, open_=None, tradable=None):
         tradable = np.isfinite(close)
     else:
         tradable = np.array(tradable, dtype=bool)[:, None]
-    out = corporate_actions(market, ratio, close, open_, tradable)
+    if pre is not None:
+        pre = np.array(pre, dtype=float)[:, None]
+    out = corporate_actions(market, ratio, close, open_, tradable, previous_close=pre)
     return {k: v[:, 0] for k, v in out.items()}
 
 
@@ -418,10 +429,108 @@ def test_unconfirmed_and_terminal_not_executed():
     assert _one("hk", [1, 1.05], [10, 16])["action_source"][1] == 6
 
 
-def reference_actions(market, ratio, close, open_, tradable):
+def test_hk_pre_close_confirms_before_prices():
+    """港股以交易所前收为第一印证（形状取自复核的一例 20 合 1，数值是同比例的合成数）。
+
+    合股当天开盘、收盘都只有隐含价位的 0.385 倍，价格印证不了；前收已按 20 合 1 调整 → 执行。
+    """
+    before = 0.1
+    after = before * 20 * 0.385
+    good = _one(
+        "hk", [1, 0.05], [before, after], [before, after], pre=[nan, before * 20]
+    )
+    assert good["action_source"].tolist() == [0, 1]
+    assert good["split"][1] == pytest.approx(0.05) and good["action_check"][1] == 1
+    # 持有者价值：股数 ×0.05、价格 ×7.7 → 0.385，照实承受下跌。
+    assert 0.05 * after / before == pytest.approx(0.385)
+    # 前收缺失时退回价格印证：这里价格印证不了 → 6。
+    gone = _one("hk", [1, 0.05], [before, after], [before, after], pre=[nan, nan])
+    assert gone["action_source"][1] == 6 and gone["action_check"][1] == 5
+    # 前收对不上（没有除权，或缺口窗口里是前一天的按盘价）也退回价格印证：价格像合股 → 执行（2）；
+    # 价格也对不上 → 6。
+    plain = _one("hk", [1, 0.05], [before, 2.0], [before, 2.0], pre=[nan, before])
+    assert plain["action_source"][1] == 1 and plain["action_check"][1] == 2
+    both = _one("hk", [1, 0.05], [before, after], [before, after], pre=[nan, before])
+    assert both["action_source"][1] == 6
+    # 前收与 1/R 相差 0.4%（在 0.5% 内）算前收印证；相差 0.8% 不算，改看价格。
+    pc = before * 20
+    near = _one("hk", [1, 0.05], [before, after], pre=[nan, pc * 1.004])
+    assert near["action_check"][1] == 1
+    far = _one("hk", [1, 0.05], [before, after], pre=[nan, pc * 1.008])
+    assert far["action_source"][1] == 6
+    # 前收按价位取整：0.5–10 港元价位 0.01，隐含前收 0.526 写成 0.53，相对差 0.76% 但在半个价位内 → 印证。
+    tick = _one("hk", [1, 2.0], [1.052, 0.2], [1.052, 0.2], pre=[nan, 0.53])
+    assert tick["action_source"][1] == 1 and tick["action_check"][1] == 1
+    # 小比值（派息）同样先看前收。
+    div = _one("hk", [1, 1.02], [10, 9.3], pre=[nan, 10 / 1.02])
+    assert div["action_source"][1] == 2 and div["action_check"][1] == 1
+
+
+def test_open_or_close_confirmation_recorded():
+    """价格印证：开盘、收盘任一个通过就算，开盘先试；只靠收盘通过的 action_check 记 3（日内前视）。"""
+    # 开盘已除权、收盘当天又涨 70%：开盘印证（2）。
+    by_open = _one("us", [1, 2], [100, 85], [100, 50])
+    assert by_open["action_source"][1] == 1 and by_open["action_check"][1] == 2
+    # 开盘沿用旧价、收盘才除权：只靠收盘（3）。
+    by_close = _one("us", [1, 2], [100, 51], [100, 100])
+    assert by_close["action_source"][1] == 1 and by_close["action_check"][1] == 3
+
+
+def test_confirmation_cap_near_and_far():
+    """R=10 的合股，持有者价值倍数 2.5：b−a ≤ 5 时上限 ln2 → 不执行；更长的窗口上限 ln3 → 执行。"""
+    h = 2.5
+    near = _one("us", [1, 1, 0.1], [10, nan, 10 / 0.1 * h], tradable=[1, 0, 1])
+    assert near["action_source"][2] == 6
+    rows = 8
+    close = [10] + [nan] * (rows - 2) + [10 / 0.1 * h]
+    ratio = [1] * (rows - 1) + [0.1]
+    far = _one("us", ratio, close, tradable=[1] + [0] * (rows - 2) + [1])
+    assert far["action_source"][-1] == 1 and far["action_check"][-1] == 2
+
+
+def test_us_small_window_share_change_needs_price():
+    """美股 R < 1.25 的窗口：整数比照常执行；非整数的股数调整价格要走一半以上，否则记 5 不执行。"""
+    flat = _one("us", [1, 0.85, 1], [35, 35.2, 35.1])
+    assert flat["action_source"][1] == 5 and flat["split"][1] == 1
+    assert flat["adj_factor"][-1] == 1
+    moved = _one("us", [1, 0.85, 1], [35, 35 / 0.85, 41])
+    assert moved["action_source"][1] == 3 and moved["split"][1] == 0.85
+    assert moved["action_check"][1] == 2
+    up = _one("us", [1, 1.15, 1], [25, 25.1, 25.1])
+    assert up["action_source"][1] == 5
+    assert _one("us", [1, 1.15, 1], [25, 25 / 1.15, 22])["action_source"][1] == 4
+    # 6 拆 5（整数比）价格不动也照常执行（小窗口只排除明显矛盾）。
+    assert _one("us", [1, 1.2, 1], [20, 20.1, 20.2])["action_source"][1] == 1
+    # 港股不受这条影响（前收印证）。
+    assert (
+        _one("hk", [1, 0.85], [35, 35.2], pre=[nan, 35 / 0.85])["action_source"][1] == 3
+    )
+
+
+def test_segments_gap_threshold():
+    """长缺口拆段（文档写的门槛是 60 个交易日）：90 天的缺口两侧价格不连续时拆开；50 天的不拆。"""
+    from ashare.data.overseas_actions import segments
+
+    T = 200
+    for gap, want in ((90, 2), (50, 1)):
+        close = np.full((T, 1), np.nan)
+        close[:10] = 5.0
+        close[10 + gap :] = 0.4  # 复牌后价格只剩 8%
+        tradable = np.isfinite(close)
+        parts = segments(
+            close, tradable, np.ones((T, 1)), np.zeros((T, 1), bool), op.US_GAP_SPLIT
+        )
+        assert len(parts) == want, gap
+
+
+REF_TICKS = [(0.25, 0.001), (0.5, 0.005), (10, 0.01), (20, 0.02), (100, 0.05)]
+
+
+def reference_actions(market, ratio, close, open_, tradable, pre=None):
     """逐格写法的参考实现（不调 corporate_actions 的任何内部函数）。"""
     T, N = ratio.shape
     src = np.zeros((T, N), dtype=int)
+    how = np.zeros((T, N), dtype=int)
     split = np.ones((T, N))
     cash = np.zeros((T, N))
     adj = np.full((T, N), np.nan)
@@ -444,30 +553,63 @@ def reference_actions(market, ratio, close, open_, tradable):
             R = math.prod(ratio[u, j] for u in group)
             if b is None:
                 for u in group:
-                    src[u, j] = 7
+                    src[u, j], how[u, j] = 7, 6
                 continue
-            after = [x for x in (open_[b, j], close[b, j]) if x > 0]
+            small = max(R, 1 / R) < 1.25
+
+            def by_price(limit, a=a, b=b, j=j, R=R):
+                # 先开盘、后收盘；只靠收盘通过的记 3。
+                for code, x in ((2, open_[b, j]), (3, close[b, j])):
+                    if x > 0 and abs(math.log(R * x / close[a, j])) <= limit:
+                        return code
+                return 0
+
+            tight = 0
             if a is None:
-                ok, ref = max(R, 1 / R) < 1.25, after[-1] * R
+                ok, ref = (4 if small else 0), close[b, j] * R
             else:
                 ref = close[a, j]
-                if max(R, 1 / R) >= 1.25:
-                    limit = min(abs(math.log(R)) / 2, math.log(2 if b - a <= 5 else 3))
+                pc = pre[b, j] if (pre is not None and market == "hk") else math.nan
+                near = False
+                if pc > 0:
+                    tick = next((k for top, k in REF_TICKS if pc <= top), 0.1)
+                    near = abs(pc * R - ref) <= max(0.005 * ref, 0.5 * tick * R) + 1e-9
+                if near:
+                    ok = 1
                 else:
-                    limit = math.log(1.5)
-                ok = any(abs(math.log(R * x / ref)) <= limit for x in after)
+                    if not small:
+                        limit = min(
+                            abs(math.log(R)) / 2, math.log(2 if b - a <= 5 else 3)
+                        )
+                    else:
+                        limit = math.log(1.5)
+                    ok = by_price(limit)
+                if market == "us" and small:
+                    tight = by_price(abs(math.log(R)) / 2)
             for u in group:
                 r = ratio[u, j]
                 if not ok:
-                    src[u, j] = 6
+                    src[u, j], how[u, j] = 6, 5
                     continue
+                how[u, j] = ok
                 kind, value = reference_classify(r)
+                needs = (
+                    market == "us"
+                    and small
+                    and (kind == 3 or (kind == 2 and r >= 1.10))
+                )
                 if kind == 1:
                     src[u, j], split[u, j] = 1, value
+                elif needs and not tight:
+                    src[u, j] = 5
                 elif kind == 3:
                     src[u, j], split[u, j] = 3, r
+                    if needs:
+                        how[u, j] = tight
                 elif r >= 1.10:
                     src[u, j], split[u, j] = 4, r
+                    if needs:
+                        how[u, j] = tight
                 elif market == "hk":
                     src[u, j], cash[u, j] = 2, ref - ref / r
                 else:
@@ -482,7 +624,13 @@ def reference_actions(market, ratio, close, open_, tradable):
                 elif src[t, j] == 2:
                     level *= ratio[t, j]
                 adj[t, j] = level
-    return dict(action_source=src, split=split, equivalent_cash=cash, adj_factor=adj)
+    return dict(
+        action_source=src,
+        split=split,
+        equivalent_cash=cash,
+        adj_factor=adj,
+        action_check=how,
+    )
 
 
 @pytest.mark.parametrize("market", ["hk", "us"])
@@ -506,8 +654,31 @@ def test_corporate_actions_match_reference(market):
     ratio = events.copy()
     ratio[0] = 1.0
     ratio[rng.random((T, N)) < 0.05] = np.nan
-    got = corporate_actions(market, ratio, close, open_, tradable)
-    want = reference_actions(market, ratio, close, open_, tradable)
+    # 港股前收：每个成交日一种，按交易所除权（上一成交日收盘 / 其间因子比之积）、没除权、缺失。
+    pre = np.full((T, N), np.nan)
+    kind = rng.integers(0, 3, (T, N))
+    for j in range(N):
+        last, product = None, 1.0
+        for t in range(T):
+            if math.isfinite(ratio[t, j]):
+                product *= ratio[t, j]
+            if not tradable[t, j]:
+                continue
+            if last is not None:
+                pre[t, j] = (
+                    close[last, j] / product
+                    if kind[t, j] == 0
+                    else close[last, j]
+                    if kind[t, j] == 1
+                    else math.nan
+                )
+            last, product = t, 1.0
+    if market == "us":
+        # 美股小窗口里的非整数股数调整：价格走一半以上才执行。
+        events[rng.random((T, N)) < 0.02] = 0.85
+        ratio = np.where(np.isfinite(ratio) & (events == 0.85), 0.85, ratio)
+    got = corporate_actions(market, ratio, close, open_, tradable, previous_close=pre)
+    want = reference_actions(market, ratio, close, open_, tradable, pre)
     for name in want:
         np.testing.assert_allclose(
             got[name].astype(float),
@@ -517,6 +688,8 @@ def test_corporate_actions_match_reference(market):
         )
     seen = set(np.unique(got["action_source"]).tolist())
     assert {1, 3, 4, 6, 7} <= seen and (2 in seen if market == "hk" else 5 in seen)
+    checks = set(np.unique(got["action_check"]).tolist())
+    assert ({1, 2, 5, 6} if market == "hk" else {2, 3, 5, 6}) <= checks
 
 
 def test_stratified_pick_deterministic():
@@ -584,6 +757,26 @@ def test_reader_slicing_fx_and_errors(tmp_path):
         ad.open(tmp_path / "root", universe="sample")
     with pytest.raises(FileNotFoundError):
         ad.open(tmp_path / "root", market="hk", universe="sample").panel("close")
+
+
+def test_reader_finds_columns_by_name_not_sort_order(tmp_path):
+    """按名字找列：列名没有排序（拆段列名带「#」，将来也可能有别的写法）时取到的仍是对的那一列。"""
+    store, _, _ = make(tmp_path)
+    meta = build_overseas(store, "all")
+    hk = ad.open(tmp_path / "root", market="hk")
+    full = hk.panel("close")
+    before = {c: np.array(col(full, "close", c)) for c in full.symbols}
+    path = store.root / "panel_all" / meta["version"]
+    order = np.arange(len(meta["symbols"]))[::-1]
+    for name in meta["fields"]:
+        array = np.load(path / f"{name}.npy")
+        np.save(path / f"{name}.npy", np.ascontiguousarray(array[:, order]))
+    meta["symbols"] = [meta["symbols"][k] for k in order]
+    (path / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False))
+    hk = ad.open(tmp_path / "root", market="hk")
+    for code in ("00001.HK", "00005.HK", "08009.HK"):
+        got = hk.panel("close", symbols=[code])["close"][:, 0]
+        np.testing.assert_array_equal(got, before[code])
 
 
 # ---------------------------------------------------------------- 校验
@@ -1020,6 +1213,57 @@ def test_verify_panel_catches_each_field(tmp_path, field):
     )
     meta = json.loads((path / "metadata.json").read_text())
     PANEL_FAULTS[field](path, meta)
+    report = verify_overseas(store, exceptions_path=exceptions_file(tmp_path))
+    panel = report["checks"]["panel"]
+    assert panel["verdict"] == "fail"
+    assert field in {e.get("field") for e in panel["examples"]}, panel["examples"]
+
+
+def _drop_real_event(path, meta):
+    """把前收印证过的 20 合 1（08009.HK 第 12 天）改成「没有印证、不执行」，并把相关字段一起改得自洽。"""
+    i, j = _cell(meta, "08009.HK", 12)
+    for name, value in (
+        ("action_source", 6),
+        ("action_suspect", True),
+        ("action_check", 5),
+        ("split", 1.0),
+    ):
+        array = np.load(path / f"{name}.npy")
+        array[i, j] = value
+        np.save(path / f"{name}.npy", array)
+    adj = np.load(path / "adj_factor.npy")
+    adj[:, j] = np.where(np.isfinite(adj[:, j]), 1.0, np.nan)
+    np.save(path / "adj_factor.npy", adj)
+
+
+HK_COMBINED_FAULTS = {
+    # 停牌缺口之后的等效现金 ×1.5（00005.HK 第 11 天，复牌前）。
+    "equivalent_cash": _tamper(
+        "equivalent_cash",
+        lambda a, m: a.__setitem__(
+            _cell(m, "00005.HK", 11), a[_cell(m, "00005.HK", 11)] * 1.5
+        ),
+    ),
+    # 真实事件被标成可疑、连 adj_factor 一起改过：只能靠前收查出来。
+    "action_source": _drop_real_event,
+    # 前收存在却记成「只靠收盘印证」。
+    "action_check": _tamper(
+        "action_check", lambda a, m: a.__setitem__(_cell(m, "00001.HK", 10), 3)
+    ),
+}
+
+
+@pytest.mark.parametrize("field", sorted(HK_COMBINED_FAULTS))
+def test_verify_panel_catches_gap_cash_and_dropped_events(tmp_path, field):
+    store, _, _ = make(tmp_path)
+    build_overseas(store, "all")
+    path = (
+        store.root
+        / "panel_all"
+        / json.loads((store.root / "panel_all/current.json").read_text())["version"]
+    )
+    meta = json.loads((path / "metadata.json").read_text())
+    HK_COMBINED_FAULTS[field](path, meta)
     report = verify_overseas(store, exceptions_path=exceptions_file(tmp_path))
     panel = report["checks"]["panel"]
     assert panel["verdict"] == "fail"

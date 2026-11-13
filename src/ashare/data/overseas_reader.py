@@ -117,7 +117,9 @@ class OverseasData:
                 raise KeyError(f"面板里没有证券 {unknown[:10]}")
             if len(set(chosen.tolist())) != len(chosen):
                 raise ValueError("symbols 不允许重复")
-            columns = np.searchsorted(codes, chosen)
+            # 按名字查列号，不依赖列名排序（拆段列名带「#」）。
+            index = {str(c): k for k, c in enumerate(codes)}
+            columns = np.array([index[str(c)] for c in chosen], dtype=np.int64)
         arrays = {}
         for name in fields:
             full = np.load(self._path / f"{name}.npy", mmap_mode="r")

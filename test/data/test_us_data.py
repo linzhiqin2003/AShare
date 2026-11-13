@@ -132,6 +132,25 @@ def test_us_panel_events_duplicates_delist(tmp_path):
     assert col(p, "has_quote", "CZO").tolist() == [i < 8 for i in range(n)]
     assert col(p, "has_quote", "CZO#2").tolist() == [i >= 8 for i in range(n)]
     assert meta["diagnostics"]["segments_split"] == 1
+    # 新旧两列不同时上市：旧列从新列开始那天起为假，并在那天退市；价格是向上跳，清算不打折。
+    assert col(p, "is_listed", "CZO").tolist() == [i < 8 for i in range(n)]
+    assert col(p, "delist", "CZO").tolist() == [i == 8 for i in range(n)]
+    assert col(p, "delist_recovery", "CZO")[8] == 1.0
+    assert np.isnan(np.delete(col(p, "delist_recovery", "CZO"), 8)).all()
+    assert not (col(p, "is_listed", "CZO") & col(p, "is_listed", "CZO#2")).any()
+    # SPX：小窗口里因子 ×0.85 而价格不动 → 不执行（5）；STK 6 拆 5 照常；SMC 1.15 价格印证 → 4。
+    assert col(p, "action_source", "SPX")[10] == 5 and col(p, "split", "SPX")[10] == 1
+    assert col(p, "action_source", "STK")[14] == 1
+    assert col(p, "split", "STK")[14] == pytest.approx(1.2)
+    assert col(p, "action_source", "SMC")[16] == 4
+    assert col(p, "action_check", "SMC")[16] == 2
+    assert (
+        col(p, "action_check", "AAA")[12] == 2
+        and col(p, "action_check", "AAA")[11] == 0
+    )
+    assert (
+        col(p, "action_check", "MRG")[11] == 6 and col(p, "action_check", "ZZZ")[6] == 5
+    )
     # TRF：转板，拼接处（第 15 天）不算事件；NYS 序列里的 2 拆 1 照常执行。
     trf = col(p, "action_source", "TRF")
     assert trf[15] == 0 and trf[20] == 1 and col(p, "split", "TRF")[20] == 2.0
@@ -156,21 +175,30 @@ def test_us_panel_events_duplicates_delist(tmp_path):
 
 
 def test_us_long_gap_split_into_segments(tmp_path, monkeypatch):
-    """GAP 第 6–20 天没有行情、复牌后价格 ×50 而因子不变：缺口长于门槛时拆成 GAP 与 GAP#2。"""
+    """GAP 第 6–20 天没有行情、复牌后价格 ×50 而因子不变：缺口长于门槛时拆成 GAP 与 GAP#2。
+
+    SHZ 同样的缺口，复牌后价格只剩 0.1 倍：旧列在复牌日退市，按复牌价清算（回收率约 0.1），不让
+    回测按停牌前的价格了结、躲过暴跌。
+    """
     from ashare.data import overseas_panel as op
 
     monkeypatch.setattr(op, "US_GAP_SPLIT", 10)
     store, _ = make(tmp_path)
     meta = build_overseas(store, "all")
     us = ad.open(tmp_path / "root", market="us")
-    p = us.panel(["has_quote", "is_listed", "delist", "close"])
+    p = us.panel(["has_quote", "is_listed", "delist", "close", "delist_recovery"])
     n = len(US_DAYS)
-    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 2
+    assert "GAP#2" in p.symbols and meta["diagnostics"]["segments_split"] == 3
     assert col(p, "has_quote", "GAP").tolist() == [i <= 5 for i in range(n)]
     assert col(p, "has_quote", "GAP#2").tolist() == [i >= 21 for i in range(n)]
-    assert col(p, "is_listed", "GAP").tolist() == [i <= 25 for i in range(n)]
-    assert col(p, "delist", "GAP").tolist() == [i == 26 for i in range(n)]
+    assert col(p, "is_listed", "GAP").tolist() == [i <= 20 for i in range(n)]
+    assert col(p, "delist", "GAP").tolist() == [i == 21 for i in range(n)]
     assert col(p, "is_listed", "GAP#2").tolist() == [i >= 21 for i in range(n)]
+    assert col(p, "delist_recovery", "GAP")[21] == 1.0
+    shz = col(p, "close", "SHZ#2")[21] / col(p, "close", "SHZ")[5]
+    assert shz == pytest.approx(0.1 * 1.005**16, rel=1e-3)
+    assert col(p, "delist", "SHZ").tolist() == [i == 21 for i in range(n)]
+    assert col(p, "delist_recovery", "SHZ")[21] == pytest.approx(shz)
     sec = us.securities().collect()
     assert sec.filter(pl.col("symbol") == "GAP#2")["segment"][0] == 2
     # 缺口不够长（默认 60 个交易日）就不拆，缺口里满 20 天后也不算上市。
@@ -257,8 +285,9 @@ def test_dedupe_merges_same_prices_and_drops_conflicts():
 
 
 def test_choose_series_rules():
-    """每天取结束日最早的那条序列，一样早取天数多的；比值只在同一序列内部算，且该序列上一行必须正好是
-    上一个取用日，否则记 1（拼接）。行的先后顺序不影响结果。"""
+    """每天取开始日最早的那条序列，一样早按交易所优先顺序（纽交所、纳斯达克、美交所）；不看序列哪天结束。
+    比值只在同一序列内部算，且该序列上一行必须正好是上一个取用日，否则记 1（拼接）。行的先后顺序不影响
+    结果；截到某一天再选，与全量选出的结果在那天及以前完全相同（不用以后的数据）。"""
     from ashare.data.overseas_panel import _choose_series
 
     rows = []
@@ -271,31 +300,38 @@ def test_choose_series_rules():
                 )
             )
 
-    # W：NYS 到第 3 天（含分红），NAS 全程只含拆股 → 1–3 取 NYS，4–5 取 NAS；第 4 天 NAS 比值 2。
+    # W：NYS 到第 3 天（含分红），NAS 全程只含拆股，同一天开始 → 1–3 取 NYS（优先），4–5 取 NAS。
     add("W", "NYS", [1, 2, 3], [0.49, 0.5, 0.5])
     add("W", "NAS", [1, 2, 3, 4, 5], [0.5, 0.5, 0.5, 1.0, 1.0])
-    # Y：两条序列结束日相同，取天数多的 NAS。
+    # Y：NAS 先开始 → 全程取 NAS（开始日比交易所优先）。
     add("Y", "NYS", [2, 3, 4], [1.0, 2.0, 2.0])
     add("Y", "NAS", [1, 2, 3, 4], [1.0, 1.0, 1.0, 1.0])
+    # S：ASE 先开始，NYS 晚一天开始 → 全程取 ASE。
+    add("S", "ASE", [1, 2, 3], [1.0, 1.0, 1.0])
+    add("S", "NYS", [2, 3], [5.0, 5.0])
     # Z：转板，NAS 第 1–2 天、NYS 第 4–5 天：第 4 天拼接，不算事件。
     add("Z", "NAS", [1, 2], [0.2, 0.2])
     add("Z", "NYS", [4, 5], [1.0, 1.0])
-    # K：NAS 第 1、3 天（结束早），NYS 全程：第 2 天取 NYS（比值按 NYS 第 1 天），第 3 天回到 NAS，
-    #    NAS 上一行（第 1 天）不是上一个取用日（第 2 天）→ 拼接记 1，不把第 2 天的变化再算一遍。
-    add("K", "NAS", [1, 3], [0.5, 1.0])
-    add("K", "NYS", [1, 2, 3, 4, 5], [0.5, 1.0, 1.0, 1.0, 1.0])
+    # K：NYS 只有第 1、3 天，NAS 全程：第 2 天只能取 NAS（比值按 NAS 第 1 天），第 3 天回到 NYS，
+    #    NYS 上一行（第 1 天）不是上一个取用日（第 2 天）→ 拼接记 1，不把第 2 天的变化再算一遍。
+    add("K", "NYS", [1, 3], [0.5, 1.0])
+    add("K", "NAS", [1, 2, 3, 4, 5], [0.5, 1.0, 1.0, 1.0, 1.0])
     # X：场外不在允许的交易所里。
     add("X", "OTC", [1, 2], [1.0, 5.0])
     add("X", "ASE", [2, 3], [1.0, 1.0])
     frame = pl.DataFrame(rows)
+    allowed = ("NYS", "NAS", "ASE")
     diag = {}
-    out = _choose_series(frame, ("NYS", "NAS", "ASE"), diag).sort(
-        "ts_code", "trade_date"
-    )
+    out = _choose_series(frame, allowed, diag).sort("ts_code", "trade_date")
     shuffled = _choose_series(
-        frame.sample(fraction=1.0, shuffle=True, seed=5), ("NYS", "NAS", "ASE"), {}
+        frame.sample(fraction=1.0, shuffle=True, seed=5), allowed, {}
     )
     assert shuffled.sort("ts_code", "trade_date").equals(out)
+    for day in ("2", "3", "4"):
+        cut = _choose_series(frame.filter(pl.col("trade_date") <= day), allowed, {})
+        assert cut.sort("ts_code", "trade_date").equals(
+            out.filter(pl.col("trade_date") <= day)
+        ), day
 
     def pick(code):
         g = out.filter(pl.col("ts_code") == code)
@@ -306,7 +342,47 @@ def test_choose_series_rules():
         pytest.approx([1, 0.5 / 0.49, 1, 2, 1]),
     )
     assert pick("Y") == (["NAS"] * 4, [1, 1, 1, 1])
+    assert pick("S") == (["ASE"] * 3, [1, 1, 1])
     assert pick("Z") == (["NAS", "NAS", "NYS", "NYS"], [1, 1, 1, 1])
-    assert pick("K") == (["NAS", "NYS", "NAS", "NYS", "NYS"], [1, 2, 1, 1, 1])
+    assert pick("K") == (["NYS", "NAS", "NYS", "NAS", "NAS"], [1, 2, 1, 1, 1])
     assert pick("X") == (["ASE", "ASE"], [1, 1])
     assert diag["factor_series_splices"] == 2  # Z 第 4 天、K 第 3 天
+
+
+def _us_panel_path(store):
+    base = store.root / "panel_all"
+    return base / json.loads((base / "current.json").read_text())["version"]
+
+
+def _set(path, field, code, day, value):
+    meta = json.loads((path / "metadata.json").read_text())
+    array = np.load(path / f"{field}.npy")
+    array[day, meta["symbols"].index(code)] = value
+    np.save(path / f"{field}.npy", array)
+
+
+US_PANEL_FAULTS = {
+    # 拆段旧列的清算回收率被改成 1（躲过暴跌）。
+    "delist_recovery": lambda p: _set(p, "delist_recovery", "SHZ", 21, 1.0),
+    # 新旧两列同一天都上市。
+    "is_listed": lambda p: _set(p, "is_listed", "CZO", 8, True),
+    # 美股记成「交易所前收印证」（美股前收不除权，不能用）。
+    "action_check": lambda p: _set(p, "action_check", "AAA", 12, 1),
+}
+
+
+@pytest.mark.parametrize("field", sorted(US_PANEL_FAULTS))
+def test_us_verify_panel_faults(tmp_path, monkeypatch, field):
+    from ashare.data import overseas_panel as op
+
+    monkeypatch.setattr(op, "US_GAP_SPLIT", 10)
+    store, _ = make(tmp_path)
+    build_overseas(store, "all")
+    exc = tmp_path / "exc.json"
+    exc.write_text(json.dumps(US_EXCEPTIONS, ensure_ascii=False))
+    clean = verify_overseas(store, exceptions_path=exc)["checks"]["panel"]
+    assert clean["verdict"] == "pass", clean["examples"]
+    US_PANEL_FAULTS[field](_us_panel_path(store))
+    panel = verify_overseas(store, exceptions_path=exc)["checks"]["panel"]
+    assert panel["verdict"] == "fail"
+    assert field in {e.get("field") for e in panel["examples"]}, panel["examples"]

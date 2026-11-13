@@ -875,19 +875,17 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             .otherwise(pl.col("close"))
         )
     elif len(f) and len(d):
-        # 美股：只取有三大交易所因子的日期段。
-        cover = f.group_by("ts_code").agg(
-            pl.col("trade_date").min().alias("_lo"),
-            pl.col("trade_date").max().alias("_hi"),
-        )
+        # 美股：从第一次有三大交易所因子的那天起（之后不按因子结束日截断）。
+        cover = f.group_by("ts_code").agg(pl.col("trade_date").min().alias("_lo"))
         d = d.join(cover, on="ts_code", how="left").filter(
-            pl.col("trade_date").is_between(pl.col("_lo"), pl.col("_hi"))
+            pl.col("trade_date") >= pl.col("_lo")
         )
 
     close = load("close")
     volume = load("volume")
     quote = load("has_quote")
     tradable = load("tradable")
+    previous = load("previous_close")
     row_of = {x: i for i, x in enumerate(dates)}
     columns = defaultdict(list)
     for j, code in enumerate(base):
@@ -930,6 +928,22 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
             problems.append(
                 dict(ts_code=symbols[j], trade_date=row["trade_date"], field="close")
             )
+        want_pre = (
+            row["pre_close"]
+            if row.get("pre_close") is not None and row["pre_close"] > 0
+            else math.nan
+        )
+        if not (
+            previous[i, j] == want_pre
+            or (math.isnan(previous[i, j]) and math.isnan(want_pre))
+        ):
+            problems.append(
+                dict(
+                    ts_code=symbols[j],
+                    trade_date=row["trade_date"],
+                    field="previous_close",
+                )
+            )
         if row["vol"] is not None and volume[i, j] != row["vol"]:
             problems.append(
                 dict(ts_code=symbols[j], trade_date=row["trade_date"], field="volume")
@@ -951,8 +965,18 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
     ratio = load("action_ratio")
     adj = load("adj_factor")
     suspect = load("action_suspect")
+    how = load("action_check")
     checked += T * N
     flag("action_source", "枚举越界", src > 7)
+    flag("action_check", "枚举越界", how > 6)
+    flag("action_check", "有事件 ⇔ 有印证方式 不成立", (how == 0) != (src == 0))
+    flag("action_check", "6 类没有记成「没有印证」", (src == 6) != (how == 5))
+    flag("action_check", "7 类没有记成「最后成交日之后」", (src == 7) != (how == 6))
+    flag(
+        "action_check",
+        "美股出现前收印证",
+        (how == 1) if market == "us" else np.zeros_like(how, bool),
+    )
     flag(
         "action_suspect",
         "不等于 action_source 为 6、7",
@@ -976,8 +1000,26 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
         flag("action_source", "4 类因子比小于 1.10", (src == 4) & ~(ratio >= 1.10))
         flag(
             "action_source",
-            "2、5 类因子比不在 (1, 1.10)",
-            np.isin(src, (2, 5)) & ~((ratio > 1) & (ratio < 1.10)),
+            "2 类因子比不在 (1, 1.10)",
+            (src == 2) & ~((ratio > 1) & (ratio < 1.10)),
+        )
+        # 5：美股现金类（1 < r < 1.10），或小窗口（窗口合计比值在 1/1.25 与 1.25 之间）里价格没印证的
+        # 非整数股数调整。
+        wide = np.argwhere((src == 5) & ~((ratio > 1) & (ratio < 1.10)))
+        bad5 = np.zeros((T, N), bool)
+        for t, j in wide:
+            trades = np.flatnonzero(tradable[:, j])
+            k = int(np.searchsorted(trades, t))
+            lo = trades[k - 1] + 1 if k > 0 else 0
+            hi = trades[k] if k < len(trades) else T - 1
+            events = [u for u in range(lo, hi + 1) if src[u, j] > 0]
+            whole = float(np.prod(ratio[events, j]))
+            bad5[t, j] = not (1 / 1.25 < whole < 1.25)
+        flag("action_source", "5 类不是现金类，所在窗口的合计比值也不小", bad5)
+        flag(
+            "action_source",
+            "港股出现 5 类",
+            (src == 5) if market == "hk" else np.zeros_like(src, bool),
         )
         flag(
             "action_source",
@@ -1069,16 +1111,57 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
                                 trade_date=dates[t],
                             )
                         )
-    # 港股等效现金：相邻两个交易日都有成交时，等效现金 = 上一日收盘 × (1 − 1/因子比)。源的前收是否与
-    # 因子一致由原始库检查 factor_vs_previous_close 核（那里登记了源自身的不一致）。
+    # 港股等效现金（含停牌缺口之后）：窗口两端口径，参考价从上一个成交日的收盘起，窗口里每个事件之后
+    # 除以它的因子比；等效现金 = 当时参考价 × (1 − 1/因子比)。
+    # 港股前收：窗口合计比值 R，前收 × R 与上一成交日收盘相对差 ≤ 0.5% 的窗口必须执行且印证方式为 1；
+    # 记 1 的，前收与 R 的差不超过 0.5% 再加一个价位；记 2、3（价格印证）的，前收必须对不上或缺失。
     if market == "hk":
         bad = np.zeros((T, N), bool)
-        for t, j in np.argwhere(src == 2):
-            if t == 0 or not (tradable[t, j] and tradable[t - 1, j]):
-                continue
-            want = close[t - 1, j] - close[t - 1, j] / ratio[t, j]
-            bad[t, j] = not abs(cash[t, j] - want) <= 1e-9 * close[t - 1, j]
-        flag("equivalent_cash", "不等于上一日收盘 ×(1 − 1/因子比)", bad)
+        pre_bad = np.zeros((T, N), bool)
+        pre_miss = np.zeros((T, N), bool)
+        for j in np.flatnonzero((src > 0).any(axis=0)):
+            trades = np.flatnonzero(tradable[:, j])
+            windows = defaultdict(list)
+            for t in np.flatnonzero(src[:, j] > 0):
+                k = int(np.searchsorted(trades, t))
+                if 0 < k < len(trades):
+                    windows[(trades[k - 1], trades[k])].append(t)
+            for (a, b), rows in windows.items():
+                R = float(np.prod(ratio[rows, j]))
+                pc = previous[b, j]
+                if math.isfinite(pc) and pc > 0:
+                    gap = abs(pc * R / close[a, j] - 1)
+                    tick = hk_tick(pc)
+                    if any(HK_ROUNDED[0] <= dates[x] <= HK_ROUNDED[1] for x in (a, b)):
+                        tick = max(tick, 0.01)  # 源日线四舍五入期，前收只到 0.01
+                    for t in rows:
+                        if how[t, j] in (2, 3) and gap <= 5e-3:
+                            pre_bad[t, j] = True
+                        if how[t, j] == 5 and gap <= 5e-3:
+                            pre_miss[t, j] = True
+                        if how[t, j] == 1 and abs(pc * R - close[a, j]) > (
+                            5e-3 * close[a, j] + tick * R
+                        ):
+                            pre_bad[t, j] = True
+                if not np.isin(src[rows, j], (1, 2, 3, 4)).all():
+                    continue
+                ref = close[a, j]
+                for t in rows:
+                    if src[t, j] == 2:
+                        want = ref - ref / ratio[t, j]
+                        bad[t, j] = not abs(cash[t, j] - want) <= 1e-9 * ref
+                    ref = ref / ratio[t, j]
+        flag(
+            "equivalent_cash",
+            "不等于窗口参考价（上一成交日收盘，逐个事件除以因子比）×(1 − 1/因子比)",
+            bad,
+        )
+        flag("action_source", "交易所前收印证了因子却没有执行", pre_miss)
+        flag(
+            "action_check",
+            "前收能印证却记成价格印证，或记成前收印证而前收对不上",
+            pre_bad,
+        )
 
     # ---- 因子账目：面板记了事件的格，因子比必须是源某条序列当天的比值；港股（只有一条序列）源因子
     #      每一次变化都必须在面板里有事件（执行或标为可疑）。
@@ -1161,14 +1244,50 @@ def _audit_panel(store, universe, daily, factor, names, securities, days, scope)
     else:
         want_l = np.zeros((T, N), bool)
         want_d = np.zeros((T, N), bool)
+        want_r = np.full((T, N), np.nan)
         # 最近 GRACE+1 个交易日（含当天）里有成交 ⇔ 上市；用累计成交次数之差写。
         counts = np.vstack([np.zeros((1, N)), np.cumsum(tradable, axis=0)])
         lag = np.maximum(np.arange(T) - GRACE, 0)
         want_l = (counts[1:] - counts[lag]) > 0
+        # 拆段：同一代码的前一列在后一列第一个行情日起不再上市，并在那天退市；清算价
+        # min(前一列最后成交日收盘, 后一列首日收盘 × 缺口里执行了的倍数)，相对引擎记账价的倍数。
+        cut_at = {}
+        for js in columns.values():
+            for old, new in zip(js[:-1], js[1:], strict=True):
+                cut_at[old] = (new, starts[new])
         for j in range(N):
             trades = np.flatnonzero(tradable[:, j])
+            if j in cut_at:
+                new, b = cut_at[j]
+                want_l[b:, j] = False
+                want_d[b, j] = True
+                if len(trades):
+                    a = trades[-1]
+                    held = float(np.prod(step[a + 1 : b, j]))
+                    whole = held * float(step[b, new])
+                    marks = np.flatnonzero(np.isfinite(close[:b, j]))
+                    last = marks[-1]
+                    mark = close[last, j] / float(np.prod(step[last + 1 : b, j]))
+                    price = min(close[a, j], whole * close[b, new]) / held
+                    want_r[b, j] = price / mark
+                continue
             if len(trades) and trades[-1] + GRACE + 1 < T:
                 want_d[trades[-1] + GRACE + 1, j] = True
+        recovery = load("delist_recovery")
+        flag(
+            "delist_recovery",
+            "与拆段清算价不符",
+            ~(
+                (np.isnan(recovery) & np.isnan(want_r))
+                | (np.abs(recovery - want_r) <= 1e-9 * np.abs(want_r))
+            ),
+        )
+        overlap = np.zeros((T, N), bool)
+        for js in columns.values():
+            if len(js) > 1:
+                total = listed[:, js].sum(axis=1)
+                overlap[:, js[0]] = total > 1
+        flag("is_listed", "同一代码的两列同时上市", overlap)
     flag("is_listed", "与上市规则不符", listed != want_l)
     flag("delist", "与退市规则不符", delist != want_d)
 
