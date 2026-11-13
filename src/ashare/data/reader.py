@@ -8,7 +8,14 @@ import numpy as np
 import polars as pl
 
 from .aliases import CanonicalStore
-from .catalog import BENCHMARKS, FIELDS, PUBLIC_TABLES, SYMBOL_ALIASES, TABLE_DATES
+from .catalog import (
+    BENCHMARKS,
+    FIELDS,
+    PUBLIC_FLOAT_COLUMNS,
+    PUBLIC_TABLES,
+    SYMBOL_ALIASES,
+    TABLE_DATES,
+)
 from .store import Store
 from .sync import compact
 
@@ -234,7 +241,13 @@ class Data:
         columns = []
         for raw, (public, scale) in PUBLIC_TABLES[name].items():
             if raw in schema:
-                expr = pl.col(raw) * scale if scale != 1 else pl.col(raw)
+                expr = pl.col(raw)
+                if schema[raw] == pl.Null:
+                    # 窗口里只有空分区时原始列是 Null 类型；定成目标类型，有值的列不动。
+                    expr = expr.cast(
+                        pl.Float64 if public in PUBLIC_FLOAT_COLUMNS else pl.String
+                    )
+                expr = expr * scale if scale != 1 else expr
                 columns.append(expr.alias(public))
         frame = frame.select(columns)
         day = TABLE_DATES.get(name, "date")

@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-11-13（指数基准）
-- 研究平台的基准从写死的主流指数名单 `catalog.BENCHMARKS`（21 个）里选，默认上证指数 `000001.SH`（`catalog.DEFAULT_BENCHMARK`）。名单里的指数与股票池指数（`INDEXES`，含义不变）一起走 `index_daily` 的逐指数逐月分区（`INDEX_DAILY_CODES`）；`Data.indexes(query)` 列出名单里本地有日线的指数，可按代码或简称搜索。`table("index_daily", symbols=…)` 只打开所请求代码、月份的分区，报告、事件研究、因子输入里取基准的地方都带上 `symbols`。第一版的全市场方案（`index_daily_all`、`index_basic`）按用户决定撤掉，真实库里的分区已删除。名单、取舍和加指数的方法见 `docs/DATA_NOTES.md`「基准指数」。
+- 研究平台的基准从写死的主流指数名单 `catalog.BENCHMARKS`（22 个，含红利低波：2016-06 至 2018-05 源里只有收盘价）里选，默认上证指数 `000001.SH`（`catalog.DEFAULT_BENCHMARK`）。名单里的指数与股票池指数（`INDEXES`，含义不变）一起走 `index_daily` 的逐指数逐月分区（`INDEX_DAILY_CODES`）；`Data.indexes(query)` 列出名单里本地有日线的指数，可按代码或简称搜索。`table("index_daily", symbols=…)` 只打开所请求代码、月份的分区，报告、事件研究、因子输入里取基准的地方都带上 `symbols`。第一版的全市场方案（`index_daily_all`、`index_basic`）按用户决定撤掉，真实库里的分区已删除。名单、取舍和加指数的方法见 `docs/DATA_NOTES.md`「基准指数」。窗口终点所在月份有测试守着；窗口里只有空分区时，公开长表的列给出正常的字符串、浮点类型（原来是 Null，成交量额是 Int32）。
 - 正式面板的 `code_version` 会变（`catalog.py`、`sync.py` 参与代码哈希）：下次 `build-panel` 整体重建一代，矩阵内容不变。
 
 ## 2026-11-13（补充算子）

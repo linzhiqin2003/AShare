@@ -248,7 +248,11 @@ def test_indexes_lists_only_benchmarks_and_searches(tmp_path):
     assert data.indexes("创业板指")["symbol"].to_list() == ["399006.SZ"]
     assert data.indexes("399006")["symbol"].to_list() == ["399006.SZ"]
     assert data.indexes("bj")["symbol"].to_list() == ["899050.BJ"]
-    assert set(data.indexes("红利")["symbol"]) == {"000922.CSI", "000015.SH"}
+    assert set(data.indexes("红利")["symbol"]) == {
+        "000922.CSI",
+        "000015.SH",
+        "H30269.CSI",
+    }
     assert data.indexes("999999").height == 0
     assert data.indexes("不存在").height == 0
 
@@ -271,3 +275,70 @@ def test_indexes_skips_benchmarks_without_local_data(tmp_path, monkeypatch):
 @pytest.mark.parametrize("code", ["000001.SH", "399001.SZ", "000688.SH", "000922.CSI"])
 def test_required_benchmarks_present(code):
     assert code in BENCHMARKS
+
+
+def test_window_end_month_is_read(tmp_path):
+    # 窗口终点所在的月份也要打开：终点落在二月第一天，二月分区必须在内。
+    store = Store(tmp_path)
+    run(store, FakeSource())
+    rows = (
+        ad.open(store.root.parent)
+        .table("index_daily", symbols=["399006.SZ"], start="20260106", end="20260202")
+        .sort("date")
+        .collect()
+    )
+    assert rows["date"].to_list() == JANUARY[1:] + ["20260202"]
+
+
+class TushareEmpty(FakeSource):
+    """像真实接口那样返回「有列名、没有行」的空表（列类型为 Null）。"""
+
+    def __init__(self, empty_code):
+        super().__init__()
+        self.empty_code = empty_code
+
+    async def fetch(self, api, params, *, fields="", page_size=None):
+        if api == "index_daily" and params["ts_code"] == self.empty_code:
+            if params["start_date"] < "20260201":
+                self.calls.append((api, dict(params)))
+                return FetchResult(
+                    pl.DataFrame([], schema=fields.split(","), orient="row"),
+                    FETCHED,
+                    1,
+                )
+        return await super().fetch(api, params, fields=fields, page_size=page_size)
+
+
+def test_empty_window_has_normal_types(tmp_path):
+    store = Store(tmp_path)
+    code = "899050.BJ"
+    run(store, TushareEmpty(code))
+    entry = store.manifest()[f"index_daily/{code}_202601"]
+    assert entry["rows"] == 0
+    data = ad.open(store.root.parent)
+    empty = data.table(
+        "index_daily", symbols=[code], start="20260105", end="20260109"
+    ).collect()
+    assert empty.height == 0
+    expected = {
+        "symbol": pl.String,
+        "date": pl.String,
+        **{
+            c: pl.Float64
+            for c in (
+                "open",
+                "high",
+                "low",
+                "close",
+                "previous_close",
+                "volume",
+                "amount",
+            )
+        },
+    }
+    assert dict(empty.schema) == expected
+    # 有数据的窗口不受影响：类型和数值照原始列换算。
+    full = data.table("index_daily", symbols=[code], start="20260201").collect()
+    assert dict(full.schema) == expected
+    assert full["volume"].to_list() == [300.0] * len(FEBRUARY)
+    assert full["amount"].to_list() == [4000.0] * len(FEBRUARY)

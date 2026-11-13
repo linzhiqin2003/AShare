@@ -66,6 +66,8 @@ BENCHMARKS = {
     "000698.SH": "科创100",
     "000922.CSI": "中证红利",
     "000015.SH": "上证红利",
+    # 2016-06 至 2018-05 源里只有收盘价；基准线只用收盘价，需要开盘价的计算要避开这段。
+    "H30269.CSI": "红利低波",
     "000919.CSI": "300价值",
     "000918.CSI": "300成长",
 }
@@ -398,6 +400,37 @@ DATASETS["index_member"] = dataset(
     known_at="旧版申万区间；仅用于 SW2021 切换前",
 )
 DAILY_DATASETS.append("index_member")
+
+# 公开长表里取浮点的统一字段，其余为字符串。只用于把「整列为空」（Null 类型）的原始列
+# 定成正常类型，例如窗口里只有空分区时；已有类型的列不动。
+PUBLIC_FLOAT_COLUMNS = frozenset(
+    {
+        "open",
+        "high",
+        "low",
+        "close",
+        "previous_close",
+        "volume",
+        "amount",
+        "contract_multiplier",
+        "settlement",
+        "previous_settlement",
+        "volume_contracts",
+        "open_interest_contracts",
+        "stock_dividend",
+        "cash_dividend",
+        "revenue",
+        "net_income",
+        "total_assets",
+        "total_liabilities",
+        "operating_cashflow",
+        "earnings_per_share",
+        "return_on_equity",
+        "net_income_low",
+        "net_income_high",
+    }
+)
+
 
 # 公开长表的统一字段；数值换算只在此声明。
 PUBLIC_TABLES = {
