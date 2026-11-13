@@ -46,6 +46,18 @@ short_budget=0)` 让多条组合共享分组标签，不展开每组完整目标
 当前 NumPy 的 float64 内核；有符号零也纳入逐位对照。`run` / `run_batch` 的
 现金和股数成交模式仍采用原有记账规则。
 
+`run_group_weights_batch(..., variants=[{"rebalance": 1}, {"rebalance": 3,
+"weighted": True, "record_holdings": True}])` 在一次释放 GIL 的调用中共享逐日
+中性化、排名、目标和价格历史，各调仓周期独立记账。其余参数与 `run_group_weights`
+相同，调仓、权重组合和持仓记录选项只放在 `variants` 中。返回顺序与输入相同，输出
+数组彼此独立；相同调仓周期还会复用共同账本。目标工作区最多保留 64 日。
+
+不同信号可通过 `exposure_cache=GroupExposureCache(logcap, universes, close,
+adjustment, signal_start)` 共享各股票池、日期、风险因子的截面均值，支持并发。
+传入连续且符合内核类型的数组，仅在一次任务内使用，整个缓存生命期禁止修改这些数组。
+复用时检查缓冲区身份、股票池顺序和历史起点。持仓加权求和仍保留全长 NumPy 求和树，
+不能去掉零项后再归约，否则会改变舍入结果。
+
 要求 NumPy >= 2.1。Rust 归约刻意复现当前 NumPy 的 float64 加法次序（八路累加、
 128 元素叶块），这属于 NumPy 内部实现，并非其兼容性承诺。导入 `panelbt` 时用
 32 条小探针与 `np.add.reduce` 逐位核对，长度覆盖 1、7、8、9、127、128、129、1000，

@@ -65,6 +65,22 @@ only NumPy. NumPy-order reductions and its installed float64 dot kernel preserve
 bitwise results, including signed zero. This research mode does not approximate
 the cash/share accounting performed by `run` or `run_batch`.
 
+`run_group_weights_batch(..., variants=[{"rebalance": 1}, {"rebalance": 3,
+"weighted": True, "record_holdings": True}])` shares daily neutralization,
+rankings, targets and price history across independent ledgers in one GIL-free
+call. Other arguments match `run_group_weights`; supply ledger options only in
+`variants`. Results follow variant order and own independent output arrays.
+Equal schedules also share common books; optional weighted books and sparse
+holdings retain their individual settings. Target buffers cover at most 64 days.
+
+For different signals, `GroupExposureCache(logcap, universes, close, adjustment,
+signal_start)` can be passed as `exposure_cache=` to either grouped entry point.
+It computes each pool/day/style mean once, even across concurrent calls. Bind it
+to contiguous arrays of the native dtypes and scope it to one task: its arrays
+must remain unchanged for the entire cache lifetime. Buffer identity, pool order
+and history alignment are checked on reuse. Weighted exposure still uses the
+full-width NumPy reduction tree; removing zero entries would change rounding.
+
 Requires NumPy >= 2.1. The Rust reduction deliberately reproduces NumPy's current
 float64 addition order (eight lanes, 128-element leaves). This is an internal
 NumPy detail, not a stable compatibility guarantee. Importing `panelbt` checks

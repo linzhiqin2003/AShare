@@ -5,7 +5,11 @@ from ._numpy_compat import check_reduction_order as _check_reduction_order
 from .api import run, run_batch
 from .futures import HedgeRoundingWarning
 from .futures_book import FuturesAccount, FuturesBook
-from .group_weights import run_group_weights
+from .group_weights import (
+    GroupExposureCache,
+    run_group_weights,
+    run_group_weights_batch,
+)
 from .models import (
     Config,
     Costs,
@@ -37,6 +41,7 @@ __all__ = [
     "FuturesBook",
     "HedgeRoundingWarning",
     "GroupWeightTargets",
+    "GroupExposureCache",
     "WeightResult",
     "Market",
     "MarginModel",
@@ -53,4 +58,5 @@ __all__ = [
     "run_weights",
     "run_weights_batch",
     "run_group_weights",
+    "run_group_weights_batch",
 ]

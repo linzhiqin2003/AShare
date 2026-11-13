@@ -83,6 +83,12 @@ def main():
             ) as client:
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
+                    if server.poll() is not None:
+                        raise RuntimeError("测量服务已退出，请检查本地日志")
+                    # 先确认本次进程成功绑定，避免端口被占用时误连用户的其他实例。
+                    if "Uvicorn running on" not in (root / f"{mode}.log").read_text():
+                        time.sleep(0.1)
+                        continue
                     try:
                         if client.get("/api/meta").status_code == 200:
                             break

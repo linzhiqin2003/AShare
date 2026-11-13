@@ -111,7 +111,7 @@ def _physical_memory():
 def parallel_budget():
     """整台机器同时计算的变体数上限，按核数和内存自动定（实测依据见 docs/PLATFORM.md）。
 
-    同时跑的变体受内存带宽限制，4 个以后不再变快；每多一个约多占 0.5–0.8 GiB。
+    变体线程与 Rust 内部线程叠加，受共享线程池调度及内存容量约束；并发上限按实测选择。
     面板本身约 3.6 GiB，所以按「物理内存 − 6 GiB，每个变体留 1.5 GiB」封顶。
     `ASHARE_PLATFORM_VARIANTS` 可手动指定。
     """

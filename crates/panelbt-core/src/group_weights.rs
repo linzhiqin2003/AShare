@@ -2,6 +2,7 @@
 use crate::weights::{Engine, Market, RowTarget};
 use panelops_core::numpy_exact::RowOps;
 use rayon::prelude::*;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 struct Clock {
@@ -46,6 +47,7 @@ impl Numbers<'_> {
     }
 }
 
+#[derive(Clone)]
 pub struct Input<'a> {
     pub rows: usize,
     pub cols: usize,
@@ -69,9 +71,22 @@ pub struct Input<'a> {
     pub profile: bool,
     pub rebalance: usize,
     pub record_holdings: bool,
+    pub exposure_cache: Option<&'a ExposureCache>,
 }
 
-#[derive(Default)]
+/// Task-scoped means: callers must bind this to the same prices, pools and window.
+pub struct ExposureCache {
+    pub means: Vec<OnceLock<[f64; 4]>>,
+}
+impl ExposureCache {
+    pub fn new(rows: usize, pools: usize) -> Self {
+        Self {
+            means: (0..rows * pools).map(|_| OnceLock::new()).collect(),
+        }
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct Holdings {
     pub days: Vec<usize>,
     pub offsets: Vec<usize>,
@@ -79,6 +94,7 @@ pub struct Holdings {
     pub weights: Vec<f64>,
 }
 
+#[derive(Clone)]
 pub struct Output {
     pub pnl: Vec<f64>,
     pub turnover: Vec<f64>,
@@ -244,7 +260,17 @@ impl Cross {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct Variant {
+    pub rebalance: usize,
+    pub weighted: bool,
+    pub record_holdings: bool,
+}
+
 struct Book {
+    variant: usize,
+    pool: usize,
+    group: usize,
     engine: Engine,
     pnl: Vec<f64>,
     turnover: Vec<f64>,
@@ -259,50 +285,138 @@ struct Book {
 /// Bounded blocks keep reductions inside a single worker, and every book in
 /// chronological order. Independent books and cross sections can run in parallel.
 pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec<Output> {
+    run_many(
+        input,
+        &[Variant {
+            rebalance: input.rebalance,
+            weighted: input.weighted,
+            record_holdings: input.record_holdings,
+        }],
+        dot,
+    )
+    .remove(0)
+}
+
+/// Share each bounded cross-section/price block, retaining independent ledgers.
+pub fn run_many(
+    input: &Input<'_>,
+    variants: &[Variant],
+    dot: impl Fn(&[f64], &[f64]) -> f64 + Sync,
+) -> Vec<Vec<Output>> {
+    let mut unique: Vec<Variant> = Vec::new();
+    let mut indices = Vec::new();
+    for config in variants {
+        let at = unique
+            .iter()
+            .position(|v| v.rebalance == config.rebalance)
+            .unwrap_or_else(|| {
+                unique.push(*config);
+                unique.len() - 1
+            });
+        unique[at].weighted |= config.weighted;
+        unique[at].record_holdings |= config.record_holdings;
+        indices.push(at);
+    }
+    let output = run_distinct(input, &unique, dot);
+    if unique.len() == variants.len() {
+        return output;
+    }
+    variants
+        .iter()
+        .zip(indices)
+        .map(|(v, i)| {
+            output[i]
+                .iter()
+                .map(|out| {
+                    let mut result = out.clone();
+                    let size = (input.groups + 1 + usize::from(v.weighted))
+                        * (input.rows - input.signal_start);
+                    result.pnl.truncate(size);
+                    result.turnover.truncate(size);
+                    if !v.record_holdings {
+                        result.holdings = None;
+                    }
+                    result
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn run_distinct(
+    input: &Input<'_>,
+    variants: &[Variant],
+    dot: impl Fn(&[f64], &[f64]) -> f64 + Sync,
+) -> Vec<Vec<Output>> {
+    let mut common = input.clone();
+    common.weighted = variants.iter().any(|v| v.weighted);
+    let input = &common;
     const BLOCK: usize = 64;
     let n = input.cols;
     let t = input.rows - input.signal_start;
-    let books = input.groups + 1 + usize::from(input.weighted);
+    let books: Vec<_> = variants
+        .iter()
+        .map(|v| input.groups + 1 + usize::from(v.weighted))
+        .collect();
     let pools = input.universes.len();
-    let mut outputs: Vec<_> = (0..pools)
-        .map(|_| Output {
-            pnl: vec![0.0; books * t],
-            turnover: vec![0.0; books * t],
-            exposure: vec![f64::NAN; 4 * t],
-            first_live: t,
-            bad_rows: Vec::new(),
-            stages: [0.0; 5],
-            holdings: None,
+    let mut outputs: Vec<Vec<_>> = books
+        .iter()
+        .map(|&books| {
+            (0..pools)
+                .map(|_| Output {
+                    pnl: vec![0.0; books * t],
+                    turnover: vec![0.0; books * t],
+                    exposure: vec![f64::NAN; 4 * t],
+                    first_live: t,
+                    bad_rows: Vec::new(),
+                    stages: [0.0; 5],
+                    holdings: None,
+                })
+                .collect()
         })
         .collect();
-    if t == 0 || pools == 0 {
+    if t == 0 || pools == 0 || variants.is_empty() {
         return outputs;
     }
     let block = BLOCK.min(t);
-    let mut states: Vec<_> = (0..pools * books)
-        .map(|b| Book {
-            engine: Engine::new(1, n),
-            pnl: vec![0.0; t],
-            turnover: vec![0.0; t],
-            held: if b % books == input.groups {
-                vec![0.0; block * n]
-            } else {
-                Vec::new()
-            },
-            active: vec![false; block],
-            first_live: t,
-            past: if input.weighted && b % books == books - 1 {
-                vec![vec![0.0; n]; input.decay.max(1).min(t)]
-            } else {
-                Vec::new()
-            },
-            decayed: vec![0.0; n],
-            holdings: (input.record_holdings && b == input.groups).then(|| Holdings {
-                offsets: vec![0],
-                ..Holdings::default()
-            }),
-        })
-        .collect();
+    let mut states = Vec::new();
+    let mut starts = Vec::new();
+    for (variant, config) in variants.iter().enumerate() {
+        starts.push(states.len());
+        for pool in 0..pools {
+            for group in 0..books[variant] {
+                states.push(Book {
+                    variant,
+                    pool,
+                    group,
+                    engine: Engine::new(1, n),
+                    pnl: vec![0.0; t],
+                    turnover: vec![0.0; t],
+                    held: if group == input.groups {
+                        vec![0.0; block * n]
+                    } else {
+                        Vec::new()
+                    },
+                    active: vec![false; block],
+                    first_live: t,
+                    past: if config.weighted && group == books[variant] - 1 {
+                        vec![vec![0.0; n]; input.decay.max(1).min(t)]
+                    } else {
+                        Vec::new()
+                    },
+                    decayed: vec![0.0; n],
+                    holdings: (config.record_holdings && pool == 0 && group == input.groups).then(
+                        || Holdings {
+                            offsets: vec![0],
+                            ..Holdings::default()
+                        },
+                    ),
+                });
+            }
+        }
+    }
+    let local_cache = (variants.len() > 1).then(|| ExposureCache::new(t, pools));
+    let exposure_cache = input.exposure_cache.or(local_cache.as_ref());
     let mut clock = Clock {
         last: input.profile.then(Instant::now),
         stages: [Duration::ZERO; 5],
@@ -369,9 +483,10 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
             }
         }
         clock.mark(1);
-        states.par_iter_mut().enumerate().for_each(|(b, state)| {
-            let pool = b / books;
-            let group = b % books;
+        states.par_iter_mut().for_each(|state| {
+            let pool = state.pool;
+            let group = state.group;
+            let config = variants[state.variant];
             for (offset, day) in signals.iter().enumerate() {
                 let s = begin + offset;
                 let execution = input.execution_start + s;
@@ -432,7 +547,7 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
                         &input.sell[at..at + n]
                     },
                 };
-                let scheduled = s.is_multiple_of(input.rebalance);
+                let scheduled = s.is_multiple_of(config.rebalance);
                 (state.pnl[dest], state.turnover[dest]) = state.engine.step(
                     0,
                     if scheduled { target } else { RowTarget::Hold },
@@ -460,54 +575,71 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
             }
         });
         clock.mark(3);
-        let exposures: Vec<_> = (0..(end - begin) * pools)
+        let exposures: Vec<_> = (0..(end - begin) * pools * variants.len())
             .into_par_iter()
             .map_init(RowOps::default, |ops, item| {
                 let pool = item % pools;
-                let offset = item / pools;
+                let variant = (item / pools) % variants.len();
+                let offset = item / (pools * variants.len());
                 let s = begin + offset;
-                let state = &states[pool * books + input.groups];
+                let state = &states[starts[variant] + pool * books[variant] + input.groups];
                 let mut out = [f64::NAN; 4];
                 if input.execution_start + s < input.rows && state.active[offset] {
                     let at = offset * n;
                     let held = &state.held[at..at + n];
                     let universe = &input.universes[pool][s * n..(s + 1) * n];
-                    out[0] = ops.exposure(held, &input.logcap[s * n..(s + 1) * n], universe);
-                    for (k, r) in risk.iter().enumerate() {
-                        out[k + 1] = ops.exposure(held, &r[at..at + n], universe);
+                    let factors = [
+                        &input.logcap[s * n..(s + 1) * n],
+                        &risk[0][at..at + n],
+                        &risk[1][at..at + n],
+                        &risk[2][at..at + n],
+                    ];
+                    if let Some(cache) = exposure_cache {
+                        let means = cache.means[s * pools + pool]
+                            .get_or_init(|| factors.map(|r| ops.exposure_mean(r, universe)));
+                        for (k, r) in factors.iter().enumerate() {
+                            out[k] = ops.exposure_centered(held, r, universe, means[k]);
+                        }
+                    } else {
+                        for (k, r) in factors.iter().enumerate() {
+                            out[k] = ops.exposure(held, r, universe);
+                        }
                     }
                 }
                 out
             })
             .collect();
-        for (offset, day) in signals.iter().enumerate() {
-            for (pool, plan) in day.iter().enumerate() {
-                if plan.bad && (begin + offset).is_multiple_of(input.rebalance) {
-                    outputs[pool]
-                        .bad_rows
-                        .push(input.signal_start + begin + offset);
-                }
-                let dest = input.execution_start + begin + offset - input.signal_start;
-                if dest < t {
-                    for (k, &value) in exposures[offset * pools + pool].iter().enumerate() {
-                        outputs[pool].exposure[k * t + dest] = value;
+        for (variant, config) in variants.iter().enumerate() {
+            for (offset, day) in signals.iter().enumerate() {
+                for (pool, plan) in day.iter().enumerate() {
+                    if plan.bad && (begin + offset).is_multiple_of(config.rebalance) {
+                        outputs[variant][pool]
+                            .bad_rows
+                            .push(input.signal_start + begin + offset);
+                    }
+                    let dest = input.execution_start + begin + offset - input.signal_start;
+                    if dest < t {
+                        let item = (offset * variants.len() + variant) * pools + pool;
+                        for (k, &value) in exposures[item].iter().enumerate() {
+                            outputs[variant][pool].exposure[k * t + dest] = value;
+                        }
                     }
                 }
             }
         }
         clock.mark(4);
     }
-    for (b, state) in states.into_iter().enumerate() {
-        let pool = b / books;
-        let group = b % books;
-        outputs[pool].pnl[group * t..(group + 1) * t].copy_from_slice(&state.pnl);
-        outputs[pool].turnover[group * t..(group + 1) * t].copy_from_slice(&state.turnover);
+    for state in states {
+        let group = state.group;
+        let out = &mut outputs[state.variant][state.pool];
+        out.pnl[group * t..(group + 1) * t].copy_from_slice(&state.pnl);
+        out.turnover[group * t..(group + 1) * t].copy_from_slice(&state.turnover);
         if group == input.groups {
-            outputs[pool].first_live = state.first_live;
-            outputs[pool].holdings = state.holdings;
+            out.first_live = state.first_live;
+            out.holdings = state.holdings;
         }
     }
-    outputs[0].stages = clock.stages.map(|v| v.as_secs_f64());
+    outputs[0][0].stages = clock.stages.map(|v| v.as_secs_f64());
     outputs
 }
 
@@ -548,6 +680,7 @@ mod tests {
             profile: false,
             rebalance: 1,
             record_holdings: false,
+            exposure_cache: None,
         };
         run(&input, |x, y| {
             crate::weights::sum(&x.iter().zip(y).map(|(a, b)| a * b).collect::<Vec<_>>())
@@ -599,5 +732,113 @@ mod tests {
             out.iter()
                 .all(|p| p.pnl.is_empty() && p.bad_rows.is_empty())
         );
+    }
+
+    #[test]
+    fn shared_targets_keep_schedules_and_pool_means_independent() {
+        let rows = 193;
+        let factor: Vec<_> = (0..rows)
+            .flat_map(|d| (0..8).map(move |j| ((j + d) % 8) as f64))
+            .collect();
+        let logcap = [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0].repeat(rows);
+        let price: Vec<_> = (0..rows)
+            .flat_map(|d| (0..8).map(move |j| 1.0 + (d * (j + 1)) as f64 / 1000.0))
+            .collect();
+        let adj = vec![1.0; rows * 8];
+        let pool = vec![true; rows * 8];
+        let sub = [true, true, true, true, false, false, false, false].repeat(rows);
+        let buy: Vec<_> = (0..rows * 8).map(|i| i % 11 != 0).collect();
+        let sell: Vec<_> = (0..rows * 8).map(|i| i % 13 != 0).collect();
+        let cache = ExposureCache::new(rows, 2);
+        let mut input = Input {
+            rows,
+            cols: 8,
+            signal_start: 0,
+            execution_start: 1,
+            factor: &factor,
+            logcap: &logcap,
+            industry: Labels::I64(&[]),
+            industry_zero_missing: false,
+            vectors: vec![],
+            universes: vec![&pool, &sub],
+            price: Numbers::F64(&price),
+            close: Numbers::F64(&price),
+            adjustment: Numbers::F64(&adj),
+            buy: &buy,
+            sell: &sell,
+            groups: 2,
+            neutralize: 0,
+            decay: 3,
+            weighted: false,
+            profile: false,
+            rebalance: 1,
+            record_holdings: true,
+            exposure_cache: Some(&cache),
+        };
+        let variants = [
+            Variant {
+                rebalance: 3,
+                weighted: true,
+                record_holdings: false,
+            },
+            Variant {
+                rebalance: 1,
+                weighted: false,
+                record_holdings: true,
+            },
+            Variant {
+                rebalance: 3,
+                weighted: false,
+                record_holdings: true,
+            },
+            Variant {
+                rebalance: 65,
+                weighted: true,
+                record_holdings: true,
+            },
+        ];
+        let dot = |x: &[f64], y: &[f64]| {
+            crate::weights::sum(&x.iter().zip(y).map(|(a, b)| a * b).collect::<Vec<_>>())
+        };
+        let output = run_many(&input, &variants, dot);
+        assert_eq!(cache.means[0].get().unwrap()[0], 4.5);
+        assert_eq!(cache.means[1].get().unwrap()[0], 6.5);
+        input.exposure_cache = None;
+        for (variant, result) in variants.iter().zip(output) {
+            input.rebalance = variant.rebalance;
+            input.weighted = variant.weighted;
+            input.record_holdings = variant.record_holdings;
+            for (expected, actual) in run(&input, dot).into_iter().zip(result) {
+                for (a, b) in [
+                    (&expected.pnl, &actual.pnl),
+                    (&expected.turnover, &actual.turnover),
+                    (&expected.exposure, &actual.exposure),
+                ] {
+                    assert_eq!(
+                        a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        b.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                    );
+                }
+                assert_eq!(expected.bad_rows, actual.bad_rows);
+                assert_eq!(expected.first_live, actual.first_live);
+                match (expected.holdings, actual.holdings) {
+                    (Some(a), Some(b)) => {
+                        assert_eq!(
+                            a.days,
+                            (0..rows - 1)
+                                .step_by(variant.rebalance)
+                                .map(|d| d + 1)
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(a.days, b.days);
+                        assert_eq!(a.offsets, b.offsets);
+                        assert_eq!(a.columns, b.columns);
+                        assert_eq!(a.weights, b.weights);
+                    }
+                    (None, None) => (),
+                    _ => panic!("holdings flag leaked between variants"),
+                }
+            }
+        }
     }
 }

@@ -78,6 +78,27 @@ mod tests {
             -2.0
         );
     }
+
+    #[test]
+    fn shared_means_retain_full_width_reduction() {
+        let mut ops = RowOps::default();
+        let pool = [true; 8];
+        let risk = [1e16, 1.0, -1e16, 1.0, 0.0, -0.0, f64::NAN, -0.0];
+        let held = [1.0, 1.0, 1.0, 1.0, 0.0, -0.0, 0.0, -0.0];
+        let mean = ops.exposure_mean(&risk, &pool);
+        assert_eq!(mean.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(
+            ops.exposure_centered(&held, &risk, &pool, mean).to_bits(),
+            0.0_f64.to_bits()
+        );
+        for weights in [held, [-0.0; 8], [0.0; 8], [f64::NAN; 8]] {
+            assert_eq!(
+                ops.exposure(&weights, &risk, &pool).to_bits(),
+                ops.exposure_centered(&weights, &risk, &pool, mean)
+                    .to_bits()
+            );
+        }
+    }
 }
 
 /// Reusable scratch for exact, single-row NumPy-compatible operations.
@@ -273,6 +294,11 @@ impl RowOps {
     }
 
     pub fn exposure(&mut self, held: &[f64], risk: &[f64], universe: &[bool]) -> f64 {
+        let mean = self.exposure_mean(risk, universe);
+        self.exposure_centered(held, risk, universe, mean)
+    }
+
+    pub fn exposure_mean(&mut self, risk: &[f64], universe: &[bool]) -> f64 {
         self.temp.clear();
         let mut count = 0;
         for (&v, &u) in risk.iter().zip(universe) {
@@ -283,11 +309,21 @@ impl RowOps {
                 0.0
             });
         }
-        let mean = if count > 0 {
+        if count > 0 {
             sum(&self.temp) / count as f64
         } else {
             0.0
-        };
+        }
+    }
+
+    pub fn exposure_centered(
+        &mut self,
+        held: &[f64],
+        risk: &[f64],
+        universe: &[bool],
+        mean: f64,
+    ) -> f64 {
+        self.temp.resize(risk.len(), 0.0);
         for (j, v) in self.temp.iter_mut().enumerate() {
             *v = held[j]
                 * if universe[j] && risk[j].is_finite() {

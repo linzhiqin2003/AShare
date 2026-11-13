@@ -62,6 +62,13 @@ def evaluate_signal(expression, panel):
     return alpha
 
 
+def evaluate_signals(expressions, panel):
+    """复用已有求值器的公共子式；各窗口保留原算子和 exact 参数。"""
+    return Evaluator().evaluate_many(
+        expressions, CutPanel(panel, groupbt.VALIDATION[1])
+    )
+
+
 _IC_LOCK = threading.Lock()
 
 
@@ -105,6 +112,7 @@ def run_variant(
     signal=None,
     timings=None,
     diagnostics=None,
+    backtests=None,
 ):
     """唯一计算入口，窗口为代码常量，调用者没有窗口参数。"""
     arrays, summaries = {}, {}
@@ -119,8 +127,12 @@ def run_variant(
         if part == "validation":
             options["sub_universes"] = False
         started = time.perf_counter()
-        result = groupbt.run(alpha, cut, **options, window=window, record_holdings=True)
-        if timings is not None:
+        result = (
+            groupbt.run(alpha, cut, **options, window=window, record_holdings=True)
+            if backtests is None
+            else backtests[part]
+        )
+        if timings is not None and backtests is None:
             timings[f"{part}.backtest"] = time.perf_counter() - started
         started = time.perf_counter()
         summary = stats(result)
