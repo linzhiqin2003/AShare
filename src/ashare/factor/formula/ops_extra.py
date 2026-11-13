@@ -11,8 +11,16 @@
 ``ts_rank`` / ``ts_quantile`` / ``ts_decay_linear`` / ``scale`` 的原语义不改，避免
 破坏现有测试、缓存键和基准。``ts_range`` 是本模块新增的算子（``ts_max - ts_min``）。
 
-本文件未在本地构建验证（开发机没有 Rust 工具链，``make dev`` 不可用）；提交前请在
-项目环境跑 ``make check``。
+口径（沿用内核，逐个与独立写法对过数，见 ``test_ops_extra_numeric.py``）：
+
+- 时序窗口默认要求窗口内没有缺失，否则当天为 NaN；
+- 时序标准差（``ts_std_dev``、``ts_zscore``、``ts_ir``）除以 n − 1；截面标准差
+  （``zscore``、``normalize(use_std=True)``）除以 n；
+- 偏度、峰度是总体口径（中心矩除以 n），峰度已减 3；
+- ``ts_arg_max`` / ``ts_arg_min`` 是「距今天数」，今天为 0；并列取最近的一个；
+- 截面秩 ``rank`` 映射到 [0, 1]，并列取平均秩；
+- 分组算子的分组字段必须是整数类型：``field("industry", dtype="int64")``；
+- ``vector_neut``、``ts_vector_neut`` 是不带截距的投影；``regression_neut`` 带截距。
 """
 
 from ..expression import Expr, call, field, neutralize
@@ -43,7 +51,7 @@ FORMULAS = {
     "ts_zscore": "(x - mean_d) / std_d",
     "ts_returns": "(x_t - x_{t-d}) / x_{t-d}；mode=2 时分母取两端均值",
     "ts_std_dev": "窗口标准差",
-    "ts_backfill": "窗口 lookback 内最近的有效值；k 表示第 k 近",
+    "ts_backfill": "含当天在内的 lookback 天窗口里最近的有效值；k 表示第 k 近",
     "last_diff_value": "窗口内最近一个与当日不同的值",
     "ts_scale": "(x - min_d) / (max_d - min_d) + c",
     "ts_entropy": "窗口直方图分布的信息熵",
@@ -78,7 +86,7 @@ FORMULAS = {
     "vector_neut": "x - proj_y(x)，截面投影",
     "regression_neut": "y - (a + b * x)，截面 OLS 残差",
     "zscore": "(x - mean) / std，截面",
-    "scale": "x / sum|x|，可分别指定长、短账本",
+    "scale": "scale * x / sum|x|，可分别指定长、短账本",
     "rank_by_side": "正负两边分别截面排名后按账本缩放",
     "normalize": "截面去均值；可选除 std、再截断到 ±limit",
     "quantile": "截面秩经指定分布的逆分布函数映射",
@@ -324,10 +332,17 @@ def ts_rank(x, window=20, constant=0.0):
 
 
 def ts_backfill(x, lookback=252, k=1):
-    """最近有效值；只实现 k=1（等价 ts_ffill(limit)）。"""
+    """含当天在内的 lookback 天窗口里最近的有效值；只实现 k=1。
+
+    窗口含当天，所以最多往回取 lookback − 1 天前的值（``ts_ffill`` 的 limit 是值的最大
+    天龄）；lookback = 1 时窗口里只有当天，原样返回。"""
     if k != 1:
         raise NotImplementedError("k != 1 需要状态型内核，暂未实现")
-    return call("ts_ffill", x, limit=lookback)
+    if int(lookback) != lookback or lookback < 1:
+        raise ValueError("lookback 须为正整数")
+    if lookback == 1:
+        return x
+    return call("ts_ffill", x, limit=int(lookback) - 1)
 
 
 def normalize(x, use_std=False, limit=0.0):
@@ -338,9 +353,32 @@ def normalize(x, use_std=False, limit=0.0):
     return out
 
 
+def _paired(y, x):
+    """y 在 x 缺失处也置为缺失（0 * x 把 NaN 和无穷传过来），两边按同一批样本求和。"""
+    return y + 0 * x
+
+
+def _cs_mean(x):
+    return x - call("cs_demean", x)
+
+
+def sigmoid(x):
+    """1 / (1 + e^(-x))。"""
+    return 1 / (1 + call("exp", call("negate", x)))
+
+
+def scale(x, scale=1.0, longscale=None, shortscale=None):
+    """scale * x / sum|x|；长、短账本分别缩放需要新内核，暂未实现。"""
+    if longscale is not None or shortscale is not None:
+        raise NotImplementedError("长、短账本分别缩放需要新内核，暂未实现")
+    out = call("cs_scale", x)
+    return out if scale == 1.0 else scale * out
+
+
 def vector_neut(x, y):
-    """x 对 y 的截面投影取残差。"""
-    return neutralize(x, y)
+    """x − (Σxy / Σyy)·y：截面上不带截距的投影残差，只用 x、y 都有值的股票。"""
+    xs, ys = _paired(x, y), _paired(y, x)
+    return x - _cs_mean(xs * ys) / _cs_mean(ys * ys) * y
 
 
 def regression_neut(y, x):
@@ -354,27 +392,27 @@ def group_neutralize(x, group):
 
 
 def ts_vector_neut(x, y, window=20):
-    """x 减去在窗口内对 y 的投影（用斜率乘 y 近似）。"""
-    slope = call("ts_regression_slope", x, y, window=window)
-    return x - slope * y
+    """x − (Σxy / Σyy)·y，求和在窗口内：不带截距的投影残差。"""
+    ys = _paired(y, x)
+    xy = call("ts_sum", x * y, window=window)
+    yy = call("ts_sum", ys * ys, window=window)
+    return x - xy / yy * y
 
 
 # ---- 需要新内核，明确报错 ---------------------------------------------------
 
 UNSUPPORTED = {
-    "sigmoid": "需要新增逐元素算子",
     "round": "需要新增逐元素算子",
     "ts_entropy": "需要窗口直方图/熵内核",
     "last_diff_value": "需要状态型扫描内核",
     "ts_quantile": "需要秩到逆分布的映射内核",
     "quantile": "需要截面秩到逆分布的映射内核",
     "winsorize": "需要截面均值/标准差口径的裁剪内核",
-    "scale": "需要截面绝对值和的归约内核",
     "rank_by_side": "需要分边排名与账本缩放内核",
     "bucket": "需要分组建模内核",
     "trade_when": "需要状态保持型内核",
     "ts_regression": "需要多 rettype 回归内核（现有 slope/residual 只覆盖部分情形）",
-    "group_mean": "需要分组归约内核",
+    "group_mean": "需要分组归约内核（带权重，组内缺失处也要给出组均值）",
     "group_median": "需要分组归约内核",
     "group_rank": "需要组内排序内核",
     "group_normalize": "需要分组归约内核",
@@ -387,8 +425,8 @@ CONFLICTS = {
     "ts_rank": "本表口径为归一化秩 + constant；内核默认返回整数平均秩",
     "ts_quantile": "本表口径为秩到逆分布映射；与内核的窗口分位插值不同，暂未实现",
     "ts_decay_linear": "本表口径缺失按 0；内核忽略缺失后重归一",
-    "scale": "本表口径支持长/短账本分别缩放；内核只有一个账本，暂未实现",
-    "ts_backfill": "本表口径带 k；本模块只支持 k=1（等价 ts_ffill(limit)）",
+    "scale": "本表口径支持长/短账本分别缩放；内核只有一个账本，分别缩放暂未实现",
+    "ts_backfill": "本表口径带 k；本模块只支持 k=1（等价 ts_ffill(limit=lookback - 1)）",
 }
 
 BUILDERS = {
@@ -397,6 +435,7 @@ BUILDERS = {
     "log": log,
     "max": max_,
     "abs": abs_,
+    "sigmoid": sigmoid,
     "divide": divide,
     "min": min_,
     "signed_power": signed_power,
@@ -440,6 +479,7 @@ BUILDERS = {
     "vector_neut": vector_neut,
     "regression_neut": regression_neut,
     "zscore": lambda x: call("cs_zscore", x),
+    "scale": scale,
     "normalize": normalize,
     "group_neutralize": group_neutralize,
     "ts_range": ts_range,
@@ -447,7 +487,7 @@ BUILDERS = {
 
 
 def build(name, *args, **params):
-    """按本模块口径构造表达式；未实现的算子明确报 NotImplementError。"""
+    """按本模块口径构造表达式；未实现的算子明确报 NotImplementedError。"""
     if name not in FORMULAS:
         raise KeyError(f"未收录的算子：{name}")
     if name in UNSUPPORTED:

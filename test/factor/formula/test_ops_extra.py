@@ -1,7 +1,7 @@
 """补充算子定义表与可组合构造器的结构检查。
 
-数值对拍留给后续；这里只守住清单覆盖、``ts_range`` 的形状，以及未实现算子必须显式
-报错而不是静默给出错误结果。
+这里只守住清单覆盖、``ts_range`` 的形状，以及未实现算子必须显式报错而不是静默给出
+错误结果；数值对拍在 ``test_ops_extra_numeric.py``。
 """
 
 import pytest
@@ -45,6 +45,8 @@ def test_unsupported_operators_raise():
         ops_extra.build("bucket", X, 10)
     with pytest.raises(NotImplementedError):
         ops_extra.build("ts_backfill", X, lookback=20, k=2)
+    with pytest.raises(NotImplementedError):
+        ops_extra.build("scale", X, longscale=1.0, shortscale=1.0)
     with pytest.raises(KeyError):
         ops_extra.build("not_an_operator", X)
 
