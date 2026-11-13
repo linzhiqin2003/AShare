@@ -28,6 +28,9 @@ REFERENCES = {
     "research_running": "p1_research_light",
     "research_results": "p1_research_light",
     "research_relative": "p1_research_light",
+    "research_holdings": "p1_research_light",
+    "research_rebalance": "p1_research_settings_light",
+    "research_parameters": "p1_research_light",
     "research_settings": "p1_research_settings_light",
     "research_benchmarks": "p1_research_settings_light",
     "research_completion": "p7_backtest_light",
@@ -46,13 +49,13 @@ def write_gallery(output, names):
         json.dumps(names, ensure_ascii=False, indent=2)
     )
     document = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<title>第四轮视觉对照</title><style>
+<title>第五轮视觉对照</title><style>
 body{margin:16px;font:14px sans-serif;background:#f1f2f4;color:#222}
 section{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:32px}
 figure{margin:0;min-width:0}img{width:100%;height:auto;background:white}
 figcaption{margin:8px 0;color:#59616b}h2{font-size:16px}
-</style><h1>第四轮视觉对照</h1>
-<p>左侧设计稿，右侧合成数据实现。空、运行中、基准名单及相对基准模式使用同页设计稿作布局参考；补全只对照候选弹窗。点击图片查看原尺寸。</p>"""
+</style><h1>第五轮视觉对照</h1>
+<p>左侧设计稿，右侧合成数据实现。空、运行中、基准名单、相对基准、持仓和调仓扫描模式使用同页设计稿作布局参考；补全只对照候选弹窗。点击图片查看原尺寸。</p>"""
     for name in names:
         state = re.sub(r"_(1366|1920)$", "", name)
         reference = (
@@ -115,6 +118,10 @@ def capture(page, output):
             assert label.evaluate(
                 "el => getComputedStyle(el).whiteSpace === 'normal' && getComputedStyle(el).textOverflow !== 'ellipsis' && el.scrollWidth <= el.clientWidth + 1"
             ), (name, label.inner_text())
+        for label in page.locator(".line-label").all():
+            assert label.evaluate(
+                "el => { const box=el.getBBox(), svg=el.ownerSVGElement.viewBox.baseVal; return box.x+box.width <= svg.width && getComputedStyle(el).letterSpacing === 'normal' }"
+            )
         page.screenshot(path=str(output / f"{name}.png"), animations="disabled")
         names.append(name)
         write_gallery(output, names)
@@ -339,11 +346,25 @@ def capture(page, output):
     expect(page.locator(".parameters tbody tr")).to_have_count(4)
     expect(page.locator(".result-chart path").first).to_be_visible()
     expect(page.locator(".benchmark-legend")).to_contain_text("上证指数")
-    expect(page.locator(".parameters th").filter(has_text="年化超额")).to_have_count(1)
-    expect(page.locator(".parameters th").filter(has_text="信息比率")).to_have_count(1)
+    expect(
+        page.locator(".parameters th").filter(has_text=re.compile("^超额$"))
+    ).to_have_count(1)
+    expect(
+        page.locator(".parameters th").filter(has_text=re.compile("^IR$"))
+    ).to_have_count(1)
     expect(page.locator(".checks th")).to_have_count(4)
     shot("research_results")
     relative_chart("research_relative", "relative-sum")
+    page.get_by_role("button", name="持仓", exact=True).click()
+    expect(page.locator(".holdings-table tbody tr").first).to_be_visible()
+    page.get_by_role("switch", name="对比前次", exact=True).click()
+    shot("research_holdings")
+    # 图上点选日期联动到持仓，日期必须来自真实的允许列表。
+    chart = page.locator(".chart-panel svg").bounding_box()
+    page.mouse.click(chart["x"] + chart["width"] * 0.55, chart["y"] + 70)
+    expect(page.locator(".holdings-table tbody tr").first).to_be_visible()
+    assert page.get_by_label("持仓日期", exact=True).input_value()
+    page.get_by_role("button", name="参数组", exact=True).click()
     original_tabs = page.request.get(page.base_url + "/api/tabs").json()
     page.reload(wait_until="domcontentloaded")
     expect(page.locator(".parameters tbody tr")).to_have_count(4)
@@ -354,6 +375,12 @@ def capture(page, output):
     settings_box = page.locator(".settings-pop").bounding_box()
     assert settings_box["y"] + settings_box["height"] <= run_box["y"]
     shot("research_settings")
+    period = page.get_by_label("调仓周期", exact=True)
+    period.fill("[1,5]")
+    expect(page.get_by_role("button", name=re.compile("运行 8 组"))).to_be_enabled()
+    shot("research_rebalance")
+    period.fill("1")
+    expect(page.get_by_role("button", name=re.compile("运行 4 组"))).to_be_enabled()
     page.get_by_role("button", name="选择基准", exact=True).click()
     expect(page.get_by_role("option").first).to_be_visible()
     assert "中证" in page.locator(".index-options").inner_text()
@@ -447,6 +474,17 @@ def capture(page, output):
         shot(f"research_{width}")
         if width == 1366:
             relative_chart("research_relative_1366", "relative-compound")
+            shot("research_parameters_1366")
+            table = page.locator(".parameters")
+            assert table.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+            for heading in table.locator("th").all():
+                assert heading.evaluate(
+                    "el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth + 1"
+                )
+            page.get_by_role("button", name="持仓", exact=True).click()
+            expect(page.locator(".holdings-table tbody tr").first).to_be_visible()
+            shot("research_holdings_1366")
+            page.get_by_role("button", name="参数组", exact=True).click()
     # 直接路由和前进后退。
     page.goto(page.base_url + "/#/library", wait_until="domcontentloaded")
     expect(page.locator(".library-page")).to_be_visible()
@@ -461,7 +499,7 @@ def capture(page, output):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default=".cache/review-r4")
+    parser.add_argument("--output", default=".cache/review-r5")
     parser.add_argument("--browser", help="可选 Chromium 可执行文件")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]

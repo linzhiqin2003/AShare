@@ -67,6 +67,16 @@ pub struct Input<'a> {
     pub decay: usize,
     pub weighted: bool,
     pub profile: bool,
+    pub rebalance: usize,
+    pub record_holdings: bool,
+}
+
+#[derive(Default)]
+pub struct Holdings {
+    pub days: Vec<usize>,
+    pub offsets: Vec<usize>,
+    pub columns: Vec<u32>,
+    pub weights: Vec<f64>,
 }
 
 pub struct Output {
@@ -76,6 +86,7 @@ pub struct Output {
     pub first_live: usize,
     pub bad_rows: Vec<usize>,
     pub stages: [f64; 5],
+    pub holdings: Option<Holdings>,
 }
 
 struct Prices<'a> {
@@ -242,6 +253,7 @@ struct Book {
     first_live: usize,
     past: Vec<Vec<f64>>,
     decayed: Vec<f64>,
+    holdings: Option<Holdings>,
 }
 
 /// Bounded blocks keep reductions inside a single worker, and every book in
@@ -260,6 +272,7 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
             first_live: t,
             bad_rows: Vec::new(),
             stages: [0.0; 5],
+            holdings: None,
         })
         .collect();
     if t == 0 || pools == 0 {
@@ -284,6 +297,10 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
                 Vec::new()
             },
             decayed: vec![0.0; n],
+            holdings: (input.record_holdings && b == input.groups).then(|| Holdings {
+                offsets: vec![0],
+                ..Holdings::default()
+            }),
         })
         .collect();
     let mut clock = Clock {
@@ -415,8 +432,24 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
                         &input.sell[at..at + n]
                     },
                 };
-                (state.pnl[dest], state.turnover[dest]) =
-                    state.engine.step(0, target, &market, 0, &dot);
+                let scheduled = s.is_multiple_of(input.rebalance);
+                (state.pnl[dest], state.turnover[dest]) = state.engine.step(
+                    0,
+                    if scheduled { target } else { RowTarget::Hold },
+                    &market,
+                    0,
+                    &dot,
+                );
+                if scheduled && let Some(snapshot) = &mut state.holdings {
+                    snapshot.days.push(dest);
+                    for (col, &weight) in state.engine.held().iter().enumerate() {
+                        if weight != 0.0 {
+                            snapshot.columns.push(col as u32);
+                            snapshot.weights.push(weight);
+                        }
+                    }
+                    snapshot.offsets.push(snapshot.columns.len());
+                }
                 if group == input.groups {
                     state.held[r..r + n].copy_from_slice(state.engine.held());
                     state.active[offset] = state.engine.active(0);
@@ -449,7 +482,7 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
             .collect();
         for (offset, day) in signals.iter().enumerate() {
             for (pool, plan) in day.iter().enumerate() {
-                if plan.bad {
+                if plan.bad && (begin + offset).is_multiple_of(input.rebalance) {
                     outputs[pool]
                         .bad_rows
                         .push(input.signal_start + begin + offset);
@@ -471,6 +504,7 @@ pub fn run(input: &Input<'_>, dot: impl Fn(&[f64], &[f64]) -> f64 + Sync) -> Vec
         outputs[pool].turnover[group * t..(group + 1) * t].copy_from_slice(&state.turnover);
         if group == input.groups {
             outputs[pool].first_live = state.first_live;
+            outputs[pool].holdings = state.holdings;
         }
     }
     outputs[0].stages = clock.stages.map(|v| v.as_secs_f64());
@@ -512,6 +546,8 @@ mod tests {
             decay: 3,
             weighted: true,
             profile: false,
+            rebalance: 1,
+            record_holdings: false,
         };
         run(&input, |x, y| {
             crate::weights::sum(&x.iter().zip(y).map(|(a, b)| a * b).collect::<Vec<_>>())

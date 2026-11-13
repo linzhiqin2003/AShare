@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, shallowRef } from 'vue'
 import { X, SlidersHorizontal, ChevronDown, Plus, Minus } from 'lucide-vue-next'
 import type { Settings, Scalar } from '../types'
 import SegmentedControl from './SegmentedControl.vue'
+import RebalanceControl from './RebalanceControl.vue'
 import BenchmarkSelect from './BenchmarkSelect.vue'
 const props = defineProps<{ modelValue: Settings; name: string; defaults: Settings }>()
 const emit = defineEmits<{ 'update:modelValue': [settings: Settings]; close: [] }>()
@@ -31,6 +32,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
       <div class="setting-row"><span>衰减</span><div class="stepper"><button aria-label="减少衰减" @click="update('decay',Math.max(0,Number(modelValue.decay)-1))"><Minus :size="11" /></button><input type="number" aria-label="衰减天数" min="0" max="2520" :value="modelValue.decay" @change="update('decay',Number(($event.target as HTMLInputElement).value))"><button aria-label="增加衰减" @click="update('decay',Math.min(2520,Number(modelValue.decay)+1))"><Plus :size="11" /></button><span>天</span></div></div>
       <div class="setting-row"><span>中性化</span><SegmentedControl :model-value="modelValue.group_neutralize" multiple label="中性化" :options="[{value:null,label:'无'},{value:'industry',label:'行业'},{value:'cap',label:'市值'},{value:'cap+industry',label:'市值+行业'}]" @update:model-value="update('group_neutralize',$event)" /></div>
       <h5>组合与成交</h5>
+      <div class="setting-row"><span>调仓周期</span><RebalanceControl :model-value="modelValue.rebalance" @update:model-value="update('rebalance',$event)" /></div>
       <div class="setting-row"><span>成交</span><SegmentedControl :model-value="modelValue.trade_at" label="成交时点" :options="[{value:'open',label:'T+1 开盘'},{value:'close',label:'T+1 收盘'}]" @update:model-value="update('trade_at',$event)" /></div>
       <div class="setting-row"><span>涨跌停与停牌</span><button class="switch" role="switch" aria-label="涨跌停与停牌" :aria-checked="!!modelValue.trade_limitation" @click="update('trade_limitation',!modelValue.trade_limitation)"><i /></button></div>
       <div class="setting-row"><span>分组</span><SegmentedControl :model-value="modelValue.n_groups" label="分组数" :options="[{value:5,label:'5'},{value:10,label:'10'}]" @update:model-value="update('n_groups',$event)" /></div>

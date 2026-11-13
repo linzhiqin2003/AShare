@@ -4,6 +4,10 @@ import { curves, fmt, niceAxis } from '../chart'
 import type { ChartData, Line } from '../types'
 
 const props = withDefaults(defineProps<{ data: ChartData; compound?: boolean; relative?: boolean; raw?: boolean; compact?: boolean; selectedId?: string; drawdownLine?: Line | null }>(), { compound: false, relative: false, raw: false, compact: false })
+const emit = defineEmits<{ date:[date:string] }>()
+let ignoreClick = false
+function resetClick() { ignoreClick = false }
+function selectDay(event:MouseEvent) { if (ignoreClick) { ignoreClick = false; return } if (props.compact || (event.target as Element).closest('.brush')) return; const rect = (event.currentTarget as SVGElement).getBoundingClientRect(); const px = (event.clientX-rect.left)*width.value/rect.width; if (px < left || px > left+plotWidth.value) return; const index = start.value+Math.round((px-left)/plotWidth.value*(end.value-start.value)); if (props.data.dates[index]) emit('date',props.data.dates[index]) }
 const root = shallowRef<HTMLDivElement | null>(null)
 const width = shallowRef(1000), height = shallowRef(450)
 const start = shallowRef(0), end = shallowRef(0), hover = shallowRef(-1)
@@ -13,7 +17,7 @@ let observer: ResizeObserver | undefined
 let frame = 0
 let pendingMove: (() => void) | undefined
 const left = 48
-const right = computed(() => props.compact ? 12 : props.relative ? 160 : 114)
+const right = computed(() => props.compact ? 12 : 114)
 const plotWidth = computed(() => Math.max(40, width.value - left - right.value))
 const plotHeight = computed(() => height.value - (props.compact ? 54 : 100) - (props.raw ? 0 : 12))
 const mainHeight = computed(() => Math.max(50, plotHeight.value * (props.raw ? 1 : .8)))
@@ -78,8 +82,10 @@ const miniYears = computed(() => props.data.dates.map((date,index) => ({date,ind
 const miniRange = computed(() => extent([mini.value]))
 const miniY = (v: number) => brushY.value + 4 + (miniRange.value[1] - v) / (miniRange.value[1] - miniRange.value[0]) * 30
 const tooltipX = computed(() => Math.max(left, Math.min(x(hover.value) + 12, width.value - 235)))
+const labelText = (line:Line) => props.relative ? line.name.replace(/ · (第 1 组|多空)$/, '') : line.name
+const labelFits = (line:Line) => [...labelText(line)].reduce((sum,c) => sum + (c.charCodeAt(0)>255 ? 11 : 6.5),0) < right.value-12
 const lineLabels = computed(() => {
-  const items = plotted.value.filter(l => Number.isFinite(l.cumulative.at(-1))).map(l => ({ id: l.id, y: y(l.cumulative.at(-1)!) + 4 })).sort((a, b) => a.y - b.y)
+  const items = plotted.value.filter(l => labelFits(l) && Number.isFinite(l.cumulative.at(-1))).map(l => ({ id: l.id, y: y(l.cumulative.at(-1)!) + 4 })).sort((a, b) => a.y - b.y)
   const gap = Math.min(13, (mainHeight.value - 18) / Math.max(1, items.length - 1))
   for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + gap)
   // 从下边界往回排，避免多空与多头同时显示时把上方标签整体挤出图外。
@@ -104,6 +110,7 @@ function move(event: PointerEvent) {
 }
 function endDrag() { if (frame) cancelAnimationFrame(frame); pendingMove?.(); pendingMove = undefined; frame = 0; drag.value = null }
 function begin(event: PointerEvent, kind: string) {
+  ignoreClick = true
   const svg = (event.currentTarget as SVGElement).ownerSVGElement!
   const rect = svg.getBoundingClientRect()
   drag.value = { kind, x: (event.clientX - rect.left) * width.value / rect.width, start: start.value, end: end.value }
@@ -123,7 +130,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
 <template>
   <div ref="root" class="result-chart" :class="{ compact }">
     <div v-if="!plotted.length" class="empty-chart">{{ relative && data.lines.length ? baseline ? '请选择参数组' : '基准数据暂不可用' : '运行后查看结果' }}</div>
-    <svg v-else :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="研究结果曲线与可拖动时间窗" @pointermove="move" @pointerup="endDrag" @pointercancel="endDrag" @pointerleave="!drag && (hover = -1)">
+    <svg v-else :viewBox="`0 0 ${width} ${height}`" role="img" @pointerdown.capture="resetClick" @click="selectDay" aria-label="研究结果曲线与可拖动时间窗" @pointermove="move" @pointerup="endDrag" @pointercancel="endDrag" @pointerleave="!drag && (hover = -1)">
       <rect :x="validationX" y="8" :width="Math.max(0, left + plotWidth - validationX)" :height="axisY - 15" fill="var(--shade)" />
       <g v-if="validationX < left + plotWidth && validationX > left" class="muted">
         <line :x1="validationX" :x2="validationX" y1="8" :y2="axisY - 7" stroke="var(--ink3)" stroke-dasharray="3 3" />
@@ -132,7 +139,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
       <g v-for="tick in mainTicks" :key="tick" class="muted main-tick"><line :x1="left" :x2="left + plotWidth" :y1="y(tick)" :y2="y(tick)" stroke="var(--grid)" /><text :x="left - 7" :y="y(tick) + 3" text-anchor="end">{{ fmt(tick, !raw, raw ? 2 : 0) }}</text></g>
       <g v-for="line in plotted" :key="line.id">
         <path class="return-line" :data-kind="line.benchmark ? 'benchmark' : line.kind" :d="path(line.cumulative, x, y)" fill="none" :stroke="line.color" :stroke-width="line.benchmark ? 1.2 : compact ? 1.3 : 1.7" :stroke-dasharray="line.benchmark ? '5 4' : line.kind === 'long' ? '7 3' : undefined" />
-        <text v-if="!compact && Number.isFinite(line.cumulative.at(-1))" :x="left + plotWidth + 6" :y="lineLabels.get(line.id)" :fill="line.color" class="line-label">{{ line.name }}</text>
+        <text v-if="!compact && labelFits(line) && Number.isFinite(line.cumulative.at(-1))" :x="left + plotWidth + 6" :y="lineLabels.get(line.id)" :fill="line.color" class="line-label">{{ labelText(line) }}</text>
       </g>
       <g v-if="!raw">
         <g v-for="tick in drawTicks" :key="tick" class="muted draw-tick"><line :x1="left" :x2="left + plotWidth" :y1="dy(tick)" :y2="dy(tick)" stroke="var(--grid)"/><text :x="left - 7" :y="dy(tick) + 3" text-anchor="end">{{ fmt(tick, true, 0) }}</text></g>
@@ -166,5 +173,5 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
   </div>
 </template>
 <style scoped>
-.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:var(--mono);font-size:10.5px}.brush-body{cursor:grab}.brush-handle{cursor:ew-resize}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip{filter:drop-shadow(0 2px 3px #0000000a)}
+.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:inherit;font-size:10.5px;letter-spacing:normal;word-spacing:normal}.brush-body{cursor:grab}.brush-handle{cursor:ew-resize}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip{filter:drop-shadow(0 2px 3px #0000000a)}
 </style>

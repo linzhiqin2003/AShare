@@ -140,6 +140,7 @@ class GroupBacktest:
     exposure: dict  # 风险因子 → 多空组合的逐日暴露
     by: str = "year"
     subs: dict = field(default_factory=dict)
+    holdings: dict | None = None
 
     def table(self, name="long_short", by=None):
         """绩效表：行是年份或季度加全历史，列是 return、sharpe、turnover、maxdrawdown、margin。"""
@@ -257,6 +258,8 @@ def run(
     group_neutralize=None,
     vector_neut=None,
     decay=0,
+    rebalance=1,
+    record_holdings=False,
     by="year",
     weights_portfolio=False,
     sub_universes=True,
@@ -269,6 +272,8 @@ def run(
     - trade_at：`"open"` 或 `"close"`，都是信号日的下一个交易日成交。
     - trade_limitation：停牌不交易；涨停只能卖、跌停只能买；冻结的持仓占着额度。
     - group_neutralize：`None`、`"industry"`、`"cap"`、`"cap+industry"`，在全市场上做。
+    - rebalance：正整数交易日数；窗口首日为第一个信号日，下一交易日成交，验证单独起算。
+    - record_holdings：可选记录主池多空的稀疏实际持仓，仅保存调仓成交日。
     - vector_neut：一个或一组 (T, N) 风险向量，依次做截面正交。
     - weights_portfolio：另算一个直接按全池归一化权重持仓的多空组合。
     - sub_universes：用大池时把嵌套的小池各跑一遍，放在结果的 `subs` 里。
@@ -283,6 +288,12 @@ def run(
     """
     if trade_at not in ("open", "close"):
         raise ValueError("trade_at 只能是 'open' 或 'close'")
+    if (
+        isinstance(rebalance, (bool, np.bool_))
+        or not isinstance(rebalance, (int, np.integer))
+        or rebalance < 1
+    ):
+        raise ValueError("rebalance 必须为正整数")
     if n_groups not in (5, 10):
         raise ValueError("n_groups 只能是 5 或 10")
     if by not in ("year", "quarter"):
@@ -352,6 +363,8 @@ def run(
         neutralize=group_neutralize,
         decay=0 if decay <= 1 else decay,
         weighted=weights_portfolio,
+        rebalance=rebalance,
+        record_holdings=record_holdings,
     )
     results = []
     for name, out in zip(names, runs, strict=True):
@@ -368,6 +381,22 @@ def run(
         turnover = {"long_short": turn[n_groups], "top": turn[0]}
         if weights_portfolio:
             pnl["weights"], turnover["weights"] = p[-1], turn[-1]
+        holdings = out.get("holdings")
+        if holdings is not None:
+            # 仅稀疏地摘取调仓信号，不展开每日全证券权重。
+            signal_rows = holdings["days"].astype(np.int64) - 1
+            repeated = np.repeat(
+                signal_rows, np.diff(holdings["offsets"]).astype(np.int64)
+            )
+            columns = holdings["columns"]
+            holdings["factor"] = x[repeated, columns]
+            holdings["industry"] = np.asarray(panel["industry"])[
+                repeated, columns
+            ].astype(np.int32)
+            holdings["signal_dates"] = dates[signal_rows + first]
+            holdings["dates"] = dates[holdings["days"] + first]
+            holdings["days"] = holdings["days"] + first
+            holdings["symbols"] = np.asarray(panel.symbols)
         results.append(
             GroupBacktest(
                 universe=name,
@@ -385,6 +414,7 @@ def run(
                     )
                 ),
                 by=by,
+                holdings=holdings,
             )
         )
     results[0].subs = dict(zip(names[1:], results[1:], strict=True))

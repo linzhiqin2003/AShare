@@ -2,6 +2,7 @@
 
 import base64
 import math
+import time
 from statistics import NormalDist
 
 import numpy as np
@@ -11,6 +12,7 @@ from ashare.factor import Evaluator, groupbt
 from ashare.factor.groupbt.api import _adjusted, _forward_return
 
 from .config import THRESHOLDS as GATES
+from .holdings import mean_days
 
 
 class CutPanel:
@@ -60,7 +62,14 @@ def evaluate_signal(expression, panel):
 
 
 def run_variant(
-    expression, panel, settings, progress=lambda phase: None, *, signal=None
+    expression,
+    panel,
+    settings,
+    progress=lambda phase: None,
+    *,
+    signal=None,
+    timings=None,
+    diagnostics=None,
 ):
     """唯一计算入口，窗口为代码常量，调用者没有窗口参数。"""
     arrays, summaries = {}, {}
@@ -74,28 +83,42 @@ def run_variant(
         options = {key: value for key, value in settings.items() if key != "benchmark"}
         if part == "validation":
             options["sub_universes"] = False
-        result = groupbt.run(alpha, cut, **options, window=window)
+        started = time.perf_counter()
+        result = groupbt.run(alpha, cut, **options, window=window, record_holdings=True)
+        if timings is not None:
+            timings[f"{part}.backtest"] = time.perf_counter() - started
+        started = time.perf_counter()
         summary = stats(result)
+        summary["holding_days"], summary["short_holding_days"] = mean_days(
+            result.holdings, len(result.dates)
+        )
+        for key, value in result.holdings.items():
+            arrays[f"{part}.holdings.{key}"] = value
         # 验证的预热历史保留在计算里，界面只接收窗口内日期。
         keep = np.asarray(result.dates) >= window[0]
         dates = np.asarray(result.dates)[keep]
         if not np.isfinite(result.pnl["long_short"]).any():
             raise ValueError("所选研究窗口没有有效收益")
-        pool = groupbt.universe_mask(cut, settings["universe"], window[0])
-        count = pool.sum(axis=1)
-        covered = (pool & np.isfinite(alpha)).sum(axis=1)
-        coverage = np.divide(
-            covered, count, out=np.full(len(count), np.nan), where=count > 0
-        )
-        shifted = np.full_like(alpha, np.nan)
-        shifted[1:] = alpha[:-1]
-        shifted_pool = np.zeros_like(pool)
-        shifted_pool[1:] = pool[:-1]
-        ic = panelops.rank_ic(
-            shifted,
-            _forward_return(_adjusted(cut, settings["trade_at"])),
-            mask=shifted_pool,
-        )
+        if diagnostics is not None and part in diagnostics:
+            coverage, ic = diagnostics[part]
+        else:
+            pool = groupbt.universe_mask(cut, settings["universe"], window[0])
+            count = pool.sum(axis=1)
+            covered = (pool & np.isfinite(alpha)).sum(axis=1)
+            coverage = np.divide(
+                covered, count, out=np.full(len(count), np.nan), where=count > 0
+            )
+            shifted = np.full_like(alpha, np.nan)
+            shifted[1:] = alpha[:-1]
+            shifted_pool = np.zeros_like(pool)
+            shifted_pool[1:] = pool[:-1]
+            ic = panelops.rank_ic(
+                shifted,
+                _forward_return(_adjusted(cut, settings["trade_at"])),
+                mask=shifted_pool,
+            )
+            if diagnostics is not None:
+                diagnostics[part] = coverage, ic
         summary["ic"] = finite(np.nanmean(ic[keep]))
         summary["coverage"] = finite(coverage[-1])
         summary["exposure"] = {k: finite(v) for k, v in result.exposure_mean().items()}
@@ -115,7 +138,9 @@ def run_variant(
             arrays[f"{part}.exposure.{name}"] = series[keep]
         for name, sub in result.subs.items():
             arrays[f"{part}.sub.{name}"] = sub.pnl["long_short"][keep]
-        del alpha, shifted, pool, shifted_pool
+        if timings is not None:
+            timings[f"{part}.statistics"] = time.perf_counter() - started
+        del alpha
     return summaries, arrays
 
 
