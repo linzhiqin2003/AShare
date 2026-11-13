@@ -1,11 +1,11 @@
 """真实数据上的小规模搜索例子：默认空间、随机采样加一轮进化。
 
-只读主目录的面板。台账、指纹、具体表达式和它们的指标都写到 --work（数据根目录下不入库的
-目录）；--summary 只写汇总统计（试验数、通过数、耗时、折算前后的显著个数分布），这一份
-可以进仓库。不解锁留出段。
+只读主目录的面板。台账、指纹、具体表达式和它们的指标都写到 --work（必须在仓库之外：
+私有仓库或临时目录）；--summary 只写汇总统计（试验数、通过数、耗时、折算前后的显著个数
+分布），这一份可以进仓库。不解锁留出段。
 
     uv run --no-sync python bench/mining/real_example.py --root <数据根目录> \\
-        --work <数据根目录>/mining/real_example --summary bench/mining/results/real_example.json
+        --work <仓库外的目录> --summary bench/mining/results/real_example.json
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ def _stats(res):
         "trials_total": s["trials_total"],
         "effective_trials": s["effective_trials"],
         "pbo": s["pbo"],
+        "pbo_note": s.get("pbo_note"),
         "significant": s["significant"],
         "psr_train_hist": _hist(r["psr_train"] for r in distinct),
         "dsr_train_hist": _hist(r["dsr_train"] for r in distinct),
@@ -88,6 +89,7 @@ def main(argv=None):
         "load_before": load.split("load averages:")[-1].strip(),
         "settings": {"space": "Space.default()", "rebalance": 5, "top_fraction": 0.1,
                      "screen_t": 1.0, "sr_var": "null", "alpha": 0.05,
+                     "benchmark": "universe", "autocorr": True,
                      "random": args.random, "population": args.population,
                      "generations": args.generations},
     }  # fmt: skip

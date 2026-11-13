@@ -277,3 +277,64 @@ def test_effective_trials():
     assert stats.effective_trials(corr=c, method="nyholt") == pytest.approx(3.25)
     # Li–Ji 手算：f(2.5) + 3·f(0.5) = (1 + 0.5) + 1.5 = 3.0
     assert stats.effective_trials(corr=c, method="li_ji") == pytest.approx(3.0)
+
+
+def test_variance_ratio_reference():
+    rng = np.random.default_rng(5)
+    x = rng.standard_normal(500)
+    e = x - x.mean()
+    g = [e[j:] @ e[: len(e) - j] / len(e) for j in range(4)]
+    ref = 1 + 2 * sum((1 - j / 4) * g[j] / g[0] for j in range(1, 4))
+    assert stats.variance_ratio(x, 3, floor=False) == pytest.approx(ref, rel=1e-12)
+    assert stats.variance_ratio(x, 3) == max(1.0, ref)
+    # AR(1) φ：长期方差比 → (1+φ)/(1−φ)（Bartlett 窗足够长时接近）
+    phi, n = 0.5, 200_000
+    y = np.empty(n)
+    z = rng.standard_normal(n)
+    y[0] = z[0]
+    for i in range(1, n):
+        y[i] = phi * y[i - 1] + z[i]
+    assert stats.variance_ratio(y, 200) == pytest.approx(3.0, rel=0.05)
+    assert stats.variance_ratio([1.0, 1.0, 1.0]) == 1.0
+
+
+def test_sharpe_with_variance_ratio():
+    sr, t, q = 0.06, 800, 2.5
+    base = stats.probabilistic_sharpe(sr, t)
+    scaled = stats.probabilistic_sharpe(sr, t, q=q)
+    z = sr * math.sqrt(t - 1) / math.sqrt(q * (1 + sr * sr / 2))
+    assert scaled == pytest.approx(N.cdf(z), rel=1e-14) and scaled < base
+    assert stats.sharpe_variance(sr, t, q=q) == pytest.approx(
+        q * stats.sharpe_variance(sr, t), rel=1e-15
+    )
+    a = stats.deflated_sharpe(sr, t, n_trials=50, sr_var=q / (t - 1), q=q)
+    sr0 = stats.expected_max_sharpe(50, q / (t - 1))
+    assert a == pytest.approx(stats.probabilistic_sharpe(sr, t, sr_star=sr0, q=q))
+
+
+def test_overlap_t_bound_and_df():
+    rng = np.random.default_rng(2)
+    x = rng.standard_normal(301)
+    t, df, n = stats.overlap_t(x, 7)
+    assert n == 301 and df == 301 // 7 - 1
+    assert t == pytest.approx(x.mean() / math.sqrt(x.var(ddof=1) * 7 / 301), rel=1e-14)
+    assert math.isnan(stats.overlap_t([1.0], 1)[0])
+
+
+def test_overlap_ic_holm_calibrated():
+    """零假设下的重叠持有期日 IC（持有 h 天的收益在相邻信号日之间重叠，因子本身高度
+    持续）：Holm 的族错误率在名义水平的抽样误差以内（完整网格见 bench/mining/ic_grid.py）。"""
+    from ashare.factor.evaluate import ic_summary
+
+    rng = np.random.default_rng(8)
+    reps, m, alpha, h, n = 300, 10, 0.05, 20, 250
+    hits = 0
+    for _ in range(reps):
+        # 日收益 iid；h 日持有收益 = 未来 h 天之和；因子 = 持续不变的随机分数 → 日 IC 是
+        # 截面上「分数与 h 日收益」的相关，近似为日 IC 的 h 天滑动和
+        daily = rng.standard_normal((n + h, m))
+        ic = np.lib.stride_tricks.sliding_window_view(daily, h, axis=0).sum(-1)[:n]
+        ic = ic / math.sqrt(h) * 0.05
+        p = [ic_summary(ic[:, k], h)["p"] for k in range(m)]
+        hits += bool(stats.reject(p, alpha, "holm").any())
+    assert hits / reps <= alpha + 3 * math.sqrt(alpha * (1 - alpha) / reps)

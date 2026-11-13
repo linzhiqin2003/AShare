@@ -1,4 +1,5 @@
-"""因子试验的台账：直接用 `ashare.ml.ledger.Ledger`（同一种 JSONL 格式、文件锁、追加写），
+"""因子试验的台账：直接用 `ashare.ledger.Ledger`（与 `ashare.ml` 的账本同一种 JSONL 格式、文件锁、追加写，
+不依赖可选依赖组 ml），
 一行一个事件。
 
 - ``event="trial"``：评估了一个候选（``kind="factor"``）。``trial_id`` = 去重键（规范形
@@ -16,12 +17,14 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
 from pathlib import Path
 
-from ...ml.ledger import Ledger, code_version  # noqa: F401  （复用同一套写法）
+from ...ledger import Ledger
+from ...ledger import code_version as _code_version
 
 __all__ = [
     "Ledger",
@@ -31,6 +34,12 @@ __all__ = [
     "trial_id",
     "record_trial",
 ]
+
+
+@functools.cache
+def code_version():
+    """仓库提交号，以及 `ashare.factor` 目录下工作区是否有改动。"""
+    return _code_version(Path(__file__).resolve().parents[1])
 
 
 def default_root():

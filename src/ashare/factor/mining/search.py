@@ -209,7 +209,8 @@ class SearchResult:
             f"回测 {s['backtested']}  数值重复 {s['duplicates']}  失败 {s['failed']}  "
             f"账本复用 {s['cache_hits']}",
             f"台账累计试验 {s['trials_total']}  本次回测候选的有效试验数约 "
-            f"{num(s['effective_trials'], 1)}（{s['effective_method']}）  PBO {num(s['pbo'], 2)}",
+            f"{num(s['effective_trials'], 1)}（{s['effective_method']}）  "
+            f"PBO {num(s['pbo'], 2) if s['pbo'] is not None else s.get('pbo_note') or '不适用'}",
             f"显著（α = {s['alpha']}）  训练段 IC 未校正 {s['significant']['ic_raw']}  "
             f"Holm {s['significant']['ic_holm']}  BH {s['significant']['ic_bh']}  "
             f"BY {s['significant']['ic_by']}；"
@@ -234,7 +235,11 @@ class SearchResult:
 
     def unlock_holdout(self, panel, *, ledger=None, root=None, top=None):
         """显式解锁留出段：在完整面板上评估入选的候选，只报留出段指标。一次搜索只能
-        解锁一次（以台账为准），解锁本身记进台账。panel 必须是搜索时的同一份面板。"""
+        解锁一次（以台账为准），解锁本身记进台账。panel 必须是搜索时的同一份面板。
+
+        这是纪律，不是技术上的锁：换一个台账或数据根目录、删掉台账里的解锁记录，就能
+        再解锁一次。它防的是无意中反复看留出段，防不了有意绕过；留出段只能看一次要靠
+        使用者自己遵守，台账只负责留下看过的记录。"""
         ctx = self.context
         if str(panel.version) != ctx["source_version"]:
             raise ValueError("面板版本与搜索时不同")
@@ -251,7 +256,7 @@ class SearchResult:
         options = dict(ctx["options"])
         if options.get("universe") is not None:
             options["universe"] = ctx["universe_full"]
-        if options.get("benchmark") is not None:
+        if "benchmark_full" in ctx:
             options["benchmark"] = ctx["benchmark_full"]
         if options.get("market") is not None:
             options["market"] = ctx["market_full"]
@@ -265,6 +270,7 @@ class SearchResult:
             m = _compact(rep, fe.screen_horizon, True)["holdout"]
             lo = m["long"] or {}
             sr = lo.get("sr_period")
+            q = (lo.get("var_ratio") or 1.0) if ctx.get("autocorr", True) else 1.0
             psr = (
                 stats.deflated_sharpe(
                     sr,
@@ -272,7 +278,8 @@ class SearchResult:
                     lo["skew"] or 0.0,
                     lo["kurt"] or 3.0,
                     n_trials=len(rows),
-                    sr_var=stats.trial_sharpe_variance([], t=lo["days"]),
+                    sr_var=q * stats.trial_sharpe_variance([], t=lo["days"]),
+                    q=q,
                 )  # fmt: skip
                 if sr is not None
                 else None
@@ -319,6 +326,7 @@ def mine(
     fingerprint_rows=16,
     progress=None,
     sr_var="null",
+    autocorr=True,
     **options,
 ):
     """在 panel 上按 space 和 strategy 搜索因子表达式。
@@ -331,7 +339,9 @@ def mine(
     - fitness：训练段上的适应度，"information_ratio"（默认，多头端超额的信息比率）、
       "excess_return"、"ic"、"ic_t"，或接收训练段指标 dict 的函数；complexity：每个
       节点扣的分；
-    - screen_t：粗筛门槛（训练段 IC 的 HAC t 值，见 `ic_summary`），低于它的不回测；
+    - screen_t：粗筛门槛（训练段 IC 的 t 值，见 `ic_summary`），低于它的不回测。台账里的
+      旧记录按这次的门槛重新判：现在过门槛的才复用回测结果，进入折算和挑选；现在不过的
+      降回粗筛结果，照样算一次试验；
     - dedup_threshold：与已入选因子的截面秩相关不低于它的标为重复；
     - existing：{名字: Expr}，已有因子，参与去重并在结果里报相关；
     - select：按验证段信息比率挑出的个数；alpha：显著性水平；
@@ -341,6 +351,9 @@ def mine(
       候选池里有真信号时它被真信号的离散度撑大，门槛跟着抬高，几乎什么都过不了（见
       MINING_NOTES 的模拟）；"max"：两者取大，最保守。``dsr_train`` 按这里选的算，
       ``dsr_train_null`` 总是按零假设算；
+    - autocorr：True（默认）时按超额日收益的序列相关修正夏普的标准误（Lo 2002；每个候选
+      乘自己的方差比 q ≥ 1，见 `stats.variance_ratio`，零假设方差相应取 q/(T−1)）；
+      False 时按独立同分布算（原文做法，日收益正自相关时偏松）；
     - progress：每记一条台账后调用一次 ``progress(记录)``（测试用来模拟中途被杀）；
     - 其余关键字参数交给 `FactorEvaluator`（horizons、rebalance、top、top_fraction、
       groups、universe、costs、config、benchmark、threads ...）。universe、benchmark 给
@@ -362,23 +375,27 @@ def mine(
     opts = dict(options)
     context_full = {}
     for name in ("universe", "benchmark"):
-        if opts.get(name) is not None:
+        if opts.get(name) is not None and not isinstance(opts[name], str):
             full = np.asarray(opts[name])
             if full.shape[0] != len(panel.dates):
                 raise ValueError(f"{name}: 行数必须与面板相同")
             context_full[f"{name}_full"] = full
             opts[name] = np.ascontiguousarray(full[:h])
     if opts.get("market") is not None:
-        opts["market"] = _truncate_market(opts["market"], h)
+        opts["market"] = _truncate_market(opts["market"], h, opts.get("exec", "open"))
         context_full["market_full"] = options["market"]
     fe = FactorEvaluator(view, segments={"train": (a, v), "valid": (v, h)}, **opts)
     ev = evaluator or Evaluator()
     sh = fe.screen_horizon
+    # 评估定义：凡是改变指标数值的设置都进来（进入试验编号）。粗筛门槛不进编号（同一个
+    # 表达式换门槛仍是同一个试验），而是在复用时按这次的门槛重判，见 `evaluate`。
     definition = {
         "horizons": list(fe.horizons),
         "screen_horizon": sh,
         "rebalance": fe.rebalance,
         "lag": fe.lag,
+        "exec": fe.exec,
+        "benchmark_mode": fe.benchmark_mode,
         "groups": fe.groups,
         "top": fe.top,
         "top_fraction": fe.top_fraction,
@@ -403,6 +420,7 @@ def mine(
         "screen_t": screen_t,
         "dedup_threshold": dedup_threshold,
         "sr_var": sr_var,
+        "autocorr": bool(autocorr),
         "existing": sorted((existing or {}).keys()),
         "split": split.describe(),
     }
@@ -451,7 +469,9 @@ def mine(
         distinct.append((key, fp))
         return None, corr
 
-    def finalize(key, tid, metrics, stage, status, fp, error=None, cached=False):
+    def finalize(
+        key, tid, metrics, stage, status, fp, error=None, cached=False, screen=None
+    ):
         nodes = size(exprs[key])
         fit = -math.inf
         if status == "ok" and stage == "backtest":
@@ -492,6 +512,7 @@ def mine(
             "stage": stage,
             "status": status,
             "metrics": metrics,
+            "screen": screen,
             "duplicate_of": dup,
             "code": code_version(),
         }
@@ -516,6 +537,20 @@ def mine(
         _save(path, fp)
         return fp
 
+    def reuse(rec):
+        """台账里同一试验的记录能怎么用：(metrics, stage, screen) 或 None（要重算）。
+
+        按这次的门槛重判粗筛：过了且有回测结果的复用回测；没过的降回粗筛结果（与在空
+        台账上直接用这个门槛跑逐位相同）；过了却只有粗筛结果、或旧记录没有粗筛结果的重算。"""
+        if rec is None or rec.get("screen") is None:
+            return None
+        screen = rec["screen"]
+        if not passes(screen["train"]):
+            return screen, "screen", screen
+        if rec["stage"] == "backtest":
+            return rec["metrics"], "backtest", screen
+        return None
+
     def evaluate(batch):
         counters["eval_batches"] += 1
         out_keys = []
@@ -528,25 +563,20 @@ def mine(
                 continue
             exprs[key] = e
             tid = trial_id(key, data_version, eval_def)
-            rec = cache.get(tid)
-            if rec is not None and (
-                rec["stage"] == "backtest" or not passes(rec["metrics"]["train"])
-            ):
-                todo.append((key, tid, rec))
-            else:
-                todo.append((key, tid, None))
-        fresh = [(key, tid) for key, tid, rec in todo if rec is None]
+            todo.append((key, tid, reuse(cache.get(tid))))
+        fresh = [(key, tid) for key, tid, use in todo if use is None]
         computed = _evaluate_batch(fresh) if fresh else {}
-        for key, tid, rec in todo:  # 按提出顺序落定：去重判定与顺序有关
-            if rec is not None:
+        for key, tid, use in todo:  # 按提出顺序落定：去重判定与顺序有关
+            if use is not None:
                 counters["cache_hits"] += 1
-                fp = load_fp(tid, key) if rec["stage"] == "backtest" else None
-                finalize(key, tid, rec["metrics"], rec["stage"], "ok", fp, cached=True)
+                metrics, stage, screen = use
+                fp = load_fp(tid, key) if stage == "backtest" else None
+                finalize(key, tid, metrics, stage, "ok", fp, cached=True, screen=screen)
             else:
-                metrics, stage, status, fp, error = computed[key]
+                metrics, stage, status, fp, error, screen = computed[key]
                 if status != "ok":
                     counters["failed"] += 1
-                finalize(key, tid, metrics, stage, status, fp, error)
+                finalize(key, tid, metrics, stage, status, fp, error, screen=screen)
         return [rows[k]["fitness"] if rows[k]["fitness"] is not None else -math.inf
                 for k in out_keys]  # fmt: skip
 
@@ -576,7 +606,7 @@ def mine(
         for key, values in _values([k for k, _ in fresh]):
             counters["evaluated"] += 1
             if isinstance(values, Exception):
-                out[key] = (None, "failed", "failed", None, type(values).__name__)
+                out[key] = (None, "failed", "failed", None, type(values).__name__, None)
                 continue
             try:
                 scores, ic = fe.screen(values)
@@ -586,26 +616,37 @@ def mine(
                     targets.append(fe.targets(scores))
                     fp = fingerprint(scores, fp_rows)
                     _save(fp_dir / f"{tids[key]}.npy", fp)
-                    passed.append((key, fp))
+                    passed.append((key, fp, metrics))
                 else:
-                    out[key] = (metrics, "screen", "ok", None, None)
+                    out[key] = (metrics, "screen", "ok", None, None, metrics)
             except Exception as exc:  # noqa: BLE001
-                out[key] = (None, "failed", "failed", None, type(exc).__name__)
+                out[key] = (None, "failed", "failed", None, type(exc).__name__, None)
         if passed:
             longs = fe.run_long(targets)
-            for (key, fp), long in zip(passed, longs, strict=True):
+            for (key, fp, screen), long in zip(passed, longs, strict=True):
                 rep = fe.finish(key, partials[key], long)
                 metrics = _compact(rep, sh, True)
                 _save(series_dir / f"{tids[key]}.npy",
                       np.ascontiguousarray(rep.series["excess"][a:v]))  # fmt: skip
-                out[key] = (metrics, "backtest", "ok", fp, None)
+                out[key] = (metrics, "backtest", "ok", fp, None, screen)
         return out
 
     strategy.run(space, evaluate)
     elapsed = time.perf_counter() - started
     total = led.trials()
     summary, selected = _summarize(
-        rows, total, alpha, select, a, v, h, series_dir, panel, data_version, sr_var
+        rows,
+        total,
+        alpha,
+        select,
+        a,
+        v,
+        h,
+        series_dir,
+        panel,
+        data_version,
+        sr_var,
+        autocorr,
     )
     summary.update(
         search_id=search_id,
@@ -632,13 +673,15 @@ def mine(
         "options": opts,
         "exprs": exprs,
         "root": root,
+        "autocorr": bool(autocorr),
         **context_full,
     }
     return SearchResult(list(rows.values()), summary, selected, context)
 
 
-def _truncate_market(market, rows):
-    """`BacktestMarket` 截到前 rows 行（由它自带的面板重建，留出段的行情读不到）。"""
+def _truncate_market(market, rows, exec="open"):
+    """`BacktestMarket` 截到前 rows 行（由它自带的面板按 exec 重建，留出段的行情读不到）。
+    原行情的成交价与重建出的不一致（例如按别的 exec 建的）时报错。"""
     import panelbt
 
     from ...backtest.market import BacktestMarket, market_inputs
@@ -648,8 +691,15 @@ def _truncate_market(market, rows):
             "market: 需要 ashare.backtest.market_from_panel 的结果（要能截掉留出段）"
         )
     view = Truncated(market.panel, rows)
+    inputs = market_inputs(view, exec)
+    if not np.array_equal(
+        np.asarray(inputs["exec_price"], dtype=np.float64),
+        np.asarray(market.market.exec_price, dtype=np.float64)[:rows],
+        equal_nan=True,
+    ):
+        raise ValueError(f"market: 成交价与 exec={exec!r} 不一致")
     return BacktestMarket(
-        panelbt.Market(**market_inputs(view), validate=False),
+        panelbt.Market(**inputs, validate=False),
         np.asarray(market.dates)[:rows],
         market.symbols,
         market.board,
@@ -700,7 +750,18 @@ def _sr_var(mode, srs, t):
 
 
 def _summarize(
-    rows, total, alpha, select, a, v, h, series_dir, panel, data_version, sr_var="max"
+    rows,
+    total,
+    alpha,
+    select,
+    a,
+    v,
+    h,
+    series_dir,
+    panel,
+    data_version,
+    sr_var="max",
+    autocorr=True,
 ):
     dates = np.asarray(panel.dates).astype(str)
     table = list(rows.values())
@@ -724,24 +785,46 @@ def _summarize(
     def long(r, seg):
         return (r[seg] or {}).get("long") or {}
 
+    def q_of(lo):
+        q = lo.get("var_ratio") if autocorr else None
+        return float(q) if isinstance(q, (int, float)) and math.isfinite(q) else 1.0
+
+    def scaled(mode, base, q):
+        # 零假设方差随候选的序列相关放大（q/(T−1)）；截面方差是观测值，不再乘
+        if mode == "null":
+            return base * q
+        if mode == "max":
+            return max(base, q * base_null) if math.isfinite(base) else base
+        return base
+
     t_train = max((long(r, "train").get("days") or 0 for r in back), default=0)
     srs = [long(r, "train").get("sr_period") for r in back]
     v_train = _sr_var(sr_var, srs, t_train)
     v_null = _sr_var("null", srs, t_train)
+    base_null = v_null
     for r in table:
         r["psr_train"] = r["dsr_train"] = r["dsr_train_null"] = r["dsr_valid"] = None
+        r["q_train"] = None
     for r in back:
         lo = long(r, "train")
         sr = lo.get("sr_period")
         if sr is None:
             continue
         g3, g4 = lo.get("skew") or 0.0, lo.get("kurt") or 3.0
-        r["psr_train"] = stats.probabilistic_sharpe(sr, lo["days"], g3, g4)
+        q = q_of(lo)
+        r["q_train"] = q
+        r["psr_train"] = stats.probabilistic_sharpe(sr, lo["days"], g3, g4, q=q)
         r["dsr_train"] = stats.deflated_sharpe(
-            sr, lo["days"], g3, g4, n_trials=total, sr_var=v_train
+            sr,
+            lo["days"],
+            g3,
+            g4,
+            n_trials=total,
+            sr_var=scaled(sr_var, v_train, q),
+            q=q,
         )
         r["dsr_train_null"] = stats.deflated_sharpe(
-            sr, lo["days"], g3, g4, n_trials=total, sr_var=v_null
+            sr, lo["days"], g3, g4, n_trials=total, sr_var=v_null * q, q=q
         )
     psr_count = sum(1 for r in distinct if (r["psr_train"] or 0) > 1 - alpha)
     dsr_count = sum(1 for r in distinct if (r["dsr_train"] or 0) > 1 - alpha)
@@ -757,12 +840,14 @@ def _summarize(
     v_valid = _sr_var(
         sr_var, [long(r, "valid").get("sr_period") for r in distinct], t_valid
     )
+    base_null = _sr_var("null", [], t_valid)
     for r in distinct:
         lo = long(r, "valid")
         if lo.get("sr_period") is not None:
+            q = q_of(lo)
             r["dsr_valid"] = stats.deflated_sharpe(
                 lo["sr_period"], lo["days"], lo.get("skew") or 0.0, lo.get("kurt") or 3.0,
-                n_trials=max(len(distinct), 1), sr_var=v_valid,
+                n_trials=max(len(distinct), 1), sr_var=scaled(sr_var, v_valid, q), q=q,
             )  # fmt: skip
     selected = ranked[:select]
     passed = sum(
@@ -772,6 +857,11 @@ def _summarize(
 
     # 有效试验数与 PBO：用回测候选的训练段日超额收益（存在 series/ 下，断点续跑也能取到）
     eff, pbo = None, None
+    pbo_note = (
+        "不适用：没有候选通过粗筛进入回测" if not back
+        else "不适用：不重复的回测候选不足 2 个" if len(distinct) < 2
+        else None
+    )  # fmt: skip
     if len(distinct) >= 2:
         mats = []
         for r in distinct:
@@ -785,6 +875,10 @@ def _summarize(
                 eff = stats.effective_trials(mat, method="li_ji")
             if len(mat) >= 40:
                 pbo = stats.pbo_cscv(mat, 10)["pbo"]
+            else:
+                pbo_note = "不适用：训练段共同有效的天数不足 40"
+        else:
+            pbo_note = "不适用：候选的训练段收益序列取不到或长度不一"
     summary = {
         "data_version": data_version,
         "split_dates": {
@@ -804,6 +898,8 @@ def _summarize(
         "effective_trials": eff,
         "effective_method": "li_ji",
         "pbo": pbo,
+        "pbo_note": pbo_note,
+        "autocorr": bool(autocorr),
         "significant": {
             "ic_raw": raw,
             "ic_holm": holm,

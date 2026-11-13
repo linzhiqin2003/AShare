@@ -43,29 +43,53 @@ def moments(r):
     return float(x.mean() / sd), float((z**3).mean()), float((z**4).mean())
 
 
-def sharpe_variance(sr, t, skew=0.0, kurt=3.0):
-    """夏普估计量的渐近方差（每期口径）：(1 − γ3·SR + (γ4 − 1)/4·SR²) / (T − 1)。
+def sharpe_variance(sr, t, skew=0.0, kurt=3.0, q=1.0):
+    """夏普估计量的渐近方差（每期口径）：q·(1 − γ3·SR + (γ4 − 1)/4·SR²) / (T − 1)。
 
     出处：Mertens (2002)；Bailey & López de Prado (2012) "The Sharpe Ratio Efficient
-    Frontier" 式 (4) 的分母部分。下限 1e-12 防止极端偏峰让方差变负。"""
+    Frontier" 式 (4) 的分母部分。下限 1e-12 防止极端偏峰让方差变负。
+    q：序列相关的方差放大倍数（长期方差 ÷ 普通方差，见 `variance_ratio`；Lo (2002)
+    "The Statistics of Sharpe Ratios" FAJ 58(4) 式 (8)–(10) 的同一思路），独立同分布时为 1。"""
     if t < 2:
         return math.nan
-    return max(1e-12, 1 - skew * sr + (kurt - 1) / 4 * sr * sr) / (t - 1)
+    return q * max(1e-12, 1 - skew * sr + (kurt - 1) / 4 * sr * sr) / (t - 1)
+
+
+def variance_ratio(x, lags=10, *, floor=True):
+    """长期方差与普通方差之比 q = 1 + 2·Σ_{j≤L} (1 − j/(L+1))·ρ_j（Bartlett 核）。
+
+    日收益有正自相关（带风格暴露的组合常见）时 q > 1，夏普的标准误要乘 √q（Lo 2002；
+    Newey & West 1987 的权重）。floor=True 时不低于 1（负自相关不拿来放松检验）。
+    样本不足或方差为 0 时返回 1。"""
+    v = np.asarray(x, dtype=np.float64)
+    v = v[np.isfinite(v)]
+    n = len(v)
+    if n < 3 or lags <= 0:
+        return 1.0
+    e = v - v.mean()
+    g0 = float(e @ e) / n
+    if not g0 > 0:
+        return 1.0
+    q = 1.0
+    for j in range(1, min(int(lags), n - 1) + 1):
+        q += 2 * (1 - j / (lags + 1)) * float(e[j:] @ e[:-j]) / n / g0
+    return max(q, 1.0) if floor else q
 
 
 # ---- 概率夏普与折算夏普 ------------------------------------------------------------
 
 
-def probabilistic_sharpe(sr, t, skew=0.0, kurt=3.0, sr_star=0.0):
+def probabilistic_sharpe(sr, t, skew=0.0, kurt=3.0, sr_star=0.0, q=1.0):
     """概率夏普 PSR：真实夏普大于 sr_star 的概率。
 
     PSR = Φ[(SR − SR*)·√(T − 1) / √(1 − γ3·SR + (γ4 − 1)/4·SR²)]。
     出处：Bailey & López de Prado (2012)，J. of Risk 15(2)，式 (11)；
     又见 Bailey & López de Prado (2014) "The Deflated Sharpe Ratio"，式 (2)。
-    sr、sr_star 每期口径；kurt 为非超额峰度。"""
+    sr、sr_star 每期口径；kurt 为非超额峰度；q 为序列相关的方差放大倍数
+    （`variance_ratio`），分母再乘 √q。"""
     if not (math.isfinite(sr) and t >= 2):
         return math.nan
-    denom = math.sqrt(max(1e-12, 1 - skew * sr + (kurt - 1) / 4 * sr * sr))
+    denom = math.sqrt(q * max(1e-12, 1 - skew * sr + (kurt - 1) / 4 * sr * sr))
     return _N.cdf((sr - sr_star) * math.sqrt(t - 1) / denom)
 
 
@@ -85,16 +109,17 @@ def expected_max_sharpe(n_trials, sr_var):
     return math.sqrt(sr_var) * ((1 - EULER_GAMMA) * a + EULER_GAMMA * b)
 
 
-def deflated_sharpe(sr, t, skew=0.0, kurt=3.0, *, n_trials, sr_var):
+def deflated_sharpe(sr, t, skew=0.0, kurt=3.0, *, n_trials, sr_var, q=1.0):
     """折算夏普 DSR：以「N 次试验里纯噪声的期望最大夏普」SR0 为门槛的 PSR。
 
     DSR = PSR(SR0)，SR0 = expected_max_sharpe(N, V)。出处：Bailey & López de Prado
     (2014) "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest
     Overfitting and Non-Normality"，J. of Portfolio Management 40(5)，式 (2)(3)。
     n_trials：到现在为止的试验总数（含被筛掉、被判重复和失败的）；sr_var：各试验
-    夏普的方差（每期口径）。返回概率；> 0.95 相当于 5% 水平显著。"""
+    夏普的方差（每期口径）；q：这个候选的序列相关放大倍数（取零假设方差时
+    调用方应传 V = q/(T−1)）。返回概率；> 0.95 相当于 5% 水平显著。"""
     sr0 = expected_max_sharpe(n_trials, sr_var)
-    return probabilistic_sharpe(sr, t, skew, kurt, sr0)
+    return probabilistic_sharpe(sr, t, skew, kurt, sr0, q)
 
 
 def deflated_sharpe_of(r, *, n_trials, sr_var):
@@ -186,6 +211,29 @@ def p_from_t(t, *, two_sided=False, df=None):
     upper = np.vectorize(upper_one, otypes=[float])(t) if t.size else t
     p = 2 * np.minimum(upper, 1 - upper) if two_sided else upper
     return float(p) if np.ndim(p) == 0 else p
+
+
+MIN_BLOCKS = 10
+
+
+def overlap_t(x, horizon):
+    """持有 h 期的日 IC（相邻 h − 1 天的收益重叠）的保守 t 值与自由度。
+
+    t = 均值 / √(s²·h/n)，df = ⌊n/h⌋ − 1。零假设下第 j 阶自相关不超过 (h − j)/h
+    （收益重叠的比例乘以因子自相关，后者绝对值 ≤ 1），所以均值的方差不超过 γ0·h/n，
+    分母取上界；自由度按不重叠的块数算，比 HAC 方差的小样本自由度更少，p 值偏保守。
+    h = 1 时就是普通单样本 t 检验。不重叠的块少于 `MIN_BLOCKS` 时返回的 df 照算，
+    由调用方决定不给 p 值。返回 (t, df, n)。"""
+    v = np.asarray(x, dtype=np.float64)
+    v = v[np.isfinite(v)]
+    n = len(v)
+    h = max(int(horizon), 1)
+    if n < 2:
+        return math.nan, 0, n
+    s2 = float(v.var(ddof=1))
+    if not s2 > 0:
+        return math.nan, 0, n
+    return float(v.mean() / math.sqrt(s2 * h / n)), n // h - 1, n
 
 
 def hac_t(x, lags, kernel="bartlett"):

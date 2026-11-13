@@ -7,8 +7,6 @@ import numpy as np
 import panelops
 import pytest
 
-pytest.importorskip("lightgbm")  # 标签与台账复用 ashare.ml（可选依赖组 ml）
-
 from ashare.factor import (  # noqa: E402
     call,
     field,
@@ -165,22 +163,46 @@ def test_duplicates_still_count_as_trials(panel, tmp_path):
     assert led.trials() == s["unique"] + 1
 
 
+def _persistent(p, phi=0.95, sd=0.002, seed=0):
+    """每只股票的日收益加一个 AR(1) 漂移：持有一段时间的组合超额收益有正自相关。"""
+    rng = np.random.default_rng(seed)
+    t, n = p.shape
+    d = np.zeros((t, n))
+    z = rng.standard_normal((t, n)) * sd
+    for i in range(1, t):
+        d[i] = phi * d[i - 1] + z[i]
+    level = np.exp(np.cumsum(d, axis=0))
+    return p.replace(**{k: np.asarray(p[k]) * level
+                        for k in ("open", "high", "low", "close", "vwap")})  # fmt: skip
+
+
 def test_dsr_uses_cumulative_trials(panel, tmp_path):
     root = tmp_path / "n"
+    panel = _persistent(panel)
     first = _run(panel, tmp_path, "n", strategy=Random(n=20, seed=7))
     second = _run(panel, tmp_path, "n", strategy=Random(n=20, seed=8))
     total = open_ledger(root=root).trials()
     assert second.summary["trials_total"] == total > first.summary["trials_total"]
-    row = next(r for r in second.candidates if r["dsr_train"] is not None)
+    row = next(
+        r for r in second.candidates
+        if r["dsr_train"] is not None and r["train"]["long"]["var_ratio"] > 1
+    )  # fmt: skip
     lo = row["train"]["long"]
+    q = max(1.0, lo["var_ratio"])
+    assert row["q_train"] == q
     expect = stats.deflated_sharpe(
         lo["sr_period"], lo["days"], lo["skew"], lo["kurt"],
-        n_trials=total, sr_var=second.summary["sr_var_train"],
+        n_trials=total, sr_var=second.summary["sr_var_train"] * q, q=q,
     )  # fmt: skip
     assert row["dsr_train"] == expect
     smaller = stats.deflated_sharpe(lo["sr_period"], lo["days"], lo["skew"], lo["kurt"],
-                                    n_trials=20, sr_var=second.summary["sr_var_train"])  # fmt: skip
+                                    n_trials=20, sr_var=second.summary["sr_var_train"] * q,
+                                    q=q)  # fmt: skip
     assert smaller >= expect
+    # 关掉序列相关修正：同一个候选的折算夏普变大（标准误变小）
+    loose = _run(panel, tmp_path, "n", strategy=Random(n=20, seed=8), autocorr=False)
+    other = next(r for r in loose.candidates if r["key"] == row["key"])
+    assert other["q_train"] == 1.0 and other["dsr_train"] > row["dsr_train"]
 
 
 class Killed(Exception):
@@ -296,3 +318,132 @@ def test_minimal_example_runs(tmp_path):
     split = Split.recent(panel.dates, holdout_years=1, valid_years=1)
     result = mine(panel, split=split, strategy=Random(n=60, seed=1), root=tmp_path)
     assert "台账累计试验 60" in result.text()
+
+
+def test_screen_threshold_is_rejudged_on_reuse(panel, tmp_path):
+    """先用门槛 0 跑（全部回测），再用门槛 2 在同一台账上跑：与门槛 2 在空台账上跑逐位
+    相同——现在不过门槛的旧回测降回粗筛结果，不进折算和挑选，但仍是一次试验。"""
+    loose = _run(panel, tmp_path, "r", screen_t=0.0)
+    again = _run(panel, tmp_path, "r", screen_t=2.0)
+    fresh = _run(panel, tmp_path, "r2", screen_t=2.0)
+    assert loose.summary["screened_out"] < fresh.summary["screened_out"]
+    assert again.summary["cache_hits"] == again.summary["unique"]
+    assert _strip(again) == _strip(fresh)
+    for k in ("trials_total", "backtested", "distinct", "pbo", "effective_trials"):
+        assert again.summary[k] == fresh.summary[k], k
+    # 反过来：门槛放宽后，原来只有粗筛结果的要补跑回测
+    back = _run(panel, tmp_path, "r2", screen_t=0.0)
+    assert _strip(back) == _strip(loose)
+    # 复用的：门槛 0 下也不过的（粗筛结果）+ 门槛 2 时已回测的；其余补跑
+    assert (
+        back.summary["cache_hits"]
+        == (loose.summary["screened_out"] + fresh.summary["backtested"])
+        < back.summary["unique"]
+    )
+
+
+def test_valid_perturbation_keeps_train_side(panel, tmp_path):
+    """改动验证段（及以后）的行情：训练段的粗筛、指标、适应度逐位不变（标签在段界处被
+    截掉；回测只往前看）。"""
+    base = _run(panel, tmp_path, "v1", screen_t=0.5)
+    _, v, _ = _split(panel).rows(panel.dates)
+    rng = np.random.default_rng(5)
+    changed = {}
+    for name in ("open", "high", "low", "close", "vwap"):
+        x = np.array(panel[name], copy=True)
+        x[v:] *= np.exp(rng.standard_normal(x[v:].shape) * 0.05)
+        changed[name] = x
+    moved = _run(panel.replace(**changed), tmp_path, "v2", screen_t=0.5)
+    a = {r["key"]: r for r in base.candidates}
+    b = {r["key"]: r for r in moved.candidates}
+    assert a.keys() == b.keys()
+    for k in a:
+        assert a[k]["stage"] == b[k]["stage"]
+        assert json.dumps(a[k]["train"], sort_keys=True) == json.dumps(
+            b[k]["train"], sort_keys=True
+        )
+        assert a[k]["fitness"] == b[k]["fitness"]
+    assert any(
+        json.dumps(a[k]["valid"], sort_keys=True)
+        != json.dumps(b[k]["valid"], sort_keys=True)
+        for k in a
+    )
+
+
+def test_evaluation_definition_enters_trial_id(panel, tmp_path):
+    """换成交价、基准口径或费用就是另一组试验，不复用台账里的旧结果。"""
+    import panelbt
+
+    first = _run(panel, tmp_path, "def", strategy=Random(n=10, seed=3))
+    for kw in ({"benchmark": "close"},
+               {"costs": panelbt.Costs(commission_rate=0.001)},
+               {"exec": "vwap"}):  # fmt: skip
+        other = _run(panel, tmp_path, "def", strategy=Random(n=10, seed=3), **kw)
+        assert other.summary["cache_hits"] == 0, kw
+    same = _run(panel, tmp_path, "def", strategy=Random(n=10, seed=3))
+    assert same.summary["cache_hits"] == first.summary["unique"]
+    assert open_ledger(root=tmp_path / "def").trials() == 4 * first.summary["unique"]
+
+
+def test_holm_denominator_is_ledger_total(panel, tmp_path):
+    """训练段 IC 的 Holm 校正按台账累计试验数补分母：之前的 30 次试验同样占位。"""
+    led = open_ledger(root=tmp_path / "hm")
+    for i in range(30):
+        led.append({"event": "trial", "kind": "factor", "trial_id": f"earlier-{i}",
+                    "status": "ok"})  # fmt: skip
+    probe = _run(panel, tmp_path, "hm", strategy=Fixed([planted_expression()]))
+    p = probe.candidates[0]["train"]["ic"]["p"]
+    assert 0 < p < 1e-3
+    res = _run(
+        panel, tmp_path, "hm", strategy=Fixed([planted_expression()]), alpha=3 * p
+    )
+    assert res.summary["trials_total"] == 31
+    assert res.summary["significant"]["ic_raw"] == 1
+    assert res.summary["significant"]["ic_holm"] == 0  # 3p/31 < p；不补分母就会是 1
+
+
+def test_pbo_not_applicable_without_candidates(panel, tmp_path):
+    res = _run(panel, tmp_path, "pbo", screen_t=1e9)
+    assert res.summary["backtested"] == 0
+    assert res.summary["pbo"] is None and "不适用" in res.summary["pbo_note"]
+    assert "PBO 不适用" in res.text()
+
+
+def test_import_without_ml_group(tmp_path):
+    """没有可选依赖组 ml（LightGBM 等）也能导入和运行挖掘。"""
+    import subprocess
+    import sys
+
+    code = """
+import importlib.abc, sys
+class Block(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path, target=None):
+        if name.split(".")[0] in ("lightgbm", "sklearn") or name.startswith("ashare.ml"):
+            raise ImportError("blocked " + name)
+sys.meta_path.insert(0, Block())
+from ashare.factor.mining import Random, Split, mine
+from ashare.factor.mining.synthetic import market
+p = market(t=300, n=30, seed=1)
+s = Split(valid_start=str(p.dates[150]), holdout_start=str(p.dates[240]))
+r = mine(p, split=s, strategy=Random(n=5, seed=1), root=sys.argv[1], screen_t=0.0)
+assert r.summary["unique"] == 5
+assert not any(m.startswith("ashare.ml") for m in sys.modules)
+print("ok")
+"""
+    out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "noml")],
+                         capture_output=True, text=True, timeout=300)  # fmt: skip
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip() == "ok"
+
+
+def test_ledger_tolerates_torn_line(tmp_path):
+    """被杀时写了半行：下次追加先补换行，读取时跳过坏行并计数。"""
+    led = open_ledger(root=tmp_path / "torn")
+    led.append({"event": "trial", "kind": "factor", "trial_id": "a", "status": "ok"})
+    with open(led.path, "ab") as f:
+        f.write(b'{"event": "trial", "trial_id": "half')
+    led.append({"event": "trial", "kind": "factor", "trial_id": "b", "status": "ok"})
+    again = open_ledger(root=tmp_path / "torn")
+    ids = [r["trial_id"] for r in again.records()]
+    assert ids == ["a", "b"] and again.skipped_lines == 1
+    assert again.trials() == 2

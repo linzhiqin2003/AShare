@@ -5,6 +5,7 @@
     uv run --no-sync python bench/mining/simulate.py --out bench/mining/results/simulation.json
 
 纯噪声：合成行情里 t+1 开盘以后的收益与 t 日及以前的一切独立，任何量价因子都没有预测力。
+默认带摩擦（`Frictions.typical()`：停牌、退市、ST、中途上市），`--no-frictions` 关掉。
 每次重复用不同种子的行情、在默认空间上随机采样 `--candidates` 个候选跑完整搜索，记录
 「这次搜索有没有至少一个候选被判显著」——这是族错误率（FWER）。分两种成本：A 股默认
 费用（多头端超额被成本拉低，检验天然偏保守）和零成本（零假设精确成立）。
@@ -30,7 +31,7 @@ import panelbt
 from ashare.factor import Evaluator
 from ashare.factor.mining import Enumerate, Random, Space, Split, mine
 from ashare.factor.mining.search import fingerprint, fingerprint_corr
-from ashare.factor.mining.synthetic import market, planted_expression
+from ashare.factor.mining.synthetic import Frictions, market, planted_expression
 
 ZERO = panelbt.Costs(
     commission_rate=0.0,
@@ -90,12 +91,15 @@ def _flags(res, alpha):
     }
 
 
+FRICTIONS = Frictions.typical()
+
+
 def noise(reps, candidates, costs, alpha, t, n, seed0, log):
     rows = []
     for k in range(reps):
         root = Path(tempfile.mkdtemp(prefix="mining-noise-"))
         try:
-            p = market(t=t, n=n, seed=seed0 + k)
+            p = market(t=t, n=n, seed=seed0 + k, frictions=FRICTIONS)
             split = Split.recent(p.dates, holdout_years=1, valid_years=1)
             res = mine(p, split=split, root=root, strategy=Random(n=candidates, seed=k),
                        costs=costs, alpha=alpha)  # fmt: skip
@@ -135,7 +139,8 @@ def planted(reps, strengths, alpha, t, n, seed0, log):
         for k in range(reps):
             root = Path(tempfile.mkdtemp(prefix="mining-plant-"))
             try:
-                p = market(t=t, n=n, seed=seed0 + k, strength=strength)
+                p = market(t=t, n=n, seed=seed0 + k, strength=strength,
+                           frictions=FRICTIONS)  # fmt: skip
                 split = Split.recent(p.dates, holdout_years=1, valid_years=1)
                 res = mine(p, split=split, space=TINY, root=root, strategy=Enumerate(limit=5000),
                            alpha=alpha)  # fmt: skip
@@ -188,7 +193,11 @@ def main(argv=None):
     ap.add_argument("--alpha", type=float, default=0.05)
     ap.add_argument("--t", type=int, default=760)
     ap.add_argument("--n", type=int, default=120)
+    ap.add_argument("--no-frictions", action="store_true")
     args = ap.parse_args(argv)
+    global FRICTIONS
+    if args.no_frictions:
+        FRICTIONS = None
     started = time.time()
 
     def log(msg):
@@ -201,6 +210,7 @@ def main(argv=None):
             "candidates": args.candidates,
             "alpha": args.alpha,
             "split": "最后 1 年留出、之前 1 年验证、其余训练",
+            "frictions": None if FRICTIONS is None else FRICTIONS.__dict__,
         },  # fmt: skip
         "noise_default_costs": noise(
             args.noise_reps,

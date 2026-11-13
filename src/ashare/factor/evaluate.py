@@ -2,10 +2,11 @@
 
 评价以**多头端**为准（做不了空）：最高组（默认前 10%，或前 N 只）等权，每 ``rebalance``
 个交易日在信号日收盘后选股，下一交易日开盘成交（`ashare.backtest.execution_targets`），
-由 `panelbt.run_batch` 按 A 股规则扣成本回测，相对基准算超额。IC 只是筛选用的中间量。
+由 `panelbt.run_batch` 按 A 股规则扣成本回测，相对基准算超额。默认基准用同一套成交机制
+持有信号日股票池全体等权，零假设下超额才接近 0。IC 只是筛选用的中间量。
 
-收益标签直接用 `ashare.ml.labels`（与回测同一成交约定）：信号日 t，t+1 开盘买入、
-t+1+h 开盘卖出；买入日不可买（停牌、涨停、一字板）的样本不进 IC；卖出日不可卖按当日价
+收益标签用 `ashare.labels`（不依赖 ml 依赖组；与回测同一成交约定）：信号日 t，t+1 按成交价
+``exec``（默认开盘）买入、t+1+h 卖出；买入日不可买（停牌、涨停、一字板）的样本不进 IC；卖出日不可卖按当日价
 （`sell_blocked="price"`）。因子值本身在 t 日只用 t 日及以前的数据，由表达式层保证。
 
 ```python
@@ -22,6 +23,7 @@ print(report.text())                           # 或 report.to_dict()
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -29,6 +31,12 @@ import panelops
 
 TRADING_DAYS = 252
 DEFAULT_HORIZONS = (1, 5, 20)
+VR_LAGS = 10
+# 默认账户规模（元）。基准持有全部约 5000 只、每次调仓把权重拉回等权，单笔调整很小；
+# 1 亿元的账户里最低佣金 5 元会让基准每年多扣约 0.65–0.8%，零假设下多头端超额偏正。
+# 100 亿元时基准单只约 200 万元，典型的再平衡单笔在万元以上，最低佣金基本不起作用。
+CAPITAL = 1e10
+BENCHMARKS = ("universe", "close")
 
 
 # ---- 小工具 -----------------------------------------------------------------------
@@ -50,41 +58,44 @@ def _mean(x):
 def ic_summary(ic, horizon=1):
     """日 IC 序列的均值、标准差、ICIR（日频不年化）、t 值与单侧 p。
 
-    t 值的标准误用 Hansen–Hodrick 均匀核 HAC、滞后 h − 1（持有 h 天的收益相邻重叠，
-    零假设下日 IC 是 MA(h − 1)），见 `ashare.factor.stats.hac_t`；p 值按自由度
-    n/h − 1 的 Student t 算（HAC 方差在小样本里偏小，正态近似的尾部太薄，纯噪声模拟里
-    Holm 的族错误率会到名义水平的两倍，见 MINING_NOTES）。"""
-    from .stats import hac_t, p_from_t
+    t 值与自由度用 `ashare.factor.stats.overlap_t`：分母取持有 h 天时均值方差的上界
+    s²·h/n，自由度为不重叠的块数减一，p 值按 Student t。不重叠的块少于 10 个时不给 p 值
+    （``p`` 为缺失，``warning`` 说明原因）。这是本框架推荐的口径；`ashare.ml.metrics.ic_stats`
+    按 √(n/h) 折算加正态 p 值，两边暂未统一（见 MINING_NOTES）。"""
+    from .stats import MIN_BLOCKS, overlap_t, p_from_t
 
     v = np.asarray(ic, dtype=np.float64)
     v = v[np.isfinite(v)]
     n = len(v)
-    if n < 2:
-        return {"mean": math.nan, "std": math.nan, "icir": math.nan, "t": math.nan,
-                "p": math.nan, "days": n}  # fmt: skip
-    mean, std = float(v.mean()), float(v.std(ddof=1))
     h = max(int(horizon), 1)
-    t, _ = hac_t(v, h - 1, "uniform")
-    df = max(n / h - 1, 1.0)  # 不重叠的样本数减一
-    return {
-        "mean": mean,
-        "std": std,
-        "icir": mean / std if std > 0 else math.nan,
-        "t": t,
-        "p": p_from_t(t, df=df) if math.isfinite(t) else math.nan,
-        "days": n,
-    }
+    out = {"mean": math.nan, "std": math.nan, "icir": math.nan, "t": math.nan,
+           "p": math.nan, "df": 0, "days": n, "warning": None}  # fmt: skip
+    if n < 2:
+        out["warning"] = "样本不足"
+        return out
+    mean, std = float(v.mean()), float(v.std(ddof=1))
+    t, df, _ = overlap_t(v, h)
+    out.update(mean=mean, std=std, icir=mean / std if std > 0 else math.nan, t=t, df=df)
+    if df + 1 < MIN_BLOCKS:
+        out["warning"] = f"不重叠的 {h} 日块只有 {df + 1} 个，不给 p 值"
+    elif math.isfinite(t):
+        out["p"] = p_from_t(t, df=df)
+    return out
 
 
-def long_summary(r, bench, *, turnover=None, cost=None, periods=TRADING_DAYS):
+def long_summary(
+    r, bench, *, turnover=None, cost=None, periods=TRADING_DAYS, lags=VR_LAGS
+):
     """多头端日收益 r 与基准日收益 bench 的汇总（同长度，已截到要统计的区间）。
 
     年化收益为几何年化；超额 = r − bench 的日序列，年化超额为其算术均值 × periods，
     信息比率 IR = 均值/标准差 × √periods；夏普同 `ashare.report.metrics.sharpe`（无风险
     利率 0）；回撤以区间起点为 1；sr_period、skew、kurt 是超额日序列的每期夏普和矩（给
-    折算夏普用）；turnover 为年化单边换手；cost 为年化成本占净值比例。"""
+    折算夏普用）；var_ratio 是超额日序列的长期方差与普通方差之比（Bartlett 核、lags 阶、
+    不低于 1，见 `stats.variance_ratio`），折算夏普的标准误要乘它的平方根；turnover 为
+    年化单边换手；cost 为年化成本占净值比例。"""
     from ..report import metrics as rm
-    from .stats import moments
+    from .stats import moments, variance_ratio
 
     r = np.asarray(r, dtype=np.float64)
     bench = np.asarray(bench, dtype=np.float64)
@@ -107,6 +118,7 @@ def long_summary(r, bench, *, turnover=None, cost=None, periods=TRADING_DAYS):
         "sr_period": _finite(sr),
         "skew": _finite(g3),
         "kurt": _finite(g4),
+        "var_ratio": float(variance_ratio(excess, lags)) if n >= 3 else None,
     }
     if turnover is not None:
         t = np.asarray(turnover, dtype=np.float64)[ok]
@@ -117,9 +129,23 @@ def long_summary(r, bench, *, turnover=None, cost=None, periods=TRADING_DAYS):
     return out
 
 
+def default_universe(panel, min_age=120):
+    """默认股票池：已上市、非 ST、上市满 min_age 个交易日、当天有行情（未停牌）。
+
+    与 `ashare.ml.default_universe` 相同（测试守住），放在这里是为了不依赖 ml 依赖组。"""
+    listed = np.asarray(panel["is_listed"], dtype=bool)
+    st = np.asarray(panel["is_st"], dtype=bool)
+    age = np.asarray(panel["listing_age"])
+    quote = np.asarray(panel["has_quote"], dtype=bool)
+    return np.ascontiguousarray(listed & ~st & (age >= min_age) & quote)
+
+
 def equal_weight_benchmark(panel, universe):
-    """股票池等权基准的日收益（长度 T，首行 NaN）：第 d 日用 d−1 日在股票池内、
-    两日复权收盘价都有效的股票的平均收盘到收盘收益。"""
+    """旧口径的股票池等权基准（`benchmark="close"`）：长度 T，首行 NaN；第 d 日用
+    d−1 日在股票池内、两日复权收盘价都有效的股票的平均收盘到收盘收益。
+
+    它和多头端不是同一套成交机制（收盘到收盘、停牌与退市的处理、整手、成交错位都不同），
+    零假设下的超额不是 0，只留作对照。默认基准见 `FactorEvaluator`。"""
     price = np.asarray(panel["close"], dtype=np.float64) * np.asarray(
         panel["adj_factor"], dtype=np.float64
     )
@@ -138,7 +164,11 @@ def equal_weight_benchmark(panel, universe):
 class _RankIC:
     """一份收益面板对多个因子的日 Rank IC；收益的逐日排序只做一次。
 
-    与 `panelops.rank_ic(score, returns)` 逐位相同（同一个内核，见 `rank_ic_many`）。"""
+    与 `panelops.rank_ic(score, returns)` 逐位相同（同一个内核，见 `rank_ic_many`）。
+    用的是 `panelops` 的私有内核；内核不在或后端不是 Rust 时退回公开的 `panelops.rank_ic`
+    （结果相同、慢一些），并且整个进程只提示一次。"""
+
+    _warned = False
 
     def __init__(self, returns, mask=None):
         self.returns = np.ascontiguousarray(returns, dtype=np.float64)
@@ -149,6 +179,14 @@ class _RankIC:
 
     def __call__(self, score):
         if not self._fast or panelops.api.BACKENDS.get("rank_ic", "rust") != "rust":
+            if not _RankIC._warned:
+                _RankIC._warned = True
+                warnings.warn(
+                    "panelops 没有可复用排序的 Rank IC 内核（或后端不是 Rust），改用逐因子"
+                    "重新排序的 panelops.rank_ic：结果相同，速度慢一些",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             return panelops.rank_ic(score, self.returns, mask=self.mask)
         core = panelops.api._core
         panelops.api.panel(score, shape=self.returns.shape)
@@ -275,13 +313,22 @@ class FactorEvaluator:
     需要的字段见 `required_fields()`。
     - horizons：IC 的持有期；screen_horizon：分组收益与筛选用的那个（默认 rebalance）。
     - groups：分组数；top / top_fraction：多头端取前 top 只或前 top_fraction 比例（默认 10%）。
-    - rebalance：多头端每隔几个交易日调仓；lag：信号到成交的行数（默认 1）。
-    - universe：T×N 布尔股票池，默认 `ashare.ml.default_universe`。
+    - rebalance：多头端每隔几个交易日调仓，调仓日固定在第 0, rebalance, 2·rebalance, …
+      行（因子从哪天开始有值都对齐到这张表，和基准同一天调仓）；lag：信号到成交的行数（默认 1）。
+    - exec：成交价 "open"（默认）、"close" 或 "vwap"；标签和默认行情都按它算。传进来的
+      行情的成交价必须就是面板的这个字段，否则报错。
+    - universe：T×N 布尔股票池，默认 `default_universe`（与 `ashare.ml.default_universe` 相同）。
     - segments：{段名: (起始行, 结束行)}，默认整段 {"all": (0, T)}；IC 只用标签完整落在
       段内的信号日（t + lag + h < 结束行），多头端用段内每天的日收益。
     - market / costs / config：`panelbt` 的行情（或 `ashare.backtest.BacktestMarket`）、
       费用、账户；默认由面板建行情、按 A 股历史印花税和过户费算费用、整手 100 股。
-    - benchmark：长度 T 的日收益；默认股票池等权（`equal_weight_benchmark`）。
+    - capital：没给 config 时的初始资金，默认 `CAPITAL`（100 亿元，让最低佣金不起作用；
+      成本模型本身不变）。想看自己账户规模下的结果就传小的——注意小账户下最低佣金会让
+      持有全体的基准多扣成本（1 亿元时约 0.65–0.8%/年），超额偏正。
+    - benchmark：默认 "universe"：用同一份行情、同样的调仓日、同样的成交错位、可交易规则
+      和费用，持有信号日股票池全体等权（`panelbt` 跑一遍「前 100%」），零假设下多头端的
+      超额才接近 0。"close" 是旧口径（`equal_weight_benchmark`，收盘到收盘、不扣成本，
+      有结构偏差，只作对照）；也可以传长度 T 的日收益。多头端指标从因子第一次成交那天算起。
     - existing：{名字: T×N 面板}，报告与它们的平均日截面秩相关（给去重用）。
     - size_buckets：按总市值把股票池分几段（默认 3：小、中、大）算 IC。
     """
@@ -297,18 +344,19 @@ class FactorEvaluator:
         top_fraction=0.1,
         rebalance=5,
         lag=1,
+        exec="open",
         universe=None,
         segments=None,
         market=None,
         costs=None,
         config=None,
+        capital=CAPITAL,
         benchmark=None,
         existing=None,
         size_buckets=3,
         threads=0,
     ):
-        from ..ml import labels as _labels
-        from ..ml.walk import default_universe
+        from .. import labels as _labels
 
         self.panel = panel
         t, n = len(panel.dates), len(panel.symbols)
@@ -322,6 +370,9 @@ class FactorEvaluator:
         if self.rebalance < 1:
             raise ValueError("rebalance: 必须是正整数")
         self.lag = int(lag)
+        if exec not in _labels.EXEC_PRICES:
+            raise ValueError(f"exec: 只能是 {tuple(_labels.EXEC_PRICES)}")
+        self.exec = exec
         self.groups = int(groups)
         self.top = None if top is None else int(top)
         self.top_fraction = None if top is not None else float(top_fraction)
@@ -340,7 +391,7 @@ class FactorEvaluator:
         horizons_needed = sorted(set(self.horizons) | {self.screen_horizon})
         for h in horizons_needed:
             values = _labels.compute(
-                panel, _labels.Label(horizon=h, lag=self.lag), self.universe
+                panel, _labels.Label(horizon=h, lag=self.lag, exec=exec), self.universe
             )
             ret = np.where(values.buyable, values.raw, np.nan)
             self.returns[h] = np.ascontiguousarray(ret)
@@ -353,16 +404,27 @@ class FactorEvaluator:
             k: _RankIC(self.returns[self.screen_horizon], m)
             for k, m in self._size_masks.items()
         }
-        self.benchmark = (
-            equal_weight_benchmark(panel, self.universe)
-            if benchmark is None
-            else np.asarray(benchmark, dtype=np.float64)
-        )
-        if self.benchmark.shape != (t,):
-            raise ValueError("benchmark: 需要长度 T 的日收益")
+        self.capital = float(capital)
+        if not (self.capital > 0 and math.isfinite(self.capital)):
+            raise ValueError("capital: 需要正数")
         self._market, self.costs, self.config = self._backtest_inputs(
             market, costs, config
         )
+        self._benchmark = None
+        if benchmark is None or (
+            isinstance(benchmark, str) and benchmark == "universe"
+        ):
+            self.benchmark_mode = "universe"
+        elif isinstance(benchmark, str):
+            if benchmark not in BENCHMARKS:
+                raise ValueError(f"benchmark: 只能是 {BENCHMARKS} 或长度 T 的日收益")
+            self.benchmark_mode = benchmark
+            self._benchmark = equal_weight_benchmark(panel, self.universe)
+        else:
+            self.benchmark_mode = "custom"
+            self._benchmark = np.asarray(benchmark, dtype=np.float64)
+            if self._benchmark.shape != (t,):
+                raise ValueError("benchmark: 需要长度 T 的日收益")
         self.existing = {
             k: np.asarray(v, dtype=np.float64) for k, v in (existing or {}).items()
         }
@@ -374,7 +436,7 @@ class FactorEvaluator:
     def required_fields(exec="open"):
         """默认设置下要从面板读的字段。"""
         from ..backtest.market import required_fields as market_fields
-        from ..ml.labels import MASKS
+        from ..labels import MASKS
 
         return tuple(
             dict.fromkeys(
@@ -415,15 +477,27 @@ class FactorEvaluator:
         from ..backtest.market import BacktestMarket, iso_dates, market_inputs
 
         if isinstance(market, BacktestMarket):
-            config = config or market.config(initial_cash=1e8)
+            config = config or market.config(initial_cash=self.capital)
             costs = costs or market.costs()
             market = market.market
         elif market is None:
-            market = panelbt.Market(**market_inputs(self.panel), validate=True)
+            market = panelbt.Market(
+                **market_inputs(self.panel, self.exec), validate=True
+            )
+        if market is not None and market.shape == self.shape:
+            from ..labels import EXEC_PRICES
+
+            want = np.asarray(self.panel[EXEC_PRICES[self.exec]], dtype=np.float64)
+            got = np.asarray(market.exec_price, dtype=np.float64)
+            if not np.array_equal(want, got, equal_nan=True):
+                raise ValueError(
+                    f"market: 成交价不是面板的 {EXEC_PRICES[self.exec]!r}（exec={self.exec!r}），"
+                    "标签和多头端会用不同的成交价"
+                )
         if costs is None:
             costs = ASHARE.costs(iso_dates(self.dates))
         if config is None:
-            config = panelbt.Config(initial_cash=1e8)
+            config = panelbt.Config(initial_cash=self.capital)
         if market.shape != self.shape:
             raise ValueError("market: 形状必须与面板一致")
         return market, costs, config
@@ -436,25 +510,48 @@ class FactorEvaluator:
             raise ValueError(f"因子面板形状 {x.shape} 与面板 {self.shape} 不一致")
         return np.ascontiguousarray(np.where(self.universe & np.isfinite(x), x, np.nan))
 
+    def grid(self):
+        """调仓信号日表：第 0, rebalance, 2·rebalance, … 行（与面板截断无关，基准共用）。"""
+        return np.arange(0, self.shape[0], self.rebalance, dtype=np.int64)
+
     def rebalance_days(self, scores):
-        """调仓信号日：从第一个有因子值的行起每 rebalance 行一次（与面板截断无关）。"""
+        """调仓信号日：调仓日表里从第一个有因子值的行起的那些。"""
         rows = np.flatnonzero(np.isfinite(scores).any(axis=1))
         if not len(rows):
             return np.empty(0, dtype=np.int64)
-        return np.arange(int(rows[0]), self.shape[0], self.rebalance, dtype=np.int64)
+        days = self.grid()
+        return days[days >= int(rows[0])]
 
-    def targets(self, scores):
-        """多头端目标（成交日行号），直接交给 `panelbt`。没有可选股票时返回 None。"""
+    def _long_targets(self, scores, days):
         from ..backtest import execution_targets
 
-        days = self.rebalance_days(scores)
-        if not len(days):
-            return None
         kw = (
             {"k": self.top} if self.top is not None else {"fraction": self.top_fraction}
         )
         sparse = panelops.targets(scores, days=days, **kw)
         return execution_targets(sparse, t=self.shape[0], lag=self.lag)
+
+    @property
+    def benchmark(self):
+        """基准的日收益（长度 T）。默认口径第一次用到时跑一遍回测，之后复用。"""
+        if self._benchmark is None:
+            from ..backtest import execution_targets
+
+            scores = np.ascontiguousarray(np.where(self.universe, 1.0, np.nan))
+            sparse = panelops.targets(scores, days=self.grid(), fraction=1.0)
+            tg = execution_targets(sparse, t=self.shape[0], lag=self.lag)
+            r = self.run_long([tg])[0]["returns"]
+            out = np.asarray(r, dtype=np.float64).copy()
+            out[: self.lag] = np.nan
+            self._benchmark = out
+        return self._benchmark
+
+    def targets(self, scores):
+        """多头端目标（成交日行号），直接交给 `panelbt`。没有可选股票时返回 None。"""
+        days = self.rebalance_days(scores)
+        if not len(days):
+            return None
+        return self._long_targets(scores, days)
 
     def screen(self, values):
         """粗筛只要的部分：股票池内的因子面板和筛选持有期的日 IC。返回 (scores, ic)。"""
@@ -528,12 +625,13 @@ class FactorEvaluator:
         }
         years = {}
         ic_sh = partial["ic"][sh]
+        first = a if long is None else max(a, int(long.get("start", 0)))
         for y in dict.fromkeys(self.years[a:b]):
             rows = np.flatnonzero(self.years == y)
             ic_rows = rows[(rows >= a) & (rows < b - self.span[sh])]
             years[str(y)] = {"ic": _mean(ic_sh[ic_rows]) if len(ic_rows) else math.nan}
             if long is not None:
-                d = rows[(rows >= a) & (rows < b)]
+                d = rows[(rows >= first) & (rows < b)]
                 excess = long["returns"][d] - self.benchmark[d]
                 ok_ = np.isfinite(excess)
                 years[str(y)]["excess_return"] = (
@@ -541,7 +639,7 @@ class FactorEvaluator:
                 )
         out["years"] = years
         if long is not None:
-            d = slice(a, b)
+            d = slice(first, max(first, b))
             out["long"] = long_summary(
                 long["returns"][d],
                 self.benchmark[d],
@@ -559,7 +657,7 @@ class FactorEvaluator:
         live = [k for k, x in enumerate(targets) if x is not None]
         t = self.shape[0]
         empty = {"returns": np.full(t, np.nan), "turnover": np.full(t, np.nan),
-                 "cost": np.full(t, np.nan)}  # fmt: skip
+                 "cost": np.full(t, np.nan), "start": t}  # fmt: skip
         out = [empty] * len(targets)
         if not live:
             return out
@@ -580,6 +678,8 @@ class FactorEvaluator:
                 "returns": res.returns[i],
                 "turnover": res.turnover[i],
                 "cost": cost,
+                # 第一次成交的行：多头端指标从这天算起
+                "start": int(targets[k].days[0]) if len(targets[k].days) else t,
             }
         return out
 
@@ -591,7 +691,9 @@ class FactorEvaluator:
         series = {"ic": partial["ic"]}
         if long is not None:
             series["long"] = long
-            series["excess"] = long["returns"] - self.benchmark
+            excess = long["returns"] - self.benchmark
+            excess[: min(int(long.get("start", 0)), len(excess))] = np.nan
+            series["excess"] = excess
         return FactorReport(
             name, segments, partial["autocorr"], partial["correlation"], series
         )

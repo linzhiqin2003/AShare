@@ -16,7 +16,7 @@ from ashare.factor.mining import (
     dedup_key,
 )
 from ashare.factor.mining import strategies as st
-from ashare.factor.mining.space import Invalid
+from ashare.factor.mining.space import Invalid, subtrees
 
 close, open_, volume, amount = (
     field("close"),
@@ -82,7 +82,13 @@ def test_canonical_and_dedup_key():
 
 def _small():
     return Space(
-        fields={"close": "price", "open": "price", "volume": "volume"},
+        # turnover（无量纲）让乘法在默认的「截面算子只排无量纲量」下仍有合法候选
+        fields={
+            "close": "price",
+            "open": "price",
+            "volume": "volume",
+            "turnover": "ratio",
+        },
         ops={
             "divide": {},
             "multiply": {},
@@ -103,6 +109,7 @@ def test_enumerate_is_complete_and_valid():
     assert all(sp.valid(e) for e in out)
     texts = {str(e) for e in out}
     assert "(close / open)" in texts or "(open / close)" in texts
+    assert any(e.op == "multiply" for e in out)
     assert out == list(st.enumerate_space(sp))
     # 穷举覆盖：随机采到的每个候选都在穷举里（去重键意义下）
     rng = np.random.default_rng(0)
@@ -159,3 +166,67 @@ def test_mutation_and_crossover_valid():
         c = st.crossover(sp, rng, a, b)
         for x in (m, c):
             assert x is None or sp.valid(x)
+
+
+def test_dedup_key_symmetry_and_nonnegative_abs():
+    c, v, o = field("close"), field("volume"), field("open")
+    assert dedup_key(call("ts_corr", c, v, window=10)) == dedup_key(
+        call("ts_corr", v, c, window=10)
+    )
+    assert dedup_key(call("ts_corr", c, v, window=10)) != dedup_key(
+        call("ts_corr", c, v, window=20)
+    )
+    # 非负量上的 abs 是恒等
+    assert dedup_key(call("abs", c)) == dedup_key(c)
+    assert dedup_key(call("abs", call("ts_std", c, window=5))) == dedup_key(
+        call("ts_std", c, window=5)
+    )
+    assert dedup_key(call("abs", c / o)) == dedup_key(c / o)
+    # 可能为负的保留
+    assert dedup_key(call("abs", c - o)) != dedup_key(c - o)
+    assert dedup_key(call("abs", call("log", c))) != dedup_key(call("log", c))
+    assert dedup_key(call("abs", call("ts_delta", c, periods=1))) != dedup_key(
+        call("ts_delta", c, periods=1)
+    )
+
+
+def test_level_ranks_excluded_by_default():
+    c = field("close")
+    sp = Space.default()
+    assert not sp.valid(call("cs_rank", c))
+    assert not sp.valid(call("cs_rank", field("volume")))
+    assert sp.valid(call("cs_rank", c / call("ts_delay", c, periods=5)))
+    assert sp.valid(call("cs_rank", field("turnover")))
+    loose = Space.default(allow_level_ranks=True)
+    assert loose.valid(call("cs_rank", c)) and loose.digest != sp.digest
+    rng = np.random.default_rng(0)
+    for _ in range(300):
+        e = st.random_candidate(sp, rng)
+        for _, node in subtrees(e):
+            if node.op in ("cs_rank", "cs_zscore"):
+                assert sp._check(node.args[0])[0].dimensionless
+
+
+def test_evolution_draws_fresh_randomness_each_generation(monkeypatch):
+    """每一代用自己的随机流（种子 + 代数）；各代第一次变异或交叉时的随机数状态都不同。"""
+    sp = Space.default()
+    gen = {"g": -1}
+    states = {}
+
+    def wrap(fn):
+        def inner(space, rng, *args):
+            states.setdefault(gen["g"], rng.bit_generator.state["state"]["state"])
+            return fn(space, rng, *args)
+
+        return inner
+
+    monkeypatch.setattr(st, "mutate", wrap(st.mutate))
+    monkeypatch.setattr(st, "crossover", wrap(st.crossover))
+
+    def evaluate(batch):
+        gen["g"] += 1
+        return [0.0] * len(batch)
+
+    Evolution(population=12, generations=3, seed=4).run(sp, evaluate)
+    firsts = [states[g] for g in sorted(states)]
+    assert len(firsts) >= 3 and len(set(firsts)) == len(firsts)

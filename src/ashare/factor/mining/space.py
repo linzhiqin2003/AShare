@@ -9,9 +9,16 @@
 - 排名、标准化、相关、符号：结果无量纲；滑动均值、最大最小、延迟、差分：量纲不变。
 
 另有：截面算子的位置（``cs_positions="any"`` 或 ``"root"``）、显然冗余的嵌套（排名套
-排名、取负套取负、两个相同的操作数相减）在生成时排除。表达式的规范形在 `Expr` 的
-摘要之上再做两步：可交换算子（加、乘、取大、取小）的操作数按摘要排序；根上的截面排名
-与截面标准化（逐日单调变换，不改变排序）在去重键里剥掉。
+排名、取负套取负、两个相同的操作数相减）在生成时排除。截面算子（排名、标准化）的参数
+默认必须无量纲：``cs_rank(close)`` 这类对价格水平、成交量水平的截面排名量的是「股价高低、
+公司大小」，不是这里要找的东西，根节点无量纲的要求也拦不住它（排名的结果无量纲），
+所以单独排除；``allow_level_ranks=True`` 放开。
+
+表达式的规范形在 `Expr` 的摘要之上再做一步：可交换算子（加、乘、取大、取小）的操作数
+按摘要排序。去重键在规范形上再做三步（只用于判重，不改变生成和求值）：滑动相关
+``ts_corr`` 的两个操作数按摘要排序（相关系数对称）；作用在非负量上的 ``abs`` 去掉
+（非负字段见 `NONNEGATIVE_FIELDS`，滑动均值、最大最小、标准差等保持非负）；根上的截面
+排名与截面标准化（逐日单调变换，不改变排序）剥掉。
 
 ```python
 from ashare.factor.mining import Space
@@ -162,6 +169,20 @@ CATALOG = {
 }
 # 根上去掉不改变逐日排序的变换（去重键）
 MONOTONE_ROOT = ("cs_rank", "cs_zscore")
+# 去重键里按对称处理的二元算子（不在 CATALOG 的可交换里：生成时两种顺序都会出现）
+SYMMETRIC_KEY = ("ts_corr",)
+# 取值非负的字段（价格、成交量、成交额、换手率、市值）：abs 套在它们上面是恒等
+NONNEGATIVE_FIELDS = frozenset(
+    {"open", "high", "low", "close", "vwap", "volume", "amount", "turnover",
+     "total_market_cap", "float_market_cap", "adj_factor"}
+)  # fmt: skip
+# 非负输入得非负结果的算子（全部操作数非负时）
+_KEEP_NONNEG = frozenset(
+    {"add", "multiply", "divide", "maximum", "minimum", "ts_delay", "ts_mean", "ts_sum",
+     "ts_max", "ts_min", "ts_median", "ts_decay_linear", "ts_ema"}
+)  # fmt: skip
+# 结果总是非负的算子
+_ALWAYS_NONNEG = frozenset({"abs", "ts_std"})
 # 两个截面单调变换互相嵌套同样冗余
 _CS_MONOTONE = set(MONOTONE_ROOT)
 
@@ -218,7 +239,8 @@ class Space:
     ops：{算子名: {参数名: 取值序列}}，算子必须在 `CATALOG` 里；max_depth：最大深度
     （字段叶子深度为 0）；max_nodes：最大节点数（字段也算）；cs_positions：截面算子可
     出现的位置，"any" 或 "root"；require_dimensionless：根节点必须无量纲（价格水平本身、
-    成交量本身这类与股价高低、公司大小直接相关的量不作为候选）。"""
+    成交量本身这类与股价高低、公司大小直接相关的量不作为候选）；allow_level_ranks：
+    是否允许截面算子作用在有量纲的量上（默认不允许，见模块说明）。"""
 
     fields: dict = field(default_factory=lambda: dict(DEFAULT_FIELDS))
     ops: dict = field(
@@ -228,6 +250,7 @@ class Space:
     max_nodes: int = 7
     cs_positions: str = "any"
     require_dimensionless: bool = True
+    allow_level_ranks: bool = False
 
     def __post_init__(self):
         fields = {}
@@ -274,6 +297,7 @@ class Space:
             "max_nodes": self.max_nodes,
             "cs_positions": self.cs_positions,
             "require_dimensionless": self.require_dimensionless,
+            "allow_level_ranks": self.allow_level_ranks,
         }
 
     @property
@@ -354,6 +378,14 @@ class Space:
                 raise Invalid(f"{node.op}: 只允许满窗口")
         if rule.kind == "cs" and self.cs_positions == "root" and not is_root:
             raise Invalid(f"{node.op}: 截面算子只能在根上")
+        if (
+            rule.kind == "cs"
+            and not self.allow_level_ranks
+            and not children[0][0].dimensionless
+        ):
+            raise Invalid(
+                f"{node.op}: 截面算子的参数必须无量纲（现在是 {children[0][0]}）"
+            )
         child_ops = [a.op for a in node.args]
         if rule.idempotent and node.op in child_ops:
             raise Invalid(f"{node.op} 套在自己上冗余")
@@ -393,9 +425,41 @@ def canonical(expr):
     return memo[expr.digest]
 
 
+def key_form(expr):
+    """去重键用的形式：规范形 + ``ts_corr`` 操作数排序 + 去掉非负量上的 ``abs``。"""
+    memo, nonneg = {}, {}
+    stack = [(expr, False)]
+    while stack:
+        node, ready = stack.pop()
+        if node.digest in memo and not ready:
+            continue
+        if not ready:
+            stack.append((node, True))
+            stack.extend((a, False) for a in node.args)
+            continue
+        args = [memo[a.digest] for a in node.args]
+        rule = CATALOG.get(node.op)
+        if (rule is not None and rule.commutative) or node.op in SYMMETRIC_KEY:
+            args.sort(key=lambda a: a.digest)
+        if node.op == "abs" and nonneg[node.args[0].digest]:
+            out = args[0]
+        elif all(a is b for a, b in zip(args, node.args, strict=True)):
+            out = node
+        else:
+            out = Expr(node.op, tuple(args), node.params)
+        memo[node.digest] = out
+        if node.op == "field":
+            nonneg[node.digest] = dict(node.params).get("value") in NONNEGATIVE_FIELDS
+        else:
+            nonneg[node.digest] = node.op in _ALWAYS_NONNEG or (
+                node.op in _KEEP_NONNEG and all(nonneg[a.digest] for a in node.args)
+            )
+    return memo[expr.digest]
+
+
 def dedup_key(expr):
-    """去重键：规范形去掉根上的逐日单调变换后的摘要。键相同的候选只评一次。"""
-    node = canonical(expr)
+    """去重键：`key_form` 再去掉根上的逐日单调变换后的摘要。键相同的候选只评一次。"""
+    node = key_form(expr)
     while node.op in MONOTONE_ROOT:
         node = node.args[0]
     return node.digest

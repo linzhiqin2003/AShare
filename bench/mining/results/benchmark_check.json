@@ -1,0 +1,120 @@
+{
+ "settings": {
+  "top_fraction": 0.1,
+  "rebalance": 5,
+  "random": 15
+ },
+ "load_before": "6.28 5.66 6.88",
+ "2016-2021": {
+  "rows": 1461,
+  "symbols": 5923,
+  "zero/universe": {
+   "ir_mean": 0.03149010153306047,
+   "ir_sd": 0.5354565030983705,
+   "excess_mean": 0.0005696253600063107,
+   "count": 15
+  },
+  "zero/close": {
+   "ir_mean": 0.438360742954288,
+   "ir_sd": 0.2978920868008471,
+   "excess_mean": 0.015225789524318491,
+   "count": 15
+  },
+  "zero/all_vs_close": {
+   "ir": 0.5118518206684772,
+   "excess": 0.014656164164312178,
+   "benchmark_cost": 0.0
+  },
+  "default/universe": {
+   "ir_mean": 0.021397155244417498,
+   "ir_sd": 0.5352364101360771,
+   "excess_mean": 0.00036977402040853994,
+   "count": 15
+  },
+  "default/close": {
+   "ir_mean": 0.3590911963138036,
+   "ir_sd": 0.3008009381015728,
+   "excess_mean": 0.01242052251734227,
+   "count": 15
+  },
+  "default/all_vs_close": {
+   "ir": 0.4249223341373762,
+   "excess": 0.012050748496933723,
+   "benchmark_cost": 0.0025862818923893484
+  },
+  "default_1e8/universe": {
+   "ir_mean": 0.3004919880210434,
+   "ir_sd": 0.5123542681799323,
+   "excess_mean": 0.0061097413291075035,
+   "count": 15
+  },
+  "default_1e8/close": {
+   "ir_mean": 0.32934801278042364,
+   "ir_sd": 0.2990672975297306,
+   "excess_mean": 0.011421359851582486,
+   "count": 15
+  },
+  "default_1e8/all_vs_close": {
+   "ir": 0.17660005873068368,
+   "excess": 0.005311618522474981,
+   "benchmark_cost": 0.006285829549775284
+  }
+ },
+ "2022-2025": {
+  "rows": 969,
+  "symbols": 5923,
+  "zero/universe": {
+   "ir_mean": -0.21571349026964168,
+   "ir_sd": 0.37188050377751236,
+   "excess_mean": -0.004019914560975312,
+   "count": 15
+  },
+  "zero/close": {
+   "ir_mean": -0.23018548128926336,
+   "ir_sd": 0.35896668048983404,
+   "excess_mean": -0.0044196074961071205,
+   "count": 15
+  },
+  "zero/all_vs_close": {
+   "ir": -0.08790913247637727,
+   "excess": -0.00039969293513180846,
+   "benchmark_cost": 0.0
+  },
+  "default/universe": {
+   "ir_mean": -0.22054345884604307,
+   "ir_sd": 0.3709406375893159,
+   "excess_mean": -0.004109677949149651,
+   "count": 15
+  },
+  "default/close": {
+   "ir_mean": -0.36573049992488277,
+   "ir_sd": 0.3586427256742517,
+   "excess_mean": -0.007027673644191347,
+   "count": 15
+  },
+  "default/all_vs_close": {
+   "ir": -0.6378214495339466,
+   "excess": -0.002917995695041695,
+   "benchmark_cost": 0.0025089653238296963
+  },
+  "default_1e8/universe": {
+   "ir_mean": 0.062801448382052,
+   "ir_sd": 0.3149283907196101,
+   "excess_mean": 0.0012547164052757053,
+   "count": 15
+  },
+  "default_1e8/close": {
+   "ir_mean": -0.4141182540575402,
+   "ir_sd": 0.3640921024125644,
+   "excess_mean": -0.007922795775630978,
+   "count": 15
+  },
+  "default_1e8/all_vs_close": {
+   "ir": -0.7122112983113166,
+   "excess": -0.00917751218090668,
+   "benchmark_cost": 0.007102264837981474
+  }
+ },
+ "seconds": 11.732452869415283,
+ "load_after": "8.25 6.10 7.01"
+}

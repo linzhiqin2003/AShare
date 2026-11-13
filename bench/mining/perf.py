@@ -75,6 +75,11 @@ def run_once(panel, data, exprs, threads):
     bm = market_from_panel(data, panel=panel, validate=False)
     fe = FactorEvaluator(panel, market=bm, threads=threads)
     timing["prepare"] = time.perf_counter() - t0
+    tb = time.perf_counter()
+    _ = (
+        fe.benchmark
+    )  # 默认基准：同口径的「前 100%」组合跑一遍回测（第一次用到时算，之后复用）
+    timing["benchmark"] = time.perf_counter() - tb
     ev = Evaluator()
     t_expr = t_cheap = 0.0
     targets, partials = [], {}
