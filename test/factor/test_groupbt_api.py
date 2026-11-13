@@ -294,3 +294,27 @@ def test_outputs():
     np.testing.assert_allclose(curve["cumsum"][-1], np.nansum(res.pnl["long_short"]))
     assert res.chart().startswith("<svg") and "TOP800" in res.html()
     assert "long_short" in res.text() and "TOP800" in res.to_dict()["subs"]
+
+
+def test_top1800_starts_in_2015():
+    """涉及 TOP1800 的回测从 2015-01-01 起：之前即使有中证1000 的成分也不出结果。"""
+    panel = make_panel(seed=4, limits=False)
+    t = panel.shape[0]
+    dates = np.array(
+        [f"201412{i + 1:02d}" for i in range(30)]
+        + [f"2015{1 + (i // 20):02d}{1 + i % 20:02d}" for i in range(t - 30)]
+    )
+    panel = FakePanel(panel._a, dates, panel.symbols)
+    assert panel["member_csi1000"][20].any()
+    mask = api.universe_mask(panel, "TOP1800")
+    assert not mask[:30].any() and mask[30].sum() == 50
+    assert api.universe_mask(panel, "TOP800")[5].sum() == 30
+    factor = np.random.default_rng(5).normal(size=panel.shape)
+    res = groupbt.run(factor, panel, "TOP1800", n_groups=5)
+    first = lambda r: int(np.flatnonzero(~np.isnan(r.pnl["long_short"]))[0])  # noqa: E731
+    assert first(res) == 31 and first(res.subs["TOP800"]) == 31  # 信号日 30，成交日 31
+    whole = groupbt.run(factor, panel, "ALL", n_groups=5)
+    assert first(whole) == 1 and first(whole.subs["TOP800"]) == 1
+    assert first(whole.subs["TOP1800"]) == 31
+    alone = groupbt.run(factor, panel, "TOP800", n_groups=5)
+    assert first(alone) == 1

@@ -34,12 +34,24 @@ FIELDS = (
     "member_csi500",
     "member_csi1000",
 )
+# 中证1000 的成分数据从 2014 年 11 月才有；涉及 TOP1800 的回测统一从这一天起算。
+TOP1800_START = "20150101"
 PRICE_TOL = 0.005  # 与数据层开盘口径相同
 PERIODS = 240  # 一年按 240 个交易日
 
 
-def universe_mask(panel, name):
-    """股票池的 (T, N) 布尔面板。TOP1800 在中证1000 有成分数据之前整行为空。"""
+def universe_mask(panel, name, start=None):
+    """股票池的 (T, N) 布尔面板。`start`（YYYYMMDD）之前的行为空；TOP1800 固定从
+    `TOP1800_START` 起，且在中证1000 有成分数据之前为空。"""
+    mask = _members(panel, name)
+    if name == "TOP1800":
+        start = max(start or "", TOP1800_START)
+    if start:
+        mask[np.asarray(panel.dates) < start] = False
+    return mask
+
+
+def _members(panel, name):
     if name not in UNIVERSES:
         raise ValueError(f"universe 只能是 {tuple(UNIVERSES)}，得到 {name!r}")
     listed = np.asarray(panel["is_listed"], dtype=bool)
@@ -223,7 +235,7 @@ def _html_table(frame):
 def _one(name, alpha_all, inputs, options):
     """一个股票池：抽池、池内去均值、分组、推进、统计。"""
     panel, fwd, can_buy, can_sell, risk = inputs
-    mask = universe_mask(panel, name)
+    mask = universe_mask(panel, name, options["start"])
     built = weights.build_weights(alpha_all, mask, decay=options["decay"])
     n = options["n_groups"]
     groups = portfolio.assign_groups(built["alpha"], n)
@@ -284,6 +296,7 @@ def run(
     """分组回测。`factor` 是在全市场上算好的 (T, N) 因子矩阵，行列与 `panel` 对齐，值越大越做多。
 
     - universe：`"TOP800"`（沪深300 + 中证500）、`"TOP1800"`（再加中证1000）、`"ALL"`。
+      `TOP1800` 从 2015-01-01 起回测（带的 `TOP800` 小池同样）。
     - trade_at：`"open"` 或 `"close"`，都是信号日的下一个交易日成交。
     - trade_limitation：停牌不交易；涨停只能卖、跌停只能买；冻结的持仓占着额度。
     - group_neutralize：`None`、`"industry"`、`"cap"`、`"cap+industry"`，在全市场上做。
@@ -334,6 +347,8 @@ def run(
         decay=decay,
         by=by,
         weights_portfolio=weights_portfolio,
+        # 主池是 TOP1800 时，带的小池也从同一天起算，才能并排比较。
+        start=TOP1800_START if universe == "TOP1800" else None,
     )
     result = _one(universe, alpha_all, inputs, options)
     if sub_universes:
