@@ -35,8 +35,10 @@ A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再�
   - 唯一带容差的是特质风险增量算法（P-006，相对从头算 ≤ 1e-12，`specific_incremental=False` 切回从头算）；并行优化序列（`parallel=True`）不逐位，是显式选项
   - 测量工具：`make perf-profile` 跑一遍端到端各阶段，`make perf-compare` 与 `bench/e2e/results/baseline.json`（优化前）逐阶段对比；优化后的一轮冻结在 `bench/e2e/results/round1-after.json`。**用户重启电脑后会让我再跑一轮**，届时跑这两条命令并把对比报给用户
   - 需要再放宽容差的候选见 `docs/perf_log.d/risk-suggestions.md`，做之前先问用户
-- 2026-11-13 实现者改为 Opus 子代理（Codex 额度不足，恢复前先问用户）；每条线仍是独立复核后由 Claude 合入。当天合入主干：因子机制（公式库私有化后的注册与加载）、报告文本版与命令行、事件、归因与容量、引擎规则与逐步接口、境内期货数据、港股美股档案、机器学习（`ashare.ml`）、境外期货适配器、`panelops` 滚动求和精度（`exact=`）、基金与可转债数据加资产配置（`ashare.allocation`）、期货回测、因子挖掘（`ashare.factor.evaluate` / `stats` / `mining`，标签和台账在 `ashare.labels`、`ashare.ledger`）
+- 2026-11-13 实现者改为 Opus 子代理（Codex 额度不足；当晚用户恢复用 Codex，平台和分组回测由 Codex 做）；每条线仍是独立复核后由 Claude 合入。当天合入主干：因子机制（公式库私有化后的注册与加载）、报告文本版与命令行、事件、归因与容量、引擎规则与逐步接口、境内期货数据、港股美股档案、机器学习（`ashare.ml`）、境外期货适配器、`panelops` 滚动求和精度（`exact=`）、基金与可转债数据加资产配置（`ashare.allocation`）、期货回测、因子挖掘（`ashare.factor.evaluate` / `stats` / `mining`，标签和台账在 `ashare.labels`、`ashare.ledger`）
 - 2026-11-13 用户定：不做 MCP 工具层（agent 直接进仓库）；不做高频；神经网络暂不做，将来作为可选依赖
 - 2026-11-13 GitHub：`main` 受规则集保护（改动走 PR、1 人批准、禁强推和删除，管理员可绕过）；有一位写权限的协作者，通过 PR 提交
+- 2026-11-13 研究平台第一期合入主干（参考 WorldQuant BRAIN）：可选安装（`--extra platform`，`make dev` 默认装），FastAPI + Vue，研究台 + 因子库，`docs/PLATFORM.md`；设计稿在 `data/platform/mockups2/`。用户定：每个「表达式 + 配置」算一个因子，因子库默认不分组、可按表达式或配置分组；基准只用 `catalog.BENCHMARKS` 里的主流指数，默认上证；行情数据和结果库放本地。进行中（Codex 第五轮）：调仓周期 N、平均持仓天数、持仓明细、真实数据 4 组 3 秒目标
+- 2026-11-13 分组回测（`groupbt`）改走 `panelbt` 权重模式合入主干：Rust、计算期间释放 GIL、与原实现逐位一致（416 组合成 + 384 组真实对照）；单组约 9 s → 0.3 s。改了 Rust 后要 `make dev` 重建扩展，`make check` 不会自动重建
 - 待用户定：报告页设计稿（`data/research/charts/mockups_v2/`，选定前不改 `tearsheet.html` 版式）；每日信号线等模拟盘接入 `tradecore`
 - 下一步：P3 模拟盘接入 `tradecore`、公开因子库（Alpha158 / Alpha101 / 国泰君安 191）批量复现、步骤 4 rqalpha 对账
