@@ -673,6 +673,18 @@ REFERENCES = {"my_range": my_range}
 - 参考实现要独立：照约定文件自己写 pandas，不调用 `ashare.factor` 的表达式和 `panelops`。
 - 外部包的测试可以用 `ashare.factor.formula.testing.synthetic_source` 造合成面板。
 
+#### 6.2.2 单因子评估与因子挖掘（`ashare.factor.evaluate`、`ashare.factor.stats`、`ashare.factor.mining`）
+
+本仓库只放机制：评估、搜索器、台账、统计检验和用自编玩具表达式写的例子。挖出来的任何因子、试验记录、台账文件都不进仓库，台账默认写到数据根目录下不入库的 `mining/`（`ASHARE_MINING_DIR` 或 `root=` 可指到私有仓库）。口径、出处、模拟与性能见 `docs/MINING_NOTES.md`。
+
+- **单因子评估**（`FactorEvaluator`、`evaluate_factor`）：收益标签直接用 `ashare.ml.labels`（t+1 开盘买、t+1+h 开盘卖，买入日不可买的样本不进 IC），Rank IC 多个持有期（默认 1、5、20），t 值用 Hansen–Hodrick 均匀核 HAC（滞后 h−1）；分组收益与单调性；**多头端**为准：前 10%（或前 N 只）等权、每 5 天调仓，T 日收盘出信号、`execution_targets` 错到 T+1 成交，`panelbt.run_batch` 一次跑一批，相对股票池等权基准（或给定基准）算超额、信息比率、夏普、回撤、换手、成本；分年度、分市值段、因子自相关、与已有因子的截面秩相关。段（训练、验证……）内的 IC 只用标签完整落在段内的信号日。`to_dict()` 只含基本类型，`text()` 给终端。
+- **统计检验**（`ashare.factor.stats`，不依赖搜索器）：概率夏普、折算夏普（Bailey & López de Prado 2012/2014）、Bonferroni / Holm / Benjamini–Hochberg / Benjamini–Yekutieli、CSCV 回测过拟合概率（Bailey 等 2017）、有效试验数（平均相关、Nyholt、Li–Ji）、HAC t 值。
+- **搜索空间**（`Space`）：用户声明字段（带量纲）、算子与参数取值、最大深度与节点数、截面算子位置；量纲规则在生成时排除价格加成交量这类组合，根节点要求无量纲；可交换算子排序、根上的截面单调变换剥掉后作为去重键。
+- **策略**：`Enumerate`（穷举）、`Random`（随机采样）、`Evolution`（变异、交叉、锦标赛、(μ+λ) 截断），同一接口 `run(space, evaluate)`，全部确定性（种子决定，与线程数无关）。
+- **搜索**（`mine`）：`split`（`Split`）必填；搜索只在截掉留出段的面板视图（`Truncated`）上进行，训练段算适应度（默认多头端超额的信息比率，可换、可加复杂度惩罚），验证段只用来挑选；两段式（训练段 IC 的 t 值过门槛才回测，筛掉的照样记账）；数值去重（与已入选因子的截面秩相关 ≥ 0.9 标为重复，照样计入试验数）；断点续跑（从台账接着跑，结果与一次跑完相同）；留出段只能 `unlock_holdout` 显式解锁一次，解锁记进台账。
+- **台账**：复用 `ashare.ml.ledger.Ledger`（同一 JSONL 格式、文件锁、失败也留痕）；`trial_id` 不含搜索策略，同一候选在不同搜索里只算一次；`Ledger.trials()` 跨搜索、跨手工（`record_trial`）累计。折算夏普的试验数用台账累计数；IC 的 Holm / BH / BY 把之前的试验补成无效检验占分母。
+- **折算夏普的方差 V**：默认取零假设下单个夏普估计量的方差 1/(T−1)；原文的「各试验夏普的截面方差」在候选池里有真信号时被撑大、几乎什么都过不了（模拟见 MINING_NOTES），作为 `sr_var="empirical"` 保留，`"max"` 两者取大。
+
 ### 6.3 合成、组合与研究纪律
 
 - 滚动训练：按时间切分，训练集和测试集之间留隔离期；LightGBM；各折并行。

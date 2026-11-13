@@ -1,0 +1,72 @@
+{
+ "factors": 100,
+ "start": "20160101",
+ "end": "20251231",
+ "cpus": 15,
+ "load_before": "10:11  up 1 day, 12:42, 2 users, load averages: 9.37 10.86 9.58",
+ "shape": [
+  2430,
+  5923
+ ],
+ "read_fields": 0.17953183298232034,
+ "runs": [
+  {
+   "prepare": 0.3300292089988943,
+   "expressions": 2.0912253326096106,
+   "ic_groups_etc": 13.894840710127028,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.23385424999287352,
+   "summaries": 0.09060008300002664,
+   "screen_only_with_expressions": 4.433805666019907,
+   "total": 16.640549584728433
+  },
+  {
+   "prepare": 0.35341233399230987,
+   "expressions": 2.229658080090303,
+   "ic_groups_etc": 14.844733712030575,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.24231458400026895,
+   "summaries": 0.08302466699387878,
+   "screen_only_with_expressions": 4.7772474590165075,
+   "total": 17.753143377107335
+  },
+  {
+   "prepare": 0.7088895419728942,
+   "expressions": 2.3048758789082058,
+   "ic_groups_etc": 15.460990204039263,
+   "evaluator_batches": 2,
+   "backtest_run_batch": 0.24611104201176204,
+   "summaries": 0.07965841598343104,
+   "screen_only_with_expressions": 4.483442583004944,
+   "total": 18.800525082915556
+  }
+ ],
+ "median": {
+  "prepare": 0.35341233399230987,
+  "expressions": 2.229658080090303,
+  "ic_groups_etc": 14.844733712030575,
+  "evaluator_batches": 2,
+  "backtest_run_batch": 0.24231458400026895,
+  "summaries": 0.08302466699387878,
+  "screen_only_with_expressions": 4.483442583004944,
+  "total": 17.753143377107335
+ },
+ "rank_ic_one_factor_one_horizon": {
+  "numpy_loop": 1.182157916977303,
+  "panelops": 0.010156750009628013
+ },
+ "cheap_breakdown_ms_per_factor": {
+  "ic_h1": 11.661470698891208,
+  "ic_h5": 11.656179200508632,
+  "ic_h20": 11.460741600603797,
+  "groups": 12.793983300798573,
+  "size_ic": 15.285479198792018,
+  "autocorr": 48.673179096658714,
+  "targets": 4.508675099350512
+ },
+ "backtest_10": {
+  "sequential_run": 0.2276312500180211,
+  "run_batch": 0.030858416022965685
+ },
+ "load_after": "10:12  up 1 day, 12:43, 2 users, load averages: 16.06 12.75 10.42"
+}

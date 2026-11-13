@@ -1,0 +1,173 @@
+[
+ {
+  "name": "holdout_leak",
+  "desc": "留出段并进验证段（搜索的面板不截断、验证段延到最后一天）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
+  ],
+  "seconds": 5.5
+ },
+ {
+  "name": "label_one_day_late",
+  "desc": "收益标签对齐差一天（T+2 开盘买）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_and_groups_match_reference"
+  ],
+  "seconds": 2.8
+ },
+ {
+  "name": "execution_lag_wrong",
+  "desc": "多头端成交晚一天",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "segment_not_purged",
+  "desc": "段内 IC 用了标签跨出段尾的信号日",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_batch_equals_single_and_segments"
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "costs_not_charged",
+  "desc": "默认不扣成本",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_long_side_matches_direct_backtest"
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "duplicates_not_ledgered",
+  "desc": "判为数值重复的候选不记进台账（不计入试验数）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
+  ],
+  "seconds": 3.9
+ },
+ {
+  "name": "screened_not_ledgered",
+  "desc": "粗筛掉的候选不记进台账",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_holdout_perturbation_changes_nothing"
+  ],
+  "seconds": 4.5
+ },
+ {
+  "name": "dsr_uses_search_count",
+  "desc": "折算夏普只用本次搜索的试验数而不是台账累计",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_dsr_uses_cumulative_trials - a..."
+  ],
+  "seconds": 4.8
+ },
+ {
+  "name": "evolution_unseeded",
+  "desc": "进化的每一代不按种子取随机数",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_strategies_deterministic - Asse..."
+  ],
+  "seconds": 3.5
+ },
+ {
+  "name": "dedup_key_keeps_rank",
+  "desc": "去重键不剥根上的截面排名",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_canonical_and_dedup_key - Asser..."
+  ],
+  "seconds": 3.4
+ },
+ {
+  "name": "commutative_not_sorted",
+  "desc": "可交换算子的操作数不排序（a+b 与 b+a 算两个）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_enumerate_is_complete_and_valid"
+  ],
+  "seconds": 3.4
+ },
+ {
+  "name": "units_not_checked",
+  "desc": "加减时不检查量纲",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_space.py::test_units - Failed: DID NOT RAISE I..."
+  ],
+  "seconds": 3.3
+ },
+ {
+  "name": "unlock_twice",
+  "desc": "留出段可以重复解锁",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_search.py::test_unlock_holdout_once - Failed: ..."
+  ],
+  "seconds": 13.2
+ },
+ {
+  "name": "student_p_to_normal",
+  "desc": "IC 的 p 值用正态近似（小样本尾部太薄）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_hansen_hodrick - ..."
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "hac_bartlett",
+  "desc": "IC 的 t 值用 Bartlett 核（低估重叠方差）",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_factor_evaluate.py::test_ic_summary_hansen_hodrick - ..."
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "holm_multiplier",
+  "desc": "Holm 的乘数少 1",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "bh_wrong_direction",
+  "desc": "BH 累计最小值方向反了",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_adjust_hand_example - assert ar..."
+  ],
+  "seconds": 3.3
+ },
+ {
+  "name": "psr_kurtosis_sign",
+  "desc": "PSR 分母偏度项符号反了",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
+  ],
+  "seconds": 3.2
+ },
+ {
+  "name": "emax_no_gamma",
+  "desc": "期望最大夏普少了欧拉常数修正",
+  "caught": true,
+  "by": [
+   "FAILED test/factor/test_mining_stats.py::test_dsr_matches_paper_example - ass..."
+  ],
+  "seconds": 3.2
+ }
+]

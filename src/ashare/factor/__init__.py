@@ -32,3 +32,9 @@ from . import expression as _expression
 for _name in _expression.ELEMENTWISE:
     globals()[_name] = getattr(_expression, _name)
     __all__.append(_name)
+
+# 单因子评估与多重检验（因子挖掘线）；搜索器在子包 ashare.factor.mining
+from . import stats  # noqa: E402
+from .evaluate import FactorEvaluator, FactorReport, evaluate_factor  # noqa: E402
+
+__all__ += ["stats", "FactorEvaluator", "FactorReport", "evaluate_factor"]
