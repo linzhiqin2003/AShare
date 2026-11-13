@@ -1,0 +1,14 @@
+{
+ "samples": 12327260,
+ "blocked_share": 0.0014866239537415452,
+ "carried_and_sold": 18147,
+ "unsold_after_carry": 179,
+ "mean_diff_blocked": -0.03186119583294782,
+ "median_diff_blocked": -0.02192448233861155,
+ "carry_days_median": 1.0,
+ "carry_days_p90": 3.0,
+ "mean_diff_all_bp": -0.46902971202076055,
+ "price_nan_but_carry_finite": 49586,
+ "start": "20120101",
+ "max_carry": 60
+}
