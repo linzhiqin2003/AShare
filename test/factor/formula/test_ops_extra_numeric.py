@@ -182,12 +182,12 @@ with np.errstate(all="ignore"):
         "ts_arg_max": (
             (X,),
             {"window": W},
-            _ts(lambda c: len(c) - 1 - np.argmax(c), x),
+            _ts(lambda c: np.argmax(c[::-1]), x),
         ),
         "ts_arg_min": (
             (X,),
             {"window": W},
-            _ts(lambda c: len(c) - 1 - np.argmin(c), x),
+            _ts(lambda c: np.argmin(c[::-1]), x),
         ),
         "ts_rank": ((X,), {"window": W, "constant": 0.1}, _ts(_rank01, x) + 0.1),
         "ts_corr": (
@@ -266,14 +266,29 @@ def test_normalize_with_std_and_limit():
     np.testing.assert_allclose(got[both], reference[both], rtol=1e-9)
 
 
-def test_ts_decay_linear_dense_ignores_missing():
-    """dense=True 交给内核：窗口内有缺失时当天缺失，不把缺失当 0。"""
+def test_ts_decay_linear_dense_skips_missing_and_renormalizes():
+    """dense=True：跳过缺失、剩下的权重重新归一，窗口里有一个有效值就出数。"""
     got = _evaluate(ops_extra.build("ts_decay_linear", X, window=W, dense=True))
     k = np.arange(1, W + 1.0)
-    reference = _ts(lambda c: (c * k).sum() / k.sum(), x)
+    reference = np.full((T, N), np.nan)
+    for t in range(T):
+        for j in range(N):
+            c = np.full(W, np.nan)
+            n = min(W, t + 1)
+            c[W - n :] = x[t - n + 1 : t + 1, j]
+            ok = np.isfinite(c)
+            if ok.any():
+                reference[t, j] = (c[ok] * k[ok]).sum() / k[ok].sum()
     np.testing.assert_array_equal(np.isfinite(got), np.isfinite(reference))
     both = np.isfinite(reference)
     np.testing.assert_allclose(got[both], reference[both], rtol=1e-9)
+    assert np.isfinite(got[32:34, 5]).all() and not np.isfinite(got[35:44, 5]).any()
+
+
+def test_ts_decay_linear_default_gives_zero_on_all_missing_windows():
+    """dense=False 把缺失当 0：整个窗口都缺失时是 0，不是缺失（口径写在构造器说明里）。"""
+    got = _evaluate(ops_extra.build("ts_decay_linear", X, window=W))
+    assert np.all(got[35:44, 5] == 0.0)
 
 
 def test_ts_backfill_window_includes_today():
@@ -300,3 +315,76 @@ def test_vector_neut_is_not_the_intercept_regression():
         m = both[t]
         assert abs(projection[t, m] @ y[t, m]) < 1e-9
         assert abs(regression[t, m].mean()) < 1e-12
+
+
+# ---- 测试数据之外的边界：并列、单只有效、溢出、全零 --------------------------------
+
+
+class _Edge:
+    dates = np.arange(6)
+    symbols = np.array(["a", "b", "c"])
+    version = "ops-extra-edge"
+    data = {
+        # 第 0 列有并列的最大值和最小值；第 1 列很负；第 2 列只在第 3 行有值
+        "x": np.array(
+            [
+                [1.0, -1000.0, np.nan],
+                [3.0, -710.0, np.nan],
+                [2.0, -700.0, np.nan],
+                [3.0, 0.0, 2.0],
+                [0.0, 700.0, np.nan],
+                [0.0, 1000.0, np.nan],
+            ]
+        ),
+        "c": np.array([[-1.0, 0.0, 2.0]] * 5 + [[np.nan, 1.0, 0.0]]),
+        "z": np.zeros((6, 3)),
+    }
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+
+def _edge(expression):
+    return np.asarray(af.Evaluator().evaluate(expression, _Edge()), dtype=float)
+
+
+def test_arg_ties_take_the_most_recent():
+    arg_max = _edge(ops_extra.build("ts_arg_max", X, window=4))[:, 0]
+    arg_min = _edge(ops_extra.build("ts_arg_min", X, window=4))[:, 0]
+    assert arg_max[3] == 0 and arg_max[4] == 1  # 窗口 [1,3,2,3]、[3,2,3,0]
+    assert arg_min[5] == 0  # 窗口 [2,3,0,0]：两个 0 取今天
+
+
+def test_sigmoid_does_not_overflow():
+    got = _edge(ops_extra.build("sigmoid", X))[:, 1]
+    v = _Edge.data["x"][:, 1]
+    reference = np.empty_like(v)
+    reference[v >= 0] = 1 / (1 + np.exp(-v[v >= 0]))
+    reference[v < 0] = np.exp(v[v < 0]) / (1 + np.exp(v[v < 0]))
+    assert np.isfinite(got).all()
+    np.testing.assert_allclose(got, reference, rtol=1e-12, atol=0)
+    assert got[0] == 0.0 and got[5] == 1.0 and got[3] == 0.5
+
+
+def test_rank_of_a_single_valid_name_is_one_half():
+    full = _edge(ops_extra.build("rank", X))
+    np.testing.assert_array_equal(
+        full[3], [1.0, 0.0, 0.5]
+    )  # 三只都有值：最小 0、最大 1
+    # 第 5 行只剩中间一只有值（另两只一只本身缺失，一只被 c 的缺失带掉）
+    lone = _edge(ops_extra.build("rank", af.field("x") + 0 * af.field("c")))
+    assert np.isnan(lone[5, 0]) and np.isnan(lone[5, 2]) and lone[5, 1] == 0.5
+
+
+def test_if_else_treats_nonzero_as_true_and_missing_as_missing():
+    got = _edge(ops_extra.build("if_else", C, af.constant(1.0), af.constant(2.0)))
+    np.testing.assert_array_equal(got[0], [1.0, 2.0, 1.0])
+    assert np.isnan(got[5, 0]) and got[5, 1] == 1.0 and got[5, 2] == 2.0
+
+
+def test_projection_on_all_zero_is_missing():
+    Z = af.field("z")
+    assert not np.isfinite(_edge(ops_extra.build("vector_neut", X, Z))).any()
+    assert not np.isfinite(
+        _edge(ops_extra.build("ts_vector_neut", X, Z, window=2))
+    ).any()

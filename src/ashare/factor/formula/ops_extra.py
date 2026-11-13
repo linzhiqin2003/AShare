@@ -19,8 +19,12 @@
 - 偏度、峰度是总体口径（中心矩除以 n），峰度已减 3；
 - ``ts_arg_max`` / ``ts_arg_min`` 是「距今天数」，今天为 0；并列取最近的一个；
 - 截面秩 ``rank`` 映射到 [0, 1]，并列取平均秩；
-- 分组算子的分组字段必须是整数类型：``field("industry", dtype="int64")``；
+- 截面只有一只有效时 ``rank`` 给 0.5；``if_else`` 的条件非零即真，条件缺失则结果缺失；
+- ``ts_count_nans`` 在开头不满窗口时按已有的行数计数；
+- 分组算子的分组字段必须是整数类型：``field("industry", dtype="int64")``；组号为负的
+  格视为不在任何组里，结果缺失；
 - ``vector_neut``、``ts_vector_neut`` 是不带截距的投影；``regression_neut`` 带截距。
+  y 在截面（或窗口）内全为 0 时投影没有定义，结果缺失。
 """
 
 from ..expression import Expr, call, field, neutralize
@@ -307,9 +311,16 @@ def ts_count_nans(x, window=20):
 
 
 def ts_decay_linear(x, window=20, dense=False):
-    """线性衰减均值；dense=False 时缺失按 0（先填 0 再算）。"""
-    filled = x if dense else call("fill_nan", x, 0.0)
-    return call("ts_decay_linear", filled, window=window, min_periods=window)
+    """线性衰减均值，权重从最早的 1 到当天的 window。
+
+    dense=False：缺失按 0 参与（先填 0 再算），满 window 行才有值；整个窗口都缺失时结果
+    是 0 而不是缺失，停牌或刚上市的股票要自己用样本池或掩码挡掉。
+    dense=True：跳过缺失、剩下的权重重新归一（内核口径），窗口里有一个有效值就出数。"""
+    if dense:
+        return call("ts_decay_linear", x, window=window, min_periods=1)
+    return call(
+        "ts_decay_linear", call("fill_nan", x, 0.0), window=window, min_periods=window
+    )
 
 
 def ts_decay_exp_window(x, window=20, factor=0.5):
@@ -363,8 +374,14 @@ def _cs_mean(x):
 
 
 def sigmoid(x):
-    """1 / (1 + e^(-x))。"""
-    return 1 / (1 + call("exp", call("negate", x)))
+    """1 / (1 + e^(-x))。按符号分两支算，x 很负时 e^(-x) 溢出也不会变成缺失。"""
+    grow = call("exp", x)
+    return call(
+        "where",
+        call("ge", x, 0),
+        1 / (1 + call("exp", call("negate", x))),
+        grow / (1 + grow),
+    )
 
 
 def scale(x, scale=1.0, longscale=None, shortscale=None):
@@ -424,7 +441,7 @@ UNSUPPORTED = {
 CONFLICTS = {
     "ts_rank": "本表口径为归一化秩 + constant；内核默认返回整数平均秩",
     "ts_quantile": "本表口径为秩到逆分布映射；与内核的窗口分位插值不同，暂未实现",
-    "ts_decay_linear": "本表口径缺失按 0；内核忽略缺失后重归一",
+    "ts_decay_linear": "本表默认（dense=False）缺失按 0；内核忽略缺失后重归一，即 dense=True",
     "scale": "本表口径支持长/短账本分别缩放；内核只有一个账本，分别缩放暂未实现",
     "ts_backfill": "本表口径带 k；本模块只支持 k=1（等价 ts_ffill(limit=lookback - 1)）",
 }
