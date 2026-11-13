@@ -120,6 +120,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
     async def lifespan(app):
         yield
         manager.close()
+        store.close()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store, app.state.manager = store, manager

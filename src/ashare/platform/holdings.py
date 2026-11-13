@@ -83,6 +83,7 @@ class Holdings:
             row = db.execute("SELECT status FROM runs WHERE id=?", (run,)).fetchone()
         if row is None or row["status"] != "complete":
             return None
+        self.store.wait_holdings(run)
         path = self.store.root / "holdings" / f"{run}.npz"
         if not path.exists():
             return {"dates": [], "date": None, "items": [], "total": 0}
