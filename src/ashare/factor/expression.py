@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass
 from functools import cache, cached_property
 
+import numpy as np
 import panelops
 
 ELEMENTWISE = {
@@ -42,6 +43,8 @@ _OPERATORS = {name for name in panelops.__all__ if name.startswith(("ts_", "cs_"
 
 
 def _parameter(value):
+    if type(value) is np.bool_:
+        return bool(value)
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float) and math.isfinite(value):
@@ -114,6 +117,14 @@ def _normalized(op, args, params):
             "weights",
         }
     }
+    if "exact" in normalized:
+        # 滑动求和的 exact 只收 bool；默认的 False 不进规范形式，已有表达式的摘要和文本不变。
+        if type(normalized["exact"]) is not bool:
+            raise TypeError("exact 必须是 bool")
+        if normalized["exact"]:
+            normalized["exact"] = True
+        else:
+            del normalized["exact"]
     for key in ("window", "min_periods", "periods", "ddof", "limit"):
         if key in normalized and normalized[key] is not None:
             panelops.api.integer(

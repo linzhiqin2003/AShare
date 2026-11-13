@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-13（panelops 滑动求和精度）
+- 退化窗口给精确值：`ts_sum`、`ts_mean`、`ts_sumif` 的窗口有效值全相等（含全为 0、`sumif` 条件全假）时，和为正确舍入的「个数 × 值」、均值恰为该值、零一律是正零；由整数的连续相等计数判定，不靠容差。修掉「整窗为 0 时残差 −6.8e-14」（开平方得 NaN、取对数得 43.7、比值得 3.75e13）。
+- 窗口不超过 3 行时 `ts_sum`、`ts_mean`、`ts_sumif` 逐窗口做无误差的补偿求和（证明不了精确时改算正确舍入的和），和是正确舍入的，只取决于窗口内容。更长的窗口默认仍是增量算法，最后一位依赖窗口之前的行。
+- 新增 `exact=True`（`ts_sum`、`ts_mean`、`ts_sumif`，Rust 层 `Options::exact`，默认关闭）：每格是窗口内数值的正确舍入和，与顺序、历史无关（均值是这个和除以个数）；部分和溢出时改用定点累加，结果仍正确舍入；只收 bool。修掉「同一组数给出相差 1 ulp 的和」（对两个窗口和求相关时零方差格子得 ±1）。代价与窗口长度无关，见 `docs/PANELOPS_BENCHMARKS.md`。
+- 默认路径速度（新旧构建交替计时）：w ≤ 3 比改前快，更长的窗口几何平均与改前持平，但稠密的 `ts_sum`、`ts_mean` 在 w ≥ 4 很可能慢 2–4%（高负载下测得，待空闲机器复测），单格见 `docs/PANELOPS_BENCHMARKS.md`。已有输出在 w ≤ 3 的格子、退化窗口及其后到下一次定期重建之间的格子变化（变化的格子大多更接近精确值，个别更远，统计见 `docs/PANELOPS_BENCHMARKS.md`）；`panelops.build_id` 随之改变，因子缓存自动重算。`ashare.factor` 的表达式规范形式不收录 `exact=False`，已有表达式的摘要不变。
+- 表达式层现在把所有参数里的 `numpy.bool_` 规范成 `bool`（不只是 `exact`）：以前会被拒的 `normalize=np.True_` 这类写法现在能建成表达式；已有表达式的文本和摘要不变。
 ## 2026-11-13（境外期货的来源适配）
 - 新增 Databento、Bloomberg 两个境外期货适配器（`docs/DESIGN.md` 6.1.2、`docs/FOREIGN_FUTURES.md`），**未用真实账号验证**：取数层 `ashare.data.sources.databento`（费用闸门：先 `metadata.get_cost`，默认预算 0 只估不取）、`ashare.data.sources.bloomberg`（`//blp/refdata` 的历史、参考、分钟线请求）；换算层 `futures_foreign*` 把合约表、日线、分钟线、日历转成与境内相同的统一字段（CME / ICE 交易日归属、十年回绕、final 结算价、持仓量归属），`build_panel` 接期货面板、连续合约和 `panelbt_inputs`。可选依赖 `ashare[databento]`，默认不装；`blpapi` 不作可选依赖，需要时按文档手动安装。
 - 境外期货适配器按复核返工（仍**未用真实账号验证**）：区间第一天不再混进 start 之前几天的 K 线（开市日覆盖整个取数窗口，窗口外的时刻丢掉不顺延，start 当天也有前结算价）；费用闸门改为整份计划先估总价、会话内缓存已取的表、预算与估价必须是有限非负数、加锁；Bloomberg 的 `fieldExceptions`、历史请求的 `securityError`、`PX_SETTLE` 整列为空、合约表缺字段都报错；结算价缺失计数进诊断并默认报错；DBN v1 的数量未定义值当空；`minute` 区间外直接报错；`futures_continuous` 的 `ratio` 复权遇到非正价格报错（境内输出不变）；`pyproject.toml` 去掉 `bloomberg` 可选依赖与 Bloomberg 包索引，`uv.lock` 不再含 `blpapi`。
