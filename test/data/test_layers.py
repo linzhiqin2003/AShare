@@ -55,6 +55,9 @@ def violations(content, module, *, source=False):
                     "polars",
                     "pyarrow",
                     "baostock",
+                    # 境外期货的官方客户端，可选依赖（docs/FOREIGN_FUTURES.md）
+                    "databento",
+                    "blpapi",
                 }
                 if imported.startswith("ashare.") and not imported.startswith(
                     "ashare.data.sources."
