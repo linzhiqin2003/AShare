@@ -418,6 +418,22 @@ def test_exact_rebuilds_after_an_overflowing_window():
     assert list(got[2:, 0]) == [0.0, -big, 3.0, 5.0, 7.0]
 
 
+def test_exact_overflow_path_rounds_half_to_even():
+    # Partial sums overflow, so the fixed-point path runs; the exact sum
+    # 2**1023 + 2**970 is exactly halfway between two doubles and must round
+    # to the even one, 2**1023.
+    top, half = 2.0**1023, 2.0**970
+    x = np.array([top, top, -top, half])[:, None]
+    want = float(Fraction(top) + Fraction(half))
+    assert want == top
+    assert po.ts_sum(x, 4, exact=True)[3, 0] == want
+    # Just above halfway rounds up.
+    y = np.array([top, top, -top, half, 2.0**900])[:, None]
+    above = float(Fraction(top) + Fraction(half) + Fraction(2.0**900))
+    assert above == np.nextafter(top, np.inf)
+    assert po.ts_sum(y, 5, exact=True)[4, 0] == above
+
+
 # Parameter types.
 
 
