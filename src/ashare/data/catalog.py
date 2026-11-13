@@ -35,6 +35,7 @@ def dataset(name, partition, keys, columns, **kwargs):
     )
 
 
+# 股票池用的指数：成分、权重（面板 weight_*/member_* 字段）只覆盖这几个。
 INDEXES = {
     "csi300": "000300.SH",
     "csi500": "000905.SH",
@@ -42,6 +43,37 @@ INDEXES = {
     "csi2000": "932000.CSI",
     "csi_all": "000985.CSI",
 }
+# 研究平台可选的基准：主流指数，写死的名单（用户 2026-11-13 定：基准只用主流指数）。
+# 日线与 INDEXES 走同一套逐指数逐月分区；只下日线，不下成分和权重。
+# 加一个指数：在这里加一行，运行 sync --datasets index_daily，见 docs/DATA_NOTES.md。
+BENCHMARKS = {
+    "000001.SH": "上证指数",
+    "399001.SZ": "深证成指",
+    "399006.SZ": "创业板指",
+    "000688.SH": "科创50",
+    "899050.BJ": "北证50",
+    "000016.SH": "上证50",
+    "000300.SH": "沪深300",
+    "000510.SH": "中证A500",
+    "000905.SH": "中证500",
+    "000906.SH": "中证800",
+    "000852.SH": "中证1000",
+    "932000.CSI": "中证2000",
+    "000985.CSI": "中证全指",
+    "399303.SZ": "国证2000",
+    "399330.SZ": "深证100",
+    "399673.SZ": "创业板50",
+    "000698.SH": "科创100",
+    "000922.CSI": "中证红利",
+    "000015.SH": "上证红利",
+    # 2016-06 至 2018-05 源里只有收盘价；基准线只用收盘价，需要开盘价的计算要避开这段。
+    "H30269.CSI": "红利低波",
+    "000919.CSI": "300价值",
+    "000918.CSI": "300成长",
+}
+DEFAULT_BENCHMARK = "000001.SH"
+# index_daily 下载的指数：股票池指数在前（与原来同序），再加基准名单里的其余指数。
+INDEX_DAILY_CODES = tuple(dict.fromkeys([*INDEXES.values(), *BENCHMARKS]))
 DATASETS = {
     d.name: d
     for d in [
@@ -368,6 +400,37 @@ DATASETS["index_member"] = dataset(
     known_at="旧版申万区间；仅用于 SW2021 切换前",
 )
 DAILY_DATASETS.append("index_member")
+
+# 公开长表里取浮点的统一字段，其余为字符串。只用于把「整列为空」（Null 类型）的原始列
+# 定成正常类型，例如窗口里只有空分区时；已有类型的列不动。
+PUBLIC_FLOAT_COLUMNS = frozenset(
+    {
+        "open",
+        "high",
+        "low",
+        "close",
+        "previous_close",
+        "volume",
+        "amount",
+        "contract_multiplier",
+        "settlement",
+        "previous_settlement",
+        "volume_contracts",
+        "open_interest_contracts",
+        "stock_dividend",
+        "cash_dividend",
+        "revenue",
+        "net_income",
+        "total_assets",
+        "total_liabilities",
+        "operating_cashflow",
+        "earnings_per_share",
+        "return_on_equity",
+        "net_income_low",
+        "net_income_high",
+    }
+)
+
 
 # 公开长表的统一字段；数值换算只在此声明。
 PUBLIC_TABLES = {
@@ -821,3 +884,206 @@ FUND_DATASETS = {
 }
 ALL_DATASETS = {**ALL_DATASETS, **FUND_DATASETS}
 assert not set(FUND_DATASETS) & (set(DATASETS) | set(FUTURES_DATASETS))
+
+
+# 港股、美股（2026-11-13 第 2 批）。原始文件写在各自市场的数据根 <root>/hk、<root>/us，
+# 与 A 股的 <root>/cn 是不同的清单；登记在 OVERSEAS_DATASETS，不并入 DATASETS，A 股的
+# 同步、状态、校验、版本只看 DATASETS，加不加这一段逐位不变。采集见 overseas_sync。
+# 分区方式：day 按交易日（沿用 A 股日分区的空表与骤降保护），symbol 按证券取一段历史
+# （样本），fx_pair 按货币对，static / status 同 A 股。权限与单页上限见 docs/HKUS_DATA.md。
+OVERSEAS_DATASETS = {
+    d.name: d
+    for d in [
+        dataset(
+            "hk_calendar",
+            "static",
+            "cal_date",
+            "cal_date,is_open,pretrade_date",
+            api="hk_tradecal",
+            date="cal_date",
+            limit=2000,
+            known_at="交易所提前公布；风球、黑雨休市只在事后体现",
+            raw_dir="hk_tradecal",
+        ),
+        dataset(
+            "hk_securities",
+            "status",
+            "ts_code",
+            "ts_code,name,fullname,enname,cn_spell,market,list_status,list_date,delist_date,trade_unit,isin,curr_type",
+            api="hk_basic",
+            date="list_date",
+            limit=5000,
+            known_at="当前证券主表；每手股数 trade_unit 只有当前值",
+            raw_dir="hk_basic",
+        ),
+        dataset(
+            "hk_daily",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
+            limit=5000,
+            coverage_start="19900102",
+            empty_allowed=False,
+            units={"vol": "股", "amount": "交易币种元（多数为港元）"},
+            known_at="收盘后约 18 点；pre_close 为除权除息后的参考价",
+            raw_dir="hk_daily",
+        ),
+        dataset(
+            "hk_adjfactor",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,cum_adjfactor,close_price",
+            limit=6000,
+            coverage_start="19900102",
+            empty_allowed=False,
+            known_at="前复权累计因子，最新日为 1，每次除权后整段历史重写：只在同一快照内可比",
+            raw_dir="hk_adjfactor",
+        ),
+        dataset(
+            "hk_daily_hist",
+            "symbol",
+            "ts_code,trade_date",
+            "ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
+            api="hk_daily",
+            limit=5000,
+            units={"vol": "股", "amount": "交易币种元（多数为港元）"},
+            known_at="同 hk_daily；按证券取 2010 年起的历史（开发库样本）",
+            raw_dir="hk_daily_hist",
+        ),
+        dataset(
+            "hk_adjfactor_hist",
+            "symbol",
+            "ts_code,trade_date",
+            "ts_code,trade_date,cum_adjfactor,close_price",
+            api="hk_adjfactor",
+            limit=6000,
+            known_at="同 hk_adjfactor；一个证券一次取完，序列内同一快照",
+            raw_dir="hk_adjfactor_hist",
+        ),
+        dataset(
+            "hk_connect_sh",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,type,name,type_name",
+            api="stock_hsgt",
+            limit=2000,
+            params={"type": "SH_HK"},
+            coverage_start="20250812",
+            known_at="当日港股通（沪）标的名单；源自 2025-08-12 起才有",
+            raw_dir="hk_connect_sh",
+        ),
+        dataset(
+            "hk_connect_sz",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,type,name,type_name",
+            api="stock_hsgt",
+            limit=2000,
+            params={"type": "SZ_HK"},
+            coverage_start="20250812",
+            known_at="当日港股通（深）标的名单；源自 2025-08-12 起才有",
+            raw_dir="hk_connect_sz",
+        ),
+        dataset(
+            "hk_connect_hold",
+            "day",
+            "ts_code,trade_date",
+            "code,trade_date,ts_code,name,vol,ratio,exchange",
+            api="hk_hold",
+            limit=3000,
+            params={"exchange": "HK"},
+            coverage_start="20170317",
+            units={"vol": "股", "ratio": "百分数"},
+            known_at="中央结算系统日终持股（南向）；次一交易日公布",
+            raw_dir="hk_connect_hold",
+        ),
+        dataset(
+            "us_calendar",
+            "static",
+            "cal_date",
+            "cal_date,is_open,pretrade_date",
+            api="us_tradecal",
+            date="cal_date",
+            limit=5000,
+            known_at="交易所提前公布；临时休市只在事后体现",
+            raw_dir="us_tradecal",
+        ),
+        dataset(
+            "us_securities",
+            "static",
+            "ts_code,list_date,enname",
+            "ts_code,name,enname,classify,list_date,delist_date",
+            api="us_basic",
+            date="list_date",
+            limit=6000,
+            known_at="当前证券主表；源忽略 list_status，几乎没有退市日；代码会复用",
+            raw_dir="us_basic",
+        ),
+        dataset(
+            "us_daily",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,close,open,high,low,pre_close,change,pct_change,vol,amount,vwap,turnover_ratio,total_mv,pe,pb",
+            limit=6000,
+            coverage_start="19900102",
+            empty_allowed=False,
+            units={"vol": "股", "amount": "美元", "total_mv": "美元"},
+            known_at="收盘后；pre_close 为上一交易日原始收盘价（不除权）",
+            raw_dir="us_daily",
+        ),
+        dataset(
+            "us_adjfactor",
+            "day",
+            "ts_code,trade_date,exchange",
+            "ts_code,trade_date,exchange,cum_adjfactor,close_price",
+            limit=15000,
+            coverage_start="20060103",
+            empty_allowed=False,
+            known_at="前复权累计因子（实测只含拆并股），最新日为 1，每次拆并股后整段历史重写",
+            raw_dir="us_adjfactor",
+        ),
+        dataset(
+            "us_daily_hist",
+            "symbol",
+            "ts_code,trade_date",
+            "ts_code,trade_date,close,open,high,low,pre_close,change,pct_change,vol,amount,vwap,turnover_ratio,total_mv,pe,pb",
+            api="us_daily",
+            limit=6000,
+            units={"vol": "股", "amount": "美元", "total_mv": "美元"},
+            known_at="同 us_daily；按证券取 2010 年起的历史（开发库样本）",
+            raw_dir="us_daily_hist",
+        ),
+        dataset(
+            "us_adjfactor_hist",
+            "symbol",
+            "ts_code,trade_date,exchange",
+            "ts_code,trade_date,exchange,cum_adjfactor,close_price",
+            api="us_adjfactor",
+            limit=15000,
+            known_at="同 us_adjfactor；一个证券一次取完，序列内同一快照",
+            raw_dir="us_adjfactor_hist",
+        ),
+        dataset(
+            "overseas_fx_daily",
+            "fx_pair",
+            "ts_code,trade_date",
+            "ts_code,trade_date,bid_open,bid_close,bid_high,bid_low,ask_open,ask_close,ask_high,ask_low,tick_qty",
+            api="fx_daily",
+            limit=1000,
+            known_at="FXCM 报价；trade_date 为格林尼治日期，见 docs/HKUS_DATA.md",
+            raw_dir="fx_daily",
+        ),
+        dataset(
+            "overseas_fx_midrate",
+            "fx_pair",
+            "ts_code,trade_date",
+            "trade_date,ts_code,mid_rate",
+            api="fx_midrate",
+            limit=3000,
+            known_at="外汇交易中心当日 9:15 公布的人民币中间价；100 外币或 100 人民币报价",
+            raw_dir="fx_midrate",
+        ),
+    ]
+}
+ALL_DATASETS.update(OVERSEAS_DATASETS)
+assert not set(DATASETS) & set(OVERSEAS_DATASETS)

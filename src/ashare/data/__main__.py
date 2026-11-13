@@ -65,6 +65,37 @@ def main():
         "--stock-root", help="正股收盘价所在的数据根（算转股价值），默认与 --root 相同"
     )
     commands.add_parser("verify-funds", help="基金与可转债原始库和面板的独立校验")
+    # 港股、美股（第 2 批）：配合 --market hk / --market us，数据根 <root>/hk、<root>/us。
+    overseas = commands.add_parser(
+        "sync-overseas", help="港股或美股原始库（--market hk|us）"
+    )
+    overseas.add_argument(
+        "--start", default=(date.today() - timedelta(days=3 * 365)).isoformat()
+    )
+    overseas.add_argument(
+        "--end", default=(date.today() - timedelta(days=1)).isoformat()
+    )
+    overseas.add_argument("--datasets", nargs="+")
+    overseas.add_argument("--force", action="store_true")
+    overseas.add_argument("--no-refresh", action="store_true")
+    overseas.add_argument("--workers", type=int, default=8)
+    overseas.add_argument("--rate", type=float, default=200)
+    overseas.add_argument("--budget", type=int, default=20000)
+    sample = commands.add_parser(
+        "select-sample-overseas", help="按当前市值分层抽 2010 年起的历史样本"
+    )
+    sample.add_argument("--asof", required=True)
+    sample.add_argument("--rate", type=float, default=60)
+    overseas_build = commands.add_parser(
+        "build-overseas", help="港股或美股「交易日 × 证券」面板"
+    )
+    overseas_build.add_argument("--universe", choices=("all", "sample"), default="all")
+    overseas_build.add_argument("--start")
+    overseas_build.add_argument("--end")
+    overseas_check = commands.add_parser(
+        "verify-overseas", help="港股或美股原始库与面板的独立校验"
+    )
+    overseas_check.add_argument("--universe", choices=("all", "sample"), default="all")
     panel = commands.add_parser("build-panel")
     panel.add_argument("--start")
     panel.add_argument("--end")
@@ -94,6 +125,20 @@ def main():
     export = commands.add_parser("export-manifest")
     export.add_argument("path", help="导出兼容旧清单，覆盖前请自行保留迁移前文件")
     args = parser.parse_args()
+    # 港股、美股只走 *-overseas 子命令（另可用 status、confirm-partition）：A 股和期货的子命令
+    # 不认识港美股数据集，在 <root>/hk 上跑会把 A 股数据写进港股根。
+    if args.market != "cn" and args.command not in (
+        "sync-overseas",
+        "select-sample-overseas",
+        "build-overseas",
+        "verify-overseas",
+        "status",
+        "confirm-partition",
+    ):
+        parser.error(
+            f"{args.command} 只用于 A 股（--market cn）；港股、美股请用 sync-overseas、"
+            "select-sample-overseas、build-overseas、verify-overseas"
+        )
     store = Store(args.root, args.market)
     logging.basicConfig(level=logging.INFO)
     if args.command == "sync":
@@ -204,6 +249,15 @@ def main():
         if report["verdict"] == "fail":
             print(json.dumps(result, ensure_ascii=False, indent=2))
             raise SystemExit(1)
+    elif args.command in (
+        "sync-overseas",
+        "select-sample-overseas",
+        "build-overseas",
+        "verify-overseas",
+    ):
+        from .overseas_cli import run as run_overseas
+
+        result = run_overseas(args, store)
     elif args.command == "build-panel":
         meta = build(
             store,
@@ -273,6 +327,20 @@ def main():
         }
         if fund_status:
             result["funds"] = fund_status
+        # 港股、美股的数据集只出现在 <root>/hk、<root>/us 的清单里，A 股清单里永远没有。
+        from .catalog import OVERSEAS_DATASETS
+
+        overseas_status = {
+            name: dict(
+                partitions=len(entries),
+                rows=sum(e.get("rows", 0) for e in entries.values()),
+                failed=sum(e["status"] != "complete" for e in entries.values()),
+            )
+            for name in OVERSEAS_DATASETS
+            if (entries := store.entries(name))
+        }
+        if overseas_status:
+            result["overseas"] = overseas_status
     if args.command in ("status", "gc"):
         result["disk_usage"] = disk_usage(store.root)
     print(json.dumps(result, ensure_ascii=False, indent=2))

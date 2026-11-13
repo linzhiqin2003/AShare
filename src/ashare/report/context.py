@@ -111,7 +111,7 @@ def index_benchmark(
     """从数据层 `index_daily` 取一条指数，按回测日期对齐成 `Benchmark`。"""
     days = [_compact(d) for d in dates]
     idx = (
-        data.table("index_daily", start=days[0], end=days[-1])
+        data.table("index_daily", start=days[0], end=days[-1], symbols=[code])
         .filter(pl.col("symbol") == code)
         .select("date", "close")
         .collect()

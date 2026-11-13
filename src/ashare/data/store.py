@@ -15,6 +15,9 @@ import polars as pl
 from .catalog import ALL_DATASETS, FUND_DATASETS, FUTURES_DATASETS
 from .manifest import Manifest
 
+# cn 是 A 股（含境内期货）；hk、us 是港股、美股的独立数据根（第 2 批，见 overseas_sync）。
+MARKETS = ("cn", "hk", "us")
+
 
 def data_root(root=None):
     resolved = Path(
@@ -71,8 +74,9 @@ def lock(path, *, shared=False, blocking=True):
 
 class Store:
     def __init__(self, root=None, market="cn", *, readonly=False):
-        if market != "cn":
-            raise ValueError(f"尚不支持市场 {market!r}，可用市场：cn")
+        if market not in MARKETS:
+            raise ValueError(f"尚不支持市场 {market!r}，可用市场：{', '.join(MARKETS)}")
+        self.market = market
         self.root = data_root(root) / market
         self._manifest = Manifest(self.root, readonly=readonly)
         self.manifest_path = self._manifest.path
@@ -293,16 +297,20 @@ class Store:
                         self.mark(key, dict(status=status, quality_state=state))
                 previous = entry
 
-    def scan(self, name, start=None, end=None):
+    def scan(self, name, start=None, end=None, codes=None):
+        """codes 只对「代码_年月」分区（指数日线、权重）生效：只打开这些代码的分区。"""
+
         def in_range(entry):
             kind = ALL_DATASETS[name].partition
             part = entry["partition"]
             if kind in ("day", "fut_day"):
                 return (start is None or part >= start) and (end is None or part <= end)
             if kind in ("index_month", "index_month_daily") and "_" in part:
-                month = part.rsplit("_", 1)[-1]
-                return (start is None or month >= start[:6]) and (
-                    end is None or month <= end[:6]
+                code, month = part.rsplit("_", 1)
+                return (
+                    (codes is None or code in codes)
+                    and (start is None or month >= start[:6])
+                    and (end is None or month <= end[:6])
                 )
             return True
 
@@ -311,7 +319,7 @@ class Store:
             for v in self.entries(name).values()
             if v["status"] == "complete" and in_range(v)
         ]
-        if not entries and (start is not None or end is not None):
+        if not entries and (start is not None or end is not None or codes is not None):
             candidates = [
                 v for v in self.entries(name).values() if v["status"] == "complete"
             ]

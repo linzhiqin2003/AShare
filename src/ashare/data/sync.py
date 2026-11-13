@@ -7,7 +7,13 @@ from datetime import date, timedelta
 
 import polars as pl
 
-from .catalog import DAILY_DATASETS, DATASETS, FUTURES_DATASETS, INDEXES
+from .catalog import (
+    DAILY_DATASETS,
+    DATASETS,
+    FUTURES_DATASETS,
+    INDEX_DAILY_CODES,
+    INDEXES,
+)
 from .store import Store, lock
 from .sync_policy import month_final, should_refresh
 
@@ -59,8 +65,9 @@ def plan(spec, start, end, days, store):
             if not spec.coverage_start or day >= spec.coverage_start:
                 yield day, {spec.date: day}
     elif kind == "index_month_daily":
+        # 日线：股票池指数与基准名单的并集；成分权重（index_month）仍只取股票池指数。
         for begin, finish in months(start, end):
-            for code in INDEXES.values():
+            for code in INDEX_DAILY_CODES:
                 yield (
                     f"{code}_{begin[:6]}",
                     dict(ts_code=code, start_date=begin, end_date=min(finish, end)),

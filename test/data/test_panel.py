@@ -60,7 +60,7 @@ def test_cells_roundtrip_and_metadata(tables, make_store):
     with pytest.raises(ValueError, match="超出"):
         data.panel(["close"], start="19900101")
     with pytest.raises(ValueError):
-        ad.open(store.root.parent, market="us")
+        ad.open(store.root.parent, market="jp")
 
 
 def test_incremental_bitwise(tables, make_store):

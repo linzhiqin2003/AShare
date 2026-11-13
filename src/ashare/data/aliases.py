@@ -126,8 +126,8 @@ class CanonicalStore:
     def read(self, name, start=None, end=None):
         return canonical(self.raw.read(name, start, end), name, self.aliases)
 
-    def scan(self, name, start=None, end=None):
-        return canonical(self.raw.scan(name, start, end), name, self.aliases)
+    def scan(self, name, start=None, end=None, codes=None):
+        return canonical(self.raw.scan(name, start, end, codes), name, self.aliases)
 
     def snapshot(self):
         return CanonicalStore(self.raw.snapshot(), self.aliases)

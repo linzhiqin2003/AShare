@@ -118,7 +118,12 @@ def load_inputs(
     opens = closes = None
     if benchmark is not None:
         frame = (
-            data.table("index_daily", start=str(dates[0]), end=str(dates[-1]))
+            data.table(
+                "index_daily",
+                start=str(dates[0]),
+                end=str(dates[-1]),
+                symbols=[benchmark],
+            )
             .filter(pl.col("symbol") == benchmark)
             .select("date", "open", "close")
             .collect()
