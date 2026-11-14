@@ -1,16 +1,25 @@
 """时间统一为 UTC 毫秒；区间一律左闭右开。"""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from numbers import Real
+
+import numpy as np
 
 HOUR = 3_600_000
 DAY = 24 * HOUR
 
 
 def millis(value):
-    if isinstance(value, (int, float)):
+    if isinstance(value, np.datetime64):
+        if np.isnat(value):
+            raise ValueError("时间不能是 NaT")
+        return int(value.astype("datetime64[ms]").astype(np.int64))
+    if isinstance(value, Real):
         return int(value)
     if isinstance(value, str):
         value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if isinstance(value, date) and not isinstance(value, datetime):
+        value = datetime(value.year, value.month, value.day, tzinfo=UTC)
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return int(value.timestamp() * 1000)

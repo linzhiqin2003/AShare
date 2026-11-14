@@ -301,7 +301,15 @@ def test_registry_and_ashare_identity():
     assert markets.get("ashare") is ASHARE
     assert markets.get("HK-Southbound") is HK_SOUTHBOUND
     assert markets.get("hk_direct") is HK_DIRECT and markets.get("us") is US
-    assert set(markets.PROFILES) == {"ashare", "hk_direct", "hk_southbound", "us"}
+    # C3 adds two built-ins; keep an exact registry assertion, not a subset check.
+    assert set(markets.PROFILES) == {
+        "ashare",
+        "hk_direct",
+        "hk_southbound",
+        "us",
+        "binance_spot",
+        "binance_usdm",
+    }
     with pytest.raises(ValueError, match="unknown market"):
         markets.get("jp")
     d = ["2008-09-19", "2023-08-28"]

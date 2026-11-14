@@ -49,6 +49,9 @@ QUALITY = {
     "rule_assumption": 64,
     "outside_lifecycle": 128,
     "rest": 256,
+    "partial_halt": 512,
+    "inferred_halt": 1024,
+    "invalid_close_time": 2048,
 }
 
 
@@ -104,6 +107,9 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
     end_price, suspended, frozen_count = None, False, 0
     history = sorted(data.get("fundingRate", []), key=lambda r: r["time"])
     known_rate, funding_cursor = math.nan, 0
+    datasets = [bars, marks, indices] if futures else [bars]
+    trade_partial_before = False
+    halt_notes = []
     for t in range(start, end, HOUR):
         while funding_cursor < len(history) and history[funding_cursor]["time"] <= t:
             known_rate = history[funding_cursor]["rate"]
@@ -220,8 +226,46 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
             continue
         bar, mark, index = bars.get(t), marks.get(t), indices.get(t)
         missing = bar is None or (futures and (mark is None or index is None))
+        # 只有成交线的半截 + 连续缺口能证明停机；正常标记线是明确反证。
+        inferred_halt = (
+            bar is None
+            and trade_partial_before
+            and not (
+                futures
+                and mark is not None
+                and mark.get("time_quality", "normal") == "normal"
+            )
+        )
+        qualities = [
+            values[t].get("time_quality", "normal")
+            for values in datasets
+            if t in values
+        ]
+        for flag in ("partial_halt", "invalid_close_time"):
+            if flag in qualities:
+                row["quality"] |= QUALITY[flag]
+        if inferred_halt:
+            row["quality"] |= QUALITY["inferred_halt"]
+            if halt_notes and halt_notes[-1]["end"] == t:
+                halt_notes[-1]["end"] = t + HOUR
+            else:
+                halt_notes.append(
+                    dict(
+                        start=t, end=t + HOUR, evidence="preceding_partial_trade_kline"
+                    )
+                )
+        # 恢复成交后终止推断。标记反证只限缺口内，半截成交线同小时尚不属缺口。
+        if bar is not None:
+            trade_partial_before = bar.get("time_quality") == "partial_halt"
+        if (
+            bar is None
+            and futures
+            and mark is not None
+            and mark.get("time_quality", "normal") == "normal"
+        ):
+            trade_partial_before = False
         if missing:
-            if not (allow_missing or suspended):
+            if not (allow_missing or suspended or inferred_halt):
                 raise ValueError(f"{name} 生命周期内缺少行情/标记/指数: {t}")
             if last_settlement is None:
                 raise ValueError(f"{name} 缺失行没有之前的估值，不能用未来价格补")
@@ -237,7 +281,11 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
             row["data_source"] = bar.get("source", "archive")
             if row["data_source"] == "rest":
                 row["quality"] |= QUALITY["rest"]
-            row["tradable"] = not suspended and bar["volume"] > 0
+            row["tradable"] = (
+                not suspended
+                and "invalid_close_time" not in qualities
+                and bar["volume"] > 0
+            )
             if bar["quote_volume"] == 0:
                 row["quality"] |= QUALITY["zero_volume"]
                 frozen_count = frozen_count + 1 if bar["close"] == last_close else 1
@@ -295,7 +343,9 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
             except LookupError:
                 if t + HOUR == end:
                     return rows, dict(
-                        truncated_at=t, reason="final_funding_price_missing"
+                        truncated_at=t,
+                        reason="final_funding_price_missing",
+                        **({"halts": halt_notes} if halt_notes else {}),
                     )
                 raise
             if row["funding_price_source"] == "mark_open_approximation":
@@ -303,7 +353,7 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
         last_settlement = row["settlement"] if futures else row["close"]
         last_close = row["close"]
         rows.append(row)
-    return rows, {}
+    return rows, {"halts": halt_notes} if halt_notes else {}
 
 
 def build_frame(profiles, data, events, start, end, *, allow_missing=False):
@@ -324,7 +374,9 @@ def build_frame(profiles, data, events, start, end, *, allow_missing=False):
     if not rows:
         raise ValueError("空面板")
     # 任一列最后缺价就同时截断整幅矩形，不制造不同列的时间轴。
-    actual_end = min([end, *(n["truncated_at"] for n in notes.values())])
+    actual_end = min(
+        [end, *(n["truncated_at"] for n in notes.values() if "truncated_at" in n)]
+    )
     frame = pl.DataFrame(
         [r for r in rows if r["time"] < actual_end],
         infer_schema_length=None,

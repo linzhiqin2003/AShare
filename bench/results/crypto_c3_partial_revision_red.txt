@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_cms_partial_revision_resume_keeps_first_observation_time _________
+test/crypto/test_c3_data_fixes.py:254: in test_cms_partial_revision_resume_keeps_first_observation_time
+    assert len(events)==4
+E   AssertionError: assert 5 == 4
+E    +  where 5 = len([{'effective_at': 1718096400000, 'event_id': 'synthetic:usdm:FAKEUSDT:settlement', 'instrument': 'usdm:FAKEUSDT', 'kin...182800000, 'event_id': 'synthetic:usdm:FAKEUSDT:settlement', 'instrument': 'usdm:FAKEUSDT', 'kind': 'settlement', ...}])
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_data_fixes.py::test_cms_partial_revision_resume_keeps_first_observation_time
+1 failed, 22 deselected in 1.10s

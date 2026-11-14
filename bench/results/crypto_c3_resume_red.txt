@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_announcement_resume_after_body_saved_before_events ____________
+test/crypto/test_c3_data_fixes.py:189: in test_announcement_resume_after_body_saved_before_events
+    assert len(EventLedger(tmp_path).read())==1
+E   AssertionError: assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = read()
+E    +      where read = <ashare.data.crypto.events.EventLedger object at 0x1086e2490>.read
+E    +        where <ashare.data.crypto.events.EventLedger object at 0x1086e2490> = <class 'ashare.data.crypto.events.EventLedger'>(PosixPath('<pytest-temp>'))
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_data_fixes.py::test_announcement_resume_after_body_saved_before_events
+1 failed, 20 deselected in 1.01s

@@ -1,0 +1,355 @@
+{
+  "imports": [
+    "packages/panelbt/python/panelbt/__init__.py",
+    "packages/panelbt/python/panelbt/_core.abi3.so",
+    "packages/panelbt/python/panelbt/markets/binance.py",
+    "src/ashare/backtest/crypto.py",
+    "src/ashare/backtest/crypto_run.py",
+    "src/ashare/backtest/crypto_schedule.py",
+    "src/ashare/backtest/crypto_migration.py",
+    "src/ashare/data/crypto/announcements.py",
+    "src/ashare/data/crypto/dataset.py",
+    "src/ashare/data/crypto/panel.py",
+    "src/ashare/data/crypto/verify.py",
+    "bench/crypto_examples.py"
+  ],
+  "baseline_passed": true,
+  "mutations": [
+    {
+      "name": "daily_double_shift",
+      "file": "src/ashare/backtest/crypto_schedule.py",
+      "before_sha256": "50be5acd504dd77e45c9b7637b9fd2746f324d982858f7b532ebf89e8075087d",
+      "mutant_sha256": "e82620d78506dc057979f3c9efa0242a792a438473b071e0571b5ba01178eee5",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_daily_targets_one_shift_and_blocked_not_carried",
+        "test/crypto/test_backtest.py::test_daily_trade_hour_and_final_signal_no_extra_shift",
+        "test/crypto/test_backtest.py::test_delist_known_at_hourly_retry_only_that_column_and_unrealized",
+        "test/crypto/test_backtest.py::test_numpy_daily_dates_from_dataset_are_accepted",
+        "test/crypto/test_backtest.py::test_quarter_roll_preserves_units_with_different_multipliers[False]",
+        "test/crypto/test_backtest.py::test_quarter_roll_preserves_units_with_different_multipliers[True]",
+        "test/crypto/test_backtest.py::test_daily_numpy_datetime_labels[label0]",
+        "test/crypto/test_backtest.py::test_daily_numpy_datetime_labels[label1]",
+        "test/crypto/test_backtest.py::test_daily_polars_date_labels"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.813
+    },
+    {
+      "name": "daily_carry",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "b27db05277a4957c446c8afefac68f78943aaf906752dacee315f405b50b20ac",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_daily_targets_one_shift_and_blocked_not_carried",
+        "test/crypto/test_backtest.py::test_migration_carries_residual_without_cash_sale"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.82
+    },
+    {
+      "name": "known_at_early",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "d202d11b1535fd32e720f7f591650dafeaf20cbdc5aa8700680fd8cb8684465a",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_delist_known_at_hourly_retry_only_that_column_and_unrealized"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.762
+    },
+    {
+      "name": "delist_buy_override",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "7e37c9513bf14429484a1dc196dfe44cec3f72cab1c8bfa79387a4462f2896a1",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_delist_known_at_hourly_retry_only_that_column_and_unrealized",
+        "test/crypto/test_backtest.py::test_delist_overrides_buy_and_missing_announcement_errors"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.795
+    },
+    {
+      "name": "ranking_window",
+      "file": "src/ashare/backtest/crypto_schedule.py",
+      "before_sha256": "50be5acd504dd77e45c9b7637b9fd2746f324d982858f7b532ebf89e8075087d",
+      "mutant_sha256": "344ef839f46b600b8e03f7b9522f7e81500542ead5d9a4df85f2a3061355995e",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_top_n_completed_time_window_coin_mapping_and_truncation"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.812
+    },
+    {
+      "name": "fee_transition",
+      "file": "packages/panelbt/python/panelbt/markets/binance.py",
+      "before_sha256": "7b93392b7ef66916e3c3a18ea7d6437da28990f3994ed7dbd378a362c50c6dc6",
+      "mutant_sha256": "01e7e2cb2e37c16b2dc28fb0332d09632e7b33f32bbed34ae5635a8148382c36",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_binance_profile.py::test_binance_identity_and_fee_segments",
+        "test/crypto/test_binance_profile.py::test_fee_sensitivity_is_explicit_and_diagnosed"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 1.081
+    },
+    {
+      "name": "assumption_gate",
+      "file": "packages/panelbt/python/panelbt/markets/binance.py",
+      "before_sha256": "7b93392b7ef66916e3c3a18ea7d6437da28990f3994ed7dbd378a362c50c6dc6",
+      "mutant_sha256": "ad482c923fe0bda88c2428ab82e2022a1db409e478afe117bd1853a0250af497",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_binance_profile.py::test_rule_gaps_require_explicit_assumption",
+        "test/crypto/test_binance_profile.py::test_risk_rules_are_symbol_and_date_specific_and_bounded"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 1.114
+    },
+    {
+      "name": "roll_rounding",
+      "file": "src/ashare/backtest/crypto_schedule.py",
+      "before_sha256": "50be5acd504dd77e45c9b7637b9fd2746f324d982858f7b532ebf89e8075087d",
+      "mutant_sha256": "5b29da1cc9528d3992f24f68c2e457d972b3247b8706e251198bf9c12b073947",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_quarter_roll_is_calendar_duration_and_forward_only",
+        "test/crypto/test_backtest.py::test_quarter_roll_preserves_units_with_different_multipliers[False]",
+        "test/crypto/test_backtest.py::test_quarter_roll_preserves_units_with_different_multipliers[True]"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.839
+    },
+    {
+      "name": "tier_validity",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "3b46d978d823e864d9668ba9cffff073aa9383aa933a0592ba8cae784463905f",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_usdm_wiring_funding_and_tier_excess_error"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.791
+    },
+    {
+      "name": "migration_ratio",
+      "file": "src/ashare/backtest/crypto_migration.py",
+      "before_sha256": "cc8230917eadc23c2c70d31f6f3a2596cb3b527a19231e180bdc66a3bf7d2e37",
+      "mutant_sha256": "8b0863931e9663c7b509c17a873df310857a62d2f169a2aa4f316afcf8f7937e",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_backtest.py::test_migration_carries_residual_without_cash_sale",
+        "test/crypto/test_backtest.py::test_migration_incompatible_fixed_spot_lot_is_rejected"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.762
+    },
+    {
+      "name": "partial_halt_evidence",
+      "file": "src/ashare/data/crypto/panel.py",
+      "before_sha256": "5889047f8f8d715a57ab6b8bb7e6c24a4ff28643d3da4c709cb7f32e7c63b30e",
+      "mutant_sha256": "05f95ed3d6e6364c0fee4206ba5e35d6b54bd60e4e05ec1144a4dda79d599d07",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_data_fixes.py::test_partial_then_gap_is_self_evidenced_halt[spot]",
+        "test/crypto/test_c3_data_fixes.py::test_partial_then_gap_is_self_evidenced_halt[usdm]"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.068
+    },
+    {
+      "name": "cms_resume_page",
+      "file": "src/ashare/data/crypto/announcements.py",
+      "before_sha256": "3d18c4466efe48f30bef4acb2370411f64f354c208fe6db86821a6c1240dafc2",
+      "mutant_sha256": "99b9e8ff9ee55284f25b69969fe6f22b3169f09a3e4367ea42cf40ab8e98c739",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_data_fixes.py::test_cms_interrupted_pages_resume_without_fetching_page_one"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.004
+    },
+    {
+      "name": "r1_p0_1_migration_event_scope",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "4ef887ed4356640958991bb192b1a9f34e9458e756d71d978254dbd69677ec61",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p0_1_migrated_delist_and_future_announcement_invariance"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.878
+    },
+    {
+      "name": "r1_p0_2_auxiliary_halt",
+      "file": "src/ashare/data/crypto/panel.py",
+      "before_sha256": "5889047f8f8d715a57ab6b8bb7e6c24a4ff28643d3da4c709cb7f32e7c63b30e",
+      "mutant_sha256": "d2f92cfbc2d5e45cd78a2666efcd99271854579d0f42cf4af5257494e9aa3723",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p0_2_normal_market_data_refutes_inferred_halt[indexPriceKlines]",
+        "test/crypto/test_c3_review.py::test_r1_p0_2_normal_market_data_refutes_inferred_halt[klines]",
+        "test/crypto/test_c3_review.py::test_r1_p0_2_counterevidence_breaks_entire_gap_chain"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.865
+    },
+    {
+      "name": "r1_p0_3_expiry_price_overwrite",
+      "file": "src/ashare/backtest/crypto.py",
+      "before_sha256": "56ad23e094e3ffb0e2d533caf8a876d8c8b81be40cbc7013bbfe51e76c78ede8",
+      "mutant_sha256": "46f576a332fb5e75426fd8551774a433ce93049d2944ee8803c4c49a0dede95d",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p0_3_missing_trade_bar_preserves_delivery_price"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.812
+    },
+    {
+      "name": "r1_p0_4_fetch_before_pending",
+      "file": "src/ashare/data/crypto/announcements.py",
+      "before_sha256": "3d18c4466efe48f30bef4acb2370411f64f354c208fe6db86821a6c1240dafc2",
+      "mutant_sha256": "2179006006bfb42b1f14123e891562bfca8ae3dcd9cd1a6eb874155ba7a4a803",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p0_4_resume_consumes_old_body_before_new_revision"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.852
+    },
+    {
+      "name": "r1_p1_5_left_boundary_delivery_fee",
+      "file": "src/ashare/backtest/crypto.py",
+      "before_sha256": "56ad23e094e3ffb0e2d533caf8a876d8c8b81be40cbc7013bbfe51e76c78ede8",
+      "mutant_sha256": "b2e589e1266e005e38d4771fc6d03f5516905ca8863d20dc3ef03f1b8ed967a3",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p1_5_delivery_fee_uses_right_boundary"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.842
+    },
+    {
+      "name": "r1_p1_6_raw_daily_signal",
+      "file": "src/ashare/data/crypto/dataset.py",
+      "before_sha256": "ad0fa6003651494e253cf720fd193ba957c7341f09070a7fc35a729c4dce4beb",
+      "mutant_sha256": "5aeb8c97fd9f2fef06edcc65f0986076d1d423fc3a7dd5527f4682628d6ccf37",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p1_6_daily_signal_excludes_invalid_close"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.833
+    },
+    {
+      "name": "r1_p1_7_double_clearance",
+      "file": "bench/crypto_examples.py",
+      "before_sha256": "e5b96654a581053e8eb1c9e458c0f625b1aba95d9ed3acfadd197f0a9c81ee22",
+      "mutant_sha256": "f7e7c7c4fd04b97ef5a32567bf25ee1615f869db310ccb23d83cc048baad3e6f",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p1_7_summary_counts_clearance_once"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.883
+    },
+    {
+      "name": "r1_p1_8_circular_funding_oracle",
+      "file": "bench/crypto_examples.py",
+      "before_sha256": "e5b96654a581053e8eb1c9e458c0f625b1aba95d9ed3acfadd197f0a9c81ee22",
+      "mutant_sha256": "c058e99d57a9c0152dfc5a1c18ad9b1360889cf68cca17d4068ec91011b40b79",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p1_8_raw_funding_oracle_catches_adapter_scale"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.853
+    },
+    {
+      "name": "r1_p2_9_missing_rounding_diagnostic",
+      "file": "packages/panelbt/python/panelbt/markets/binance.py",
+      "before_sha256": "7b93392b7ef66916e3c3a18ea7d6437da28990f3994ed7dbd378a362c50c6dc6",
+      "mutant_sha256": "811e8d6f6057107886c76970976fd32a26bcb19df68a6f3ef572932cc718e6f4",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review.py::test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.867
+    },
+    {
+      "name": "r2_p1_keep_delisted_pending_buy",
+      "file": "src/ashare/backtest/crypto_run.py",
+      "before_sha256": "5da7bb2c0d679f34ea1c31bbf0b0e4c81afd73cf194d4e7161e07193da9653a2",
+      "mutant_sha256": "94fb66a1997fd81e46b359699912fcbde4866270b4ee0cc1693a4098383d6810",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review_r2.py::test_r2_p1_delist_cancels_flat_pending_buy",
+        "test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[buy]",
+        "test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[reduce]",
+        "test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[sell]"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.705
+    },
+    {
+      "name": "r2_p2_mark_before_gap_refutes_build",
+      "file": "src/ashare/data/crypto/panel.py",
+      "before_sha256": "5889047f8f8d715a57ab6b8bb7e6c24a4ff28643d3da4c709cb7f32e7c63b30e",
+      "mutant_sha256": "15efb84b002eab601c22bfc6678e75dddb45b8ce00934bbae8fc0397fa06bfa8",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review_r2.py::test_r2_p2_normal_mark_before_gap_does_not_refute_build"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.727
+    },
+    {
+      "name": "r2_p2_mark_before_gap_refutes_verify",
+      "file": "src/ashare/data/crypto/verify.py",
+      "before_sha256": "79b223d3c8e64b614aa451c272dc1f3bf20dce4fb4561e5bf89649398152c95f",
+      "mutant_sha256": "05cbdb050ce55fc189690888e5dafa0c584aa433118ad218a48f26d61a255838",
+      "killed": true,
+      "failed_tests": [
+        "test/crypto/test_c3_review_r2.py::test_r2_p2_independent_verify_accepts_mark_before_gap"
+      ],
+      "exit_code": 1,
+      "invalid": false,
+      "seconds": 2.674
+    }
+  ],
+  "killed": 24,
+  "total": 24,
+  "restored_tests_passed": true
+}

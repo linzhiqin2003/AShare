@@ -1,0 +1,56 @@
+Source: .review/review_c3_r2.md; recorded before round-2 source changes.
+nice: setpriority: Operation not permitted
+FFFF..FF....                                                             [100%]
+=================================== FAILURES ===================================
+__________________ test_r2_p1_delist_cancels_flat_pending_buy __________________
+test/crypto/test_c3_review_r2.py:59: in test_r2_p1_delist_cancels_flat_pending_buy
+    np.testing.assert_array_equal(r.nav, np.ones(4))
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 3 / 4 (75%)
+E   Mismatch at indices:
+E    [1]: 0.9995 (ACTUAL), 1.0 (DESIRED)
+E    [2]: 0.74925 (ACTUAL), 1.0 (DESIRED)
+E    [3]: 0.74925 (ACTUAL), 1.0 (DESIRED)
+E   Max absolute difference among violations: 0.25075
+E   Max relative difference among violations: 0.25075
+E    ACTUAL: array([1.     , 0.9995 , 0.74925, 0.74925])
+E    DESIRED: array([1., 1., 1., 1.])
+_______________ test_r2_p1_cancel_only_delisted_pending_buy[buy] _______________
+test/crypto/test_c3_review_r2.py:82: in test_r2_p1_cancel_only_delisted_pending_buy
+    assert not [t for t in r.trades if t.col == 0]
+E   assert not [Trade(day=2, col=0, qty=50.0, price=100.0, commission=0.0, tax=0.0, other_fee=5.0, slippage_cost=0.0, impact_cost=0.0...=100.0, commission=0.0, tax=0.0, other_fee=5.0, slippage_cost=0.0, impact_cost=0.0, reason=<TradeReason.REBALANCE: 0>)]
+_____________ test_r2_p1_cancel_only_delisted_pending_buy[reduce] ______________
+test/crypto/test_c3_review_r2.py:82: in test_r2_p1_cancel_only_delisted_pending_buy
+    assert not [t for t in r.trades if t.col == 0]
+E   assert not [Trade(day=2, col=0, qty=49.98, price=100.0, commission=0.0, tax=0.0, other_fee=4.998, slippage_cost=0.0, impact_cost=...00.0, commission=0.0, tax=0.0, other_fee=4.998, slippage_cost=0.0, impact_cost=0.0, reason=<TradeReason.REBALANCE: 0>)]
+______________ test_r2_p1_cancel_only_delisted_pending_buy[sell] _______________
+test/crypto/test_c3_review_r2.py:82: in test_r2_p1_cancel_only_delisted_pending_buy
+    assert not [t for t in r.trades if t.col == 0]
+E   assert not [Trade(day=2, col=0, qty=49.98, price=100.0, commission=0.0, tax=0.0, other_fee=4.998, slippage_cost=0.0, impact_cost=...00.0, commission=0.0, tax=0.0, other_fee=4.998, slippage_cost=0.0, impact_cost=0.0, reason=<TradeReason.REBALANCE: 0>)]
+___________ test_r2_p2_normal_mark_before_gap_does_not_refute_build ____________
+test/crypto/test_c3_review_r2.py:115: in test_r2_p2_normal_mark_before_gap_does_not_refute_build
+    frame, notes = build_frame(**f)
+                   ^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/panel.py:367: in build_frame
+    values, note = build_instrument(
+src/ashare/data/crypto/panel.py:268: in build_instrument
+    raise ValueError(f"{name} 生命周期内缺少行情/标记/指数: {t}")
+E   ValueError: usdm:TESTUSDT 生命周期内缺少行情/标记/指数: 1719536400000
+____________ test_r2_p2_independent_verify_accepts_mark_before_gap _____________
+test/crypto/test_c3_review_r2.py:139: in test_r2_p2_independent_verify_accepts_mark_before_gap
+    assert report["verdict"] == "pass", report["errors"]
+E   AssertionError: [{'check': 'halt_evidence', 'instrument': 'usdm:TESTUSDT', 'time': 1719536400000}, {'check': 'unexplained_gap', 'instr...:TESTUSDT', 'time': 1719540000000}, {'check': 'unexplained_gap', 'instrument': 'usdm:TESTUSDT', 'time': 1719540000000}]
+E   assert 'fail' == 'pass'
+E     
+E     - pass
+E     + fail
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p1_delist_cancels_flat_pending_buy
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[buy]
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[reduce]
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p1_cancel_only_delisted_pending_buy[sell]
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p2_normal_mark_before_gap_does_not_refute_build
+FAILED test/crypto/test_c3_review_r2.py::test_r2_p2_independent_verify_accepts_mark_before_gap
+6 failed, 6 passed in 2.66s

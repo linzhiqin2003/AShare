@@ -1,0 +1,15 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________________ test_liquidation_diagnostics_intraday_not_lost ________________
+test/crypto/test_backtest.py:178: in test_liquidation_diagnostics_intraday_not_lost
+    assert r.diagnostics['crypto']['liquidation_counts']['intraday']==1
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'intraday'
+______________ test_migration_carries_residual_without_cash_sale _______________
+test/crypto/test_backtest.py:197: in test_migration_carries_residual_without_cash_sale
+    assert m.market.close[31,0]==204.
+E   assert np.float64(101.0) == 204.0
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_liquidation_diagnostics_intraday_not_lost
+FAILED test/crypto/test_backtest.py::test_migration_carries_residual_without_cash_sale
+2 failed, 8 deselected in 1.05s

@@ -53,7 +53,8 @@ def verify_raw(root, inputs):
                     if scale == 1000 and "/futures/" in key:
                         raise ValueError("UM timestamp unit")
                     t = ts // scale
-                    if t % 3_600_000 or int(r[6]) // scale - t != 3_599_999:
+                    close_t = int(r[6]) // scale
+                    if t % 3_600_000 or close_t - t > 3_600_999:
                         raise ValueError("kline boundary")
                     row = {
                         f: float(r[i])
@@ -68,6 +69,14 @@ def verify_raw(root, inputs):
                         ]
                     }
                     row["time"] = t
+                    row["close_time"] = close_t
+                    row["time_quality"] = (
+                        "invalid_close_time"
+                        if close_t < t
+                        else "partial_halt"
+                        if close_t < t + 3_598_999
+                        else "normal"
+                    )
                 if t in rows:
                     raise ValueError("duplicate")
                 rows[t] = row
@@ -81,7 +90,14 @@ def verify_raw(root, inputs):
                 if key not in decoded:
                     continue
                 raw = decoded[key].get(row["time"])
-                if raw is None or any(row.get(f) != v for f, v in raw.items()):
+                # 旧面板的正常行没有新增时间字段，仍可按旧版读取核对。
+                if raw is None or any(
+                    row.get(f) != v
+                    for f, v in raw.items()
+                    if f not in ("close_time", "time_quality")
+                    or f in row
+                    or raw["time_quality"] != "normal"
+                ):
                     errors.append(
                         dict(
                             check="raw_decode",

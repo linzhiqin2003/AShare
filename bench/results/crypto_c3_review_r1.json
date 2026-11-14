@@ -1,0 +1,147 @@
+{
+  "review_round": 1,
+  "completed_at": "2026-11-15T07:13:07+08:00",
+  "issues": [
+    {
+      "id": "p0_1",
+      "locations": [
+        "src/ashare/backtest/crypto_run.py:65",
+        "src/ashare/backtest/crypto.py:243"
+      ],
+      "tests": [
+        "test_r1_p0_1_migrated_delist_and_future_announcement_invariance",
+        "test_r1_p0_1_missing_notice_checks_actual_execution_symbol"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p0_2",
+      "locations": [
+        "src/ashare/data/crypto/panel.py:230",
+        "src/ashare/data/crypto/verify.py:88"
+      ],
+      "tests": [
+        "test_r1_p0_2_normal_market_data_refutes_inferred_halt",
+        "test_r1_p0_2_independent_verify_rejects_false_halt",
+        "test_r1_p0_2_counterevidence_breaks_entire_gap_chain"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p0_3",
+      "locations": [
+        "src/ashare/backtest/crypto.py:212"
+      ],
+      "tests": [
+        "test_r1_p0_3_missing_trade_bar_preserves_delivery_price",
+        "test_r1_p0_3_unproven_expiry_price_is_rejected"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p0_4",
+      "locations": [
+        "src/ashare/data/crypto/announcements.py:125"
+      ],
+      "tests": [
+        "test_r1_p0_4_resume_consumes_old_body_before_new_revision"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p1_5",
+      "locations": [
+        "src/ashare/backtest/crypto.py:256"
+      ],
+      "tests": [
+        "test_r1_p1_5_delivery_fee_uses_right_boundary"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p1_6",
+      "locations": [
+        "src/ashare/data/crypto/dataset.py:129",
+        "src/ashare/backtest/crypto.py:81"
+      ],
+      "tests": [
+        "test_r1_p1_6_daily_signal_excludes_invalid_close"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p1_7",
+      "locations": [
+        "bench/crypto_examples.py:57"
+      ],
+      "tests": [
+        "test_r1_p1_7_summary_counts_clearance_once"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p1_8",
+      "locations": [
+        "bench/crypto_examples.py:209"
+      ],
+      "tests": [
+        "test_r1_p1_8_raw_funding_oracle_catches_adapter_scale"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "p2_9",
+      "locations": [
+        "packages/panelbt/python/panelbt/markets/binance.py:142",
+        "src/ashare/backtest/crypto.py:315"
+      ],
+      "tests": [
+        "test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics"
+      ],
+      "status": "fixed"
+    }
+  ],
+  "red_regressions": {
+    "review_cases_failed_before_fix": 14,
+    "additional_case_failed_before_fix": 1,
+    "reports": [
+      "bench/results/crypto_c3_r1_red.txt",
+      "bench/results/crypto_c3_r1_extra_red.txt"
+    ]
+  },
+  "validation": {
+    "tests_passed": 487,
+    "seconds": 12.47,
+    "workers": 4,
+    "offline": true,
+    "ruff": "passed",
+    "format_files": 772,
+    "git_diff_check": "passed",
+    "mutation_killed": 21,
+    "mutation_total": 21,
+    "new_mutations_killed": 9,
+    "imports_verified_in_worktree": true,
+    "source_restoration_sha_verified": true
+  },
+  "real_rebuild": {
+    "version": "592e490b1d0b50ca14c51035be2d373370bc53a3df8a3f77ce83dd1a6735c194",
+    "rows": 239612,
+    "archives_checked": 955,
+    "errors": 0,
+    "diagnostics": 6642,
+    "start": "2020-01-01T00:00:00+00:00",
+    "end_exclusive": "2026-10-31T23:00:00+00:00",
+    "new_downloads": 0
+  },
+  "examples": {
+    "report": "bench/results/crypto_examples.json",
+    "previous_strategy_metrics_unchanged": true,
+    "previous_hand_check_numbers_unchanged": true,
+    "quant_comparison_unchanged": true,
+    "changes": [
+      "data version records trade-kline halt evidence explicitly",
+      "clearance fee displayed separately without adding twice",
+      "funding oracle uses frozen raw records and verifies settlement times and positions"
+    ]
+  }
+}

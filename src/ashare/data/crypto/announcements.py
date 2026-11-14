@@ -4,9 +4,10 @@ import html
 import json
 import re
 
+from ..store import atomic_json
 from .events import EventLedger, normalize_event
 from .sources import CMS
-from .storage import encoded
+from .storage import digest, encoded
 from .timeutil import DAY, millis
 
 
@@ -121,6 +122,110 @@ def extract_events(article, fetched_at):
     return events
 
 
+def _drain_article(store, ledger, listing):
+    """按原文 SHA / 首次观察时间持久化导入队列，旧正文完成后才能消费新修订。"""
+    code = listing["code"]
+    key = f"announcements/article/{code}"
+    entry = store.manifest.read().get(key)
+    if entry is None:
+        return 0, 0
+    queue_key = f"announcements/ingestion/{code}"
+    queue = json.loads(store.get(queue_key)) if store.complete(queue_key) else []
+    known = {(r["sha256"], r["observed_at"]) for r in queue}
+    previous_sha = None
+    observations = []
+    for saved in entry.get("revisions", [entry]):
+        sha = saved["sha256"]
+        if sha == previous_sha:
+            continue
+        previous_sha = sha
+        observed = saved.get("first_observed_at", saved.get("fetched_at"))
+        if observed is None:
+            raise ValueError("已存公告缺首次观察时间，不能重新抓取后倒填")
+        record = dict(
+            sha256=sha,
+            observed_at=observed,
+            release_date=saved.get("release_date", listing["releaseDate"]),
+            revision=bool(observations),
+            complete=False,
+        )
+        observations.append(record)
+        if (sha, observed) not in known:
+            queue.append(record)
+            known.add((sha, observed))
+    store.put(queue_key, encoded(queue), source="cms_ingestion")
+    imported = reviews = 0
+    semantic = (
+        "original_text",
+        "effective_at",
+        "settlement_price",
+        "replacement",
+        "ratio",
+        "status",
+        "kind",
+        "instrument",
+        "source_url",
+    )
+    for record in queue:
+        if record["complete"]:
+            continue
+        detail = json.loads(store.get(key, sha=record["sha256"]))
+        observed = record["observed_at"]
+        parsed = extract_events(
+            dict(
+                detail, releaseDate=detail.get("releaseDate") or record["release_date"]
+            ),
+            observed,
+        )
+        for e in parsed:
+            e.pop("version_id")
+            if record["revision"]:
+                e["known_at"] = observed
+                e["known_at_basis"] = "observed_revision"
+            prior = [
+                x
+                for x in ledger.read()
+                if x["event_id"] == e["event_id"]
+                or (
+                    x["source_url"] == e["source_url"]
+                    and x["instrument"] == e["instrument"]
+                    and x["kind"] == e["kind"]
+                )
+            ]
+            if any(
+                x["known_at"] == e["known_at"]
+                and all(x.get(k) == e.get(k) for k in semantic)
+                for x in prior
+            ):
+                continue
+            if prior:
+                last = max(prior, key=lambda x: x["known_at"])
+                if last["manual"] and last["effective_at"] == e["effective_at"]:
+                    continue
+                e["event_id"] = last["event_id"]
+                e["supersedes"] = last["version_id"]
+                if e["known_at"] <= last["known_at"]:
+                    e["known_at"] = observed
+                    e["known_at_basis"] = "observed_revision"
+            e.update(body_sha256=record["sha256"], body_observed_at=observed)
+            ledger.append(e)
+            imported += 1
+        store.put(
+            f"announcements/pending/{code}",
+            encoded(dict(article=detail, parsed=parsed, review_required=True)),
+            source="cms",
+        )
+        record["complete"] = True
+        store.put(queue_key, encoded(queue), source="cms_ingestion")
+        store.put(
+            f"announcements/processed/{code}",
+            record["sha256"].encode(),
+            source="cms_ingestion",
+        )
+        reviews += 1
+    return imported, reviews
+
+
 def crawl_announcements(
     client,
     store,
@@ -138,21 +243,45 @@ def crawl_announcements(
     """
     seen, pages, imported, pending = set(), 0, 0, 0
     ledger = EventLedger(store.root)
+    query = dict(
+        since=millis(since),
+        until=millis(until) if until is not None else None,
+        catalogs=list(catalogs),
+        symbols=sorted(symbols or []),
+    )
+    progress_path = (
+        store.root / "announcements" / ("progress-" + digest(encoded(query)) + ".json")
+    )
+    progress = json.loads(progress_path.read_text()) if progress_path.exists() else {}
+    if progress.get("complete"):
+        progress = {}
+    progress.setdefault("next_pages", {})
+    progress.setdefault("finished", [])
+    progress.setdefault("cached_page", None)
     for catalog in catalogs:
+        if catalog in progress["finished"]:
+            continue
         finished = False
-        for page in range(1, page_limit + 1):
-            response = client.json(
-                CMS + "/list/query",
-                params=dict(type=1, pageNo=page, pageSize=50, catalogId=catalog),
+        for page in range(progress["next_pages"].get(str(catalog), 1), page_limit + 1):
+            key = f"announcements/list/{catalog}/{page}"
+            response = (
+                json.loads(store.get(key))
+                if progress["cached_page"] == key
+                else client.json(
+                    CMS + "/list/query",
+                    params=dict(type=1, pageNo=page, pageSize=50, catalogId=catalog),
+                )
             )
             if not response.get("success"):
                 raise ValueError("公告列表返回失败")
             store.put(
-                f"announcements/list/{catalog}/{page}",
+                key,
                 encoded(response),
                 source="cms",
                 fetched_at=millis(fetched_at),
             )
+            progress["cached_page"] = key
+            atomic_json(progress_path, progress)
             pages += 1
             groups = response["data"]["catalogs"]
             articles = [a for g in groups for a in g["articles"]]
@@ -176,6 +305,10 @@ def crawl_announcements(
                     re.I,
                 ):
                     continue
+                # 必须先消费落盘版本，再发起可能返回新正文的网络请求。
+                count, reviews = _drain_article(store, ledger, a)
+                imported += count
+                pending += reviews
                 response = client.json(
                     CMS + "/detail/query", params=dict(articleCode=a["code"])
                 )
@@ -183,54 +316,38 @@ def crawl_announcements(
                     raise ValueError("公告正文返回失败")
                 detail = dict(response["data"], code=a["code"])
                 key = f"announcements/article/{a['code']}"
-                previous = store.manifest.read().get(key, {})
                 payload = encoded(detail)
-                entry = store.put(
-                    key, payload, source="cms", fetched_at=millis(fetched_at)
+                previous = store.manifest.read().get(key, {})
+                observed_at = (
+                    previous.get(
+                        "first_observed_at",
+                        previous.get("fetched_at", millis(fetched_at)),
+                    )
+                    if previous.get("sha256") == digest(payload)
+                    else millis(fetched_at)
                 )
-                if previous.get("sha256") == entry["sha256"]:
-                    continue
-                # 列表补充的首发时间只用于解析，不能改变原文 hash、伪造一次修订。
-                parsed = extract_events(
-                    dict(
-                        detail,
-                        releaseDate=detail.get("releaseDate") or a["releaseDate"],
-                    ),
-                    fetched_at,
-                )
-                old = ledger.read()
-                for e in parsed:
-                    prior = [
-                        x
-                        for x in old
-                        if x["event_id"] == e["event_id"]
-                        or (
-                            x["source_url"] == e["source_url"]
-                            and x["instrument"] == e["instrument"]
-                            and x["kind"] == e["kind"]
-                        )
-                    ]
-                    if prior:
-                        last = max(prior, key=lambda x: x["known_at"])
-                        if last["manual"] and last["effective_at"] == e["effective_at"]:
-                            continue
-                        e.pop("version_id")
-                        e["event_id"] = last["event_id"]
-                        e["supersedes"] = last["version_id"]
-                        if e["known_at"] <= last["known_at"]:
-                            e["known_at"] = millis(fetched_at)
-                            e["known_at_basis"] = "observed_revision"
-                    ledger.append(e)
-                    imported += 1
                 store.put(
-                    f"announcements/pending/{a['code']}",
-                    encoded(dict(article=detail, parsed=parsed, review_required=True)),
+                    key,
+                    payload,
                     source="cms",
+                    fetched_at=millis(fetched_at),
+                    first_observed_at=observed_at,
+                    release_date=a["releaseDate"],
                 )
-                pending += 1
+                count, reviews = _drain_article(store, ledger, a)
+                imported += count
+                pending += reviews
+            progress["next_pages"][str(catalog)] = page + 1
+            progress["cached_page"] = None
+            atomic_json(progress_path, progress)
             if min(a["releaseDate"] for a in articles) < millis(since):
                 finished = True
                 break
         if not finished:
             raise ValueError(f"公告列表超过页数上限 {page_limit}，覆盖未完成")
+        progress["finished"].append(catalog)
+        progress["cached_page"] = None
+        atomic_json(progress_path, progress)
+    progress["complete"] = True
+    atomic_json(progress_path, progress)
     return dict(pages=pages, imported=imported, pending_review=pending)

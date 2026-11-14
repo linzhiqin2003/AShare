@@ -1,8 +1,11 @@
 """币安只读 HTTP：代理、超时、重试、接口节流、S3 分页与校验和。"""
 
 import hashlib
+import math
 import time
 import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -28,7 +31,18 @@ class PublicClient:
         sleep=time.sleep,
         clock=time.monotonic,
         max_bytes=40_000_000,
+        cms_attempts=8,
+        cms_backoff=30.0,
+        cms_backoff_cap=240.0,
     ):
+        if (
+            not isinstance(cms_attempts, int)
+            or cms_attempts < 1
+            or not all(
+                math.isfinite(x) and x > 0 for x in (cms_backoff, cms_backoff_cap)
+            )
+        ):
+            raise ValueError("CMS 重试次数与退避参数必须为正")
         self.client = httpx.Client(
             timeout=httpx.Timeout(30, connect=10),
             trust_env=True,
@@ -39,6 +53,16 @@ class PublicClient:
         self.next_at = {}
         self.bytes = 0
         self.max_bytes = max_bytes
+        self.cms_attempts = cms_attempts
+        self.cms_backoff = cms_backoff
+        self.cms_backoff_cap = cms_backoff_cap
+
+    def _wait(self, seconds):
+        # 长退避分段，保持中断可响应；测试注入 sleep 不会真的等待。
+        while seconds > 0:
+            part = min(seconds, 60)
+            self.sleep(part)
+            seconds -= part
 
     def __enter__(self):
         return self
@@ -58,7 +82,13 @@ class PublicClient:
             else "archive"
         )
         delay = {"funding": 0.65, "cms": 1.0, "rest": 0.25, "archive": 0.1}[group]
-        for attempt in range(4):
+        attempts = self.cms_attempts if group == "cms" else 4
+        for attempt in range(attempts):
+            backoff = (
+                min(self.cms_backoff * 2**attempt, self.cms_backoff_cap)
+                if group == "cms"
+                else 2**attempt
+            )
             self.sleep(max(0, self.next_at.get(group, 0) - self.clock()))
             self.next_at[group] = self.clock() + delay
             try:
@@ -69,14 +99,23 @@ class PublicClient:
                         response.status_code in (418, 429)
                         or response.status_code >= 500
                     ):
-                        if attempt == 3:
+                        if attempt == attempts - 1:
                             response.raise_for_status()
-                        pause = float(response.headers.get("Retry-After", 2**attempt))
-                        if pause > 60:
+                        retry = response.headers.get("Retry-After")
+                        try:
+                            pause = float(retry) if retry is not None else backoff
+                        except ValueError:
+                            pause = (
+                                parsedate_to_datetime(retry) - datetime.now(UTC)
+                            ).total_seconds()
+                        pause = max(pause, backoff) if group == "cms" else max(0, pause)
+                        if not math.isfinite(pause) or pause > (
+                            self.cms_backoff_cap * 4 if group == "cms" else 60
+                        ):
                             raise RuntimeError(
-                                "服务端要求等待超过 60 秒；停止本次同步，稍后续跑"
+                                "服务端要求等待超过安全上限；停止本次同步，稍后续跑"
                             )
-                        self.sleep(pause)
+                        self._wait(pause)
                         continue
                     response.raise_for_status()
                     chunks = []
@@ -89,9 +128,9 @@ class PublicClient:
                         chunks.append(chunk)
                     return b"".join(chunks)
             except (httpx.TimeoutException, httpx.NetworkError):
-                if attempt == 3:
+                if attempt == attempts - 1:
                     raise
-                self.sleep(2**attempt)
+                self._wait(backoff)
         raise RuntimeError("HTTP 重试耗尽")
 
     def json(self, url, **kwargs):
