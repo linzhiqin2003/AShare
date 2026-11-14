@@ -1,0 +1,228 @@
+{
+ "tag": "real",
+ "n": 256,
+ "backends": {
+  "mlx-fused_gpu_real": {
+   "thr0.5_delta0.0": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.1": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.25": {
+    "missed": 0,
+    "rechecked": 152,
+    "cpu_pass": 149,
+    "extra_rechecks": 3
+   },
+   "thr0.5_delta0.5": {
+    "missed": 0,
+    "rechecked": 154,
+    "cpu_pass": 149,
+    "extra_rechecks": 5
+   },
+   "thr1.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 145,
+    "cpu_pass": 145,
+    "extra_rechecks": 0
+   },
+   "thr1.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 145,
+    "extra_rechecks": 4
+   },
+   "thr2.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 135,
+    "cpu_pass": 134,
+    "extra_rechecks": 1
+   },
+   "thr2.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 136,
+    "cpu_pass": 134,
+    "extra_rechecks": 2
+   }
+  },
+  "torch-fused_mps_real": {
+   "thr0.5_delta0.0": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.1": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.25": {
+    "missed": 0,
+    "rechecked": 152,
+    "cpu_pass": 149,
+    "extra_rechecks": 3
+   },
+   "thr0.5_delta0.5": {
+    "missed": 0,
+    "rechecked": 154,
+    "cpu_pass": 149,
+    "extra_rechecks": 5
+   },
+   "thr1.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 145,
+    "cpu_pass": 145,
+    "extra_rechecks": 0
+   },
+   "thr1.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 145,
+    "extra_rechecks": 4
+   },
+   "thr2.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 135,
+    "cpu_pass": 134,
+    "extra_rechecks": 1
+   },
+   "thr2.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 136,
+    "cpu_pass": 134,
+    "extra_rechecks": 2
+   }
+  },
+  "torch_mps_real": {
+   "thr0.5_delta0.0": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.1": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 149,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.25": {
+    "missed": 0,
+    "rechecked": 152,
+    "cpu_pass": 149,
+    "extra_rechecks": 3
+   },
+   "thr0.5_delta0.5": {
+    "missed": 0,
+    "rechecked": 154,
+    "cpu_pass": 149,
+    "extra_rechecks": 5
+   },
+   "thr1.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 145,
+    "cpu_pass": 145,
+    "extra_rechecks": 0
+   },
+   "thr1.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 146,
+    "cpu_pass": 145,
+    "extra_rechecks": 1
+   },
+   "thr1.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 149,
+    "cpu_pass": 145,
+    "extra_rechecks": 4
+   },
+   "thr2.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 134,
+    "cpu_pass": 134,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 135,
+    "cpu_pass": 134,
+    "extra_rechecks": 1
+   },
+   "thr2.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 136,
+    "cpu_pass": 134,
+    "extra_rechecks": 2
+   }
+  }
+ }
+}

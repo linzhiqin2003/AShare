@@ -1,0 +1,175 @@
+{
+ "machine": {
+  "cpus": 15,
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "chip": "Apple M5 Pro",
+  "memory_gib": 24.0
+ },
+ "backend": "torch",
+ "device": "mps",
+ "chunk": 1,
+ "load_before": "14.02 7.88 9.75",
+ "import_seconds": 1.418173415993806,
+ "source": {
+  "kind": "real",
+  "start": "20160101",
+  "end": "20251231",
+  "shape": [
+   2430,
+   5923
+  ]
+ },
+ "read_fields_seconds": 0.49860350001836196,
+ "prepare_cpu_seconds": 0.1741495419992134,
+ "population": {
+  "file": "population_real.json",
+  "n": 256
+ },
+ "upload_seconds": 0.15742204198613763,
+ "memory_after_upload": {
+  "active": 533463040,
+  "driver": 1074216960
+ },
+ "first_generation": {
+  "device_and_fetch": 51.409411625005305,
+  "t_stats_cpu": 0.007357166992733255,
+  "total": 51.41676908399677,
+  "load": "11.13 8.20 9.76"
+ },
+ "runs": [
+  {
+   "device_and_fetch": 49.429388666001614,
+   "t_stats_cpu": 0.008688667003298178,
+   "total": 49.43807750000269,
+   "load": "7.12 7.56 9.42",
+   "bitwise_same_as_first": false
+  },
+  {
+   "device_and_fetch": 46.81060550000984,
+   "t_stats_cpu": 0.006010749988490716,
+   "total": 46.81661633300246,
+   "load": "4.36 6.76 9.03",
+   "bitwise_same_as_first": false
+  }
+ ],
+ "median": {
+  "device_and_fetch": 48.11999708300573,
+  "t_stats_cpu": 0.007349708495894447,
+  "total": 48.127346916502574
+ },
+ "per_op_seconds": {
+  "ts_corr": 15.808787461952306,
+  "rank_ic": 12.216312912176363,
+  "ts_zscore": 10.429731791926315,
+  "ts_std": 4.431162207911257,
+  "ts_rank": 2.4337512919446453,
+  "universe_mask": 0.4457687849353533,
+  "ts_decay_linear": 0.3020503341103904,
+  "ts_max": 0.2595559981709812,
+  "ts_min": 0.2341190039878711,
+  "ts_mean": 0.2199958760465961,
+  "divide": 0.07051275295088999,
+  "negate": 0.06130362316616811,
+  "cs_rank": 0.05080229300074279,
+  "ts_delta": 0.04583241592627019,
+  "subtract": 0.03419824902084656,
+  "log": 0.01920941803837195,
+  "add": 0.018536167044658214,
+  "multiply": 0.011890374938957393,
+  "abs": 0.007550582027761266,
+  "ts_delay": 0.006524040101794526
+ },
+ "op_counts_per_generation": {
+  "negate": 51,
+  "ts_zscore": 48,
+  "ts_rank": 48,
+  "ts_corr": 80,
+  "ts_max": 25,
+  "ts_mean": 21,
+  "abs": 7,
+  "multiply": 9,
+  "ts_decay_linear": 33,
+  "log": 18,
+  "ts_delta": 24,
+  "subtract": 25,
+  "ts_std": 33,
+  "divide": 54,
+  "ts_delay": 10,
+  "ts_min": 33,
+  "add": 12,
+  "cs_rank": 3
+ },
+ "memory_end": {
+  "active": 533463040,
+  "driver": 10746527744
+ },
+ "device_active_peak_sampled": 4052554240,
+ "peak_rss_gib": 2.3442840576171875,
+ "float32_vs_float64": {
+  "t_missing_mismatch": 0,
+  "t_abs_err": {
+   "0.5": 1.4420539101500651e-05,
+   "0.9": 0.00013885473952668365,
+   "0.99": 0.05581663709167757,
+   "1.0": 0.2500431133805855
+  },
+  "t_abs_err_mean": 0.0020667506265515346,
+  "daily_ic_abs_err": {
+   "0.5": 1.7146051181360367e-06,
+   "0.99": 0.001367180894362642,
+   "0.9999": 0.05892095270332969,
+   "1.0": 0.09260361650715179
+  },
+  "daily_ic_missing_mismatch": 814,
+  "per_candidate_max_daily_ic_err": {
+   "0.5": 1.423822337229437e-05,
+   "0.9": 0.0006996912922112265,
+   "1.0": 0.09260361650715179
+  },
+  "top26_overlap": 1.0,
+  "top32_overlap": 1.0,
+  "thresholds": {
+   "0.5": {
+    "cpu_pass": 149,
+    "gpu_pass": 149,
+    "cpu_pass_gpu_fail": 0,
+    "gpu_pass_cpu_fail": 0,
+    "margin_needed": 0.0,
+    "near_threshold_cpu_within_0.05": 0
+   },
+   "1.0": {
+    "cpu_pass": 145,
+    "gpu_pass": 145,
+    "cpu_pass_gpu_fail": 0,
+    "gpu_pass_cpu_fail": 0,
+    "margin_needed": 0.0,
+    "near_threshold_cpu_within_0.05": 4
+   },
+   "1.5": {
+    "cpu_pass": 136,
+    "gpu_pass": 136,
+    "cpu_pass_gpu_fail": 0,
+    "gpu_pass_cpu_fail": 0,
+    "margin_needed": 0.0,
+    "near_threshold_cpu_within_0.05": 2
+   },
+   "2.0": {
+    "cpu_pass": 134,
+    "gpu_pass": 134,
+    "cpu_pass_gpu_fail": 0,
+    "gpu_pass_cpu_fail": 0,
+    "margin_needed": 0.0,
+    "near_threshold_cpu_within_0.05": 1
+   },
+   "3.0": {
+    "cpu_pass": 125,
+    "gpu_pass": 125,
+    "cpu_pass_gpu_fail": 0,
+    "gpu_pass_cpu_fail": 0,
+    "margin_needed": 0.0,
+    "near_threshold_cpu_within_0.05": 0
+   }
+  }
+ },
+ "load_after": "8.00 7.12 9.03"
+}

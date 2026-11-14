@@ -40,6 +40,11 @@ risk-reference = ["scikit-learn>=1.6", "threadpoolctl>=3.5"]
 # 机器学习（ashare.ml）：树模型和线性模型。神经网络以后走单独的 nn 组，默认不装。
 ml = ["lightgbm>=4.6", "scikit-learn>=1.6"]
 
+# GPU 加速探针（bench/gpu/，docs/GPU_PROBE.md），默认不装。
+gpu-probe = ["mlx>=0.29; sys_platform == 'darwin'", "torch>=2.8"]
+# NVIDIA Linux 上的同一探针：MLX 的 CUDA 12 构建 + PyPI 上默认带 CUDA 的 torch（bench/gpu/run_cuda.sh）。
+gpu-probe-cuda = ["mlx[cuda12]>=0.29; sys_platform == 'linux'", "torch>=2.8"]
+
 panelops-bench = ["pandas>=2.2", "polars>=2.1", "bottleneck>=1.4"]
 panelops-crosscheck = ["alphalens-reloaded>=0.4", "matplotlib>=3.9"]
 
