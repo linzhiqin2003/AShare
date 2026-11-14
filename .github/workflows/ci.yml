@@ -1,0 +1,94 @@
+# 每个 PR 和推送 main 都跑；合并前必须通过（规则集里的必需检查）。设计见 docs/TESTING_PLAN.md「GitHub Actions CI」。
+# 只用合成数据和夹具：不需要任何密钥，Tushare 不进 CI，没有 data/ 目录。action 钉 SHA（注释里是版本号）。
+# 推送前用 ci-local 在本机把这些 job 跑一遍；Rust 工具链用 rustup 命令装（ci-local 不认第三方 action）。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: 检查（ruff、Rust fmt / clippy）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Rust 工具链
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: ruff
+        run: |
+          uvx ruff@0.17.4 check .
+          uvx ruff@0.17.4 format --check .
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  rust-test:
+    name: Rust 测试
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Rust 工具链
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  python-test:
+    name: Python 测试（Linux 从锁文件安装）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust 工具链（构建原生扩展）
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: 从锁文件安装（--locked：macOS 生成的锁在 Linux 上也要能用）
+        run: |
+          uv sync --locked --all-packages --group dev --group ml --extra platform
+          uv run --no-sync python bench/clean_extension.py
+      - name: pytest（并行、随机顺序）
+        run: uv run --no-sync pytest -q -n auto -p randomly --durations=20
+
+  web:
+    name: 前端（类型检查、单测、构建）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
