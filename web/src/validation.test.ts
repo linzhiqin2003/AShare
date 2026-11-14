@@ -5,8 +5,10 @@ import { setShowValidation, showValidation, VALIDATION_KEY, visibleParts, visibl
 import { useResearch, type ResearchTab } from './useResearch'
 import ResearchResults from './components/ResearchResults.vue'
 import CheckTable from './components/CheckTable.vue'
+import SharedSettings from './components/SharedSettings.vue'
 import TabSettings from './components/TabSettings.vue'
 import type { Packed, Run, Summary } from './types'
+import { FALLBACK_SETTINGS, restoreRun } from './backtest/useBacktests'
 
 const pack = (values: number[]): Packed => ({ shape: [values.length], data: btoa(String.fromCharCode(...new Uint8Array(new Float32Array(values).buffer))) })
 const parts = [
@@ -17,7 +19,7 @@ const period = (name: string, sharpe: number) => ({ period: name, sharpe, return
 const stats = (sharpe: number, periods: ReturnType<typeof period>[]) => ({ ...period('', sharpe), n: 10, fitness: 1, t: 2, ic: .02, coverage: .9, holding_days: 3, exposure: {}, periods, years: periods, subs: {} })
 const summary: Summary = { is: stats(1.11, [period('2024', 1.11)]), validation: stats(-0.77, [period('2025', -0.77)]), trial_count: 1, correlations: [], checks: [{ key: 'validation_ratio', label: '验证 Sharpe ÷ 样本内', value: -0.69, threshold: '≥ 0.50', status: 'fail' }, { key: 'sharpe', label: 'Sharpe（样本内）', value: 1.11, threshold: '≥ 1.00', status: 'pass' }] }
 const run = { id: 'validation-run', ordinal: 0, label: '20 · industry', status: 'complete', settings: { by: 'year' }, summary, elapsed: 1 } as Run
-const tab = (): ResearchTab => ({ id: 'tab', name: 't', source: 'rank(close)', settings: {}, count: 1, error: null, running: false, progress: 100, job: { id: 'job', status: 'complete', total: 1, elapsed: 1, runs: [run] }, selected: run.id, visible: [run.id], chart: { dates: [], lines: [] }, view: 'returns', compound: false, relative: false, returnSelection: 'both', autoName: false, drawdown: null, benchmark: null })
+const tab = (): ResearchTab => ({ id: 'tab', name: 't', source: 'rank(close)', settings: {}, count: 1, error: null, running: false, progress: 100, job: { id: 'job', status: 'complete', total: 1, elapsed: 1, runs: [run] }, selected: run.id, visible: [run.id], chart: { dates: [], lines: [] }, view: 'returns', compound: false, relative: false, returnSelection: 'both', autoName: false, drawdown: null, benchmark: null, mode: 'factor', backtest: restoreRun(null, FALLBACK_SETTINGS) })
 afterEach(() => { setShowValidation(false); localStorage.clear() })
 
 describe('验证期开关（2026-11-14 用户要求默认隐藏验证期）', () => {
@@ -81,9 +83,11 @@ describe('验证期开关（2026-11-14 用户要求默认隐藏验证期）', ()
     expect(wrapper.findAll('tbody tr')[0].findAll('td')[1].text()).toBe('-0.69')
     wrapper.unmount()
   })
+  // 2026-11-14 合并成研究页后，这一行在两个视图共用的「样本与成交」（SharedSettings）里。
   it('入口只在 tab 设置的「验证 2025 年」一行', async () => {
     const settings = { universe: 'TOP800', group_neutralize: [null], n_groups: 10, trade_at: 'open', by: 'year', weights_portfolio: false, sub_universes: true, trade_limitation: true, decay: 0 }
-    const wrapper = mount(TabSettings, { props: { modelValue: settings, name: 'a', defaults: settings }, global: { stubs: { BenchmarkSelect: true } } })
+    expect(mount(TabSettings, { props: { modelValue: settings, defaults: settings } }).find('[aria-label="显示验证期"]').exists()).toBe(false)
+    const wrapper = mount(SharedSettings, { props: { modelValue: settings }, global: { stubs: { BenchmarkSelect: true } } })
     const toggle = wrapper.get('[role="switch"][aria-label="显示验证期"]')
     expect(toggle.element.closest('.setting-row')!.textContent).toContain('验证 2025 年')
     expect(toggle.attributes('aria-checked')).toBe('false')

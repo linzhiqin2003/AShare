@@ -42,17 +42,18 @@ vue-tsc 和 Vitest；`make check` 运行 Python/Rust 检查，不依赖 Node。
 字体（IBM Plex Sans、IBM Plex Mono、Noto Sans SC）和 Lucide 图标随前端构建，无 CDN。
 `static/`、Node 依赖和 `.cache/` 均在根 `.gitignore` 中按根路径忽略。
 
-顶栏五个页面：研究台、因子库、数据、回测、模拟盘，另有设置页（顶栏右侧齿轮），说明见下文「外壳、数据页与设置页」。
+顶栏四个页面：研究、因子库、数据、模拟盘（2026-11-14 研究台和回测合并成「研究」页，见下文「研究页的两个视图」），另有设置页（顶栏右侧齿轮），说明见下文「外壳、数据页与设置页」。
 顶栏日期来自数据清单所引用的当前面板日期，而不是时钟或硬编码日期。
 
 ## 外壳、数据页与设置页
 
 ### 路由与外壳
 
-hash 路由：`#/research`（默认）、`#/library`、`#/data`、`#/backtest`、`#/paper`、`#/settings`，
-刷新停在当前页，前进后退可用，未知地址回到研究台。页面清单在 `web/src/router.ts`（`PAGES`）。
-研究台常驻（`v-show`，切页不丢草稿和运行中的任务），其余页面按需挂载。回测、模拟盘的页面组件是
-`web/src/pages/BacktestPage.vue`、`PaperPage.vue`（模拟盘见下文「模拟盘页」）。
+hash 路由：`#/research`（默认）、`#/library`、`#/data`、`#/paper`、`#/settings`，
+刷新停在当前页，前进后退可用，未知地址回到研究页。页面清单在 `web/src/router.ts`（`PAGES`）。
+旧的 `#/backtest` 落到研究页并切到当前 tab 的策略回测视图，`#/backtest?entry=<id>` 新开 tab 带入因子库条目，
+处理完把地址换成 `#/research`。研究页（`web/src/pages/ResearchPage.vue`）常驻（`v-show`，切页不丢草稿和运行中的任务），
+其余页面按需挂载；模拟盘见下文「模拟盘页」。
 
 顶栏右侧：运行中的任务数、数据截至日期、设置入口。底部状态栏（`StatusBar.vue`）显示本地数据
 最近一个交易日的收盘行情：上证、深成、创业板、沪深300 的点位与涨跌幅，涨跌家数，申万一级行业
@@ -532,7 +533,7 @@ Rank IC 使用信号在 T+1 成交时点到 T+2 同时点的收益；分组回�
 
 样本内（2016–2024）和验证期（2025）一直是分开回测、分开统计的；界面默认只显示样本内，避免看着验证期调参。
 唯一入口是 tab 设置里「验证 2025 年」那一行的开关，全局生效，存 localStorage `ashare.showValidation`
-（值为 `1` 表示显示，其他或不存在表示隐藏；回测页读同一个键）。关闭时：
+（值为 `1` 表示显示，其他或不存在表示隐藏；策略回测视图读同一个键）。关闭时：
 
 - 研究台收益、分组、IC、子池图和相对基准曲线只画到样本内末，没有验证期阴影；
 - 参数组表没有「验证」列，分年 / 分季表没有验证期的行；检验表「验证 Sharpe ÷ 样本内」保留通过与否，不显示数值；
@@ -718,13 +719,35 @@ timeout 1400s .venv/bin/python -m bench.platform.verify_real
 最后一个脚本需要先启动服务，并设置真实数据的只读 `ASHARE_DATA_DIR` 和本 worktree 下的
 `ASHARE_PLATFORM_DIR`。它输出真实对照数字，仅用于私有最终报告，不要将输出加入仓库。
 
-## 回测页
+## 研究页的两个视图
 
-`#/backtest`（页面组件 `web/src/pages/BacktestPage.vue`，后端 `src/ashare/platform/backtest/`）。
+2026-11-14 研究台与回测合并（设计稿 `p10_merge_a1_light` / `p10_merge_a2_light`，方向 A：视图切换）。
+左栏一套 tab，编辑器在上，设置摊在编辑器下方：「样本与成交」两个视图共用，其余随视图换成因子检验或策略回测的那一套；
+运行按钮只跑当前视图（「运行 N 组」，因子检验的组数含设置扫描，策略回测只按候选列表展开）。结果区顶部是
+「因子检验｜策略回测」分段控件和一行组名（切换选中组）。两个视图共用同一份表达式，各自的结果分别存在 tab 上
+（因子检验是 `job`，策略回测是 `backtest`），切换视图不丢结果。
+
+共用设置只出现一次，存在研究设置里，回测提交时覆盖到回测设置上（`backtest/useBacktests.ts` 的 `sharedSettings`）：
+- 成交价：研究的 `trade_at` 与回测的 `trade_at` 同一含义（信号日的下一个交易日开盘或收盘成交），合并；
+- 基准：两边用同一份主流指数目录（`benchmarks.Benchmarks`），合并。研究里换基准只重取对比，回测要重跑；
+- 涨跌停与停牌不合并：研究的 `trade_limitation` 是「计不计入涨跌停与停牌」，回测总是计入，
+  `carry_blocked` 选的是被挡住的委托逐日重试还是等下次调仓，两者含义不同，各留在自己视图的设置里；
+- 股票池和调仓也不合并：研究只有 TOP800 / TOP1800 / 全市场、调仓按交易日数，回测还有指数时点成分、按日历周期调仓。
+
+本地存储：研究草稿 `ashare.drafts` 每项多了 `mode` 和 `backtest`（回测自己的设置、组的身份与组名、选中组、来源条目，
+不存共用的成交价和基准）。合并前回测页的 `ashare.backtest.tabs` 在研究页启动时读一次，每个 tab 变成一个停在策略回测视图的
+研究 tab（空白 tab 不迁），迁好的从旧列表去掉，全部迁完删掉这个键和 `ashare.backtest.active`。
+
+净值图和研究结果图用同一个时间窗刷子（`web/src/components/TimeBrush.vue`）：拖窗口平移、拉两端改起止，
+净值以窗口起点为 1 重新起算、回撤在窗内重算；替代原来的「1 年 / 3 年 / 5 年 / 全部」按钮，线性/对数切换保留。
+
+## 策略回测
+
+策略回测视图（结果区 `web/src/backtest/BacktestResults.vue`，后端 `src/ashare/platform/backtest/`）。
 对一个表达式用 `panelbt` 成交模式跑完整的现金/股数回测，设计稿 `p7_backtest_light`。
-因子库工具栏「对比」旁的「送去回测」在只勾选一个因子时可用，跳到 `#/backtest?entry=<条目 id>`：页面读
-`/api/library/{id}`，带入表达式、名称，设置只带入回测页认得的股票池（TOP800 / TOP1800 / ALL）、成交时点和基准；
-同一条目已开过就切回那个 tab。默认基准跟设置页保存的默认基准一致。顶栏「N 个任务运行中」把排队和正在跑的回测也算上。
+因子库工具栏「对比」旁的「送去回测」在只勾选一个因子时可用，跳到 `#/backtest?entry=<条目 id>`：研究页读
+`/api/library/{id}`，新开一个 tab 停在策略回测视图，带入表达式、名称；回测设置只带入认得的股票池（TOP800 / TOP1800 / ALL）、
+成交时点和基准，因子检验沿用条目自己的研究设置；同一条目已开过就切回那个 tab。默认基准跟设置页保存的默认基准一致。顶栏「N 个任务运行中」把排队和正在跑的回测也算上。
 
 计算全部复用现有模块：信号用 `analysis.evaluate_signal`（截到验证期末）；每个调仓信号日用
 `ashare.portfolio.top_equal` 取池内信号最高的前 N 只等权，`to_targets` 转稀疏目标，`ashare.backtest.execution_targets`

@@ -69,30 +69,31 @@ describe('整批进度', () => {
   })
 })
 
+// 2026-11-14 研究台与回测合并：tab 列表归研究页，回测部分（BacktestRun）由 useBacktestRuns 提交、轮询和取消；
+// 原来「存回新格式」的断言改为检查存进研究草稿的形状（storedRun），旧 tab 读回走 restoreTab + restore。
 describe('多组运行', () => {
   it('提交后每组一个身份；切换选中组；整批取消一次请求；存回新格式', async () => {
     server.states.set(A, state(A, 'running', 0.2)); server.states.set(B, state(B, 'queued'))
-    const { useBacktests } = await import('./useBacktests')
-    const b = useBacktests()
-    await b.init()
-    const tab = b.current.value!
-    tab.source = '-ts_std(returns, [20, 60])'
-    await b.run(tab)
-    expect(tab.groups.map(g => [g.id, g.label, g.state?.status])).toEqual([[A, '20', 'running'], [B, '60', 'queued']])
-    expect(tab.selected).toBe(A)
-    expect(tab.name).toBe('vol')
-    expect(b.active(tab)).toBe(true)
-    b.select(tab, B)
-    expect(selectedGroup(tab)?.label).toBe('60')
-    b.select(tab, 'nope')
-    expect(tab.selected).toBe(B)
+    const { restoreRun, storedRun, useBacktestRuns } = await import('./useBacktests')
+    const run = restoreRun(null, defaults)
+    const b = useBacktestRuns(() => [run], () => {})
+    await b.load()
+    const name = await b.submit(run, { source: '-ts_std(returns, [20, 60])', name: '', settings: run.settings })
+    expect(run.groups.map(g => [g.id, g.label, g.state?.status])).toEqual([[A, '20', 'running'], [B, '60', 'queued']])
+    expect(run.selected).toBe(A)
+    expect(name).toBe('vol')
+    expect(b.active(run)).toBe(true)
+    b.select(run, B)
+    expect(selectedGroup(run)?.label).toBe('60')
+    b.select(run, 'nope')
+    expect(run.selected).toBe(B)
     server.states.set(A, state(A, 'cancelled')); server.states.set(B, state(B, 'cancelled'))
-    await b.cancel(tab)
+    await b.cancel(run)
     expect(calls.filter(c => c.path === '/backtests/cancel')).toEqual([{ path: '/backtests/cancel', body: { ids: [A, B] } }])
-    expect(tab.groups.map(g => g.state?.status)).toEqual(['cancelled', 'cancelled'])
-    expect(b.active(tab)).toBe(false)
+    expect(run.groups.map(g => g.state?.status)).toEqual(['cancelled', 'cancelled'])
+    expect(b.active(run)).toBe(false)
     await flushPromises()
-    const saved = JSON.parse(localStorage.getItem('ashare.backtest.tabs')!)[0]
+    const saved = storedRun(run)
     expect(saved.groups).toEqual([{ id: A, label: '20' }, { id: B, label: '60' }])
     expect(saved.selected).toBe(B)
     expect(saved).not.toHaveProperty('backtest')
@@ -100,16 +101,17 @@ describe('多组运行', () => {
   })
   it('读回旧格式的 tab：一次请求取状态，服务端已不认识的组去掉', async () => {
     server.states.set(A, state(A, 'complete'))
-    localStorage.setItem('ashare.backtest.tabs', JSON.stringify([
+    const old = [
       { id: 't1', name: '低波', source: '-ts_std(returns, 20)', settings: {}, backtest: A },
       { id: 't2', name: '已清', source: 'close', settings: {}, backtest: C },
-    ]))
-    const { useBacktests } = await import('./useBacktests')
-    const b = useBacktests()
-    await b.init()
-    expect(b.tabs.value[0].groups.map(g => [g.id, g.state?.status])).toEqual([[A, 'complete']])
-    expect(b.tabs.value[1].groups).toEqual([])
-    expect(b.tabs.value[1].selected).toBeNull()
+    ]
+    const { useBacktestRuns } = await import('./useBacktests')
+    const runs = old.map(t => ({ ...restoreTab(t, defaults)!, count: 1, error: null }))
+    const b = useBacktestRuns(() => runs, () => {})
+    await b.restore(runs)
+    expect(runs[0].groups.map(g => [g.id, g.state?.status])).toEqual([[A, 'complete']])
+    expect(runs[1].groups).toEqual([])
+    expect(runs[1].selected).toBeNull()
     expect(calls.filter(c => c.path.startsWith('/backtests/states?'))).toHaveLength(2)
     b.dispose()
   })

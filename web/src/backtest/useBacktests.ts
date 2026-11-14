@@ -1,13 +1,22 @@
-import { computed, ref, shallowRef, watch } from 'vue'
-import { api, friendly, RequestError } from '../api'
-import type { ApiError, Completion, Entry } from '../types'
+import { shallowRef } from 'vue'
+import { friendly, RequestError } from '../api'
+import type { Scalar, Settings } from '../types'
 import * as client from './api'
-import type { BacktestGroup, BacktestOptions, BacktestSettings, BacktestState, BacktestTab } from './types'
+import type { BacktestGroup, BacktestOptions, BacktestRun, BacktestSettings, BacktestState, BacktestTab } from './types'
 
+/** 合并前回测页自己的 localStorage；研究页启动时读一次、迁移成研究 tab 后删掉。 */
 export const TABS_KEY = 'ashare.backtest.tabs'
 export const ACTIVE_KEY = 'ashare.backtest.active'
-function read(key: string) { try { return localStorage.getItem(key) } catch { return null } }
-function write(key: string, value: string) { try { localStorage.setItem(key, value) } catch { /* 隐私模式等：只是不记住 */ } }
+
+/** 与后端 `backtest/settings.py` 的 DEFAULTS 相同；只在回测选项还没读到时兜底。 */
+export const FALLBACK_SETTINGS: BacktestSettings = { universe: 'csi300', rebalance: 'month', top_n: 30, trade_at: 'open', capital: 1000, commission: 0.00025, commission_min: 5, slippage_bps: 5, dividend_tax: 0.2, carry_blocked: true, lots: 'board' }
+
+/**
+ * 两个视图共用、只在「样本与成交」里出现一次的设置：成交价（次日开盘或收盘，两边同一含义）和基准
+ * （同一份主流指数目录）。存在研究设置里；回测设置里的同名键不再保存，提交时用共用值覆盖。
+ * 涨跌停与停牌两边含义不同（研究：是否计入涨跌停与停牌；回测：总是计入，选的是挡住的委托怎么处理），不合并。
+ */
+export const SHARED_KEYS = ['trade_at', 'benchmark'] as const
 
 /** `#/backtest?entry=<因子库条目 id>`：从因子库「送去回测」进入。 */
 export function routeEntry(hash: string) {
@@ -16,7 +25,7 @@ export function routeEntry(hash: string) {
   return entry && /^[\w-]{1,80}$/.test(entry) ? entry : null
 }
 
-/** 因子库条目的设置里，回测页认得的只有股票池、成交时点和基准；其余用回测默认值。 */
+/** 因子库条目的设置里，回测认得的只有股票池、成交时点和基准；其余用回测默认值。 */
 export function settingsFromEntry(entry: Record<string, unknown>, defaults: BacktestSettings, choices: BacktestOptions['choices']): BacktestSettings {
   const out = { ...defaults }
   if (typeof entry.universe === 'string' && choices.universe?.includes(entry.universe)) out.universe = entry.universe
@@ -25,15 +34,17 @@ export function settingsFromEntry(entry: Record<string, unknown>, defaults: Back
   return out
 }
 
+const first = (value: Scalar | Scalar[] | undefined) => (Array.isArray(value) ? value[0] : value)
+/** 提交回测用的设置：回测自己的组合与成本规则 + 研究设置里的共用成交价和基准（扫参时取第一项）。 */
+export function sharedSettings(research: Settings, own: BacktestSettings): BacktestSettings {
+  const trade = first(research.trade_at), bench = first(research.benchmark)
+  return { ...own, ...(typeof trade === 'string' ? { trade_at: trade } : {}), ...(typeof bench === 'string' && bench ? { benchmark: bench } : {}) }
+}
+
 const RUNNING = ['queued', 'running']
 const running = (state: BacktestState | null) => !!state && RUNNING.includes(state.status)
 
-/**
- * localStorage 里的一个 tab → 页面状态。第一版只存一个 `backtest` 身份（一次只跑一个表达式），
- * 读的时候当成只有一组；组名为空，界面与单组时一样。
- */
-export function restoreTab(saved: Record<string, unknown>, defaults: BacktestSettings): BacktestTab | null {
-  if (!saved || typeof saved.id !== 'string') return null
+function restoreGroups(saved: Record<string, unknown>) {
   let groups: BacktestGroup[] = []
   if (Array.isArray(saved.groups)) {
     groups = saved.groups
@@ -43,17 +54,73 @@ export function restoreTab(saved: Record<string, unknown>, defaults: BacktestSet
     groups = [{ id: saved.backtest, label: '', state: null }]
   }
   const selected = groups.some(g => g.id === saved.selected) ? saved.selected as string : groups[0]?.id ?? null
+  return { groups, selected }
+}
+
+/**
+ * 合并前回测页 localStorage 里的一个 tab → 页面状态。第一版只存一个 `backtest` 身份（一次只跑一个表达式），
+ * 读的时候当成只有一组；组名为空，界面与单组时一样。
+ */
+export function restoreTab(saved: Record<string, unknown>, defaults: BacktestSettings): BacktestTab | null {
+  if (!saved || typeof saved.id !== 'string') return null
   return {
     id: saved.id,
     name: typeof saved.name === 'string' ? saved.name : '',
     source: typeof saved.source === 'string' ? saved.source : '',
     settings: { ...defaults, ...(saved.settings as Partial<BacktestSettings> | undefined) },
-    groups, selected,
+    ...restoreGroups(saved),
     ...(typeof saved.entry === 'string' ? { entry: saved.entry } : {}),
   }
 }
 
-export function selectedGroup(tab: BacktestTab | null) {
+/** 研究草稿里的 `backtest` 部分 → 回测状态；缺了或格式不对就是一个没运行过的回测。 */
+export function restoreRun(saved: unknown, defaults: BacktestSettings): BacktestRun {
+  const value = saved && typeof saved === 'object' ? saved as Record<string, unknown> : {}
+  const settings = value.settings && typeof value.settings === 'object' ? value.settings as Partial<BacktestSettings> : {}
+  return {
+    settings: { ...defaults, ...settings },
+    ...restoreGroups(value),
+    ...(typeof value.entry === 'string' ? { entry: value.entry } : {}),
+    count: typeof value.count === 'number' ? value.count : 1,
+    error: null,
+  }
+}
+
+/** 存进研究草稿的回测部分：只存组的身份和组名（状态每次向服务端问），不存共用设置。 */
+export function storedRun(run: BacktestRun) {
+  const settings: Partial<BacktestSettings> = { ...run.settings }
+  for (const key of SHARED_KEYS) delete settings[key]
+  return { settings, groups: run.groups.map(({ id, label }) => ({ id, label })), selected: run.selected, ...(run.entry ? { entry: run.entry } : {}) }
+}
+
+/** 一个旧回测 tab 迁移成研究 tab 要用的字段；没写过表达式也没运行过的空白 tab 不迁。 */
+export interface MigratedTab {
+  old: string
+  name?: string
+  autoName: boolean
+  source: string
+  settings: Settings
+  mode: 'backtest'
+  backtest: BacktestRun
+}
+/** 读合并前回测页的 tab 列表：要迁的 tab 和全部原始项（没迁成功的由调用方写回）。 */
+export function migrateBacktestTabs(raw: string | null, defaults: BacktestSettings, researchDefaults: Settings): { tabs: MigratedTab[]; items: unknown[] } {
+  let items: unknown[] = []
+  try { const value = JSON.parse(raw ?? '[]'); if (Array.isArray(value)) items = value } catch { /* 损坏的旧数据不阻塞研究页 */ }
+  const tabs: MigratedTab[] = []
+  for (const item of items) {
+    const tab = restoreTab(item as Record<string, unknown>, defaults)
+    if (!tab || (!tab.source.trim() && !tab.groups.length)) continue
+    tabs.push({
+      old: tab.id, ...(tab.name ? { name: tab.name } : {}), autoName: !tab.name, source: tab.source, mode: 'backtest',
+      settings: { ...researchDefaults, trade_at: tab.settings.trade_at, ...(tab.settings.benchmark ? { benchmark: tab.settings.benchmark } : {}) },
+      backtest: { settings: tab.settings, groups: tab.groups, selected: tab.selected, ...(tab.entry ? { entry: tab.entry } : {}), count: Math.max(1, tab.groups.length), error: null },
+    })
+  }
+  return { tabs, items }
+}
+
+export function selectedGroup(tab: { groups: BacktestGroup[]; selected: string | null } | null) {
   return tab?.groups.find(g => g.id === tab.selected) ?? tab?.groups[0] ?? null
 }
 
@@ -69,114 +136,70 @@ export function batchProgress(groups: BacktestGroup[]) {
   return `${Math.round(done / groups.length * 100)}%`
 }
 
-const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/-/g, '').slice(0, 16)
-
-export function useBacktests() {
-  const tabs = ref<BacktestTab[]>([])
-  const activeId = shallowRef('')
+/**
+ * 研究页里策略回测的运行状态：选项、提交、整批取消、状态轮询。tab 列表归研究页，
+ * `all()` 返回全部 tab 的回测部分，轮询只问还在跑的。
+ */
+export function useBacktestRuns(all: () => BacktestRun[], report: (message: string) => void) {
   const options = shallowRef<BacktestOptions | null>(null)
-  const completions = shallowRef<Completion[]>([])
-  const message = shallowRef('')
-  const errors = ref<Record<string, ApiError | null>>({})
-  const current = computed(() => tabs.value.find(t => t.id === activeId.value) ?? null)
   let timer: ReturnType<typeof setInterval> | undefined
 
-  function blank(settings?: Partial<BacktestSettings>): BacktestTab {
-    return { id: uid(), name: '', source: '', settings: { ...options.value!.defaults, ...settings }, groups: [], selected: null }
+  const active = (run: BacktestRun) => run.groups.some(g => running(g.state))
+  const defaults = () => options.value?.defaults ?? FALLBACK_SETTINGS
+  async function load() {
+    try { options.value = await client.options() } catch (e) { report(friendly(e).message) }
+    return options.value
   }
-  function persist() {
-    write(TABS_KEY, JSON.stringify(tabs.value.map(({ id, name, source, settings, groups, selected, entry }) => ({
-      id, name, source, settings, groups: groups.map(({ id, label }) => ({ id, label })), selected, entry,
-    }))))
-    write(ACTIVE_KEY, activeId.value)
-  }
-  const active = (tab: BacktestTab) => tab.groups.some(g => running(g.state))
   /** 一次请求刷新一个 tab 全部组的状态；服务端已不认识的组从 tab 里去掉。 */
-  async function refresh(tab: BacktestTab) {
-    const asked = tab.groups
+  async function refresh(run: BacktestRun) {
+    const asked = run.groups
     if (!asked.length) return
     const { items } = await client.states(asked.map(g => g.id))
-    if (tab.groups !== asked) return  // 等待期间重新运行过：这批回答已经过时
+    if (run.groups !== asked) return  // 等待期间重新运行过：这批回答已经过时
     const found = new Map(items.map(item => [item.id, item]))
-    tab.groups = asked.filter(g => found.has(g.id)).map(g => ({ ...g, state: found.get(g.id)! }))
-    if (!tab.groups.some(g => g.id === tab.selected)) tab.selected = tab.groups[0]?.id ?? null
+    run.groups = asked.filter(g => found.has(g.id)).map(g => ({ ...g, state: found.get(g.id)! }))
+    if (!run.groups.some(g => g.id === run.selected)) run.selected = run.groups[0]?.id ?? null
+  }
+  async function restore(runs: BacktestRun[]) {
+    await Promise.all(runs.map(run => refresh(run).catch(() => { run.groups = []; run.selected = null })))
+    poll()
   }
   function poll() {
     clearInterval(timer)
-    if (!tabs.value.some(active)) return
+    if (!all().some(active)) return
     timer = setInterval(async () => {
-      const busy = tabs.value.filter(active)
+      const busy = all().filter(active)
       if (!busy.length) return clearInterval(timer)
-      await Promise.all(busy.map(tab => refresh(tab).catch(() => { /* 下一次再问 */ })))
+      await Promise.all(busy.map(run => refresh(run).catch(() => { /* 下一次再问 */ })))
     }, 600)
   }
-
-  async function init() {
+  function select(run: BacktestRun, group: string) {
+    if (run.groups.some(g => g.id === group)) run.selected = group
+  }
+  /** 提交一批；返回服务端起的名字（tab 没名字时用）。表达式错误（带行号）记在 run.error，其余报给页面。 */
+  async function submit(run: BacktestRun, body: { source: string; name: string; settings: BacktestSettings }) {
+    if (!body.source.trim() || active(run)) return null
+    run.error = null
     try {
-      const [loaded, words] = await Promise.all([client.options(), api<Completion[]>('/completions').catch(() => [])])
-      options.value = loaded; completions.value = words
-    } catch (e) { message.value = friendly(e).message; return }
-    let saved: unknown = []
-    try { saved = JSON.parse(read(TABS_KEY) ?? '[]') } catch { saved = [] }
-    tabs.value = (Array.isArray(saved) ? saved : []).map(t => restoreTab(t, options.value!.defaults)).filter((t): t is BacktestTab => !!t)
-    if (!tabs.value.length) tabs.value = [blank()]
-    activeId.value = tabs.value.some(t => t.id === read(ACTIVE_KEY)) ? read(ACTIVE_KEY)! : tabs.value[0].id
-    await Promise.all(tabs.value.map(tab => refresh(tab).catch(() => { tab.groups = []; tab.selected = null })))
-    poll()
-  }
-
-  function addTab(seed?: Partial<BacktestTab>) {
-    const tab = { ...blank(), ...seed }
-    tabs.value.push(tab); activeId.value = tab.id
-    return tab
-  }
-  function closeTab(tab: BacktestTab) {
-    const index = tabs.value.findIndex(t => t.id === tab.id)
-    tabs.value.splice(index, 1)
-    if (!tabs.value.length) tabs.value.push(blank())
-    if (activeId.value === tab.id) activeId.value = tabs.value[Math.max(0, index - 1)].id
-  }
-  function select(tab: BacktestTab, group: string) {
-    if (tab.groups.some(g => g.id === group)) tab.selected = group
-  }
-
-  async function run(tab: BacktestTab) {
-    if (!tab.source.trim() || active(tab)) return
-    errors.value[tab.id] = null
-    try {
-      const submitted = await client.submit({ source: tab.source, name: tab.name, settings: tab.settings })
+      const submitted = await client.submit(body)
       // 重跑时留在同名的那一组上（改了设置再跑，多半还想看刚才那组）。
-      const label = selectedGroup(tab)?.label
-      tab.groups = submitted.variants.map(({ label, ...state }) => ({ id: state.id, label, state }))
-      tab.selected = (tab.groups.find(g => g.label === label) ?? tab.groups[0]).id
-      if (!tab.name) tab.name = submitted.name
+      const label = selectedGroup(run)?.label
+      run.groups = submitted.variants.map(({ label, ...state }) => ({ id: state.id, label, state }))
+      run.selected = (run.groups.find(g => g.label === label) ?? run.groups[0]).id
       poll()
+      return submitted.name
     } catch (e) {
       const detail = friendly(e)
-      if (e instanceof RequestError && detail.line) errors.value[tab.id] = detail
-      else message.value = detail.message
+      if (e instanceof RequestError && detail.line) run.error = detail
+      else report(detail.message)
+      return null
     }
   }
-  async function cancel(tab: BacktestTab) {
-    const ids = tab.groups.filter(g => running(g.state)).map(g => g.id)
+  async function cancel(run: BacktestRun) {
+    const ids = run.groups.filter(g => running(g.state)).map(g => g.id)
     if (!ids.length) return
-    try { await client.cancel(ids); await refresh(tab) } catch (e) { message.value = friendly(e).message }
+    try { await client.cancel(ids); await refresh(run) } catch (e) { report(friendly(e).message) }
   }
-
-  /** 从因子库带入：同一条目已经开过就切过去，否则新开一个 tab。 */
-  async function openEntry(entry: string) {
-    const existing = tabs.value.find(t => t.entry === entry)
-    if (existing) { activeId.value = existing.id; return existing }
-    try {
-      const detail = await api<Entry>(`/library/${entry}`)
-      const settings = settingsFromEntry(detail.settings as Record<string, unknown>, options.value!.defaults, options.value!.choices)
-      const empty = current.value && !current.value.source.trim() && !current.value.groups.length ? current.value : null
-      if (empty) { Object.assign(empty, { name: detail.name, source: detail.source, settings, entry }); return empty }
-      return addTab({ name: detail.name, source: detail.source, settings, entry })
-    } catch (e) { message.value = friendly(e).message; return null }
-  }
-
-  watch([tabs, activeId], persist, { deep: true })
   const dispose = () => clearInterval(timer)
-  return { tabs, activeId, current, options, completions, message, errors, init, addTab, closeTab, select, run, cancel, openEntry, dispose, active }
+  return { options, defaults, active, load, refresh, restore, poll, select, submit, cancel, dispose }
 }

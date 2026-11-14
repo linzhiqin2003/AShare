@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useResearch, type ResearchTab } from './useResearch'
 import type { Packed, Run } from './types'
+import { FALLBACK_SETTINGS, restoreRun } from './backtest/useBacktests'
 
 const pack = (values: number[]): Packed => ({shape:[values.length],data:btoa(String.fromCharCode(...new Uint8Array(new Float32Array(values).buffer)))})
 afterEach(() => vi.unstubAllGlobals())
@@ -18,7 +19,7 @@ describe('相对基准序列按需加载', () => {
     const tab: ResearchTab = {
       id:'tab',name:'test',source:'rank(close)',settings:{benchmark:'000001.SH'},count:1,error:null,
       running:false,progress:100,job:{id:'job',status:'complete',total:1,elapsed:1,runs:[run]},selected:run.id,visible:[run.id],
-      chart:{dates:[],lines:[]},view:'returns',compound:false,relative:false,returnSelection:'both',autoName:false,drawdown:null,
+      chart:{dates:[],lines:[]},view:'returns',compound:false,relative:false,returnSelection:'both',autoName:false,drawdown:null,mode:'factor',backtest:restoreRun(null,FALLBACK_SETTINGS),
       benchmark:{symbol:'000001.SH',name:'上证指数',requested:'000001.SH',fallback:false,relatives:{},parts:[{part:'is',dates:['20240102','20240103'],series:{benchmark:pack([.01,.02])}}]},
     }
     await research.loadChart(tab)

@@ -106,3 +106,40 @@ export function niceAxis(values: number[][], count = 4, integerPercent = false, 
   const max = Math.ceil((hi === lo ? hi + step : hi) / step - 1e-10) * step
   return { min, max, ticks: Array.from({ length: Math.round((max-firstTick)/step)+1 },(_,i) => Number((firstTick+i*step).toPrecision(12))) }
 }
+
+/**
+ * 折线路径：每个像素保留区间内的最低和最高点，长序列缩放时形状不丢（研究结果图、时间窗缩略图、净值缩略图共用）。
+ * 非有限值断开折线。
+ */
+export function decimatedPath(values: (number | null)[], xf: (i: number) => number, yf: (n: number) => number, plotWidth: number) {
+  const ok = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v)
+  const stride = Math.max(1, Math.floor(values.length / (plotWidth * 2)))
+  let output = '', drawing = false
+  for (let i = 0; i < values.length; i += stride) {
+    let low = -1, high = -1
+    for (let j = i; j < Math.min(values.length, i + stride); j++) {
+      const v = values[j]
+      if (!ok(v)) continue
+      if (low < 0 || v < (values[low] as number)) low = j
+      if (high < 0 || v > (values[high] as number)) high = j
+    }
+    if (low < 0) { drawing = false; continue }
+    const points = [...new Set([i, low, high, Math.min(values.length - 1, i + stride - 1)])].sort((a, b) => a - b)
+    for (const point of points) {
+      const v = values[point]
+      if (!ok(v)) { drawing = false; continue }
+      output += `${drawing ? 'L' : 'M'}${xf(point).toFixed(1)},${yf(v).toFixed(1)}`; drawing = true
+    }
+  }
+  return output
+}
+
+/** 时间窗（起止下标，含两端）的一次拖动：拉左端、拉右端或整体平移；窗口至少 3 个点，不出数据范围。 */
+export function moveWindow(kind: 'left' | 'right' | 'body', origin: { start: number; end: number }, delta: number, length: number) {
+  const last = Math.max(0, length - 1)
+  if (kind === 'left') return { start: Math.max(0, Math.min(origin.end - 2, origin.start + delta)), end: origin.end }
+  if (kind === 'right') return { start: origin.start, end: Math.min(last, Math.max(origin.start + 2, origin.end + delta)) }
+  const span = origin.end - origin.start
+  const start = Math.max(0, Math.min(last - span, origin.start + delta))
+  return { start, end: start + span }
+}

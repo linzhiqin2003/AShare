@@ -92,3 +92,17 @@ export interface BacktestTab {
   selected: string | null
   entry?: string
 }
+
+/**
+ * 研究页一个 tab 里的策略回测部分（2026-11-14 研究台与回测合并）：表达式和名字归 tab，
+ * 成交价与基准归 tab 的共用设置；这里只放回测自己的组合与成本规则、各组身份和选中组。
+ */
+export interface BacktestRun {
+  settings: BacktestSettings
+  groups: BacktestGroup[]
+  selected: string | null
+  entry?: string
+  /** 当前表达式展开的组数（回测不扫设置，只按候选列表展开）。 */
+  count: number
+  error: import('../types').ApiError | null
+}

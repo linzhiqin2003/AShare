@@ -9,9 +9,11 @@ import { BACKTEST_FIELDS, validate } from './preferences'
 afterEach(() => { localStorage.clear(); document.documentElement.removeAttribute('data-theme'); vi.unstubAllGlobals() })
 
 describe('hash 路由', () => {
-  it('五个顶栏页面与设置页可直达，未知地址回到研究台', () => {
-    expect(PAGES.map(p => p.label)).toEqual(['研究台', '因子库', '数据', '回测', '模拟盘'])
-    for (const page of ['library', 'data', 'backtest', 'paper', 'settings']) expect(pageFromHash(`#/${page}`)).toBe(page)
+  // 2026-11-14 研究台与回测合并成「研究」页：顶栏四个页面，旧的 #/backtest 落到研究页。
+  it('四个顶栏页面与设置页可直达，未知地址和旧回测地址回到研究页', () => {
+    expect(PAGES.map(p => p.label)).toEqual(['研究', '因子库', '数据', '模拟盘'])
+    for (const page of ['library', 'data', 'paper', 'settings']) expect(pageFromHash(`#/${page}`)).toBe(page)
+    expect(pageFromHash('#/backtest')).toBe('research')
     expect(pageFromHash('#/data/close')).toBe('data')
     expect(pageFromHash('')).toBe('research')
     expect(pageFromHash('#/nope')).toBe('research')

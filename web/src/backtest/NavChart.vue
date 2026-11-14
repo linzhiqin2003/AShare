@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { CircleAlert, LoaderCircle } from 'lucide-vue-next'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import TimeBrush from '../components/TimeBrush.vue'
 import { vTip } from '../components/ui'
 import { num, pct } from './format'
-import { aligned, areaPath, drawdown, drawdownTicks, linePath, monthTicks, navTicks, rangeAvailable, rangeStart, rebase, tickDigits, yearTicks, type Range } from './navChart'
+import { aligned, areaPath, drawdown, drawdownTicks, linePath, monthTicks, navTicks, rebase, tickDigits, yearTicks } from './navChart'
 import type { BacktestDocument, BacktestStatus, Part } from './types'
 
 /** 候选列表展开出的组：多于一组时图上方出现一行组名，点选切换；其余组的净值以中性色叠在下面。 */
 export interface ChartGroup { id: string; label: string; status: BacktestStatus | null; document: BacktestDocument | null }
-const props = defineProps<{ document: BacktestDocument | null; part: Part; showValidation: boolean; loading?: boolean; groups?: ChartGroup[]; selected?: string | null }>()
+// hideGroups：组名由研究页结果区顶栏切换，图里不再放一行组名（其余组的净值照样叠画）。
+const props = defineProps<{ document: BacktestDocument | null; part: Part; showValidation: boolean; loading?: boolean; groups?: ChartGroup[]; selected?: string | null; hideGroups?: boolean }>()
 const emit = defineEmits<{ part: [value: Part]; select: [id: string] }>()
 const multi = computed(() => (props.groups?.length ?? 0) > 1)
 const selectedLabel = computed(() => props.groups?.find(g => g.id === props.selected)?.label ?? '')
 
-const range = shallowRef<Range>('all'), log = shallowRef(false)
+// 时间窗（2026-11-14 用户：与研究结果图一样用底部缩略图刷子拖动，替代原来的 1/3/5 年按钮）：
+// 选中组净值的下标区间，含两端；窗内净值以窗口起点为 1 重新起算，回撤也在窗内重算。换了日期轴就回到全部。
+const log = shallowRef(false), win = shallowRef({ start: 0, end: 0 })
+const fullDates = computed(() => props.document?.series.dates ?? [])
+watch(() => { const d = fullDates.value; return `${d.length}:${d[0] ?? ''}:${d.at(-1) ?? ''}` }, () => { win.value = { start: 0, end: Math.max(0, fullDates.value.length - 1) } }, { immediate: true })
+const brushValues = computed(() => props.document?.series.nav ?? [])
 const box = shallowRef<HTMLElement | null>(null), size = shallowRef({ width: 720, height: 480 })
 const hover = shallowRef<number | null>(null)
 let observer: ResizeObserver | undefined
@@ -28,29 +35,26 @@ onMounted(() => {
 })
 onUnmounted(() => observer?.disconnect())
 
-const LEFT = 46, RIGHT = 10, TOP = 12
-const ranges = computed(() => (['1y', '3y', '5y', 'all'] as Range[])
-  .filter(r => props.document && rangeAvailable(props.document.series.dates, r))
-  .map(r => ({ value: r, label: r === 'all' ? '全部' : `${r[0]} 年` })))
+const LEFT = 46, RIGHT = 10, TOP = 12, BRUSH = 56
 const view = computed(() => {
   const doc = props.document
   if (!doc) return null
   const s = doc.series
-  const active = ranges.value.some(r => r.value === range.value) ? range.value : 'all'
-  const start = rangeStart(s.dates, active)
-  const dates = s.dates.slice(start)
-  const nav = rebase(s.nav, start)
-  const bench = s.benchmark ? rebase(s.benchmark, start) : null
+  const start = Math.min(win.value.start, Math.max(0, s.dates.length - 1)), stop = Math.max(start, Math.min(win.value.end, s.dates.length - 1)) + 1
+  const cut = (values: (number | null)[]) => rebase(values.slice(0, stop), start)
+  const dates = s.dates.slice(start, stop)
+  const nav = cut(s.nav)
+  const bench = s.benchmark ? cut(s.benchmark) : null
   // 其余组按日期对齐到选中组的日期轴，同一起点重新起算。
   const others = multi.value
-    ? props.groups!.filter(g => g.id !== props.selected && g.document).map(g => rebase(aligned(s.dates, g.document!.series), start))
+    ? props.groups!.filter(g => g.id !== props.selected && g.document).map(g => cut(aligned(s.dates, g.document!.series)))
     : []
   return { dates, nav, bench, dd: drawdown(nav), others }
 })
 const layout = computed(() => {
   const { width, height } = size.value
-  const ddHeight = Math.max(80, Math.round(height * 0.24))
-  const mainHeight = Math.max(160, height - ddHeight - 8)
+  const ddHeight = Math.max(80, Math.round(height * 0.22))
+  const mainHeight = Math.max(160, height - ddHeight - BRUSH - 8)
   return { width, mainHeight, ddHeight, plotW: Math.max(10, width - LEFT - RIGHT) }
 })
 const axis = computed(() => {
@@ -105,10 +109,9 @@ const tip = computed(() => {
       <span v-if="document" class="push tools">
         <SegmentedControl v-if="showValidation" label="窗口" :model-value="part" :options="[{ value: 'is', label: '样本内' }, { value: 'validation', label: '验证' }]" @update:model-value="emit('part', $event as Part)" />
         <SegmentedControl label="纵轴" :model-value="log ? 'log' : 'linear'" :options="[{ value: 'linear', label: '线性' }, { value: 'log', label: '对数' }]" @update:model-value="log = $event === 'log'" />
-        <SegmentedControl v-if="ranges.length > 1" label="时间窗" :model-value="ranges.some(r => r.value === range) ? range : 'all'" :options="ranges" @update:model-value="range = $event as Range" />
       </span>
     </div>
-    <div v-if="multi" class="groups" role="tablist" aria-label="候选组">
+    <div v-if="multi && !hideGroups" class="groups" role="tablist" aria-label="候选组">
       <button v-for="g in groups" :key="g.id" class="group mono" role="tab" :aria-selected="g.id === selected" :class="{ active: g.id === selected, failed: g.status === 'failed', idle: g.status !== 'complete' && g.status !== 'failed' }" v-tip="g.status === 'failed' ? '回测失败' : g.label" @click="emit('select', g.id)">
         <LoaderCircle v-if="g.status === 'queued' || g.status === 'running'" :size="11" class="spinning" /><CircleAlert v-else-if="g.status === 'failed'" :size="11" /><i v-else />{{ g.label }}
       </button>
@@ -131,6 +134,9 @@ const tip = computed(() => {
           <line :x1="LEFT" :x2="layout.width - RIGHT" :y1="axis.ddBottom" :y2="axis.ddBottom" class="base" />
           <text v-for="t in axis.years" :key="t.index" :x="axis.x(t.index)" :y="layout.ddHeight - 6" text-anchor="middle">{{ t.label }}</text>
           <line v-if="tip" :x1="axis.x(hover!)" :x2="axis.x(hover!)" :y1="8" :y2="axis.ddBottom" class="cross" />
+        </svg>
+        <svg class="chart brush-chart" :width="layout.width" :height="BRUSH" aria-label="可拖动时间窗">
+          <TimeBrush :left="LEFT" :top="4" :width="layout.plotW" :dates="fullDates" :values="brushValues" :start="win.start" :end="win.end" :baseline="null" @range="(a, b) => win = { start: a, end: b }" @dragging="hover = null" />
         </svg>
         <div v-if="tip" class="tip" :style="{ left: `${Math.min(axis.x(hover!) + 10, layout.width - 170)}px` }">
           <b class="mono">{{ tip.date }}</b>

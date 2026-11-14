@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import { curves, fmt, niceAxis } from '../chart'
+import { curves, decimatedPath, fmt, niceAxis } from '../chart'
+import TimeBrush from './TimeBrush.vue'
 import type { ChartData, Line } from '../types'
 
 const props = withDefaults(defineProps<{ data: ChartData; compound?: boolean; relative?: boolean; raw?: boolean; compact?: boolean; selectedId?: string; drawdownLine?: Line | null }>(), { compound: false, relative: false, raw: false, compact: false })
@@ -12,7 +13,8 @@ const root = shallowRef<HTMLDivElement | null>(null)
 const width = shallowRef(1000), height = shallowRef(450)
 const start = shallowRef(0), end = shallowRef(0), hover = shallowRef(-1)
 const hoverY = shallowRef(0)
-const drag = shallowRef<{ kind: string; x: number; start: number; end: number } | null>(null)
+// 刷子拖动期间不显示悬停读数（刷子自己处理拖动，见 TimeBrush）。
+const drag = shallowRef(false)
 let observer: ResizeObserver | undefined
 let frame = 0
 let pendingMove: (() => void) | undefined
@@ -27,16 +29,8 @@ const axisY = computed(() => drawTop.value + drawHeight.value + 12)
 const brushY = computed(() => height.value - 51)
 const length = computed(() => props.data.dates.length)
 const x = (i: number) => left + i / Math.max(1, end.value - start.value) * plotWidth.value
-const fullX = (i: number) => left + i / Math.max(1, length.value - 1) * plotWidth.value
 const baseline = computed(() => props.relative ? props.data.lines.find(line => line.benchmark)?.values : undefined)
 const plotted = computed(() => props.relative && !baseline.value ? [] : props.data.lines.filter(line => !props.relative || !line.benchmark).map(line => ({ ...line, ...(props.raw ? { cumulative: line.values.slice(start.value, end.value + 1), drawdown: [] } : curves(line.values, props.compound, start.value, end.value, baseline.value)) })))
-function extent(series: number[][], zero = true): [number, number] {
-  let lo = zero ? 0 : Infinity, hi = zero ? 0 : -Infinity
-  for (const values of series) for (const value of values) if (Number.isFinite(value)) { lo = Math.min(lo, value); hi = Math.max(hi, value) }
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [-0.01, 0.01]
-  const span = hi - lo || 0.02
-  return [lo - span * 0.07, hi + span * 0.12]
-}
 const selectedLine = computed(() => props.drawdownLine ?? props.data.lines.find(line => !line.benchmark && line.id.startsWith(props.selectedId ?? '')) ?? props.data.lines.find(line => !line.benchmark))
 const selectedDrawdown = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound, start.value, end.value, baseline.value).drawdown : [])
 const mainAxis = computed(() => niceAxis(plotted.value.map(v => v.cumulative),props.compact ? 2 : 4,!props.raw,true))
@@ -45,26 +39,7 @@ const drawAxis = computed(() => niceAxis([selectedDrawdown.value],2,true))
 const drawRange = computed(() => [Math.min(-.01,drawAxis.value.min),0])
 const y = (value: number) => 18 + (mainRange.value[1] - value) / (mainRange.value[1] - mainRange.value[0]) * (mainHeight.value - 22)
 const dy = (value: number) => drawTop.value + (drawRange.value[1] - value) / (drawRange.value[1] - drawRange.value[0]) * drawHeight.value
-function path(values: number[], xf: (i: number) => number, yf: (n: number) => number) {
-  // 按像素极值保留折点，缩放窗口仍先用完整逐日收益重算。
-  const stride = Math.max(1, Math.floor(values.length / (plotWidth.value * 2)))
-  let output = '', drawing = false
-  for (let i = 0; i < values.length; i += stride) {
-    let low = -1, high = -1
-    for (let j = i; j < Math.min(values.length, i + stride); j++) {
-      if (!Number.isFinite(values[j])) continue
-      if (low < 0 || values[j] < values[low]) low = j
-      if (high < 0 || values[j] > values[high]) high = j
-    }
-    if (low < 0) { drawing = false; continue }
-    const points = [...new Set([i, low, high, Math.min(values.length - 1, i + stride - 1)])].sort((a, b) => a - b)
-    for (const point of points) {
-      if (!Number.isFinite(values[point])) { drawing = false; continue }
-      output += `${drawing ? 'L' : 'M'}${xf(point).toFixed(1)},${yf(values[point]).toFixed(1)}`; drawing = true
-    }
-  }
-  return output
-}
+const path = (values: number[], xf: (i: number) => number, yf: (n: number) => number) => decimatedPath(values, xf, yf, plotWidth.value)
 const mainTicks = computed(() => mainAxis.value.ticks)
 const drawTicks = computed(() => props.compact ? [] : drawAxis.value.ticks.filter(tick => tick <= 0))
 const drawLabel = computed(() => props.relative ? `超额回撤 · ${selectedLine.value?.kind === 'long' ? '第 1 组' : '多空'}` : '回撤')
@@ -78,9 +53,6 @@ const labels = computed(() => {
   return items.filter((_, i) => i % Math.max(1, Math.ceil(items.length / (width.value / 90))) === 0)
 })
 const mini = computed(() => selectedLine.value ? curves(selectedLine.value.values, props.compound, 0, length.value - 1, baseline.value).cumulative : [])
-const miniYears = computed(() => props.data.dates.map((date,index) => ({date,index})).filter(({date,index}) => index === 0 || date.slice(0,4) !== props.data.dates[index-1].slice(0,4)).filter((_,i,items) => i % Math.max(1,Math.ceil(items.length / (plotWidth.value/65))) === 0))
-const miniRange = computed(() => extent([mini.value]))
-const miniY = (v: number) => brushY.value + 4 + (miniRange.value[1] - v) / (miniRange.value[1] - miniRange.value[0]) * 30
 const tooltipX = computed(() => Math.max(left, Math.min(x(hover.value) + 12, width.value - 235)))
 const labelText = (line:Line) => props.relative ? line.name.replace(/ · (第 1 组|多空)$/, '') : line.name
 const labelFits = (line:Line) => [...labelText(line)].reduce((sum,c) => sum + (c.charCodeAt(0)>255 ? 11 : 6.5),0) < right.value-12
@@ -112,31 +84,12 @@ function move(event: PointerEvent) {
   const pixel = (event.clientX - rect.left) * width.value / rect.width
   const nextY = Math.max(18, Math.min(mainHeight.value, (event.clientY - rect.top) * height.value / rect.height))
   pendingMove = () => { hoverY.value = nextY
-  if (drag.value) {
-    const delta = Math.round((pixel - drag.value.x) / plotWidth.value * (length.value - 1))
-    const span = drag.value.end - drag.value.start
-    if (drag.value.kind === 'left') start.value = Math.max(0, Math.min(end.value - 2, drag.value.start + delta))
-    else if (drag.value.kind === 'right') end.value = Math.min(length.value - 1, Math.max(start.value + 2, drag.value.end + delta))
-    else { start.value = Math.max(0, Math.min(length.value - 1 - span, drag.value.start + delta)); end.value = start.value + span }
-  } else hover.value = Math.max(0, Math.min(end.value - start.value, Math.round((pixel - left) / plotWidth.value * (end.value - start.value))))
+  if (!drag.value) hover.value = Math.max(0, Math.min(end.value - start.value, Math.round((pixel - left) / plotWidth.value * (end.value - start.value))))
   }
   if (!frame) frame = requestAnimationFrame(() => { pendingMove?.(); pendingMove = undefined; frame = 0 })
 }
-function endDrag() { if (frame) cancelAnimationFrame(frame); pendingMove?.(); pendingMove = undefined; frame = 0; drag.value = null }
-function begin(event: PointerEvent, kind: string) {
-  ignoreClick = true
-  const svg = (event.currentTarget as SVGElement).ownerSVGElement!
-  const rect = svg.getBoundingClientRect()
-  drag.value = { kind, x: (event.clientX - rect.left) * width.value / rect.width, start: start.value, end: end.value }
-  svg.setPointerCapture(event.pointerId); event.preventDefault()
-}
-function adjust(event: KeyboardEvent, edge: 'left' | 'right') {
-  const amount = event.key === 'ArrowLeft' ? -10 : event.key === 'ArrowRight' ? 10 : 0
-  if (!amount) return
-  event.preventDefault()
-  if (edge === 'left') start.value = Math.max(0, Math.min(end.value - 2, start.value + amount))
-  else end.value = Math.min(length.value - 1, Math.max(start.value + 2, end.value + amount))
-}
+function dragging(value: boolean) { drag.value = value; if (value) { ignoreClick = true; hover.value = -1 } }
+function setRange(a: number, b: number) { start.value = a; end.value = b }
 watch(() => props.data.dates.join(','), () => { start.value = 0; end.value = Math.max(0, length.value - 1); hover.value = -1 }, { immediate: true })
 onMounted(() => { observer = new ResizeObserver(entries => { width.value = entries[0].contentRect.width; height.value = Math.max(120, entries[0].contentRect.height) }); if (root.value) observer.observe(root.value) })
 onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
@@ -144,7 +97,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
 <template>
   <div ref="root" class="result-chart" :class="{ compact }">
     <div v-if="!plotted.length" class="empty-chart">{{ relative && data.lines.length ? baseline ? '请选择参数组' : '基准数据暂不可用' : '运行后查看结果' }}</div>
-    <svg v-else :viewBox="`0 0 ${width} ${height}`" role="img" @pointerdown.capture="resetClick" @click="selectDay" aria-label="研究结果曲线与可拖动时间窗" @pointermove="move" @pointerup="endDrag" @pointercancel="endDrag" @pointerleave="!drag && (hover = -1)">
+    <svg v-else :viewBox="`0 0 ${width} ${height}`" role="img" @pointerdown.capture="resetClick" @click="selectDay" aria-label="研究结果曲线与可拖动时间窗" @pointermove="move" @pointerleave="!drag && (hover = -1)">
       <rect :x="validationX" y="8" :width="Math.max(0, left + plotWidth - validationX)" :height="axisY - 15" fill="var(--shade)" />
       <g v-if="validationX < left + plotWidth && validationX > left" class="muted">
         <line :x1="validationX" :x2="validationX" y1="8" :y2="axisY - 7" stroke="var(--ink3)" stroke-dasharray="3 3" />
@@ -162,18 +115,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
         <text :x="left + 5" :y="drawTop + drawHeight - 4" fill="var(--ink2)">{{ drawLabel }}</text>
       </g>
       <text v-for="label in labels" :key="label.index" :x="x(label.index)" :y="axisY + 3" class="muted" text-anchor="middle">{{ label.text }}</text>
-      <g v-if="!compact" class="brush">
-        <rect :x="left" :y="brushY" :width="plotWidth" height="34" rx="2" fill="var(--chrome)" stroke="var(--line)" />
-        <rect v-if="validationIndex >= 0" :x="fullX(validationIndex)" :y="brushY" :width="left + plotWidth - fullX(validationIndex)" height="34" fill="var(--shade)" />
-        <path v-if="mini.length" :d="`${path(mini,fullX,miniY)} L${fullX(mini.length-1)},${brushY+34} L${fullX(0)},${brushY+34} Z`" fill="var(--ink3)" fill-opacity=".16" />
-        <path :d="path(mini, fullX, miniY)" stroke="var(--ink2)" stroke-width="1.1" fill="none" />
-        <rect :x="fullX(start)" :y="brushY" :width="fullX(end) - fullX(start)" height="34" fill="color-mix(in srgb, var(--accent) 3.5%, transparent)" stroke="var(--accent)" class="brush-body" @pointerdown="begin($event, 'body')" />
-        <g v-for="edge in (['left', 'right'] as const)" :key="edge" tabindex="0" role="slider" :aria-label="edge === 'left' ? '时间窗起点' : '时间窗终点'" :aria-valuemin="0" :aria-valuemax="length - 1" :aria-valuenow="edge === 'left' ? start : end" @keydown="adjust($event, edge)" class="brush-handle" @pointerdown="begin($event, edge)">
-          <rect :x="fullX(edge === 'left' ? start : end) - 8" :y="brushY - 4" width="16" height="42" fill="transparent" />
-          <rect :x="fullX(edge === 'left' ? start : end) - 3" :y="brushY + 9" width="6" height="16" rx="2" fill="var(--panel)" stroke="var(--accent)" />
-        </g>
-        <g v-for="year in miniYears" :key="year.date"><line :x1="fullX(year.index)" :x2="fullX(year.index)" :y1="brushY+34" :y2="brushY+37" stroke="var(--line)"/><text :x="fullX(year.index)" :y="brushY+48" class="muted" text-anchor="middle">{{ year.date.slice(0,4) }}</text></g>
-      </g>
+      <TimeBrush v-if="!compact" :left="left" :top="brushY" :width="plotWidth" :dates="data.dates" :values="mini" :start="start" :end="end" :validation-index="validationIndex" :baseline="0" @range="setRange" @dragging="dragging" />
       <g v-if="hover >= 0 && !drag" class="hover-tip" pointer-events="none">
         <line :x1="x(hover)" :x2="x(hover)" y1="18" :y2="axisY - 8" stroke="var(--ink3)" />
         <line :x1="left" :x2="left + plotWidth" :y1="hoverY" :y2="hoverY" stroke="var(--ink3)" stroke-dasharray="3 3" />
@@ -194,5 +136,5 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
   </div>
 </template>
 <style scoped>
-.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:inherit;font-size:10.5px;letter-spacing:normal;word-spacing:normal}.brush-body{cursor:grab}.brush-handle{cursor:ew-resize}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip rect{filter:drop-shadow(0 2px 3px var(--tip-shadow))}.hover-value,.hover-date{font-size:10.5px}
+.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:inherit;font-size:10.5px;letter-spacing:normal;word-spacing:normal}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip rect{filter:drop-shadow(0 2px 3px var(--tip-shadow))}.hover-value,.hover-date{font-size:10.5px}
 </style>

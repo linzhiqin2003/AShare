@@ -8,7 +8,7 @@ import UiSkeleton from './components/ui/UiSkeleton.vue'
 import DataPage from './pages/DataPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import PaperPage from './pages/PaperPage.vue'
-import BacktestPage from './pages/BacktestPage.vue'
+import BacktestResults from './backtest/BacktestResults.vue'
 import FactorLibrary from './components/FactorLibrary.vue'
 import App from './App.vue'
 
@@ -148,13 +148,16 @@ describe('模拟盘', () => {
 
 const backtestOptions = { defaults: { universe: 'csi300', rebalance: 'month', top_n: 30, trade_at: 'open', capital: 1000, commission: 0.00025, commission_min: 5, slippage_bps: 5, dividend_tax: 0.2, carry_blocked: true, lots: 'board', benchmark: '000001.SH' }, choices: { universe: ['csi300'], trade_at: ['open'] }, limits: {}, windows: {} }
 
-describe('回测页', () => {
-  it('选项到之前左侧配置、净值图、右侧统计都是骨架，到了以后换成真实组件', async () => {
-    const gate = gated({ '/backtests/options': () => backtestOptions, '/completions': () => [] })
-    const stubs = { ExpressionEditor: true, BacktestConfig: true, BacktestSide: true, BacktestTables: true, NavChart: true }
-    const wrapper = mount(BacktestPage, { global: { stubs } })
+// 2026-11-14 研究台与回测合并：回测选项随研究页一起读（研究页骨架盖住左侧配置），
+// 策略回测视图的结果区自己在第一次取结果时显示净值图和右侧统计的骨架。
+const completeState = { id: 'a'.repeat(24), name: 'vol', status: 'complete' as const, progress: null, queue_position: null, elapsed: 1, settings: backtestOptions.defaults }
+describe('研究页 · 策略回测', () => {
+  it('第一次取结果之前净值图、右侧统计都是骨架，到了以后换成真实组件', async () => {
+    const gate = gated({ '/backtests/*': () => { throw new Error('hold') } })
+    const stubs = { BacktestSide: true, BacktestTables: true, NavChart: true }
+    const run = { settings: backtestOptions.defaults, groups: [{ id: completeState.id, label: '', state: completeState }], selected: completeState.id, count: 1, error: null }
+    const wrapper = mount(BacktestResults, { props: { run, running: false }, global: { stubs } })
     await flushPromises()
-    expect(wrapper.find('.bt-skeleton .ui-skeleton').exists()).toBe(true)
     expect(wrapper.find('.chart-skeleton .ui-skeleton').exists()).toBe(true)
     expect(wrapper.find('.side-skeleton .ui-skeleton').exists()).toBe(true)
     await gate.release()
@@ -162,9 +165,9 @@ describe('回测页', () => {
     expect(wrapper.findComponent({ name: 'BacktestSide' }).exists()).toBe(true)
     wrapper.unmount()
   })
-  it('选项读取失败时不再转骨架', async () => {
-    const gate = gated({})
-    const wrapper = mount(BacktestPage, { global: { stubs: { ExpressionEditor: true, BacktestConfig: true, BacktestSide: true, BacktestTables: true, NavChart: true } } })
+  it('回测选项读取失败时研究页不再转骨架', async () => {
+    const gate = gated({ '/settings': () => ({ defaults: {} }), '/completions': () => [], '/tabs': init => init?.method === 'POST' ? { id: 't1' } : [], '/meta': () => ({ data_date: null, running: 0, max_workers: 4 }) })
+    const wrapper = mount(App, { global: { stubs: { ExpressionEditor: true, ResearchResults: true, StatusBar: true, TabSettings: true } } })
     await gate.release()
     expect(skeletons(wrapper)).toBe(0)
     wrapper.unmount()

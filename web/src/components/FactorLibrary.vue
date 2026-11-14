@@ -34,7 +34,7 @@ const picked = shallowRef<Entry[]>([])
 const comparing = shallowRef(false)
 function isPicked(entry: Entry) { return picked.value.some(e => e.id === entry.id) }
 // 送去回测：把一个条目（表达式与股票池、成交时点、基准）带进回测页的一个 tab，只选中一个因子时可用；
-// 回测页一次能跑候选列表展开的多组，但各条目的设置不同，不合并进同一个 tab（接收方见 pages/BacktestPage.vue）。
+// 回测页一次能跑候选列表展开的多组，但各条目的设置不同，不合并进同一个 tab（接收方：研究页新开一个 tab，停在策略回测视图，见 useResearch 的 openRoute）。
 function sendToBacktest() { if (picked.value.length === 1) location.hash = `#/backtest?entry=${encodeURIComponent(picked.value[0].id)}` }
 function togglePick(entry: Entry) { picked.value = isPicked(entry) ? picked.value.filter(e => e.id !== entry.id) : picked.value.length < MAX_COMPARE ? [...picked.value, entry] : picked.value }
 const collapsed = reactive(new Set<string>())
