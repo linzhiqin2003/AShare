@@ -41,8 +41,18 @@ pub(super) fn held_margin(
 }
 
 pub(super) fn quote(q: f64, i: usize, day: usize, m: &Market<'_>, s: &Settings<'_>) -> Quote {
+    quote_at(q, i, day, m.price[day * m.n + i], m, s)
+}
+
+pub(super) fn quote_at(
+    q: f64,
+    i: usize,
+    day: usize,
+    raw: f64,
+    m: &Market<'_>,
+    s: &Settings<'_>,
+) -> Quote {
     let f = m.futures.as_ref().unwrap();
-    let raw = m.price[day * m.n + i];
     let slip = cell(s.slippage, day, i, m);
     let slipped = raw * (1.0 + q.signum() * slip);
     let impact = if s.impact.is_empty() {
@@ -141,6 +151,23 @@ impl Book<'_> {
         out: &mut Output,
     ) {
         let x = quote(q, i, day, m, s);
+        self.execute_quote(shares, cash, i, q, day, carry, forced, m, out, x);
+    }
+
+    #[expect(clippy::too_many_arguments, reason = "Explicit fill context")]
+    pub(super) fn execute_quote(
+        &mut self,
+        shares: &mut [f64],
+        cash: &mut f64,
+        i: usize,
+        q: f64,
+        day: usize,
+        carry: bool,
+        forced: bool,
+        m: &Market<'_>,
+        out: &mut Output,
+        x: Quote,
+    ) {
         let before = shares[i];
         let after = before + q;
         debug_assert!(before == 0.0 || after == 0.0 || before.signum() == after.signum());
@@ -200,7 +227,7 @@ impl Book<'_> {
     }
 
     /// Closing variation, expiry cash settlement and closing collateral.
-    pub(super) fn settle(
+    pub(super) fn settle<const C: bool>(
         &mut self,
         shares: &mut [f64],
         cash: &mut f64,
@@ -240,6 +267,29 @@ impl Book<'_> {
             }
         }
         self.held.retain(|&i| shares[i] != 0.0);
+        if C && let Some(c) = &f.crypto {
+            for &i in &self.held {
+                if !c.funding.is_empty() {
+                    let per = c.funding[base + i];
+                    if !per.is_finite() {
+                        out.error = Some(format!(
+                            "funding: missing held value at row {day}, column {i}"
+                        ));
+                        break;
+                    }
+                    let paid = shares[i] * per;
+                    *cash -= paid;
+                    out.contribution[i] -= paid;
+                    out.daily[30 * m.t + day] += paid;
+                    if paid > 0.0 {
+                        out.counts[39] += 1;
+                    }
+                    if paid < 0.0 {
+                        out.counts[40] += 1;
+                    }
+                }
+            }
+        }
         closing
     }
 }

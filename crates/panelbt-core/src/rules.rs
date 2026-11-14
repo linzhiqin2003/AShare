@@ -330,7 +330,7 @@ fn reduce<const CLASSIC: bool>(
 ) -> f64 {
     let k = day * m.n + i;
     let cur = st.shares[i];
-    let (minimum, step) = lot_terms::<false>(m, s, shares, i);
+    let (minimum, step) = lot_terms::<false, false>(m, s, shares, i, day);
     let allowed = raw.is_finite()
         && raw > 0.0
         && if request > 0.0 {
@@ -493,7 +493,7 @@ fn limit_orders<const CLASSIC: bool>(
             keep.push((i, w, limit));
             continue;
         }
-        let (minimum, step) = lot_terms::<false>(m, s, shares, i);
+        let (minimum, step) = lot_terms::<false, false>(m, s, shares, i, day);
         let cur = st.shares[i];
         let mut target = if shares {
             w
@@ -536,7 +536,7 @@ fn limit_orders<const CLASSIC: bool>(
     for p in plan.iter_mut() {
         let (i, target, raw) = (p.0, p.1, p.2);
         let cur = st.shares[i];
-        let (minimum, step) = lot_terms::<false>(m, s, shares, i);
+        let (minimum, step) = lot_terms::<false, false>(m, s, shares, i, day);
         let request = if cur > 0.0 && target < cur {
             -round_close(cur - target.max(0.0), cur, minimum, step)
         } else if cur < 0.0 && target > cur {
@@ -562,7 +562,7 @@ fn limit_orders<const CLASSIC: bool>(
         let (i, target, raw) = (p.0, p.1, p.2);
         let k = base + i;
         let after = st.shares[i];
-        let (minimum, step) = lot_terms::<false>(m, s, shares, i);
+        let (minimum, step) = lot_terms::<false, false>(m, s, shares, i, day);
         let opening = if target > 0.0 && after >= 0.0 && target > after {
             lot(target - after, minimum, step)
         } else if target < 0.0 && after <= 0.0 && target < after {

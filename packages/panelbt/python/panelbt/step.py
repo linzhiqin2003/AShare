@@ -12,9 +12,19 @@ import numpy as np
 
 from . import _core
 from .api import _prepare, _result, _rules
-from .models import METRICS, Config, Costs, FloatArray, IntArray, Market, Result
+from .models import (
+    CRYPTO_METRICS,
+    METRICS,
+    Config,
+    Costs,
+    FloatArray,
+    IntArray,
+    Market,
+    Result,
+)
 
 DayRecord = namedtuple("DayRecord", ("day", *METRICS))
+CryptoDayRecord = namedtuple("CryptoDayRecord", ("day", *METRICS, *CRYPTO_METRICS))
 DayRecord.__doc__ = "Daily metrics of one stepped row (the same fields as Result)."
 
 
@@ -228,7 +238,10 @@ class Simulator:
         """Trade and close the current row, then open the next one."""
         cols, values, limits = self._row(target)
         day = self.day
-        return DayRecord(day, *self._core.step(cols, values, limits))
+        values = self._core.step(cols, values, limits)
+        if self._market.futures is not None and self._market.futures.has_crypto:
+            return CryptoDayRecord(day, *values)
+        return DayRecord(day, *values[: len(METRICS)])
 
     def run(self, strategy: Callable[[int, State], Any]) -> Result:
         """Step every remaining row with `strategy(day, state)`; return the result."""
@@ -238,7 +251,11 @@ class Simulator:
 
     def result(self) -> Result:
         """The finished Result; every row must have been stepped."""
-        return _result(self._core.result(), self._market.validated)
+        return _result(
+            self._core.result(),
+            self._market.validated,
+            bool(self._market.futures and self._market.futures.has_crypto),
+        )
 
     def snapshot(self) -> bytes:
         """Serialize the simulation; restore it with `Simulator.restore`."""

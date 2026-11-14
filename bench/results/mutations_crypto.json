@@ -1,0 +1,729 @@
+{
+  "original_source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+  "package": "packages/panelbt/python/panelbt/__init__.py",
+  "extension": "packages/panelbt/python/panelbt/_core.abi3.so",
+  "mutants": [
+    {
+      "name": "funding_direction",
+      "occurrences": [
+        1
+      ],
+      "source": "83d36b0d1569bd647d7c0a78e6c4cf5ae826c60732036f0b91d9ca73efcba471",
+      "file": "crates/panelbt-core/src/futures.rs",
+      "file_sha256": "0b38ac6d595d085607b7c6e371631e99e96212df8cf45acda8e2b30ff8952a6b",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+        "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto.py::test_optional_funding_maintenance_and_rules_without_liquidation",
+        "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture",
+        "FAILED test/test_crypto.py::test_funding_is_per_internal_contract_and_multiplier_is_applied_once",
+        "FAILED test/test_crypto.py::test_closed_target_at_boundary_paid_prior_rows_funding",
+        "FAILED test/test_crypto.py::test_step_exposes_current_funding_only_after_step",
+        "FAILED test/test_crypto.py::test_no_record_batch_keeps_crypto_metrics - Asser...",
+        "FAILED test/test_crypto.py::test_mixed_optional_input_reference_corpus - Asse...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-close]"
+      ]
+    },
+    {
+      "name": "funding_right_boundary",
+      "occurrences": [
+        1
+      ],
+      "source": "ddcbe10c0d12eeb686dd7ee446b4ba2064a81e3d64efdc2cc0c60be7b0d2ed5c",
+      "file": "crates/panelbt-core/src/futures.rs",
+      "file_sha256": "30e686a14270445327101adc99c95637eb0d8403057d505a3dfcb400360dcd21",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+        "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto.py::test_optional_funding_maintenance_and_rules_without_liquidation",
+        "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture",
+        "FAILED test/test_crypto.py::test_funding_is_per_internal_contract_and_multiplier_is_applied_once",
+        "FAILED test/test_crypto.py::test_closed_target_at_boundary_paid_prior_rows_funding",
+        "FAILED test/test_crypto.py::test_step_exposes_current_funding_only_after_step",
+        "FAILED test/test_crypto.py::test_mixed_optional_input_reference_corpus - Asse...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-close]"
+      ]
+    },
+    {
+      "name": "funding_on_liquidated_contracts",
+      "occurrences": [
+        1
+      ],
+      "source": "5afaca6bdc88d2f4c471cca23e6f9e4c37cbb3e96bf828504d192143808e679f",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "f1c2efa8878ae4e6b19c40431f5fc0652b58e36131cb9918d11b459ee904168a",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+        "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-close]"
+      ]
+    },
+    {
+      "name": "lambda_frozen_maintenance",
+      "occurrences": [
+        1
+      ],
+      "source": "53c570430aa9e8251246d1c0172369c4456517e699949ef6875d0b04a61ea9fb",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "74488c3af0399284d48b3c3996030ae253c90cb352877e8c5f39614d4233a185",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+        "FAILED test/test_crypto.py::test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit",
+        "FAILED test/test_crypto.py::test_lambda_short_and_multi_column_formula - asse...",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+      ]
+    },
+    {
+      "name": "omit_post_trade_check",
+      "occurrences": [
+        1
+      ],
+      "source": "81c29a9130803c461d6a6d2b44b3fbac8fc7cd8e9d1702dc467bfe97cdb474a6",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "c4b6149ed4c68384759a71d3eb2cfea06d52ec5c3a9bd5fc72c4f8e9a61d7186",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_post_trade_reduction_liquidates_at_equality",
+        "FAILED test/test_crypto.py::test_lambda_one_and_nondecreasing - assert 0 == 1",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-post_trade]"
+      ]
+    },
+    {
+      "name": "uncapped_clearance_fee",
+      "occurrences": [
+        1
+      ],
+      "source": "87e7588decbe24ed5ed187245702fb9d69c8d00660b6b5c44311d2f62a8ac12a",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "3dbf498b53e380410e09d9fd1758a48af88744b729486359fb9a6c496b270ffe",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto.py::test_clearance_aggregates_columns_before_cash_cap",
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[native]",
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[step]",
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[snapshot]"
+      ]
+    },
+    {
+      "name": "delivery_execution_instead_of_settlement",
+      "occurrences": [
+        1
+      ],
+      "source": "8f74fcacef90b383768500a82fc765ca08e2103b26193a9c95e57732a865b178",
+      "file": "crates/panelbt-core/src/futures.rs",
+      "file_sha256": "50d4ec291f842c390f6b8f290f5e24d569335861ea0569299997381fcf932ddd",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_delivery_uses_delivery_price_once_and_expires_before_funding",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture",
+        "FAILED test/test_crypto.py::test_mixed_optional_input_reference_corpus - Asse..."
+      ]
+    },
+    {
+      "name": "opening_wrongly_exempt_min_notional",
+      "occurrences": [
+        1
+      ],
+      "source": "3d5c87a0b53dd8344b865a601409b32908b25c582fd190672a18c356bed59b18",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "1d6964254f7be340dc1146c8b40073af9a7c6fd8d5c9b08055871f1c09612efd",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_scaled_order_rules_reversal_and_full_close_dust",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto.py::test_min_notional_uses_mark_not_execution_price"
+      ]
+    },
+    {
+      "name": "maintenance_used_for_initial",
+      "occurrences": [
+        3
+      ],
+      "source": "70078465bc3dbe17a135a15841dde528e0e89a4049cebc781d784707f78ca052",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "db5ba17ebf02183c0b368992a0e1ffd0e9ff57750fac8ad212ee79168bcce7ad",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+      ]
+    },
+    {
+      "name": "omit_funding_close_risk",
+      "occurrences": [
+        1
+      ],
+      "source": "ed289ae27e040a2f73a86fbaa5dd8e2f7aeb9708b745296b9c948fd720478071",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "630e10525ec5b5f6dfd6379c319f33ffe209990c69c4daa0fc4f7488dbfdcde0",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-close]"
+      ]
+    },
+    {
+      "name": "tier_uses_low",
+      "occurrences": [
+        1
+      ],
+      "source": "ad55495cb0233cc3f51342ad7d7d0eb7fe2dfbdd6d188a6ec4c7081a83b27262",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "1f93da35e6919f9148d4225e8f2fd832fb3c6a3934d0786822af330d27adc7d8",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_tier_cap_uses_high_for_longs - assert 0 == 1",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+      ]
+    },
+    {
+      "name": "retain_pending_after_liquidation",
+      "occurrences": [
+        1
+      ],
+      "source": "a3c355e6d4d055a210eb20e624be20c383feab19f8cbe40931396834206e3731",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "daf62ce610c4e239cb3e0ca0d0dda711947303b6ff373fa1eef4597f937dda09",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_liquidation_clears_other_columns_pending_and_allows_later_target",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[native--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[step--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot-1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_hand_values[snapshot--1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[1-close]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-post_trade]",
+        "FAILED test/test_crypto_review.py::test_review_combined_liquidation_state_survives_every_snapshot[-1-close]"
+      ]
+    },
+    {
+      "name": "opening_ignores_execution_mark_loss",
+      "occurrences": [
+        1
+      ],
+      "source": "ef0b9862cd336443880e94b43adea59fc3759f5a23d2e7002422550fbf55eef6",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "32b162645f7252788f3a9ba3d552511fbfef88ef8c20c876ea56460cfd89a54e",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+      ]
+    },
+    {
+      "name": "intraday_before_endpoint_only",
+      "occurrences": [
+        1
+      ],
+      "source": "da6a9bbe6de1d111a45de114f8a3391e4ddcf8b4e228dc91ea9e798923e71406",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "7a7b3becb9f23283bee2ba77ff5734cc3a345247158650bacc37814ee6d1ec33",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_lambda_one_and_nondecreasing - assert 0 == 1",
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+      ]
+    },
+    {
+      "name": "quantity_filter_wrongly_carried",
+      "occurrences": [
+        1
+      ],
+      "source": "593642cd573a615f5ff5efd01a9de218db7fae25f40d72a52aeab40d511a4f07",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "d71f4428dce68eda6f9007b785a9293258ca2443cd12d53da4aa9bc643704b5e",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[native-4-5-900]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[native-1-2-960]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[step-4-5-900]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[step-1-2-960]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[snapshot-4-5-900]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[snapshot-1-2-960]",
+        "FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[native]",
+        "FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[step]",
+        "FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[snapshot]"
+      ]
+    },
+    {
+      "name": "zero_equity_candidate_profit",
+      "occurrences": [
+        1,
+        1
+      ],
+      "source": "781d9ca32309fa6a901a3d420cd447cb4fde585713fd84365ce79409e05f38c6",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "461dbd0ffe7d2f93a4c0992b7b7cf6012a6c14863ffafe89cdbedaf3e8ec65b1",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[native]",
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[step]",
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[snapshot]",
+        "FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[native]",
+        "FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[step]",
+        "FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[snapshot]"
+      ]
+    },
+    {
+      "name": "invalid_reduction_quote_drops_target",
+      "occurrences": [
+        1
+      ],
+      "source": "d31e93ef3c120aa6e1c637c68d418499a7e21a9526b061668aa3ca70d370260d",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "3544e3d9228d5f47bdccd7459cdc02596e2629fcdb500bd2967d97e205435737",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-True-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-True-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-False-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-False-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-True-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-True-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-False-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-False-True--1]"
+      ]
+    },
+    {
+      "name": "invalid_opening_quote_drops_target",
+      "occurrences": [
+        1
+      ],
+      "source": "42a1a407dfff23c4768713389af3c5676a96fe727133fcd35e510d8b7aed6c1b",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "64b3df31d4103f08628a0f58ba344161add3548d791cef31a1b5ef7557fe68f7",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-True-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-True-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-False-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[step-False-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-True-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-True-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-False-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[snapshot-False-False--1]"
+      ]
+    },
+    {
+      "name": "weight_intent_missing_marks",
+      "occurrences": [
+        1
+      ],
+      "source": "803776584702cfefcf3ba083f71ee45f91c593c948dffd38ef24a7abc238b04e",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "1e8ecfdcd974e94a9e0ba5656172dd004ae01883f5388459742389dee3b090af",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[native-1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[native--1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[step-1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[step--1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[snapshot-1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[snapshot--1]"
+      ]
+    },
+    {
+      "name": "volume_block_lost_after_quantity_filter",
+      "occurrences": [
+        1
+      ],
+      "source": "cac114a1252911e7897b23b0e6b3328d992565e414bd0d58158b8cacbc918e67",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "8814e709183b4c78b04cfa502bf4d642da77809106d355eb0f6dac4c00da3f35",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_volume_block_survives_quantity_filter[native]",
+        "FAILED test/test_crypto_review.py::test_review_volume_block_survives_quantity_filter[step]",
+        "FAILED test/test_crypto_review.py::test_review_volume_block_survives_quantity_filter[snapshot]"
+      ]
+    },
+    {
+      "name": "old_npz_enables_crypto",
+      "occurrences": [
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/models.py",
+      "file_sha256": "8e5e365d9e425d8f5f712dedeacac5dfe6428ada85b42979b0da3c072f5bc22c",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_old_npz_keeps_crypto_disabled_and_frame_columns[False]",
+        "FAILED test/test_crypto_review.py::test_review_old_npz_keeps_crypto_disabled_and_frame_columns[True]"
+      ]
+    },
+    {
+      "name": "reference_quantity_filter_wrongly_carried",
+      "occurrences": [
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/reference_crypto.py",
+      "file_sha256": "17435f32bf847104b48bd6a9f990c21fc589e0d1de09793d865cc2ad4a3a0661",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[reference-4-5-900]",
+        "FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[reference-1-2-960]",
+        "FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[reference]"
+      ]
+    },
+    {
+      "name": "reference_zero_equity_candidate_profit",
+      "occurrences": [
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/reference_crypto.py",
+      "file_sha256": "3d587e79e92267bc6e69d26e7adc6bc9d8b5f8ba809b6c0bf13e9104567632f0",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[reference]",
+        "FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[reference]"
+      ]
+    },
+    {
+      "name": "reference_invalid_quote_drops_target",
+      "occurrences": [
+        1,
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/reference_crypto.py",
+      "file_sha256": "4dfc138ef66950595a2b35a822e1fb72cc6958739adfc7e4190ce0fe59f5b8a7",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False--1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True-1]",
+        "FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True--1]"
+      ]
+    },
+    {
+      "name": "reference_weight_intent_missing_marks",
+      "occurrences": [
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/reference_crypto.py",
+      "file_sha256": "6828a899c7728132c0602911091aa89ff57437fbf513a2b6a843e97eea7e22fa",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[reference-1]",
+        "FAILED test/test_crypto_review_intent.py::test_review_tiny_weight_intent_cannot_hide_missing_marks[reference--1]"
+      ]
+    },
+    {
+      "name": "inactive_first_row_weight_dropped",
+      "occurrences": [
+        1
+      ],
+      "source": "734065d8ab822e035a4f77a047c119f10052d441c2738636d8f5add30b715b00",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "file_sha256": "8e76a1349dc3b8d26fd522dabcccf4d0b30d90e115c4ab0c292af22c552e4a1a",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-price]"
+      ]
+    },
+    {
+      "name": "reference_inactive_first_row_weight_dropped",
+      "occurrences": [
+        1
+      ],
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+      "file": "packages/panelbt/python/panelbt/reference_crypto.py",
+      "file_sha256": "15512f5a4447f3ef2ce728498824187e1eff3030010c63e86a6d780860a0c6d1",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-price]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-mask]",
+        "FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-price]"
+      ]
+    }
+  ],
+  "killed": 27,
+  "total": 27,
+  "restored": true,
+  "restored_source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+  "rust_mutants": 21,
+  "python_mutants": 6,
+  "commands": [
+    "bench/mutations_crypto.py --group original",
+    "bench/mutations_crypto.py --group review"
+  ],
+  "previous_report": {
+    "original_source": "bc8077be5be22410a3d6d576ec433eb19196a664cd0742c271da61b3649788bc",
+    "package": "packages/panelbt/python/panelbt/__init__.py",
+    "extension": "packages/panelbt/python/panelbt/_core.abi3.so",
+    "mutants": [
+      {
+        "name": "funding_direction",
+        "occurrences": 1,
+        "source": "34864b1a5f933f1ba775d1b9012872c809672a0ebf9b54f0ce607fa80debc7f7",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+          "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+          "FAILED test/test_crypto.py::test_optional_funding_maintenance_and_rules_without_liquidation",
+          "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture",
+          "FAILED test/test_crypto.py::test_funding_is_per_internal_contract_and_multiplier_is_applied_once",
+          "FAILED test/test_crypto.py::test_closed_target_at_boundary_paid_prior_rows_funding",
+          "FAILED test/test_crypto.py::test_step_exposes_current_funding_only_after_step",
+          "FAILED test/test_crypto.py::test_no_record_batch_keeps_crypto_metrics - Asser..."
+        ]
+      },
+      {
+        "name": "funding_right_boundary",
+        "occurrences": 1,
+        "source": "a29dcc9766fcd4f34c6575ce6459f316d6a0d37db266154cc7e194d1e5627f17",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+          "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+          "FAILED test/test_crypto.py::test_optional_funding_maintenance_and_rules_without_liquidation",
+          "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture",
+          "FAILED test/test_crypto.py::test_funding_is_per_internal_contract_and_multiplier_is_applied_once",
+          "FAILED test/test_crypto.py::test_closed_target_at_boundary_paid_prior_rows_funding",
+          "FAILED test/test_crypto.py::test_step_exposes_current_funding_only_after_step"
+        ]
+      },
+      {
+        "name": "funding_on_liquidated_contracts",
+        "occurrences": 1,
+        "source": "26f8c403eff82be1c8a9b313b12636a61071dafc85430cad7849b7f0a55444b8",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+          "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "lambda_frozen_maintenance",
+        "occurrences": 1,
+        "source": "9ee84c00379e2a52e08daa4d5232fbdffe93dc34ed7d11cfaf39b910284ccd4f",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation",
+          "FAILED test/test_crypto.py::test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit",
+          "FAILED test/test_crypto.py::test_lambda_short_and_multi_column_formula - asse...",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "omit_post_trade_check",
+        "occurrences": 1,
+        "source": "3e76e84c0543dde52c4fde48f476085d189557d9c95f80a8c23036284db7b29d",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_post_trade_reduction_liquidates_at_equality",
+          "FAILED test/test_crypto.py::test_lambda_one_and_nondecreasing - assert 0 == 1",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "uncapped_clearance_fee",
+        "occurrences": 1,
+        "source": "3a22bcda8e70922c47e28e868e8253438b19aa21d365b3940a7e7bad628863a3",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+          "FAILED test/test_crypto.py::test_clearance_aggregates_columns_before_cash_cap"
+        ]
+      },
+      {
+        "name": "delivery_execution_instead_of_settlement",
+        "occurrences": 1,
+        "source": "a2952bd9d8a2e90d0537694817eaecedfc9d772f4abe88501fac435939b49a61",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_delivery_uses_delivery_price_once_and_expires_before_funding",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+          "FAILED test/test_crypto.py::test_rule_expiry_lifecycle_two_contract_fixture"
+        ]
+      },
+      {
+        "name": "opening_wrongly_exempt_min_notional",
+        "occurrences": 1,
+        "source": "683434c5ec00b2a41832bfa816f902b9bf0b0af096e32fb5847b2f4a2191bf16",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_scaled_order_rules_reversal_and_full_close_dust",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert...",
+          "FAILED test/test_crypto.py::test_min_notional_uses_mark_not_execution_price"
+        ]
+      },
+      {
+        "name": "maintenance_used_for_initial",
+        "occurrences": 3,
+        "source": "f7b27061c9fc68efdccc9b4e4a4a64317cb9e3a7498479e0a1c5a883c46f0982",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "omit_funding_close_risk",
+        "occurrences": 1,
+        "source": "0aa24b13fe25abb6875c1f54203a89992d4914daf58a4172d54714bc014e180a",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "tier_uses_low",
+        "occurrences": 1,
+        "source": "f6b59b4ce536e83f536dcaf65b49b757315afe97c57d100784cb2495644f3a8c",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_tier_cap_uses_high_for_longs - assert 0 == 1",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "retain_pending_after_liquidation",
+        "occurrences": 1,
+        "source": "2e5b200fab53282ea6991359619e35ea389679fc03479d91527e9cea46f8671f",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_liquidation_clears_other_columns_pending_and_allows_later_target",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "opening_ignores_execution_mark_loss",
+        "occurrences": 1,
+        "source": "c1d497ca61a1ec66003df8dfad93b5b239faf08b40b0a0f4ffb9b41cc020ce8a",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      },
+      {
+        "name": "intraday_before_endpoint_only",
+        "occurrences": 1,
+        "source": "814db94b5a180b1ed30e4d049f99b9249c483b6fa8c24f6c9a2a5b035b8fa1c5",
+        "killed": true,
+        "failures": [
+          "FAILED test/test_crypto.py::test_lambda_one_and_nondecreasing - assert 0 == 1",
+          "FAILED test/test_crypto.py::test_independent_reference_branch_corpus - Assert..."
+        ]
+      }
+    ],
+    "killed": 14,
+    "total": 14,
+    "restored": true
+  },
+  "post_restore_crypto_tests": 200,
+  "test_sha256": {
+    "test_crypto.py": "06432bc3fb95ed999c1ce14191d0e04b9c30b68dff054529edf396ea0c7280c3",
+    "test_crypto_review.py": "a79b91e960c3d0308b77c8bca3d526fc15ffff8bc9d07661084da569b85ec652",
+    "test_crypto_review_intent.py": "c5734ad323ec450b4999cc9c815cf4fb6e651d3aa66ede212366d2f1e7f4f03a"
+  }
+}

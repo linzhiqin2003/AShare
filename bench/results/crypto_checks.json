@@ -1,0 +1,175 @@
+{
+  "recorded_at": "2026-11-15T05:24:12",
+  "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+  "package": "packages/panelbt/python/panelbt/__init__.py",
+  "extension": "packages/panelbt/python/panelbt/_core.abi3.so",
+  "checks": [
+    {
+      "command": "make dev (UV_CACHE_DIR=.cache/uv, CARGO_BUILD_JOBS=2, nice -n 15)",
+      "passed": true
+    },
+    {
+      "command": "ruff check .",
+      "passed": true
+    },
+    {
+      "command": "ruff format --check .",
+      "passed": true,
+      "files": 727
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "passed": true
+    },
+    {
+      "command": "nice -n 15 cargo clippy -j 2 --workspace --all-targets -- -D warnings",
+      "passed": true
+    },
+    {
+      "command": "nice -n 15 cargo test -j 2 --workspace",
+      "passed": true,
+      "tests": 33
+    },
+    {
+      "command": "nice -n 15 pytest -n 4 -q",
+      "passed": false,
+      "passed_tests": 5587,
+      "failed_tests": 4,
+      "existing_skips": 127,
+      "existing_xfails": 1,
+      "seconds": 333.7,
+      "environment_failures": [
+        "test/e2e/test_platform_api.py::test_full_research_over_http",
+        "test/e2e/test_platform_api.py::test_listens_on_loopback_only",
+        "test/e2e/test_platform_api.py::test_leftover_check_catches_orphaned_children",
+        "test/smoke/test_smoke.py::test_platform_starts_serves_and_stops"
+      ],
+      "reason": "Sandbox denies ps subprocess execution: PermissionError [Errno 1] Operation not permitted"
+    },
+    {
+      "command": "nice -n 15 pytest test/test_crypto.py test/test_crypto_review.py test/test_crypto_review_intent.py -q (after mutation restore)",
+      "passed": true,
+      "tests": 200,
+      "seconds": 3.8
+    }
+  ],
+  "crypto_tests": 200,
+  "new_review_tests": 157,
+  "existing_test_assertions_changed": false,
+  "existing_tests_excluded": false,
+  "review_red": {
+    "failed": 33,
+    "passed": 16,
+    "source": "bc8077be5be22410a3d6d576ec433eb19196a664cd0742c271da61b3649788bc"
+  },
+  "review_extra_red": {
+    "failed": 16,
+    "passed": 16,
+    "deselected": 8,
+    "source": "22a92411e5cba9e92d847f163f40b2213b0312ef348bb55a01d1214bfe890381"
+  },
+  "legacy_bitwise_outputs": 1200,
+  "legacy_snapshots_restored": 300,
+  "legacy_npz_migrations_and_frame_schemas": 300,
+  "differential_cases": 2220,
+  "mandatory_branches": 21,
+  "combinations": {
+    "post_trade.multi_mixed_fees": 2,
+    "post_trade.expiry_suppressed": 2,
+    "post_trade.funding_suppressed": 2,
+    "post_trade.pending_and_reopen": 2,
+    "post_trade.all_interactions": 2,
+    "close.multi_mixed_fees": 2,
+    "close.expiry_released": 2,
+    "close.funding_debited": 2,
+    "close.pending_and_reopen": 2,
+    "close.all_interactions": 2
+  },
+  "mutants_killed": 27,
+  "mutants_total": 27,
+  "native_mutants_killed": 21,
+  "native_mutants_total": 21,
+  "python_mutants_killed": 6,
+  "python_mutants_total": 6,
+  "native_mutations_restored": true,
+  "performance_zero_regression_proven": false,
+  "performance_requirement_met": false,
+  "performance_ratios": {
+    "full_rules": 0.9950432324725732,
+    "prices_only": 0.9976917395966035,
+    "long_short": 1.0228693287510926,
+    "batch16": 1.0079121452797435,
+    "hedge_leg": 1.0032081531742318,
+    "pure_futures": 0.9746328734350768,
+    "spot_rules": 1.0147934435139994
+  },
+  "enabled_70000x100_seconds": 0.24831941700540483,
+  "performance_note": "Two launch orders retained. Long-short and batch16 confidence intervals remain above 1; max observed slowdown 2.29%. No claim of zero regression.",
+  "previous_report": {
+    "recorded_at": "2026-11-15T04:17:37",
+    "source": "bc8077be5be22410a3d6d576ec433eb19196a664cd0742c271da61b3649788bc",
+    "package": "packages/panelbt/python/panelbt/__init__.py",
+    "extension": "packages/panelbt/python/panelbt/_core.abi3.so",
+    "checks": [
+      {
+        "command": "make dev",
+        "passed": true
+      },
+      {
+        "command": "ruff check .",
+        "passed": true
+      },
+      {
+        "command": "ruff format --check .",
+        "passed": true,
+        "files": 725
+      },
+      {
+        "command": "cargo fmt --all --check",
+        "passed": true
+      },
+      {
+        "command": "cargo clippy -j 2 --workspace --all-targets -- -D warnings",
+        "passed": true
+      },
+      {
+        "command": "cargo test -j 2 --workspace",
+        "passed": true,
+        "tests": 33
+      },
+      {
+        "command": "pytest -n 4 -q test/test_*.py",
+        "passed": true,
+        "tests": 706
+      },
+      {
+        "command": "pytest -n 4 -q",
+        "passed": false,
+        "passed_tests": 5430,
+        "failed_tests": 4,
+        "existing_skips": 127,
+        "existing_xfails": 1,
+        "seconds": 315.29,
+        "environment_failures": [
+          "test/e2e/test_platform_api.py::test_full_research_over_http",
+          "test/e2e/test_platform_api.py::test_listens_on_loopback_only",
+          "test/e2e/test_platform_api.py::test_leftover_check_catches_orphaned_children",
+          "test/smoke/test_smoke.py::test_platform_starts_serves_and_stops"
+        ],
+        "reason": "Sandbox denies subprocess execution of ps: PermissionError [Errno 1] Operation not permitted"
+      }
+    ],
+    "crypto_tests": 43,
+    "existing_test_assertions_changed": false,
+    "existing_tests_excluded": false,
+    "legacy_bitwise_outputs": 1200,
+    "legacy_snapshots_restored": 300,
+    "differential_cases": 2216,
+    "mandatory_branches": 21,
+    "native_mutants_killed": 14,
+    "native_mutants_total": 14,
+    "native_mutations_restored": true,
+    "performance_zero_regression_proven": false,
+    "performance_note": "Ratios 0.964034–1.008643; positive paired-round 95% intervals include 1. Shared-machine timing cannot establish strictly zero regression."
+  }
+}

@@ -100,6 +100,17 @@ def future_rate(value: ArrayLike, shape: tuple[int, int], name: str) -> FloatArr
 
 
 @dataclass(frozen=True)
+class Liquidation:
+    """Exchange liquidation marks, clearance rate and first-tier notional cap."""
+
+    mark_open: ArrayLike
+    mark_high: ArrayLike
+    mark_low: ArrayLike
+    clearance_fee_rate: ArrayLike
+    tier_cap: ArrayLike
+
+
+@dataclass(frozen=True)
 class Futures:
     """Contract columns, settlement, expiry and explicitly supplied exchange costs.
 
@@ -116,6 +127,25 @@ class Futures:
     fee_per_contract: ArrayLike = 0.0
     delivery_fee_rate: ArrayLike = 0.0
     delivery_fee_per_contract: ArrayLike = 0.0
+    funding: ArrayLike | None = None
+    maint_rate: ArrayLike | None = None
+    liquidation: Liquidation | None = None
+    exec_at_open: bool = False
+    qty_step: ArrayLike | None = None
+    min_qty: ArrayLike | None = None
+    min_notional: ArrayLike | None = None
+
+    @property
+    def has_crypto(self) -> bool:
+        """Whether any optional hourly-futures inputs were supplied."""
+        return (
+            self.funding is not None
+            or self.maint_rate is not None
+            or self.qty_step is not None
+            or self.min_qty is not None
+            or self.min_notional is not None
+            or self.liquidation is not None
+        )
 
     def validated(
         self, shape: tuple[int, int], market: Market, validate: bool = True
@@ -144,6 +174,66 @@ class Futures:
             "delivery_fee_per_contract",
         )
         rates = {name: future_rate(getattr(self, name), shape, name) for name in names}
+        extra = {}
+        for name in ("funding", "qty_step", "min_qty", "min_notional"):
+            value = getattr(self, name)
+            if value is not None:
+                a = array(value, name, np.float64, 2)
+                if a.shape != shape:
+                    raise ValueError(f"{name}: expected T×N matching market prices")
+                extra[name] = a
+        if self.maint_rate is not None:
+            extra["maint_rate"] = future_rate(self.maint_rate, shape, "maint_rate")
+        liq = self.liquidation
+        if liq is not None:
+            if not isinstance(liq, Liquidation):
+                raise ValueError("liquidation: expected Liquidation")
+            if not kind.all() or self.exec_at_open is not True:
+                raise ValueError(
+                    "liquidation requires all futures and exec_at_open=True"
+                )
+            marks = {}
+            for name in ("mark_open", "mark_high", "mark_low"):
+                a = array(getattr(liq, name), name, np.float64, 2)
+                if a.shape != shape:
+                    raise ValueError(f"{name}: expected T×N matching market prices")
+                marks[name] = a
+            for name in ("clearance_fee_rate", "tier_cap"):
+                marks[name] = future_rate(getattr(liq, name), shape, name)
+            extra["liquidation"] = Liquidation(**marks)
+        elif self.min_notional is not None:
+            raise ValueError("min_notional requires liquidation.mark_open")
+        if extra:
+            # Content checks live in Rust; they also protect validate=False from
+            # nonsensical contract units and structural risk configuration.
+            empty = np.empty((0, 0))
+            _core.validate_crypto(
+                kind.view(np.uint8),
+                rates["margin_rate"],
+                [
+                    extra.get(k, empty)
+                    for k in (
+                        "funding",
+                        "maint_rate",
+                        "qty_step",
+                        "min_qty",
+                        "min_notional",
+                    )
+                ],
+                []
+                if liq is None
+                else [
+                    getattr(extra["liquidation"], k)
+                    for k in (
+                        "mark_open",
+                        "mark_high",
+                        "mark_low",
+                        "clearance_fee_rate",
+                        "tier_cap",
+                    )
+                ],
+                t,
+            )
         if validate:
             empty, none = np.empty((0, 0)), np.empty((0, 0), np.uint8)
             _core.validate_futures(
@@ -157,7 +247,14 @@ class Futures:
                 list(rates.items()),
             )
         return Futures(
-            kind, multiplier, rates.pop("margin_rate"), settlement, expiry, **rates
+            kind,
+            multiplier,
+            rates.pop("margin_rate"),
+            settlement,
+            expiry,
+            **rates,
+            **extra,
+            exec_at_open=self.exec_at_open,
         )
 
 
@@ -578,6 +675,11 @@ METRICS = (
     "delivery_fee",
     "n_expired_target",
 )
+CRYPTO_METRICS = (
+    "funding",
+    "clearance_fee",
+    "bankruptcy_deficit",
+)
 # The original counters stay separate so the unchanged long-only generator
 # continues to assert that every original branch was actually exercised.
 COUNTERS = (
@@ -622,6 +724,27 @@ EXTRA_COUNTERS = (
     "futures_expiry",
     "expired_target",
     "futures_rounded_to_zero",
+)
+CRYPTO_COUNTERS = (
+    "funding_paid",
+    "funding_received",
+    "liquidation_open",
+    "liquidation_post_trade",
+    "liquidation_intraday",
+    "liquidation_close",
+    "liquidation_single",
+    "liquidation_multi",
+    "liquidation_mixed",
+    "liquidation_lambda_one",
+    "liquidation_nondecreasing",
+    "clearance_capped",
+    "bankruptcy_deficit",
+    "tier_cap_exceeded",
+    "futures_rule_scaled",
+    "futures_min_notional",
+    "futures_reduce_exempt",
+    "futures_full_close",
+    "futures_reopen",
 )
 # Present in `Result.diagnostics` only when `Config.rules` is set.
 RULE_COUNTERS = (
@@ -673,6 +796,9 @@ class Result:
     futures_margin: FloatArray | None = None
     delivery_fee: FloatArray | None = None
     n_expired_target: IntArray | None = None
+    funding: FloatArray | None = None
+    clearance_fee: FloatArray | None = None
+    bankruptcy_deficit: FloatArray | None = None
     contribution: FloatArray | None = None
     liquidation_events: list = field(default_factory=list)
     bankruptcy_events: list = field(default_factory=list)
@@ -735,8 +861,15 @@ class Result:
             if key in values and values[key] is not None:
                 values[key] = restore(values[key], kind)
         # Version-1 archives created before futures support have no future fields.
-        for key in ("futures_pnl", "futures_margin", "delivery_fee"):
+        for key in (
+            "futures_pnl",
+            "futures_margin",
+            "delivery_fee",
+        ):
             values.setdefault(key, np.zeros_like(values["nav"]))
+        # Missing opt-in fields mean disabled, not an enabled all-zero panel.
+        for key in CRYPTO_METRICS:
+            values.setdefault(key, None)
         values.setdefault("n_expired_target", np.zeros_like(values["n_blocked_buy"]))
         for key in ("diagnostics", "coverage"):
             values[key] = {
@@ -751,4 +884,5 @@ class Result:
 
         if self.nav.ndim != 1:
             raise ValueError("to_frame requires a single-strategy Result")
-        return pd.DataFrame({k: getattr(self, k) for k in METRICS}, index=index)
+        names = (*METRICS, *(k for k in CRYPTO_METRICS if getattr(self, k) is not None))
+        return pd.DataFrame({k: getattr(self, k) for k in names}, index=index)
