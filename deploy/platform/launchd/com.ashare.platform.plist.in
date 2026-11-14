@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 研究平台常驻服务：登录后启动，退出后 10 秒内由 launchd 拉起。
+     监听本机回环和 {{SUBNET}} 网段上的本机地址；地址变化时进程以 75 退出、随后按新地址重启。
+     访问口令 ASHARE_PLATFORM_TOKEN 由 zsh 启动时读的 ~/.zshenv 提供，不写进本文件。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ashare.platform</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>exec {{PYTHON}} -m ashare.platform --port {{PORT}} --host-subnet {{SUBNET}}</string>
+  </array>
+  <key>WorkingDirectory</key><string>{{REPO}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ASHARE_DATA_DIR</key><string>{{REPO}}/data</string>
+    <key>ASHARE_PLATFORM_DIR</key><string>{{REPO}}/data/platform/results</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>{{REPO}}/data/platform/logs/platform.out.log</string>
+  <key>StandardErrorPath</key><string>{{REPO}}/data/platform/logs/platform.err.log</string>
+</dict>
+</plist>

@@ -36,6 +36,25 @@ python -m ashare.platform --host <VPN 网卡地址>
 没有前端构建产物时只输出一行 `make web` 提示，不启动服务、不报栈。
 只安装 Python 平台依赖可以使用 `uv sync --extra platform`。
 
+### 常驻服务（macOS）
+
+给协作者长期用时不要从终端或开发工具里起服务（关掉窗口就停，改代码要人去重启），改用 launchd：
+
+```sh
+make platform-service    # 装 ~/Library/LaunchAgents/com.ashare.platform.plist 并启动；再跑一次即更新
+make platform-restart    # 改了后端代码或 make web 之后重启进程
+make platform-status     # 状态和最近日志；日志在 data/platform/logs/
+make platform-stop       # 停掉（下次登录仍会启动，彻底不要就删掉那个 plist）
+```
+
+服务用 `--host-subnet 10.77.0.0/24`（`PLATFORM_SUBNET` 可改）代替写死的 `--host`：启动时找本机在这个网段
+上的地址；还没有（开机时 VPN 没连上）就先只听本机。之后每 5 秒复查，地址出现、消失或变化时进程以 75
+退出，launchd 10 秒内按新地址重启。进程因任何原因退出都会被拉起。口令由 `/bin/zsh -c` 读 `~/.zshenv`
+得到，不写进 plist。
+
+本机自己访问一律用 `http://127.0.0.1:8765`：从本机打开自己的 VPN 地址，请求会经隧道绕到 VPN 服务器再
+回来，每个请求多等 1 秒以上，页面会一直转圈。
+
 `make web-dev` 启动 127.0.0.1:5173 的 Vite 开发服务，`/api` 代理到 8765。
 开发代理保留 Host，使浏览器 Origin 与服务收到的 Host 一致。`make web-check` 运行
 vue-tsc 和 Vitest；`make check` 运行 Python/Rust 检查，不依赖 Node。

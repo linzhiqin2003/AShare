@@ -13,7 +13,7 @@ A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再�
 - Tushare 密钥在环境变量 `TUSHARE_TOKEN`（`~/.config/secrets/env.zsh`），不写进仓库
 - 信号与成交的错位只在 `ashare` 里统一处理；`panelbt` 不做移位
 - 各条线（回测、模拟盘、数据层、因子算子、风险与组合）都由 Codex 按 `docs/DESIGN.md` 在 `.worktrees/` 里各自的分支上并行做；Claude 做独立审查（副本试验、变异检查），问题退回原会话返工，通过后由 Claude 提交并合入主干；不推送远程
-- 数据在 `data/`（不入库）：`data/cn` 是 Tushare 原始库和面板，`data/live` 是实时行情的原始录制（launchd 任务 `com.ashare.rt-recorder`，交易日 9:05 启动）；每晚数据同步是 launchd 任务 `com.ashare.paper.nightly`（2026-11-14 装，18:30、20:30、次日 07:30 跑 `python -m ashare.paper daily nightly`，日志在 `data/paper/.ops/logs/`）。模拟交易任务 `com.ashare.paper.run` 没装，用户说等有好策略再开账户。Tushare 限额按接口计，每接口每分钟 500 次；同一账号只在这一台机器上用
+- 数据在 `data/`（不入库）：`data/cn` 是 Tushare 原始库和面板，`data/live` 是实时行情的原始录制（launchd 任务 `com.ashare.rt-recorder`，交易日 9:05 启动）；每晚数据同步是 launchd 任务 `com.ashare.paper.nightly`（2026-11-14 装，18:30、20:30、次日 07:30 跑 `python -m ashare.paper daily nightly`，日志在 `data/paper/.ops/logs/`）。研究平台是 launchd 常驻服务 `com.ashare.platform`（2026-11-14 装，`make platform-service` / `platform-restart`，见 `docs/PLATFORM.md`「常驻服务」；不要再用预览工具另起 8765，预览配置只连接这个服务）；模拟交易任务 `com.ashare.paper.run` 没装，用户说等有好策略再开账户。Tushare 限额按接口计，每接口每分钟 500 次；同一账号只在这一台机器上用
 - 因子库全部私有（2026-11-13 用户定）：因子的公式实现、参考实现、公式原文和试验记录放本地私有仓库 `~/Codespace/AShare-factors`（包名 `ashare_factors`，经入口点组 `ashare.factors` 加载），本仓库只保留机制和几个示例因子；合并和推送前检查没有私有内容进入提交
 - 引擎沿用 `panelbt` 这个名字（改名 `zqbt` 已搁置），暂不发布到 PyPI
 - 根 `.gitignore` 里忽略根目录的东西写成 `/name/`（`data/` 曾把 `src/ashare/data` 等代码目录一起忽略）
