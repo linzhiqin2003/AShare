@@ -5,6 +5,7 @@ import type { Settings, Scalar } from '../types'
 import SegmentedControl from './SegmentedControl.vue'
 import RebalanceControl from './RebalanceControl.vue'
 import BenchmarkSelect from './BenchmarkSelect.vue'
+import { setShowValidation, showValidation } from '../validation'
 const props = defineProps<{ modelValue: Settings; name: string; defaults: Settings }>()
 const emit = defineEmits<{ 'update:modelValue': [settings: Settings]; close: [] }>()
 const root = shallowRef<HTMLElement | null>(null), saved = shallowRef(false)
@@ -27,7 +28,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
       <h5>样本</h5>
       <div class="setting-row"><span>股票池</span><SegmentedControl :model-value="modelValue.universe" label="股票池" :options="[{value:'TOP800',label:'TOP800'},{value:'TOP1800',label:'TOP1800'},{value:'ALL',label:'全市场'}]" @update:model-value="update('universe',$event)" /></div>
       <div class="setting-row"><span>样本内</span><span class="date-range">2016-01-01 至 2024-12-31</span></div>
-      <div class="setting-row"><span>验证</span><span class="date-range">2025 年</span></div>
+      <div class="setting-row"><span>验证 <span class="date-range">2025 年</span></span><button class="switch" role="switch" aria-label="显示验证期" :aria-checked="showValidation" @click="setShowValidation(!showValidation)"><i /></button></div>
       <div class="setting-row"><span>基准</span><BenchmarkSelect :model-value="typeof modelValue.benchmark === 'string' ? modelValue.benchmark : undefined" @update:model-value="update('benchmark',$event)" /></div>
       <div class="setting-row"><span>子池检验</span><button class="switch" role="switch" aria-label="子池检验" :aria-checked="!!modelValue.sub_universes" @click="update('sub_universes',!modelValue.sub_universes)"><i /></button></div>
       <h5>信号处理</h5>

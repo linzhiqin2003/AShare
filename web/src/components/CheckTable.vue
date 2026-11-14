@@ -2,6 +2,7 @@
 import { CircleCheck, CircleX, CircleAlert } from 'lucide-vue-next'
 import { fmt } from '../chart'
 import type { Check } from '../types'
+import { showValidation, VALIDATION_CHECKS } from '../validation'
 defineProps<{ checks: Check[] }>()
 </script>
 <template>
@@ -9,7 +10,7 @@ defineProps<{ checks: Check[] }>()
     <thead><tr><th>检验</th><th>值</th><th>阈值</th><th>结果</th></tr></thead>
     <tbody><tr v-for="check in checks" :key="check.key">
       <td class="check-label">{{ check.label }}</td>
-      <td class="number">{{ fmt(check.value, ['turnover','coverage','positive_years'].includes(check.key)) }}</td>
+      <td class="number">{{ !showValidation && VALIDATION_CHECKS.has(check.key) ? '' : fmt(check.value, ['turnover','coverage','positive_years'].includes(check.key)) }}</td>
       <td class="number muted nowrap">{{ check.threshold }}</td>
       <td><span class="check-status" :class="check.status"><component :is="check.status === 'pass' ? CircleCheck : check.status === 'fail' ? CircleX : CircleAlert" :size="13" />{{ check.status === 'pass' ? '通过' : check.status === 'fail' ? '未通过' : '提示' }}</span></td>
     </tr></tbody>

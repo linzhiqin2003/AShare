@@ -1,6 +1,7 @@
 import { computed, onUnmounted, reactive, shallowRef, watch } from 'vue'
 import { api, friendly, post, series } from './api'
 import { chartData, relativeLines, withBenchmark } from './chart'
+import { showValidation, visibleParts } from './validation'
 import type { ApiError, BenchmarkData, ChartData, Completion, Job, Line, ReturnSelection, Settings, View } from './types'
 
 export interface ResearchTab {
@@ -65,13 +66,15 @@ export function useResearch() {
     const version = (chartVersions.get(tab.id) ?? 0) + 1; chartVersions.set(tab.id, version)
     const view = tab.view, relative = tab.relative && view === 'returns', selection = tab.returnSelection
     const runs = tab.job?.runs.filter(r => r.status === 'complete' && (view === 'returns' ? tab.visible.includes(r.id) : r.id === tab.selected)) ?? []
+    // 验证期开关关闭时只取样本内部分，图表只画到样本内末。
+    const show = showValidation.value
     async function partsFor(id: string) {
-      if (!relative) return series(id, view)
+      if (!relative) return visibleParts(await series(id, view), show)
       const parts = await Promise.all([
         ...(selection !== 'long' ? [series(id, 'returns')] : []),
         ...(selection !== 'long_short' ? [series(id, 'long')] : []),
       ])
-      return parts.flat()
+      return visibleParts(parts.flat(), show)
     }
     try {
       const parts = await Promise.all(runs.map(r => partsFor(r.id)))
@@ -179,6 +182,7 @@ export function useResearch() {
   }
   watch(() => tabs.map(t => ({ id: t.id, name: t.name, source: t.source, settings: t.settings, autoName: t.autoName })), persist, { deep: true })
   watch(activeId,persist)
+  watch(showValidation, () => { for (const tab of tabs) void loadChart(tab) })
   onUnmounted(() => { clearInterval(metadataTimer); events.forEach(e => e.close()); validations.forEach(v => v.abort()) })
   return { tabs, activeId, current, completions, defaults, metadata, message, elapsed, init, addTab, closeTab, renameTab, validate, loadChart, loadBenchmark, run, cancel }
 }

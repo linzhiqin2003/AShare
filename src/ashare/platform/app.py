@@ -23,6 +23,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from .access import Access, login_page
 from .analysis import plot_payload
 from .benchmarks import Benchmarks
+from .compare import router as compare_router
 from .config import CHOICES, DEFAULTS, expand_settings, platform_dir
 from .holdings import Holdings
 from .language import ExpressionError, completions, parse, suggested_name
@@ -486,6 +487,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
             raise HTTPException(404, "没有找到这个因子")
         return result
 
+    app.include_router(compare_router)
     if STATIC.is_dir():
         app.mount("/", StaticFiles(directory=STATIC, html=True), name="web")
     return app
