@@ -126,8 +126,54 @@ class CryptoDataset:
             result[field] = np.column_stack(columns)
         return dict(time=times, instruments=names, **result)
 
-    def daily(self, trade_hour=0, **kwargs):
-        return aggregate_daily(self.read(**kwargs), trade_hour=trade_hour)
+    def daily(self, trade_hour=0, *, invalid_prices="raise", **kwargs):
+        """日线信号默认拒绝异常时刻；显式 carry 与小时回测一样按前值持平。
+
+        原始异常价始终保留在 read()，不把质检原值直接交给日频信号。
+        """
+        frame = signal_frame(self.read(**kwargs), invalid_prices=invalid_prices)
+        return aggregate_daily(frame, trade_hour=trade_hour)
+
+
+def signal_frame(frame, *, invalid_prices="raise"):
+    if invalid_prices not in ("raise", "carry"):
+        raise ValueError("invalid_prices 只能为 raise/carry")
+    invalid = (pl.col("lifecycle") == "active") & ((pl.col("quality") & 2048) != 0)
+    if invalid_prices == "raise":
+        if frame.select(invalid.any()).item():
+            raise ValueError(
+                "日线信号含异常时间戳价格；显式 invalid_prices='carry' 才可持平"
+            )
+        return frame
+    frame = frame.sort(["instrument", "time"])
+    missing = (pl.col("lifecycle") == "active") & (
+        (pl.col("quality") & (1 | 2048)) != 0
+    )
+    frame = frame.with_columns(
+        pl.when(missing)
+        .then(None)
+        .otherwise(pl.col("close"))
+        .forward_fill()
+        .over("instrument")
+        .alias("_signal_carry")
+    )
+    if frame.select(
+        (
+            missing
+            & (pl.col("_signal_carry").is_null() | ~pl.col("_signal_carry").is_finite())
+        ).any()
+    ).item():
+        raise ValueError("异常日线信号缺少此前估值")
+    return frame.with_columns(
+        *[
+            pl.when(missing).then(pl.col("_signal_carry")).otherwise(pl.col(f)).alias(f)
+            for f in ("open", "high", "low", "close")
+        ],
+        *[
+            pl.when(missing).then(0.0).otherwise(pl.col(f)).alias(f)
+            for f in ("volume", "quote_volume", "taker_buy_quote_volume")
+        ],
+    ).drop("_signal_carry")
 
 
 def aggregate_daily(frame, *, trade_hour=0):

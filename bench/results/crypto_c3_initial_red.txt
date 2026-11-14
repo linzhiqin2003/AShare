@@ -1,0 +1,197 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFFFFFFFFFFFF                                                 [100%]
+=================================== FAILURES ===================================
+_____________ test_kline_end_anomalies_preserved[-999-None-spot-1] _____________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+___________ test_kline_end_anomalies_preserved[-999-None-spot-1000] ____________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000000
+_____________ test_kline_end_anomalies_preserved[-999-None-usdm-1] _____________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+____________ test_kline_end_anomalies_preserved[-1000-None-spot-1] _____________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+___________ test_kline_end_anomalies_preserved[-1000-None-spot-1000] ___________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000000
+____________ test_kline_end_anomalies_preserved[-1000-None-usdm-1] _____________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+________ test_kline_end_anomalies_preserved[-1001-partial_halt-spot-1] _________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+_______ test_kline_end_anomalies_preserved[-1001-partial_halt-spot-1000] _______
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000000
+________ test_kline_end_anomalies_preserved[-1001-partial_halt-usdm-1] _________
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+_______ test_kline_end_anomalies_preserved[-1500000-partial_halt-spot-1] _______
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+_____ test_kline_end_anomalies_preserved[-1500000-partial_halt-spot-1000] ______
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000000
+_______ test_kline_end_anomalies_preserved[-1500000-partial_halt-usdm-1] _______
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+____ test_kline_end_anomalies_preserved[-3600000-invalid_close_time-spot-1] ____
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+__ test_kline_end_anomalies_preserved[-3600000-invalid_close_time-spot-1000] ___
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000000
+____ test_kline_end_anomalies_preserved[-3600000-invalid_close_time-usdm-1] ____
+test/crypto/test_c3_data_fixes.py:27: in test_kline_end_anomalies_preserved
+    rows = parse_klines(kline(t, end, scale), market)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/formats.py:68: in parse_klines
+    raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+E   ValueError: 小时 K 线时间范围/边界错误: 1577836800000
+______________ test_partial_then_gap_is_self_evidenced_halt[spot] ______________
+test/crypto/test_c3_data_fixes.py:53: in test_partial_then_gap_is_self_evidenced_halt
+    frame, notes = build_frame(**f)
+                   ^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/panel.py:318: in build_frame
+    values, note = build_instrument(
+src/ashare/data/crypto/panel.py:225: in build_instrument
+    raise ValueError(f"{name} 生命周期内缺少行情/标记/指数: {t}")
+E   ValueError: spot:TESTUSDT 生命周期内缺少行情/标记/指数: 1719536400000
+______________ test_partial_then_gap_is_self_evidenced_halt[usdm] ______________
+test/crypto/test_c3_data_fixes.py:53: in test_partial_then_gap_is_self_evidenced_halt
+    frame, notes = build_frame(**f)
+                   ^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/panel.py:318: in build_frame
+    values, note = build_instrument(
+src/ashare/data/crypto/panel.py:225: in build_instrument
+    raise ValueError(f"{name} 生命周期内缺少行情/标记/指数: {t}")
+E   ValueError: usdm:TESTUSDT 生命周期内缺少行情/标记/指数: 1719536400000
+________________ test_bad_end_is_reported_and_not_halt_evidence ________________
+test/crypto/test_c3_data_fixes.py:80: in test_bad_end_is_reported_and_not_halt_evidence
+    assert frame["quality"][0] & 2048 and not frame["tradable"][0]
+E   assert ((0 & 2048))
+______________ test_cms_long_backoff_recovers_and_is_configurable ______________
+test/crypto/test_c3_data_fixes.py:90: in test_cms_long_backoff_recovers_and_is_configurable
+    with PublicClient(transport=httpx.MockTransport(handle), sleep=waits.append, clock=lambda: 0, cms_attempts=7, cms_backoff=30, cms_backoff_cap=120) as c:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: PublicClient.__init__() got an unexpected keyword argument 'cms_attempts'
+_________ test_cms_interrupted_pages_resume_without_fetching_page_one __________
+test/crypto/test_c3_data_fixes.py:113: in test_cms_interrupted_pages_resume_without_fetching_page_one
+    assert calls == [1, 2, 3, 3, 4]
+E   assert [1, 2, 3, 1, 2, 3, ...] == [1, 2, 3, 3, 4]
+E     
+E     At index 3 diff: 1 != 3
+E     Left contains 2 more items, first extra item: 3
+E     Use -v to get more diff
+____________________ test_binance_identity_and_fee_segments ____________________
+test/crypto/test_binance_profile.py:10: in test_binance_identity_and_fee_segments
+    spot = markets.get("binance_spot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/markets/__init__.py:383: in get
+    raise ValueError(
+E   ValueError: unknown market 'binance_spot'; expected one of ashare, hk_direct, hk_southbound, us
+__________________ test_rule_gaps_require_explicit_assumption __________________
+test/crypto/test_binance_profile.py:30: in test_rule_gaps_require_explicit_assumption
+    p = markets.get("binance_usdm")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/markets/__init__.py:383: in get
+    raise ValueError(
+E   ValueError: unknown market 'binance_usdm'; expected one of ashare, hk_direct, hk_southbound, us
+___________ test_risk_rules_are_symbol_and_date_specific_and_bounded ___________
+test/crypto/test_binance_profile.py:44: in test_risk_rules_are_symbol_and_date_specific_and_bounded
+    p = markets.get("binance_usdm")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/markets/__init__.py:383: in get
+    raise ValueError(
+E   ValueError: unknown market 'binance_usdm'; expected one of ashare, hk_direct, hk_southbound, us
+________________ test_fee_sensitivity_is_explicit_and_diagnosed ________________
+test/crypto/test_binance_profile.py:57: in test_fee_sensitivity_is_explicit_and_diagnosed
+    p = markets.get("binance_usdm")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/markets/__init__.py:383: in get
+    raise ValueError(
+E   ValueError: unknown market 'binance_usdm'; expected one of ashare, hk_direct, hk_southbound, us
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-999-None-spot-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-999-None-spot-1000]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-999-None-usdm-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1000-None-spot-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1000-None-spot-1000]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1000-None-usdm-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1001-partial_halt-spot-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1001-partial_halt-spot-1000]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1001-partial_halt-usdm-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1500000-partial_halt-spot-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1500000-partial_halt-spot-1000]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-1500000-partial_halt-usdm-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-3600000-invalid_close_time-spot-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-3600000-invalid_close_time-spot-1000]
+FAILED test/crypto/test_c3_data_fixes.py::test_kline_end_anomalies_preserved[-3600000-invalid_close_time-usdm-1]
+FAILED test/crypto/test_c3_data_fixes.py::test_partial_then_gap_is_self_evidenced_halt[spot]
+FAILED test/crypto/test_c3_data_fixes.py::test_partial_then_gap_is_self_evidenced_halt[usdm]
+FAILED test/crypto/test_c3_data_fixes.py::test_bad_end_is_reported_and_not_halt_evidence
+FAILED test/crypto/test_c3_data_fixes.py::test_cms_long_backoff_recovers_and_is_configurable
+FAILED test/crypto/test_c3_data_fixes.py::test_cms_interrupted_pages_resume_without_fetching_page_one
+FAILED test/crypto/test_binance_profile.py::test_binance_identity_and_fee_segments
+FAILED test/crypto/test_binance_profile.py::test_rule_gaps_require_explicit_assumption
+FAILED test/crypto/test_binance_profile.py::test_risk_rules_are_symbol_and_date_specific_and_bounded
+FAILED test/crypto/test_binance_profile.py::test_fee_sensitivity_is_explicit_and_diagnosed
+24 failed in 4.81s

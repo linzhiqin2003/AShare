@@ -1,0 +1,40 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___________________ test_daily_numpy_datetime_labels[label0] ___________________
+test/crypto/test_backtest.py:525: in test_daily_numpy_datetime_labels
+    a["data"][p["instrument"]]["funding_prices"] = []
+    ^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_schedule.py:79: in daily_targets
+    days = np.array([millis(d) for d in days], dtype=np.int64)
+                     ^^^^^^^^^
+src/ashare/data/crypto/timeutil.py:15: in millis
+    if value.tzinfo is None:
+       ^^^^^^^^^^^^
+E   AttributeError: 'numpy.datetime64' object has no attribute 'tzinfo'
+___________________ test_daily_numpy_datetime_labels[label1] ___________________
+test/crypto/test_backtest.py:525: in test_daily_numpy_datetime_labels
+    a["data"][p["instrument"]]["funding_prices"] = []
+    ^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_schedule.py:79: in daily_targets
+    days = np.array([millis(d) for d in days], dtype=np.int64)
+                     ^^^^^^^^^
+src/ashare/data/crypto/timeutil.py:15: in millis
+    if value.tzinfo is None:
+       ^^^^^^^^^^^^
+E   AttributeError: 'numpy.datetime64' object has no attribute 'tzinfo'
+________________________ test_daily_polars_date_labels _________________________
+test/crypto/test_backtest.py:532: in test_daily_polars_date_labels
+    ds = sample(tmp_path, kind="usdm", events=[event], change=change)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_schedule.py:79: in daily_targets
+    days = np.array([millis(d) for d in days], dtype=np.int64)
+                     ^^^^^^^^^
+src/ashare/data/crypto/timeutil.py:15: in millis
+    if value.tzinfo is None:
+       ^^^^^^^^^^^^
+E   AttributeError: 'datetime.date' object has no attribute 'tzinfo'
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_daily_numpy_datetime_labels[label0]
+FAILED test/crypto/test_backtest.py::test_daily_numpy_datetime_labels[label1]
+FAILED test/crypto/test_backtest.py::test_daily_polars_date_labels - Attribut...
+3 failed, 18 deselected in 1.06s

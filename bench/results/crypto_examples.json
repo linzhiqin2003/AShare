@@ -1,0 +1,178 @@
+{
+  "data_version": "592e490b1d0b50ca14c51035be2d373370bc53a3df8a3f77ce83dd1a6735c194",
+  "start": "2020-01-01T00:00:00.000",
+  "end": "2026-10-31T23:00:00.000",
+  "rows": 239612,
+  "parameters": {
+    "momentum_days": [
+      20,
+      60,
+      120
+    ],
+    "vol_days": 30,
+    "annual_vol_target": 0.2,
+    "capital_usdt": 1000.0,
+    "usdm_target_gross_cap": 2.0,
+    "spot_target_gross_cap": 1.0,
+    "trade_hour": 0,
+    "fee_switch": "2023-06-01",
+    "risk_assume": "previous",
+    "missing_policy": "explicit flat/untradable on diagnosed spot archive gaps"
+  },
+  "strategies": {
+    "usdm": {
+      "final_nav": 2.251744618123367,
+      "annualized": 0.1260330418974409,
+      "max_drawdown": 0.1865971210621722,
+      "funding_paid": 229.41495192123983,
+      "funding_pct_initial": 0.22941495192123984,
+      "fees": 97.068293651,
+      "fees_pct_initial": 0.097068293651,
+      "clearance_fee": 0.0,
+      "liquidation_count": 0,
+      "liquidation_by_stage": {
+        "open": 0,
+        "post_trade": 0,
+        "intraday": 0,
+        "close": 0
+      },
+      "tier_cap_exceeded": 0,
+      "valid": true,
+      "funding_price_approximation_cells": 8394,
+      "rule_assumption_intervals": 22,
+      "missing_intervals": 0,
+      "halt_intervals": 0
+    },
+    "spot": {
+      "final_nav": 2.633912380760807,
+      "annualized": 0.15214524008945896,
+      "max_drawdown": 0.13510447253757008,
+      "funding_paid": 0.0,
+      "funding_pct_initial": 0.0,
+      "fees": 137.74194243920002,
+      "fees_pct_initial": 0.13774194243920002,
+      "clearance_fee": 0.0,
+      "liquidation_count": 0,
+      "liquidation_by_stage": {
+        "open": 0,
+        "post_trade": 0,
+        "intraday": 0,
+        "close": 0
+      },
+      "tier_cap_exceeded": 0,
+      "valid": true,
+      "funding_price_approximation_cells": 0,
+      "rule_assumption_intervals": 4,
+      "missing_intervals": 20,
+      "halt_intervals": 10
+    }
+  },
+  "hand_checks": {
+    "liquidation": {
+      "source": "real mark and trade hours",
+      "assumptions": "MMR 0.4%, clearance 1.25% carried from dated evidence; first-tier uncertainty explicitly allowed",
+      "initial_cash": 4323.461016000002,
+      "units": 1.0,
+      "expected": {
+        "hour": 4,
+        "liquidation_price": 38731.15662650602,
+        "closing_fee": 15.492462650602407,
+        "clearance_fee": 139.43216385541587,
+        "cash": 0.0,
+        "bankruptcy_deficit": 0.0,
+        "funding_paid_before": 0.0,
+        "mark_low": 29563.37,
+        "opening_fee": 17.153016
+      },
+      "observed": {
+        "hour": 4,
+        "liquidation_price": 38731.156626506025,
+        "closing_fee": 15.492462650602413,
+        "clearance_fee": 139.43216385542314,
+        "cash": 0.0,
+        "bankruptcy_deficit": 0.0,
+        "funding_paid_before": 0.0
+      },
+      "tier_cap_exceeded": 1,
+      "opening_notional": 42882.54,
+      "actual_opening_contracts": 1000.0
+    },
+    "funding": {
+      "source": "independent frozen raw funding records and associated mark prices",
+      "date": "2024-06-01",
+      "events": 3,
+      "settlement_hours_utc": [
+        8,
+        16,
+        24
+      ],
+      "contracts": 10.0,
+      "multiplier": 0.001,
+      "positions_verified": true,
+      "expected_funding": 0.20488769058528228,
+      "engine_funding": 0.20488769058528228,
+      "expected_cash": 1001.6712228094148,
+      "engine_cash": 1001.6712228094149
+    },
+    "delivery": {
+      "source": "synthetic C2 shared fixture; copied real dataset has no quarter contracts",
+      "expected_cash": 99.7601,
+      "engine_cash": 99.76010000000001,
+      "expiry_row": 7,
+      "delivery_fee": 0.0199,
+      "funding": 0.0
+    }
+  },
+  "quant_comparison": {
+    "strategy": "BTC 20/60/120-day votes, 30-day vol, 20% annual target, gross cap 1, 01:00 UTC; final common liquidation to cash",
+    "periods": 2495,
+    "crypto_final_nav": 1.9458397244602275,
+    "quant_final_nav": 1.986505786031298,
+    "nav_difference": -0.040666061571070555,
+    "crypto_funding_pct_initial": 0.21120148254381013,
+    "quant_funding_pct_initial": 0.22896266581752098,
+    "crypto_fees_pct_initial": 0.10392840299600001,
+    "quant_fees_pct_initial": 0.11847374921303744,
+    "crypto_liquidation_count": 0,
+    "quant_liquidated": false,
+    "quant_capital_violations": 0,
+    "quant_min_futures_buffer": 131.33140676706407,
+    "differences": [
+      {
+        "item": "funding",
+        "crypto": "official associated mark, early boundary mark open",
+        "quant": "trade-kline open; missing-hour fallback uses decision execution price"
+      },
+      {
+        "item": "liquidation",
+        "crypto": "mark OHLC crossing price; normal closing fee plus separate capped clearance",
+        "quant": "trade OHLC adverse extreme; maintenance rate used as clearance proxy"
+      },
+      {
+        "item": "deficit",
+        "crypto": "explicit bankruptcy_deficit and bankruptcy latch",
+        "quant": "negative futures cash clipped to zero without deficit ledger"
+      },
+      {
+        "item": "wallets",
+        "crypto": "single standalone futures equity collateral",
+        "quant": "separate spot cash and futures wallet, reset to nominal * margin after decisions"
+      },
+      {
+        "item": "fees",
+        "crypto": "4 bp until assumed 2023-06-01; then 5 bp",
+        "quant": "constant 5 bp in this comparison"
+      },
+      {
+        "item": "sizing",
+        "crypto": "pre-fee equity, integer contracts, dated minimum-order filters",
+        "quant": "continuous quantities, iterative post-fee equity, no minimum filters"
+      },
+      {
+        "item": "valuation",
+        "crypto": "hourly mark settlement and mark-open sizing",
+        "quant": "trade execution prices between daily decisions"
+      }
+    ]
+  }
+}

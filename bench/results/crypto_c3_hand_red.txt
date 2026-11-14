@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_hand_example_funds_execution_to_mark_loss ________________
+test/crypto/test_backtest.py:416: in test_hand_example_funds_execution_to_mark_loss
+    assert r.trades[0].qty==100
+E   assert 52.0 == 100
+E    +  where 52.0 = Trade(day=0, col=0, qty=52.0, price=100.0, commission=0.026000000000000002, tax=0.0, other_fee=0.0, slippage_cost=0.0, impact_cost=0.0, reason=<TradeReason.REBALANCE: 0>).qty
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_hand_example_funds_execution_to_mark_loss
+1 failed, 14 deselected in 2.34s

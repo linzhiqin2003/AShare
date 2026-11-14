@@ -1,0 +1,16 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______________ test_spot_share_mode_cannot_bypass_snapshot_lots _______________
+test/crypto/test_backtest.py:579: in test_spot_share_mode_cannot_bypass_snapshot_lots
+    with pytest.raises(ValueError,match='现货.*权重'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+____________ test_migration_incompatible_fixed_spot_lot_is_rejected ____________
+test/crypto/test_backtest.py:590: in test_migration_incompatible_fixed_spot_lot_is_rejected
+    with pytest.raises(ValueError,match='转换.*数量格点'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_spot_share_mode_cannot_bypass_snapshot_lots
+FAILED test/crypto/test_backtest.py::test_migration_incompatible_fixed_spot_lot_is_rejected
+2 failed, 21 deselected in 1.00s

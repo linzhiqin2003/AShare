@@ -1,0 +1,62 @@
+{
+  "completed_at": "2026-11-15T07:31:35+08:00",
+  "branch": "agent/codex/crypto-backtest",
+  "environment": {
+    "venv": ".venv",
+    "setup": "make dev",
+    "cargo_build_jobs": 2,
+    "pytest_workers": 4,
+    "nice_requested": 15,
+    "nice_applied": false,
+    "nice_limitation": "sandbox setpriority: Operation not permitted"
+  },
+  "checks": [
+    {
+      "command": ".venv/bin/ruff check .",
+      "result": "passed"
+    },
+    {
+      "command": ".venv/bin/ruff format --check .",
+      "result": "passed",
+      "files": 773
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "nice -n 15 .venv/bin/pytest -q test/crypto test/test_crypto.py test/test_crypto_review.py test/test_crypto_review_intent.py test/test_markets_hkus.py test/backtest test/test_step.py -n 4 --tb=short",
+      "result": "passed",
+      "passed": 499,
+      "seconds": 11.79,
+      "offline": true
+    },
+    {
+      "command": "nice -n 15 .venv/bin/python bench/mutations_crypto_backtest.py",
+      "result": "passed",
+      "killed": 24,
+      "total": 24,
+      "imports_checked_in_worktree": true,
+      "restored_tests_passed": true
+    }
+  ],
+  "data_validation": {
+    "report": "bench/results/crypto_data_validation.json",
+    "errors": 0,
+    "archives": 955,
+    "cells": 239612,
+    "end_exclusive": "2026-10-31T23:00:00Z",
+    "version": "592e490b1d0b50ca14c51035be2d373370bc53a3df8a3f77ce83dd1a6735c194"
+  },
+  "examples": "bench/results/crypto_examples.json",
+  "public_artifact_audit": {
+    "absolute_machine_paths": 0,
+    "real_market_data_files": 0,
+    "changed_or_new_files": 48,
+    "source_data_untouched": true,
+    "quant_untouched": true
+  },
+  "scope": "Python adapters/data fixes and documentation; C1 Rust unchanged. Relevant make check Python checks completed.",
+  "review_round": 2,
+  "review_report": "bench/results/crypto_c3_review_r2.json"
+}

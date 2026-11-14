@@ -1,0 +1,11 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_r1_p0_2_counterevidence_breaks_entire_gap_chain _____________
+test/crypto/test_c3_review.py:139: in test_r1_p0_2_counterevidence_breaks_entire_gap_chain
+    assert not any(frame["quality"][i] & 1024 for i in (1, 2))
+E   assert not True
+E    +  where True = any(<generator object test_r1_p0_2_counterevidence_breaks_entire_gap_chain.<locals>.<genexpr> at 0x10dc3bb90>)
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_review.py::test_r1_p0_2_counterevidence_breaks_entire_gap_chain
+1 failed in 2.25s

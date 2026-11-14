@@ -1,0 +1,16 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_numpy_daily_dates_from_dataset_are_accepted _______________
+test/crypto/test_backtest.py:352: in test_numpy_daily_dates_from_dataset_are_accepted
+    p=daily((days,[[.5]]))
+      ^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_schedule.py:79: in daily_targets
+    days = np.array([millis(d) for d in days], dtype=np.int64)
+                     ^^^^^^^^^
+src/ashare/data/crypto/timeutil.py:14: in millis
+    if value.tzinfo is None:
+       ^^^^^^^^^^^^
+E   AttributeError: 'numpy.int64' object has no attribute 'tzinfo'
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_numpy_daily_dates_from_dataset_are_accepted
+1 failed, 10 deselected in 0.88s

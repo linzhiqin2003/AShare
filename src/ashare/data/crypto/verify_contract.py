@@ -74,7 +74,7 @@ def verify_contract(frame, inputs):
         expected_tradable = (
             expected_life == "active"
             and not suspend
-            and not (r["quality"] & 1)
+            and not (r["quality"] & (1 | 2048))
             and r["volume"] > 0
         )
         if r["tradable"] != expected_tradable:

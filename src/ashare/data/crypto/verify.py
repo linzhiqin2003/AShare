@@ -5,6 +5,7 @@
 """
 
 import math
+from bisect import bisect_right
 from collections import defaultdict
 
 from .dataset import CryptoDataset
@@ -82,6 +83,15 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                     ):
                         fail("funding_missing", name, expected)
         previous = None
+        previous_close = None
+        datasets = [raw, marks, indices] if p["market"] == "usdm" else [raw]
+        trade_times = sorted(raw)
+        trade_cursor = 0
+        normal_mark_times = sorted(
+            t
+            for t, row in marks.items()
+            if row.get("time_quality", "normal") == "normal"
+        )
         for r in group:
             t, boundary = r["time"], r["time"] + HOUR
             futures = p["market"] == "usdm"
@@ -103,6 +113,48 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                     fail("outside_lifecycle", name, t)
                 continue
             missing = t not in raw or (futures and (t not in marks or t not in indices))
+            # 从原始成交时间轴独立找缺口前的证据，不沿用构建器的状态或辅助线标记。
+            while trade_cursor < len(trade_times) and trade_times[trade_cursor] < t:
+                trade_cursor += 1
+            preceding = raw[trade_times[trade_cursor - 1]] if trade_cursor else None
+            halt = (
+                t not in raw
+                and preceding is not None
+                and preceding.get("time_quality") == "partial_halt"
+            )
+            counterevidence = any(
+                t in values and values[t].get("time_quality", "normal") == "normal"
+                for values in (raw, marks)
+                if futures or values is raw
+            )
+            mark_cursor = bisect_right(normal_mark_times, t)
+            if futures and preceding is not None and mark_cursor:
+                counterevidence |= (
+                    normal_mark_times[mark_cursor - 1] > preceding["time"]
+                )
+            if counterevidence:
+                halt = False
+            time_flags = {
+                values[t].get("time_quality", "normal")
+                for values in datasets
+                if t in values
+            }
+            for flag, bit in (("partial_halt", 512), ("invalid_close_time", 2048)):
+                if bool(r["quality"] & bit) != (flag in time_flags):
+                    fail("time_quality", name, t, field=flag)
+                if flag in time_flags:
+                    diagnostics.append(
+                        dict(
+                            check=flag,
+                            instrument=name,
+                            time=t,
+                            review=flag == "invalid_close_time",
+                        )
+                    )
+            if bool(r["quality"] & 1024) != halt:
+                fail("halt_evidence", name, t)
+            if halt:
+                diagnostics.append(dict(check="inferred_halt", instrument=name, time=t))
             if missing:
                 # 缺口必须逐格有标记与解释，allow_missing 仅是模型选择，不是解释。
                 known_suspend = False
@@ -121,15 +173,26 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                         if e["kind"] == "resume":
                             known_suspend = False
                 exceptions = inputs.get("exceptions", [])
-                explained = known_suspend or any(
-                    e["instrument"] == name
-                    and e["start"] <= t < e["end"]
-                    and e.get("reason")
-                    and e.get("source_url")
-                    for e in exceptions
+                explained = (
+                    halt
+                    or known_suspend
+                    or any(
+                        e["instrument"] == name
+                        and e["start"] <= t < e["end"]
+                        and e.get("reason")
+                        and e.get("source_url")
+                        for e in exceptions
+                    )
                 )
                 if not explained or not (r["quality"] & 1) or r["tradable"]:
                     fail("unexplained_gap", name, t)
+                if (
+                    any(
+                        r[f] != previous_close for f in ("open", "high", "low", "close")
+                    )
+                    or r["volume_engine"] != 0
+                ):
+                    fail("gap_valuation", name, t)
             else:
                 for f in (
                     "open",
@@ -270,6 +333,7 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                         )
                     )
             previous = r["settlement"]
+            previous_close = r["close"]
     # 单币现货/永续按真实币单位比较；成交额不做 1000 倍转换。
     spot = {
         (r["time"], r["coin"]): r["close"] / r["coin_units"]

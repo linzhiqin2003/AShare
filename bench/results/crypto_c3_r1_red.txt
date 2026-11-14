@@ -1,0 +1,97 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+_______ test_r1_p0_1_migrated_delist_and_future_announcement_invariance ________
+test/crypto/test_c3_review.py:49: in test_r1_p0_1_migrated_delist_and_future_announcement_invariance
+    assert [t.day for t in result.trades if t.qty < 0] == [3]
+E   assert [] == [3]
+E     
+E     Right contains one more item: 3
+E     Use -v to get more diff
+__________ test_r1_p0_1_missing_notice_checks_actual_execution_symbol __________
+test/crypto/test_c3_review.py:68: in test_r1_p0_1_missing_notice_checks_actual_execution_symbol
+    with pytest.raises(ValueError, match="ETHUSDT.*公告"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+___ test_r1_p0_2_normal_market_data_refutes_inferred_halt[indexPriceKlines] ____
+test/crypto/test_c3_review.py:82: in test_r1_p0_2_normal_market_data_refutes_inferred_halt
+    with pytest.raises(ValueError, match="缺少|反证"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+________ test_r1_p0_2_normal_market_data_refutes_inferred_halt[klines] _________
+test/crypto/test_c3_review.py:82: in test_r1_p0_2_normal_market_data_refutes_inferred_halt
+    with pytest.raises(ValueError, match="缺少|反证"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+______________ test_r1_p0_2_independent_verify_rejects_false_halt ______________
+test/crypto/test_c3_review.py:98: in test_r1_p0_2_independent_verify_rejects_false_halt
+    assert report["verdict"] == "fail"
+E   AssertionError: assert 'pass' == 'fail'
+E     
+E     - fail
+E     + pass
+___________ test_r1_p0_3_missing_trade_bar_preserves_delivery_price ____________
+test/crypto/test_c3_review.py:115: in test_r1_p0_3_missing_trade_bar_preserves_delivery_price
+    assert m.futures.settlement[7, 0] == 199
+E   assert np.float64(207.5) == 199
+___________ test_r1_p0_3_unproven_expiry_price_is_rejected[corrupt0] ___________
+test/crypto/test_c3_review.py:124: in test_r1_p0_3_unproven_expiry_price_is_rejected
+    with pytest.raises(ValueError, match="结算"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+___________ test_r1_p0_3_unproven_expiry_price_is_rejected[corrupt1] ___________
+test/crypto/test_c3_review.py:124: in test_r1_p0_3_unproven_expiry_price_is_rejected
+    with pytest.raises(ValueError, match="结算"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+__________ test_r1_p0_4_resume_consumes_old_body_before_new_revision ___________
+test/crypto/test_c3_review.py:144: in test_r1_p0_4_resume_consumes_old_body_before_new_revision
+    assert len(versions) == 2
+E   AssertionError: assert 1 == 2
+E    +  where 1 = len([{'effective_at': 1718182800000, 'event_id': 'synthetic:usdm:FAKEUSDT:settlement', 'instrument': 'usdm:FAKEUSDT', 'kind': 'settlement', ...}])
+________________ test_r1_p1_5_delivery_fee_uses_right_boundary _________________
+test/crypto/test_c3_review.py:180: in test_r1_p1_5_delivery_fee_uses_right_boundary
+    assert r.delivery_fee.sum() == pytest.approx(.05)
+E   assert np.float64(0.04) == 0.05 ± 5.0e-08
+E     
+E     comparison failed
+E     Obtained: 0.04
+E     Expected: 0.05 ± 5.0e-08
+_______________ test_r1_p1_6_daily_signal_excludes_invalid_close _______________
+test/crypto/test_c3_review.py:191: in test_r1_p1_6_daily_signal_excludes_invalid_close
+    assert m.daily()["close"][0] == 101
+E   assert 10000.0 == 101
+__________________ test_r1_p1_7_summary_counts_clearance_once __________________
+test/crypto/test_c3_review.py:205: in test_r1_p1_7_summary_counts_clearance_once
+    assert examples.summary(r, 1000, 72)["fees"] == pytest.approx(expected)
+E   assert 32.63930722891555 == 18.574297188754965 ± 1.9e-05
+E     
+E     comparison failed
+E     Obtained: 32.63930722891555
+E     Expected: 18.574297188754965 ± 1.9e-05
+____________ test_r1_p1_8_raw_funding_oracle_catches_adapter_scale _____________
+test/crypto/test_c3_review.py:226: in test_r1_p1_8_raw_funding_oracle_catches_adapter_scale
+    with pytest.raises(AssertionError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE AssertionError
+___________ test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics ____________
+test/crypto/test_c3_review.py:235: in test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics
+    assert any(n.get("parameter") == "maint_rate" and n.get("effective_at") == "2023-12-24T09:35:00.000" and n.get("applied_at") == "2023-12-24T10:00:00.000" for n in notes)
+E   assert False
+E    +  where False = any(<generator object test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics.<locals>.<genexpr> at 0x10fc84040>)
+=========================== short test summary info ============================
+FAILED test/crypto/test_c3_review.py::test_r1_p0_1_migrated_delist_and_future_announcement_invariance
+FAILED test/crypto/test_c3_review.py::test_r1_p0_1_missing_notice_checks_actual_execution_symbol
+FAILED test/crypto/test_c3_review.py::test_r1_p0_2_normal_market_data_refutes_inferred_halt[indexPriceKlines]
+FAILED test/crypto/test_c3_review.py::test_r1_p0_2_normal_market_data_refutes_inferred_halt[klines]
+FAILED test/crypto/test_c3_review.py::test_r1_p0_2_independent_verify_rejects_false_halt
+FAILED test/crypto/test_c3_review.py::test_r1_p0_3_missing_trade_bar_preserves_delivery_price
+FAILED test/crypto/test_c3_review.py::test_r1_p0_3_unproven_expiry_price_is_rejected[corrupt0]
+FAILED test/crypto/test_c3_review.py::test_r1_p0_3_unproven_expiry_price_is_rejected[corrupt1]
+FAILED test/crypto/test_c3_review.py::test_r1_p0_4_resume_consumes_old_body_before_new_revision
+FAILED test/crypto/test_c3_review.py::test_r1_p1_5_delivery_fee_uses_right_boundary
+FAILED test/crypto/test_c3_review.py::test_r1_p1_6_daily_signal_excludes_invalid_close
+FAILED test/crypto/test_c3_review.py::test_r1_p1_7_summary_counts_clearance_once
+FAILED test/crypto/test_c3_review.py::test_r1_p1_8_raw_funding_oracle_catches_adapter_scale
+FAILED test/crypto/test_c3_review.py::test_r1_p2_9_risk_rounding_metadata_reaches_diagnostics
+14 failed in 2.66s

@@ -64,8 +64,15 @@ def parse_klines(payload, market, *, start=None, end=None):
     for r in rows:
         t = int(r[0]) // scale
         close_t = int(r[6]) // scale
-        if not MIN_TIME <= t < MAX_TIME or t % HOUR or close_t != t + HOUR - 1:
+        if not MIN_TIME <= t < MAX_TIME or t % HOUR or close_t > t + HOUR - 1 + 1000:
             raise ValueError(f"小时 K 线时间范围/边界错误: {r[0]}")
+        time_quality = (
+            "invalid_close_time"
+            if close_t < t
+            else "partial_halt"
+            if close_t < t + HOUR - 1 - 1000
+            else "normal"
+        )
         if (start is not None and t < millis(start)) or (
             end is not None and t >= millis(end)
         ):
@@ -77,7 +84,15 @@ def parse_klines(payload, market, *, start=None, end=None):
         }
         if any(not math.isfinite(v) for v in values.values()):
             raise ValueError("K 线含非有限数值")
-        out.append(dict(time=t, **values, count=int(r[8])))
+        out.append(
+            dict(
+                time=t,
+                close_time=close_t,
+                time_quality=time_quality,
+                **values,
+                count=int(r[8]),
+            )
+        )
     if any(a["time"] >= b["time"] for a, b in zip(out, out[1:], strict=False)):
         raise ValueError("K 线重复或乱序")
     return out

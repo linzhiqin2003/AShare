@@ -1,0 +1,18 @@
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+______ test_quarter_roll_preserves_units_with_different_multipliers[True] ______
+test/crypto/test_backtest.py:516: in test_quarter_roll_preserves_units_with_different_multipliers
+    np.testing.assert_array_equal(r.positions[25],[0.,20.])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 20.0 (DESIRED)
+E   Max absolute difference among violations: 20.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([ 0., 20.])
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_quarter_roll_preserves_units_with_different_multipliers[True]
+1 failed, 2 passed, 15 deselected in 1.15s

@@ -349,6 +349,7 @@ __all__ = [
 
 # Hong Kong and US profiles (docs/markets/PROFILES.md). Imported last: they
 # subclass MarketProfile defined above.
+from .binance import BINANCE_SPOT, BINANCE_USDM, BinanceProfile  # noqa: E402
 from .hk import (  # noqa: E402
     HK_DIRECT,
     HK_SOUTHBOUND,
@@ -367,6 +368,8 @@ PROFILES = MappingProxyType(
         "hk_direct": HK_DIRECT,
         "hk_southbound": HK_SOUTHBOUND,
         "us": US,
+        "binance_spot": BINANCE_SPOT,
+        "binance_usdm": BINANCE_USDM,
     }
 )
 
@@ -387,6 +390,9 @@ def get(name: str) -> MarketProfile:
 
 
 __all__ += [
+    "BINANCE_SPOT",
+    "BINANCE_USDM",
+    "BinanceProfile",
     "HK_DIRECT",
     "HK_SOUTHBOUND",
     "HKProfile",

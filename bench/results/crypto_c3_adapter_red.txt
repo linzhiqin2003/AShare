@@ -1,0 +1,66 @@
+nice: setpriority: Operation not permitted
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_____________ test_daily_targets_one_shift_and_blocked_not_carried _____________
+test/crypto/test_backtest.py:43: in test_daily_targets_one_shift_and_blocked_not_carried
+    market, daily, _ = adapter()
+                       ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+____________ test_daily_trade_hour_and_final_signal_no_extra_shift _____________
+test/crypto/test_backtest.py:62: in test_daily_trade_hour_and_final_signal_no_extra_shift
+    _, daily, _ = adapter()
+                  ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+________________ test_missing_active_data_errors_with_name_time ________________
+test/crypto/test_backtest.py:71: in test_missing_active_data_errors_with_name_time
+    market, _, _ = adapter()
+                   ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+______ test_delist_known_at_hourly_retry_only_that_column_and_unrealized _______
+test/crypto/test_backtest.py:89: in test_delist_known_at_hourly_retry_only_that_column_and_unrealized
+    market,daily,_=adapter()
+                   ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+__________ test_delist_overrides_buy_and_missing_announcement_errors ___________
+test/crypto/test_backtest.py:109: in test_delist_overrides_buy_and_missing_announcement_errors
+    market,daily,_=adapter()
+                   ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+________________ test_usdm_wiring_funding_and_tier_excess_error ________________
+test/crypto/test_backtest.py:124: in test_usdm_wiring_funding_and_tier_excess_error
+    market,_,_=adapter()
+               ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+_________ test_top_n_completed_time_window_coin_mapping_and_truncation _________
+test/crypto/test_backtest.py:141: in test_top_n_completed_time_window_coin_mapping_and_truncation
+    _,_,top=adapter()
+            ^^^^^^^^^
+test/crypto/test_backtest.py:38: in adapter
+    from ashare.backtest.crypto import crypto_market, daily_targets, top_n
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+___________ test_quarter_roll_is_calendar_duration_and_forward_only ____________
+test/crypto/test_backtest.py:158: in test_quarter_roll_is_calendar_duration_and_forward_only
+    from ashare.backtest.crypto import roll_time, quarter_chain
+E   ModuleNotFoundError: No module named 'ashare.backtest.crypto'
+=========================== short test summary info ============================
+FAILED test/crypto/test_backtest.py::test_daily_targets_one_shift_and_blocked_not_carried
+FAILED test/crypto/test_backtest.py::test_daily_trade_hour_and_final_signal_no_extra_shift
+FAILED test/crypto/test_backtest.py::test_missing_active_data_errors_with_name_time
+FAILED test/crypto/test_backtest.py::test_delist_known_at_hourly_retry_only_that_column_and_unrealized
+FAILED test/crypto/test_backtest.py::test_delist_overrides_buy_and_missing_announcement_errors
+FAILED test/crypto/test_backtest.py::test_usdm_wiring_funding_and_tier_excess_error
+FAILED test/crypto/test_backtest.py::test_top_n_completed_time_window_coin_mapping_and_truncation
+FAILED test/crypto/test_backtest.py::test_quarter_roll_is_calendar_duration_and_forward_only
+8 failed in 9.04s

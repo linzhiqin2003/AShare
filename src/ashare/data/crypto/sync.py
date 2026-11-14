@@ -108,7 +108,12 @@ def sync(
     if not config.get("instruments"):
         raise ValueError("必须显式给 instruments；不隐式做全历史下载")
     own = client is None
-    client = client or PublicClient(max_bytes=config.get("max_bytes", 40_000_000))
+    client = client or PublicClient(
+        max_bytes=config.get("max_bytes", 40_000_000),
+        cms_attempts=config.get("cms_attempts", 8),
+        cms_backoff=config.get("cms_backoff", 30),
+        cms_backoff_cap=config.get("cms_backoff_cap", 240),
+    )
     store = RawStore(root)
     try:
         with lock(root / ".sync.lock"):
