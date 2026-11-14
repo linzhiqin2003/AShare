@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
+import { CircleAlert, LoaderCircle } from 'lucide-vue-next'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import { vTip } from '../components/ui'
 import { num, pct } from './format'
-import { areaPath, drawdown, drawdownTicks, linePath, monthTicks, navTicks, rangeAvailable, rangeStart, rebase, tickDigits, yearTicks, type Range } from './navChart'
-import type { BacktestDocument, Part } from './types'
+import { aligned, areaPath, drawdown, drawdownTicks, linePath, monthTicks, navTicks, rangeAvailable, rangeStart, rebase, tickDigits, yearTicks, type Range } from './navChart'
+import type { BacktestDocument, BacktestStatus, Part } from './types'
 
-const props = defineProps<{ document: BacktestDocument | null; part: Part; showValidation: boolean; loading?: boolean }>()
-const emit = defineEmits<{ part: [value: Part] }>()
+/** 候选列表展开出的组：多于一组时图上方出现一行组名，点选切换；其余组的净值以中性色叠在下面。 */
+export interface ChartGroup { id: string; label: string; status: BacktestStatus | null; document: BacktestDocument | null }
+const props = defineProps<{ document: BacktestDocument | null; part: Part; showValidation: boolean; loading?: boolean; groups?: ChartGroup[]; selected?: string | null }>()
+const emit = defineEmits<{ part: [value: Part]; select: [id: string] }>()
+const multi = computed(() => (props.groups?.length ?? 0) > 1)
+const selectedLabel = computed(() => props.groups?.find(g => g.id === props.selected)?.label ?? '')
 
 const range = shallowRef<Range>('all'), log = shallowRef(false)
 const box = shallowRef<HTMLElement | null>(null), size = shallowRef({ width: 720, height: 480 })
@@ -35,7 +41,11 @@ const view = computed(() => {
   const dates = s.dates.slice(start)
   const nav = rebase(s.nav, start)
   const bench = s.benchmark ? rebase(s.benchmark, start) : null
-  return { dates, nav, bench, dd: drawdown(nav) }
+  // 其余组按日期对齐到选中组的日期轴，同一起点重新起算。
+  const others = multi.value
+    ? props.groups!.filter(g => g.id !== props.selected && g.document).map(g => rebase(aligned(s.dates, g.document!.series), start))
+    : []
+  return { dates, nav, bench, dd: drawdown(nav), others }
 })
 const layout = computed(() => {
   const { width, height } = size.value
@@ -46,7 +56,7 @@ const layout = computed(() => {
 const axis = computed(() => {
   const v = view.value
   if (!v) return null
-  const values = v.bench ? [v.nav, v.bench] : [v.nav]
+  const values = [v.nav, ...(v.bench ? [v.bench] : []), ...v.others]
   const ticks = navTicks(values, 5)
   const { mainHeight, ddHeight, plotW } = layout.value
   const bottom = mainHeight - 22
@@ -67,6 +77,7 @@ const paths = computed(() => {
   return {
     nav: linePath(v.nav, a.x, a.y),
     bench: v.bench ? linePath(v.bench, a.x, a.y) : '',
+    others: v.others.map(o => linePath(o, a.x, a.y)),
     dd: areaPath(v.dd, a.x, a.yd),
     ddLine: linePath(v.dd, a.x, a.yd),
   }
@@ -89,7 +100,7 @@ const tip = computed(() => {
   <section class="panel nav-panel">
     <div class="panel-header">
       净值
-      <span v-if="document" class="legend"><i class="ink" />策略</span>
+      <span v-if="document && !multi" class="legend"><i class="ink" />策略</span>
       <span v-if="document?.benchmark" class="legend"><i class="blue" />{{ document.benchmark.name }}</span>
       <span v-if="document" class="push tools">
         <SegmentedControl v-if="showValidation" label="窗口" :model-value="part" :options="[{ value: 'is', label: '样本内' }, { value: 'validation', label: '验证' }]" @update:model-value="emit('part', $event as Part)" />
@@ -97,12 +108,18 @@ const tip = computed(() => {
         <SegmentedControl v-if="ranges.length > 1" label="时间窗" :model-value="ranges.some(r => r.value === range) ? range : 'all'" :options="ranges" @update:model-value="range = $event as Range" />
       </span>
     </div>
+    <div v-if="multi" class="groups" role="tablist" aria-label="候选组">
+      <button v-for="g in groups" :key="g.id" class="group mono" role="tab" :aria-selected="g.id === selected" :class="{ active: g.id === selected, failed: g.status === 'failed', idle: g.status !== 'complete' && g.status !== 'failed' }" v-tip="g.status === 'failed' ? '回测失败' : g.label" @click="emit('select', g.id)">
+        <LoaderCircle v-if="g.status === 'queued' || g.status === 'running'" :size="11" class="spinning" /><CircleAlert v-else-if="g.status === 'failed'" :size="11" /><i v-else />{{ g.label }}
+      </button>
+    </div>
     <div ref="box" class="chart-box" :class="{ stale: loading }">
       <template v-if="view && axis && paths">
         <svg class="chart" :width="layout.width" :height="layout.mainHeight" role="img" aria-label="策略与基准净值" @pointermove="move" @pointerleave="hover = null">
           <g v-for="t in axis.ticks" :key="t"><line :x1="LEFT" :x2="layout.width - RIGHT" :y1="axis.y(t)" :y2="axis.y(t)" class="grid" /><text :x="LEFT - 6" :y="axis.y(t) + 3.5" text-anchor="end">{{ t.toFixed(axis.digits) }}</text></g>
           <line :x1="LEFT" :x2="layout.width - RIGHT" :y1="axis.bottom" :y2="axis.bottom" class="base" />
           <text v-for="t in axis.years" :key="t.index" :x="axis.x(t.index)" :y="layout.mainHeight - 6" text-anchor="middle">{{ t.label }}</text>
+          <path v-for="(d, i) in paths.others" :key="i" :d="d" class="other" />
           <path v-if="paths.bench" :d="paths.bench" class="bench" />
           <path :d="paths.nav" class="nav" />
           <template v-if="tip"><line :x1="axis.x(hover!)" :x2="axis.x(hover!)" :y1="TOP" :y2="axis.bottom" class="cross" /></template>
@@ -117,7 +134,7 @@ const tip = computed(() => {
         </svg>
         <div v-if="tip" class="tip" :style="{ left: `${Math.min(axis.x(hover!) + 10, layout.width - 170)}px` }">
           <b class="mono">{{ tip.date }}</b>
-          <span>策略<em class="mono">{{ num(tip.nav, 3) }}</em></span>
+          <span>{{ multi ? selectedLabel : '策略' }}<em class="mono">{{ num(tip.nav, 3) }}</em></span>
           <span v-if="view.bench">{{ document?.benchmark?.name }}<em class="mono">{{ num(tip.bench, 3) }}</em></span>
           <span>回撤<em class="mono">{{ pct(tip.dd) }}</em></span>
         </div>
@@ -138,6 +155,15 @@ const tip = computed(() => {
 .grid{stroke:var(--grid)}.base{stroke:var(--line)}
 .nav{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linejoin:round}
 .bench{fill:none;stroke:var(--accent);stroke-width:1.3;stroke-linejoin:round}
+.other{fill:none;stroke:var(--ink3);stroke-width:1;stroke-linejoin:round;opacity:.5}
+.groups{display:flex;flex-wrap:wrap;gap:4px 16px;padding:7px 10px 0 56px;flex:none}
+.group{border:0;background:none;padding:2px 0;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink3);white-space:nowrap}
+.group i{width:12px;height:2px;display:block;background:var(--ink3);opacity:.6}
+.group:hover{color:var(--ink2)}
+.group.active{color:var(--ink);font-weight:600}
+.group.active i{background:var(--ink);opacity:1;height:2.5px}
+.group.idle i{opacity:0}
+.group.failed{color:var(--red)}
 .dd{fill:var(--ink3);opacity:.22}.dd-line{fill:none;stroke:var(--ink2);stroke-width:1}
 .cross{stroke:var(--ink3);stroke-dasharray:3 3}
 .tip{position:absolute;top:10px;width:160px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 6px 18px #0000001a;font-size:11.5px;display:flex;flex-direction:column;gap:2px;pointer-events:none;color:var(--ink2)}

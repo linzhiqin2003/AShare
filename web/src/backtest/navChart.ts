@@ -17,6 +17,13 @@ export function rangeAvailable(dates: string[], range: Range) {
   return rangeStart(dates, range) > 0
 }
 
+/** 另一组的净值按日期对齐到选中组的日期轴；同一窗口同一设置时日期相同，缺的日期留空。 */
+export function aligned(dates: string[], series: { dates: string[]; nav: (number | null)[] }): (number | null)[] {
+  if (series.dates.length === dates.length && series.dates[0] === dates[0] && series.dates[dates.length - 1] === dates[dates.length - 1]) return series.nav
+  const lookup = new Map(series.dates.map((d, i) => [d, series.nav[i]]))
+  return dates.map(d => lookup.get(d) ?? null)
+}
+
 /** 窗内以起点为 1 重新起算；起点缺值时取窗内第一个有效值。 */
 export function rebase(values: (number | null)[], start: number): (number | null)[] {
   let base: number | null = null

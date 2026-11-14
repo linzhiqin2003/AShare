@@ -170,6 +170,22 @@ def calendar(data):
     return frame.filter(pl.col("is_open"))["date"].to_list()
 
 
+def shared_context(panel, board=False):
+    """证券简称、行业名、交易日历、板块：与表达式和设置无关。
+
+    面板缓存带 `context` 字典时（工作进程里的 `PanelCache`）存进去，一批候选组只读一次；
+    面板版本在工作进程内固定，缓存跟着面板缓存一起丢弃。
+    """
+    cache = getattr(panel, "context", None)
+    cache = {} if cache is None else cache
+    if "names" not in cache:
+        cache["names"], cache["industry_names"] = securities_context(panel.data)
+        cache["calendar"] = calendar(panel.data)
+    if board and "boards" not in cache:
+        cache["boards"] = boards(panel.data.securities(), panel.symbols)
+    return cache
+
+
 def run_window(panel, alpha, settings, window, context):
     """一个窗口的完整回测，返回 (panelbt 结果, 行情, 目标, 报告数据)。"""
     dates = np.asarray(panel.dates)
@@ -395,23 +411,25 @@ def run_backtest(
     """两个窗口的回测；返回 {part: (页面文档, 调仓记录, 成交数组, 日期)}。"""
     ensure_fields(panel, settings)
     panel.ensure(set(expression.fields))
-    try:
-        panel.ensure({"industry_source"})
-    except (FileNotFoundError, KeyError):
-        pass
+    shared = shared_context(panel, settings["lots"] == "board")
+    if "industry_source" not in shared:
+        # 旧面板没有这一列：记下来，同一批的后几组不再去读。
+        try:
+            panel.ensure({"industry_source"})
+            shared["industry_source"] = True
+        except (FileNotFoundError, KeyError):
+            shared["industry_source"] = False
     progress("signal")
     alpha = evaluate_signal(expression, panel)
-    names, industry_names = securities_context(panel.data)
+    names = shared["names"]
     context = dict(
         data=panel.data,
         names=names,
-        industry_names=industry_names,
+        industry_names=shared["industry_names"],
         benchmark=settings.get("benchmark"),
         benchmark_name=benchmark_name,
-        calendar=calendar(panel.data),
-        boards=boards(panel.data.securities(), panel.symbols)
-        if settings["lots"] == "board"
-        else None,
+        calendar=shared["calendar"],
+        boards=shared["boards"] if settings["lots"] == "board" else None,
     )
     out = {}
     for part, window in WINDOWS.items():

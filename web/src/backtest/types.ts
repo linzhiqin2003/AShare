@@ -71,12 +71,24 @@ export interface RebalanceRow { date: string; targets: number; buys: number; sel
 export interface TradeRow { date: string; symbol: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; amount: number; fees: number; slippage: number }
 export interface Page<T> { items: T[]; total: number }
 
+/** 提交回应：顶层是第一组的状态（与单表达式时相同），`variants` 是展开后的每一组。 */
+export interface BacktestSubmitted extends BacktestState {
+  variants: (BacktestState & { label: string })[]
+}
+
+/** 候选列表展开出的一组；只有一组时 label 为空。 */
+export interface BacktestGroup {
+  id: string
+  label: string
+  state: BacktestState | null
+}
+
 export interface BacktestTab {
   id: string
   name: string
   source: string
   settings: BacktestSettings
-  backtest: string | null
-  state: BacktestState | null
+  groups: BacktestGroup[]
+  selected: string | null
   entry?: string
 }

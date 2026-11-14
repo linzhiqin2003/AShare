@@ -19,7 +19,7 @@ from ashare.platform.backtest.engine import (
     run_backtest,
     signal_days,
 )
-from ashare.platform.language import parse
+from ashare.platform.language import parse, suggested_name
 from ashare.platform.runner import PanelCache
 from ashare.report import build_tearsheet
 from bench.platform.synthetic import panel as synthetic
@@ -323,12 +323,6 @@ def test_http_run_reuse_pages_and_window_discipline(client):
         ).status_code
         == 422
     )
-    listed = client.post(
-        "/api/backtests",
-        json=body | {"source": "-ts_std(returns, [10, 20])"},
-        headers=ORIGIN,
-    )
-    assert listed.status_code == 422 and "一个表达式" in listed.json()["message"]
     assert client.get("/api/backtests/zzzz").status_code == 422
     assert client.get("/api/backtests/" + "0" * 24).status_code == 404
     assert (
@@ -512,4 +506,185 @@ def test_options_follow_settings_page_default_benchmark(client):
     assert (
         client.get("/api/backtests/options").json()["defaults"]["benchmark"]
         == "000300.SH"
+    )
+
+
+# ---------------------------------------------------------------- 候选列表（2026-11-14）
+# 回测页原先遇到 `ts_std(returns, [20, 60])` 直接 422；现在每组一个独立任务。
+
+
+def submit(client, source, **settings):
+    return client.post(
+        "/api/backtests",
+        json={"source": source, "settings": {"top_n": 5} | settings},
+        headers=ORIGIN,
+    )
+
+
+def test_http_candidate_list_runs_every_variant_and_reuses_identity(client):
+    response = submit(client, "-ts_std(returns, [10, 20])")
+    assert response.status_code == 202, response.text
+    body = response.json()
+    variants = body["variants"]
+    assert [v["label"] for v in variants] == ["10", "20"]
+    assert len({v["id"] for v in variants}) == 2
+    # tab 名不带组名：组名只在页面的切换行里。
+    assert body["name"] == suggested_name("-ts_std(returns, [10, 20])")
+    states = [wait(client, v["id"]) for v in variants]
+    assert [s["status"] for s in states] == ["complete", "complete"]
+    navs = [
+        client.get(f"/api/backtests/{v['id']}/result").json()["series"]["nav"]
+        for v in variants
+    ]
+    assert navs[0] != navs[1]
+    # 展开后的单个表达式与同一组的身份相同：直接复用，不再排队。
+    single = submit(client, "-ts_std(returns, 20)").json()
+    assert single["id"] == variants[1]["id"] and single["status"] == "complete"
+    # 再提交同一列表：两组都复用。
+    again = submit(client, "-ts_std(returns, [10, 20])").json()["variants"]
+    assert [v["status"] for v in again] == ["complete", "complete"]
+    # 批量读状态：页面轮询一次问全部组。
+    ids = ",".join(v["id"] for v in variants)
+    listed = client.get("/api/backtests/states", params={"ids": ids}).json()["items"]
+    assert [s["id"] for s in listed] == [v["id"] for v in variants]
+    assert client.get("/api/backtests/states", params={"ids": "zz"}).status_code == 422
+
+
+def test_http_candidate_list_over_limit_is_rejected(client):
+    response = submit(
+        client, "ts_std(returns, [5, 10, 20]) + ts_mean(returns, [5, 10, 20])"
+    )
+    assert response.status_code == 422
+    assert "8 组" in response.json()["message"]
+    assert client.get("/api/backtests/status").json()["running"] == 0
+
+
+def test_http_single_expression_response_unchanged(client):
+    body = submit(client, SOURCE).json()
+    legacy = {
+        "id",
+        "name",
+        "status",
+        "progress",
+        "queue_position",
+        "elapsed",
+        "settings",
+    }
+    assert legacy <= set(body)
+    assert body["variants"] == [
+        {k: body[k] for k in legacy}
+        | {"label": "", "status": body["variants"][0]["status"]}
+    ]
+    assert wait(client, body["id"])["status"] == "complete"
+
+
+def test_http_cancel_whole_batch(client):
+    variants = submit(client, "-ts_std(returns, [11, 12, 13])", top_n=7).json()[
+        "variants"
+    ]
+    ids = [v["id"] for v in variants]
+    stop = time.monotonic() + 30
+    while client.get(f"/api/backtests/{ids[0]}").json()["status"] != "running":
+        assert time.monotonic() < stop
+        time.sleep(0.01)
+    response = client.post(
+        "/api/backtests/cancel", json={"ids": ids}, headers=ORIGIN
+    ).json()
+    assert sorted(response["cancelled"]) == sorted(ids)
+    for key in ids:
+        assert client.get(f"/api/backtests/{key}").json()["status"] == "cancelled"
+    assert client.get("/api/backtests/status").json()["running"] == 0
+    # 取消后可以整批重跑。
+    rerun = submit(client, "-ts_std(returns, [11, 12, 13])", top_n=7).json()
+    assert [v["id"] for v in rerun["variants"]] == ids
+    assert all(wait(client, key)["status"] == "complete" for key in ids)
+
+
+def test_http_one_failed_variant_does_not_stop_others(client):
+    # 合成数据没有 pe 字段：这一组在工作进程里失败，其余组照常完成。
+    variants = submit(client, "-rank([returns, pe, close])").json()["variants"]
+    assert [v["label"] for v in variants] == ["returns", "pe", "close"]
+    states = [wait(client, v["id"])["status"] for v in variants]
+    assert states == ["complete", "failed", "complete"]
+
+
+class FakeProcess:
+    """记录启动次数的假工作进程；批量取消不应为批内下一组起进程。"""
+
+    started = []
+
+    def __init__(self, target=None, args=()):
+        self.pid = 2**22 - 7  # 不存在的进程号：killpg 抛 ProcessLookupError
+        self.alive = False
+
+    def start(self):
+        FakeProcess.started.append(self)
+        self.alive = True
+
+    def is_alive(self):
+        return self.alive
+
+    def join(self, timeout=None):
+        pass
+
+    def terminate(self):
+        self.alive = False
+
+    kill = terminate
+
+
+def test_cancel_many_removes_queued_before_stopping_current(tmp_path, monkeypatch):
+    import queue as stdlib_queue
+
+    from ashare.platform.backtest.jobs import Backtests
+
+    jobs = Backtests(tmp_path, idle_seconds=3600)
+    try:
+        fake = type(
+            "Context",
+            (),
+            {"Queue": lambda self: stdlib_queue.Queue(), "Process": FakeProcess},
+        )()
+        for name in ("cancel_join_thread", "close"):
+            monkeypatch.setattr(
+                stdlib_queue.Queue, name, lambda self: None, raising=False
+            )
+        jobs.context = fake
+        FakeProcess.started.clear()
+        keys = [f"{i:024x}" for i in range(1, 4)]
+        for key in keys:
+            jobs.submit(key, "批", "-ts_std(returns, 20)", {}, None, "v", "{}")
+        assert len(FakeProcess.started) == 1 and jobs.current == keys[0]
+        assert sorted(jobs.cancel_many(keys)) == sorted(keys)
+        assert len(FakeProcess.started) == 1  # 没有为第二组再起进程
+        assert jobs.process is None and jobs.current is None and not jobs.pending
+        assert [jobs.status(k)["status"] for k in keys] == ["cancelled"] * 3
+        assert jobs.cancel_many(keys) == []  # 已结束的不再算取消
+    finally:
+        jobs.close()
+
+
+def test_variants_share_panel_and_security_context(data_root, monkeypatch):
+    """同一工作进程里的多组共用面板字段和证券上下文，不为每组重读。"""
+    from ashare.platform.backtest import engine
+
+    calls = []
+    original = engine.securities_context
+    monkeypatch.setattr(
+        engine, "securities_context", lambda data: calls.append(1) or original(data)
+    )
+    cache = PanelCache(data_root)
+    settings = config.normalize({"top_n": 5})
+    reads = []
+    panel = cache.data.panel
+    monkeypatch.setattr(
+        cache.data, "panel", lambda *a, **k: reads.append(a) or panel(*a, **k)
+    )
+    first = run_backtest(cache, parse("-ts_std(returns, 10)")[0].expression, settings)
+    before = len(reads)
+    second = run_backtest(cache, parse("-ts_std(returns, 20)")[0].expression, settings)
+    assert len(calls) == 1 and len(reads) == before, reads
+    assert (
+        first["is"]["document"]["series"]["nav"]
+        != second["is"]["document"]["series"]["nav"]
     )

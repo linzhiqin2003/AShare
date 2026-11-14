@@ -66,6 +66,7 @@ class PanelCache:
         self.version = meta.version
         self.arrays = {}
         self.diagnostics = {}
+        self.context = {}  # 与表达式无关的只读上下文（回测的证券简称、日历等）
 
     @property
     def shape(self):
