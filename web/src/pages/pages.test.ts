@@ -46,13 +46,22 @@ describe('数据页', () => {
     await vi.advanceTimersByTimeAsync(1600); await flushPromises()
     const rows = wrapper.findAll('.fields-table tbody tr')
     expect(rows.map(r => r.find('td').text())).toEqual(['open', 'close', 'pe'])
-    // 上次选中的字段默认是 close。
-    expect(wrapper.find('tr.selected td').text()).toBe('close')
-    expect(calls.some(c => c.path === '/data/fields/close')).toBe(true)
+    // 2026-11-14 用户：右栏改成点击弹出的浮窗。没点之前没有详情、也没有选中行。
+    expect(wrapper.find('.detail').exists()).toBe(false)
+    expect(wrapper.find('tr.selected').exists()).toBe(false)
     await rows[2].trigger('click'); await flushPromises()
     expect(calls.at(-1)!.path).toBe('/data/fields/pe')
     expect(wrapper.find('.detail .panel-header').text()).toContain('pe')
+    expect(wrapper.find('tr.selected td').text()).toBe('pe')
     expect(localStorage.getItem('ashare.data.field')).toBe('pe')
+    // Esc 关闭；键盘回车重新打开另一行。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await flushPromises()
+    expect(wrapper.find('.detail').exists()).toBe(false)
+    await rows[1].trigger('keydown', { key: 'Enter' }); await flushPromises()
+    expect(wrapper.find('.detail .panel-header').text()).toContain('close')
+    // 点浮窗外（不是字段行）关闭。
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); await flushPromises()
+    expect(wrapper.find('.detail').exists()).toBe(false)
     await wrapper.find('.find input').setValue('估值'); await flushPromises()
     expect(wrapper.findAll('.fields-table tbody tr')).toHaveLength(1)
     wrapper.unmount()

@@ -69,7 +69,8 @@ describe('数据页', () => {
     const wrapper = mount(DataPage, { props: { completions: [] } })
     expect(wrapper.find('.datasets .ui-skeleton').exists()).toBe(true)
     expect(wrapper.find('.fields-table .ui-skeleton').exists()).toBe(true)
-    expect(wrapper.find('.detail .ui-skeleton').exists()).toBe(true)
+    // 字段详情改为点击弹出（2026-11-14），首屏没有详情区域。
+    expect(wrapper.find('.detail').exists()).toBe(false)
     await gate.release()
     expect(wrapper.find('.datasets .ui-skeleton').exists()).toBe(false)
     expect(wrapper.find('.fields-table .ui-skeleton').exists()).toBe(true)

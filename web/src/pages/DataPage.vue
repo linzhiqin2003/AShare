@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import { Search } from 'lucide-vue-next'
+import { Search, X } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import type { Completion } from '../types'
 import FieldDetailView from '../components/data/FieldDetail.vue'
@@ -48,6 +48,15 @@ function chooseDataset(key: string) { datasetKey.value = key; remember('ashare.d
 watch(tabs, value => { if (value.length && !value.includes(tab.value)) tab.value = value[0] })
 watch(() => dataset.value?.key, () => { if (tabs.value.length) tab.value = tabs.value[0] })
 function chooseField(name: string) { selected.value = name; remember('ashare.data.field', name) }
+// 字段详情是点一行才从右侧弹出的浮窗（2026-11-14 用户：右栏常驻挤掉了字段名）；Esc、关闭按钮或点浮窗外关闭。
+const open = shallowRef(false), drawer = shallowRef<HTMLElement | null>(null)
+function openField(name: string) { chooseField(name); open.value = true }
+function outside(event: PointerEvent) {
+  const target = event.target as Element | null
+  if (open.value && target && !drawer.value?.contains(target) && !target.closest('.fields-table tbody tr, .ui-menu')) open.value = false
+}
+function escape(event: KeyboardEvent) { if (event.key === 'Escape' && open.value) { event.stopPropagation(); open.value = false } }
+watch(tab, () => { open.value = false })
 
 let poll: ReturnType<typeof setTimeout> | undefined, alive = true, detailController: AbortController | undefined
 async function loadOverview() { try { overview.value = await api<Overview>('/data/overview'); error.value = '' } catch (e) { error.value = friendly(e).message } }
@@ -69,14 +78,15 @@ async function loadDetail() {
 }
 watch([selected, () => fields.value?.state], loadDetail)
 onMounted(() => { void loadOverview(); void loadFields() })
-onUnmounted(() => { alive = false; clearTimeout(poll); detailController?.abort() })
+onMounted(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape) })
+onUnmounted(() => { alive = false; clearTimeout(poll); detailController?.abort(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape) })
 
 function datasetList(names: string[]) { return names.length > 3 ? `${names.slice(0, 3).join('、')} 等 ${names.length} 个` : names.join('、') }
 function spark(values: (number | null)[]) { return linePath(values, 110, 18, 2) }
-function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); chooseField(name) } }
+function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openField(name) } }
 </script>
 <template>
-  <main class="data-page" :class="{ 'no-detail': !showDetail }">
+  <main class="data-page">
     <section class="panel datasets" aria-label="数据集">
       <div class="panel-header">数据集</div>
       <template v-if="overview">
@@ -106,7 +116,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
         <table class="grid-table fields-table">
           <thead><tr><th class="c-name">字段</th><th class="c-label">名称</th><th class="c-cat">类别</th><th class="c-type">类型</th><th class="r c-start">起始</th><th class="r c-cov">最新覆盖率</th><th class="c-bar"></th><th class="spark-head c-spark">历史覆盖</th><th class="r c-refs">被因子引用</th></tr></thead>
           <tbody v-if="fields?.state === 'ready'">
-            <tr v-for="field in visibleFields" :key="field.name" :class="{ selected: selected === field.name }" tabindex="0" :aria-selected="selected === field.name" @click="chooseField(field.name)" @keydown="rowKey($event, field.name)">
+            <tr v-for="field in visibleFields" :key="field.name" :class="{ selected: open && selected === field.name }" tabindex="0" :aria-selected="open && selected === field.name" @click="openField(field.name)" @keydown="rowKey($event, field.name)">
               <td class="mono">{{ field.name }}</td><td>{{ field.label }}</td><td class="dim2 c-cat">{{ field.category }}</td><td class="mono dim c-type">{{ field.dtype }}</td><td class="mono r">{{ field.start ?? '—' }}</td><td class="mono r">{{ percent(field.latest) }}</td>
               <td class="bar-cell c-bar"><svg width="70" height="8" aria-hidden="true"><rect width="70" height="8" rx="1.5" class="track" /><rect :width="70 * (field.latest ?? 0)" height="8" rx="1.5" class="fill" /></svg></td>
               <td class="spark-cell"><svg width="110" height="18" aria-hidden="true"><line x1="0" x2="110" y1="16" y2="16" class="base" /><path :d="spark(field.spark)" class="spark" /></svg></td>
@@ -149,16 +159,17 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
         </table>
       </div>
     </section>
-    <section v-if="showDetail" class="panel detail">
-      <div class="panel-header"><span class="mono detail-name">{{ detail?.name ?? selected }}</span><span v-if="detail" class="push detail-sub">{{ detail.label }} · {{ detail.category }}</span></div>
-      <FieldDetailView v-if="detail && detail.name === selected" :field="detail" />
-      <div v-else-if="!error" class="skeleton-list" aria-busy="true"><UiSkeleton :lines="6" /></div>
-    </section>
+    <Transition name="drawer">
+      <section v-if="showDetail && open" ref="drawer" class="panel detail detail-drawer" role="dialog" :aria-label="`字段 ${selected}`">
+        <div class="panel-header"><span class="mono detail-name">{{ detail?.name ?? selected }}</span><span v-if="detail" class="push detail-sub">{{ detail.label }} · {{ detail.category }}</span><button class="icon-button" :class="{ push: !detail }" aria-label="关闭字段详情" @click="open = false"><X :size="15" /></button></div>
+        <FieldDetailView v-if="detail && detail.name === selected" :field="detail" />
+        <div v-else-if="!error" class="skeleton-list" aria-busy="true"><UiSkeleton :lines="6" /></div>
+      </section>
+    </Transition>
   </main>
 </template>
 <style scoped>
-.data-page{height:100%;padding:8px;display:grid;grid-template-columns:232px minmax(0,1fr) 412px;gap:8px;min-height:0}
-.data-page.no-detail{grid-template-columns:232px minmax(0,1fr)}
+.data-page{height:100%;padding:8px;display:grid;grid-template-columns:232px minmax(0,1fr);gap:8px;min-height:0;position:relative;overflow:hidden}
 .datasets .panel-header,.detail .panel-header{font-weight:600}
 .dataset{display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-bottom:1px solid var(--grid);background:var(--panel)}
 .dataset.on{background:var(--selected)}
@@ -187,7 +198,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:2px 0 5px}
 .fields-table tbody tr:hover td{background:var(--chrome)}
 .fields-table tbody tr.selected td{background:var(--selected)}
 .fields-table tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.c-name{width:auto}.c-label{width:120px}.c-cat{width:76px}.c-type{width:76px}.c-start{width:92px}.c-cov{width:84px}.c-bar{width:84px}.c-spark{width:134px}.c-refs{width:84px}
+.c-name{width:164px}.c-label{width:auto}.c-cat{width:76px}.c-type{width:76px}.c-start{width:92px}.c-cov{width:84px}.c-bar{width:84px}.c-spark{width:134px}.c-refs{width:84px}
 .bar-cell{padding-left:10px}.bar-cell svg,.spark-cell svg{display:block}
 .track{fill:var(--grid)}.fill{fill:var(--ink2)}
 .spark-head,.spark-cell{padding-left:14px}
@@ -203,7 +214,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:2px 0 5px}
 .verify-table th:last-child{padding-left:14px}
 .detail-name{color:var(--ink)}
 .detail-sub{font-weight:400;color:var(--ink3)}
-.detail{min-width:0}
-@media (max-width:1500px){.data-page{grid-template-columns:220px minmax(0,1fr) 360px}.data-page.no-detail{grid-template-columns:220px minmax(0,1fr)}.c-type{display:none}}
-@media (max-width:1340px){.c-bar{display:none}.c-cat{display:none}.c-label{width:100px}.c-refs{width:64px}}
+.detail{min-width:0}.detail-drawer{position:absolute;top:8px;right:8px;bottom:8px;z-index:30;width:min(440px,calc(100% - 16px));box-shadow:-10px 0 30px var(--overlay-shadow)}.detail-drawer .panel-header{gap:8px}.drawer-enter-active,.drawer-leave-active{transition:transform .2s cubic-bezier(.2,.7,.3,1),opacity .2s}.drawer-enter-from,.drawer-leave-to{transform:translateX(calc(100% + 16px));opacity:.6}@media (prefers-reduced-motion:reduce){.drawer-enter-active,.drawer-leave-active{transition:none}}
+@media (max-width:1500px){.data-page{grid-template-columns:220px minmax(0,1fr)}}
+@media (max-width:1340px){.c-bar{display:none}.c-cat{display:none}.c-refs{width:64px}}
 </style>
