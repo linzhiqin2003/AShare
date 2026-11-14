@@ -34,7 +34,7 @@ compare = [
     "vectorbt[rust]>=1.2.1",
 ]
 data-verify = ["baostock>=0.8.9"]
-dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "ruff>=0.17.4", "maturin>=1.16.0", "fastapi", "uvicorn[standard]", {include-group = "risk-reference"}, {include-group = "factor-reference"}]
+dev = ["pytest>=9.2.0", "hypothesis>=6.170.15", "pytest-xdist", "pytest-randomly", "pytest-timeout", "coverage[toml]", "mutmut", "ruff>=0.17.4", "maturin>=1.16.0", "fastapi", "uvicorn[standard]", {include-group = "risk-reference"}, {include-group = "factor-reference"}]
 factor-reference = ["pandas>=3.1.1"]
 risk-reference = ["scikit-learn>=1.6", "threadpoolctl>=3.5"]
 # 机器学习（ashare.ml）：树模型和线性模型。神经网络以后走单独的 nn 组，默认不装。
@@ -45,7 +45,8 @@ panelops-crosscheck = ["alphalens-reloaded>=0.4", "matplotlib>=3.9"]
 
 [tool.pytest.ini_options]
 testpaths = ["test", "packages/paperbroker/tests"]
-addopts = "-ra"
+# pytest-randomly 默认关闭，随机顺序只在 flaky 检测与 CI 里显式打开。
+addopts = "-ra -p no:randomly"
 
 [tool.ruff]
 target-version = "py313"

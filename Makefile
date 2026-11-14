@@ -4,6 +4,9 @@ endif
 export PYO3_PYTHON := $(CURDIR)/.venv/bin/python
 export npm_config_cache := $(CURDIR)/.cache/npm
 
+# 测试体系各部分的目标分文件放在 mk/ 下。
+-include mk/*.mk
+
 .PHONY: dev check bench bench-pair bench-compare bench-docs spike mutate mutate-1c risk-bench risk-validate risk-mutate
 
 dev:
