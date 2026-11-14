@@ -84,15 +84,29 @@ const miniY = (v: number) => brushY.value + 4 + (miniRange.value[1] - v) / (mini
 const tooltipX = computed(() => Math.max(left, Math.min(x(hover.value) + 12, width.value - 235)))
 const labelText = (line:Line) => props.relative ? line.name.replace(/ · (第 1 组|多空)$/, '') : line.name
 const labelFits = (line:Line) => [...labelText(line)].reduce((sum,c) => sum + (c.charCodeAt(0)>255 ? 11 : 6.5),0) < right.value-12
-const lineLabels = computed(() => {
-  const items = plotted.value.filter(l => labelFits(l) && Number.isFinite(l.cumulative.at(-1))).map(l => ({ id: l.id, y: y(l.cumulative.at(-1)!) + 4 })).sort((a, b) => a.y - b.y)
+// 右侧标签按 y 排开，避免重叠；曲线末端的名字和悬停时的数值共用同一套排法。
+function stack(points: { id: string; y: number }[], top = 0) {
+  const items = [...points].sort((a, b) => a.y - b.y)
+  if (items.length) items[0].y = Math.max(items[0].y, top)
   const gap = Math.min(13, (mainHeight.value - 18) / Math.max(1, items.length - 1))
   for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + gap)
   // 从下边界往回排，避免多空与多头同时显示时把上方标签整体挤出图外。
   if (items.length) items[items.length - 1].y = Math.min(items[items.length - 1].y, mainHeight.value)
   for (let i = items.length - 2; i >= 0; i--) items[i].y = Math.min(items[i].y, items[i + 1].y - gap)
   return new Map(items.map(item => [item.id, item.y]))
+}
+const lineLabels = computed(() => stack(plotted.value.filter(l => labelFits(l) && Number.isFinite(l.cumulative.at(-1))).map(l => ({ id: l.id, y: y(l.cumulative.at(-1)!) + 4 }))))
+// 悬停读数（2026-11-14 用户：浮动卡片挡住曲线，改成右侧无底色、按线条着色的文字）：
+// 每条线的数值画在右侧标签栏、对齐到这条线在悬停日的高度；抽屉里的小图没有标签栏，仍用卡片。
+const hovering = computed(() => hover.value >= 0 && !drag.value)
+const hoverValues = computed(() => {
+  if (!hovering.value || props.compact) return []
+  const live = plotted.value.filter(l => Number.isFinite(l.cumulative[hover.value]))
+  // 最上面留给日期。
+  const at = stack(live.map(l => ({ id: l.id, y: y(l.cumulative[hover.value]) + 4 })), 30)
+  return live.map(l => ({ id: l.id, color: l.color, y: at.get(l.id)!, text: fmt(l.cumulative[hover.value], !props.raw) }))
 })
+const hoverDate = computed(() => (props.data.dates[start.value + hover.value] ?? '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))
 function move(event: PointerEvent) {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   const pixel = (event.clientX - rect.left) * width.value / rect.width
@@ -139,7 +153,7 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
       <g v-for="tick in mainTicks" :key="tick" class="muted main-tick"><line :x1="left" :x2="left + plotWidth" :y1="y(tick)" :y2="y(tick)" stroke="var(--grid)" /><text :x="left - 7" :y="y(tick) + 3" text-anchor="end">{{ fmt(tick, !raw, raw ? 2 : 0) }}</text></g>
       <g v-for="line in plotted" :key="line.id">
         <path class="return-line" :data-kind="line.benchmark ? 'benchmark' : line.kind" :d="path(line.cumulative, x, y)" fill="none" :stroke="line.color" :stroke-width="line.benchmark ? 1.2 : compact ? 1.3 : 1.7" :stroke-dasharray="line.benchmark ? '5 4' : line.kind === 'long' ? '7 3' : undefined" />
-        <text v-if="!compact && labelFits(line) && Number.isFinite(line.cumulative.at(-1))" :x="left + plotWidth + 6" :y="lineLabels.get(line.id)" :fill="line.color" class="line-label">{{ labelText(line) }}</text>
+        <text v-if="!compact && !hoverValues.length && labelFits(line) && Number.isFinite(line.cumulative.at(-1))" :x="left + plotWidth + 6" :y="lineLabels.get(line.id)" :fill="line.color" class="line-label">{{ labelText(line) }}</text>
       </g>
       <g v-if="!raw">
         <g v-for="tick in drawTicks" :key="tick" class="muted draw-tick"><line :x1="left" :x2="left + plotWidth" :y1="dy(tick)" :y2="dy(tick)" stroke="var(--grid)"/><text :x="left - 7" :y="dy(tick) + 3" text-anchor="end">{{ fmt(tick, true, 0) }}</text></g>
@@ -164,14 +178,21 @@ onUnmounted(() => { observer?.disconnect(); cancelAnimationFrame(frame) })
         <line :x1="x(hover)" :x2="x(hover)" y1="18" :y2="axisY - 8" stroke="var(--ink3)" />
         <line :x1="left" :x2="left + plotWidth" :y1="hoverY" :y2="hoverY" stroke="var(--ink3)" stroke-dasharray="3 3" />
         <g v-for="line in plotted" :key="line.id"><circle v-if="Number.isFinite(line.cumulative[hover])" :cx="x(hover)" :cy="y(line.cumulative[hover])" r="3" :fill="line.color" stroke="var(--panel)" /></g>
-        <rect :x="tooltipX" y="26" width="220" :height="(raw ? 30 : 52) + plotted.length * 18" rx="3" fill="var(--panel)" stroke="var(--line)" />
-        <text :x="tooltipX + 10" y="44" class="mono" fill="var(--ink)">{{ data.dates[start + hover]?.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }}{{ relative ? ' · 超额' : '' }}</text>
-        <g v-for="(line, i) in plotted" :key="line.id"><text :x="tooltipX + 10" :y="64 + i * 18" :fill="line.color">{{ line.name }}</text><text :x="tooltipX + 210" :y="64 + i * 18" text-anchor="end" class="mono" fill="var(--ink)">{{ fmt(line.cumulative[hover], !raw) }}</text></g>
-        <text v-if="!raw && selectedLine" :x="tooltipX+10" :y="64+plotted.length*18" :fill="selectedLine.color">{{ drawLabel }}</text><text v-if="!raw && selectedLine" :x="tooltipX+210" :y="64+plotted.length*18" text-anchor="end" class="mono" fill="var(--ink)">{{ fmt(selectedDrawdown[hover],true) }}</text>
+        <template v-if="compact">
+          <rect :x="tooltipX" y="26" width="220" :height="(raw ? 30 : 52) + plotted.length * 18" rx="3" fill="var(--panel)" stroke="var(--line)" />
+          <text :x="tooltipX + 10" y="44" class="mono" fill="var(--ink)">{{ data.dates[start + hover]?.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }}{{ relative ? ' · 超额' : '' }}</text>
+          <g v-for="(line, i) in plotted" :key="line.id"><text :x="tooltipX + 10" :y="64 + i * 18" :fill="line.color">{{ line.name }}</text><text :x="tooltipX + 210" :y="64 + i * 18" text-anchor="end" class="mono" fill="var(--ink)">{{ fmt(line.cumulative[hover], !raw) }}</text></g>
+          <text v-if="!raw && selectedLine" :x="tooltipX+10" :y="64+plotted.length*18" :fill="selectedLine.color">{{ drawLabel }}</text><text v-if="!raw && selectedLine" :x="tooltipX+210" :y="64+plotted.length*18" text-anchor="end" class="mono" fill="var(--ink)">{{ fmt(selectedDrawdown[hover],true) }}</text>
+        </template>
+        <template v-else>
+          <text :x="left + plotWidth + 6" y="15" class="mono hover-date" fill="var(--ink3)">{{ hoverDate }}{{ relative ? ' · 超额' : '' }}</text>
+          <text v-for="item in hoverValues" :key="item.id" :x="left + plotWidth + 6" :y="item.y" :fill="item.color" class="mono hover-value">{{ item.text }}</text>
+          <text v-if="!raw && selectedLine && Number.isFinite(selectedDrawdown[hover])" :x="left + plotWidth + 6" :y="Math.min(dy(selectedDrawdown[hover]) + 4, drawTop + drawHeight)" :fill="selectedLine.color" class="mono hover-value">{{ fmt(selectedDrawdown[hover], true) }}</text>
+        </template>
       </g>
     </svg>
   </div>
 </template>
 <style scoped>
-.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:inherit;font-size:10.5px;letter-spacing:normal;word-spacing:normal}.brush-body{cursor:grab}.brush-handle{cursor:ew-resize}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip{filter:drop-shadow(0 2px 3px var(--tip-shadow))}
+.result-chart{height:100%;min-height:200px;position:relative;overflow:hidden}.result-chart svg{display:block;width:100%;height:100%;font-size:10.5px;touch-action:none}.compact{height:220px;flex:none}.muted{fill:var(--ink3)}.line-label{font-family:inherit;font-size:10.5px;letter-spacing:normal;word-spacing:normal}.brush-body{cursor:grab}.brush-handle{cursor:ew-resize}.empty-chart{height:100%;display:grid;place-items:center;color:var(--ink3)}.hover-tip rect{filter:drop-shadow(0 2px 3px var(--tip-shadow))}.hover-value,.hover-date{font-size:10.5px}
 </style>

@@ -32,11 +32,27 @@ describe('收益图实际绘制', () => {
     expect(wrapper.get('.hover-tip').text()).toContain('2024-01-01 · 超额')
     expect(wrapper.get('.hover-tip').text()).toContain('6.00%')
     expect(wrapper.get('.hover-tip').text()).toContain('16.00%')
-    expect(wrapper.get('.hover-tip').text()).toContain('超额回撤 · 多空')
+    // 2026-11-14 用户：浮动卡片挡住曲线。读数改成右侧标签栏里按线条着色的文字，没有底色卡片。
+    expect(wrapper.find('.hover-tip rect').exists()).toBe(false)
+    const values = wrapper.findAll('.hover-tip .hover-value')
+    expect(values.length).toBe(3) // 两条线 + 选中线的回撤
+    expect(values.every(v => v.attributes('fill') === '#123456')).toBe(true)
+    expect(values.every(v => Number(v.attributes('x')) >= 1000 - 114)).toBe(true)
+    expect(wrapper.findAll('.line-label')).toHaveLength(0) // 悬停时末端名字让位给数值
     // 2026-11-14 暗色统一：日期和数值没写填色，SVG 默认纯黑，深色下整列看不见。每个文字都要显式填色。
     expect(wrapper.findAll('.hover-tip text').filter(t => !t.attributes('fill'))).toHaveLength(0)
     await wrapper.setProps({relative:false})
     expect(wrapper.find('[data-kind="benchmark"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('抽屉小图没有右侧标签栏，悬停仍用卡片', async () => {
+    vi.spyOn(window,'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1 })
+    const wrapper = mount(ResultChart,{props:{data,compact:true}})
+    const svg = wrapper.get('svg')
+    vi.spyOn(svg.element,'getBoundingClientRect').mockReturnValue({x:0,y:0,left:0,top:0,right:600,bottom:220,width:600,height:220,toJSON:() => ({})})
+    await svg.trigger('pointermove',{clientX:48,clientY:40})
+    expect(wrapper.find('.hover-tip rect').exists()).toBe(true)
+    expect(wrapper.findAll('.hover-tip .hover-value')).toHaveLength(0)
     wrapper.unmount()
   })
   it('基准尚未加载时不把绝对收益冒充超额', () => {
