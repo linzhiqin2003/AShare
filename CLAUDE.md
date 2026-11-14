@@ -41,6 +41,6 @@ A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再�
 - 2026-11-13 研究平台第一期合入主干（参考 WorldQuant BRAIN）：可选安装（`--extra platform`，`make dev` 默认装），FastAPI + Vue，研究台 + 因子库，`docs/PLATFORM.md`；设计稿在 `data/platform/mockups2/`。用户定：每个「表达式 + 配置」算一个因子，因子库默认不分组、可按表达式或配置分组；基准只用 `catalog.BENCHMARKS` 里的主流指数，默认上证；行情数据和结果库放本地。进行中（Codex 第五轮）：调仓周期 N、平均持仓天数、持仓明细、真实数据 4 组 3 秒目标
 - 2026-11-13 分组回测（`groupbt`）改走 `panelbt` 权重模式合入主干：Rust、计算期间释放 GIL、与原实现逐位一致（416 组合成 + 384 组真实对照）；单组约 9 s → 0.3 s。改了 Rust 后要 `make dev` 重建扩展，`make check` 不会自动重建
 - 待用户定：报告页设计稿（`data/research/charts/mockups_v2/`，选定前不改 `tearsheet.html` 版式）；每日信号线等模拟盘接入 `tradecore`
-- 下一个工作日的目标（用户 2026-11-14 定）：补全本地测试体系，见 `docs/TESTING_PLAN.md`（单元、集成、端到端、差分、属性、变异、并发、性能回归、冒烟等各类都要有，一条命令能跑）；要看的指标是 branch coverage、test runtime、mutation score、flaky rate。CI 暂不做
+- 下一个工作日的目标（用户 2026-11-14 定）：补全本地测试体系，见 `docs/TESTING_PLAN.md`（单元、集成、端到端、差分、属性、变异、并发、性能回归、冒烟等各类都要有，一条命令能跑）；要看的指标是 branch coverage、test runtime、mutation score、flaky rate；然后加 GitHub Actions CI（PR 和推送 main 时跑同一套检查，合并前必须通过）
 - 开发中出现的每个错误、审查发现的问题和排查中找到的可测试点，都写成回归测试（注明来源，先在旧代码上失败再修）
 - 下一步：P3 模拟盘接入 `tradecore`、公开因子库（Alpha158 / Alpha101 / 国泰君安 191）批量复现、步骤 4 rqalpha 对账

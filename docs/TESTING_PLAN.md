@@ -1,6 +1,6 @@
 # 测试体系补全计划
 
-2026-11-14 凌晨记下，作为下一个工作日的目标。范围是本地测试，CI 暂不做。
+2026-11-14 凌晨记下，作为下一个工作日的目标：先补全本地测试，再把它接进 GitHub Actions。
 
 ## 现状
 
@@ -34,6 +34,34 @@
 - **Test runtime**：总耗时、最慢 20 个测试、各类别耗时；单元测试并行（pytest-xdist）后的耗时。给慢测试定预算。
 - **Mutation score**：被杀死的变异 / 全部有效变异，按模块报；存活的变异逐个看，要么补测试，要么写明是等价变异。
 - **Flaky rate**：全量连跑 N 次（随机顺序，pytest-randomly），统计时好时坏的测试；flaky 的一律从根上修，不靠重跑。
+
+## GitHub Actions CI
+
+仓库目前没有任何 workflow，`main` 只靠本地检查。本地各类测试补全后全部接进 CI，四个指标每次都出、有门槛。
+
+**每个 PR 和推送 `main`**（合并前必须通过，规则集里加必需检查）：
+
+| job | 内容 |
+|---|---|
+| 检查 | ruff 检查和格式、Rust fmt / clippy、`make web-check` |
+| 单元 + 属性 + 差分 | pytest（xdist 并行、随机顺序）、`cargo test`；hypothesis 用 CI 档（更多样例、固定种子可复现） |
+| 集成 + 端到端 + 并发 | 合成数据目录上的完整研究链路、平台 API 主链路、并发与取消用例 |
+| 冒烟 | `make smoke` |
+| 性能守卫 | pytest 里的相对比例和复杂度守卫（不比绝对耗时） |
+| 覆盖率 | Python branch coverage、Rust 行覆盖；低于基线即失败，变化写进任务摘要 |
+| 变异（增量） | 只对本次改动的文件跑 mutmut / cargo-mutants；新存活的变异要么补测试，要么在 PR 里标为等价变异 |
+| Linux 安装 | 在 Linux 上从锁文件装一遍，确认 macOS 生成的锁在 Linux 上能用 |
+
+**每晚定时**（不挡 PR，失败开 issue）：
+
+- 全量变异测试，按模块出 mutation score，低于门槛报警；
+- flaky 检测：全量测试随机顺序连跑 N 次，统计时好时坏的用例，flaky 一律从根上修；
+- 性能基准：`make perf-check` 的固定基准与存档基线比，超过 20% 报警（共享机器有噪声，以本机复测为准）；
+- 耗时：总时长、最慢 20 个、各类别耗时，超出预算的列出来。
+
+**指标**：每次运行把 branch coverage、test runtime、mutation score、flaky rate 写进任务摘要；每晚的结果汇总进 `docs/TESTING_METRICS.md` 看趋势（由本机 `make test-report` 拉取后提交，CI 不往仓库推送）。
+
+**约束**：只用合成数据和夹具，不需要任何密钥，Tushare 不进 CI；action 钉 SHA；artifact 只在失败时上传、保留 1–3 天；推送前用 `ci-local` 在本机把 PR 上的 job 完整跑一遍。
 
 ## 长期习惯
 
