@@ -1,5 +1,8 @@
 // 模拟盘页的数据类型与纯计算（格式化、区间截取、曲线归一），不碰 DOM，便于单测。
-export interface PaperAccountItem { id: string; since: string | null; running: boolean }
+export interface PaperStrategy { name: string; universe: string; rebalance: string; top_n: number; trade_at: string; initial_cash: number; enabled: boolean; origin: string | null }
+export interface PaperPlan { last_signal_day: string | null; last_execution_day: string | null; next_signal_day: string | null; pending_execution_day: string | null }
+export interface PaperAccountItem { id: string; since: string | null; running: boolean; started?: boolean; strategy?: PaperStrategy | null; plan?: PaperPlan | null }
+export interface PaperBacktest { id: string; name: string; universe: string | null; rebalance: string | null; top_n: number | null; capital: number | null }
 export interface PaperPosition { symbol: string; name: string; industry: string | null; total: number; sellable: number; cost: number; mark: number; value: number; pnl: number; weight: number | null }
 export interface PaperOrder { id: number; symbol: string; name: string; side: 'buy' | 'sell'; kind: string; qty: number; filled: number; price: number; status: string; time: string | null }
 export interface PaperFill { day: string | null; time: string | null; symbol: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; fee: number }
@@ -75,4 +78,30 @@ export function pollDelay(summary: PaperSummary | null) {
   if (!summary) return 30_000
   if (summary.running) return 10_000
   return summary.settled || summary.phase === '已收盘' ? 60_000 : 30_000
+}
+
+// 账户与策略绑定（2026-11-14）：账户列表的副标题、从回测新建账户时的默认名称。
+export const rebalanceLabel: Record<string, string> = { day: '每日调仓', week: '每周调仓', month: '月度调仓', quarter: '季度调仓', year: '年度调仓' }
+export const universeLabel: Record<string, string> = { csi300: '沪深300', csi500: '中证500', csi1000: '中证1000', TOP800: 'TOP800', TOP1800: 'TOP1800', ALL: '全市场' }
+export function accountLine(item: PaperAccountItem) {
+  const s = item.strategy
+  const parts = [s && !s.enabled ? '已停用' : item.running ? '运行中' : s ? '纸面跟踪' : '实时模拟']
+  if (s) parts.push(rebalanceLabel[s.rebalance] ?? s.rebalance)
+  if (item.since) parts.push(`自 ${item.since}`)
+  else if (s && item.started === false) parts.push('等待首个交易日')
+  return parts.join(' · ')
+}
+export function backtestLabel(b: PaperBacktest) {
+  const parts = [b.name]
+  if (b.universe) parts.push(universeLabel[b.universe] ?? b.universe)
+  if (b.rebalance) parts.push(rebalanceLabel[b.rebalance] ?? b.rebalance)
+  if (b.top_n) parts.push(`前 ${b.top_n} 只`)
+  return parts.join(' · ')
+}
+// 与后端账户名规则一致：首字符为字母、数字、汉字或下划线，其余可含点和短横线，最长 64。
+const NAME = /^[\p{L}\p{N}_][\p{L}\p{N}_.-]{0,63}$/u
+export function validName(name: string) { return NAME.test(name) }
+export function suggestName(text: string) {
+  const cleaned = text.trim().replace(/[^\p{L}\p{N}_.-]+/gu, '-').replace(/^[.-]+/, '').replace(/-+$/, '')
+  return [...cleaned].slice(0, 64).join('')
 }

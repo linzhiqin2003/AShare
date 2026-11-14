@@ -1,0 +1,20 @@
+# 模拟盘运行阶段：开盘前启动运行器，--until 后自动退出；非交易日立即退出。
+[Unit]
+Description=AShare paper trading: intraday runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{REPO}}
+Environment=TZ=Asia/Shanghai
+Environment=ASHARE_DATA_DIR={{DATA_DIR}}
+Environment=ASHARE_PAPER_DIR={{PAPER_DIR}}
+EnvironmentFile={{ENV_FILE}}
+ExecStart={{PYTHON}} -m ashare.paper daily run --until 17:00
+SuccessExitStatus=3
+# 定时器 Persistent=true：错过的 08:55 会在开机时补跑，最早可能从零点跑到 17:00，按 18 小时留足。
+TimeoutStartSec=18h
+# 运行器每一步先写日志再推进，被停掉后下次启动从日志恢复。
+KillSignal=SIGINT
+TimeoutStopSec=60

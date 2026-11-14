@@ -1,8 +1,10 @@
-"""模拟盘页的只读接口。
+"""模拟盘页的接口。
 
-账户目录由 ``python -m ashare.paper start --directory <账户根>/<名字>`` 建立，账户根默认是
-``$ASHARE_DATA_DIR/paper``，可用 ``ASHARE_PAPER_DIR`` 指定。这里只读：日志以 ``read_only``
-方式重放（不加锁、不截尾、不写文件），不启动或停止运行器，不连接任何券商。
+账户目录由 ``python -m ashare.paper account create``（或本页「从回测新建账户」）建立策略定义，
+由每日流水线的运行器（或手工 ``python -m ashare.paper start``）建立账本；账户根默认是
+``$ASHARE_DATA_DIR/paper``，可用 ``ASHARE_PAPER_DIR`` 指定。账本只读：日志以 ``read_only``
+方式重放（不加锁、不截尾、不写文件），不启动或停止运行器，不连接任何券商。唯一的写接口是
+新建账户（只写 ``strategy.json``），同源校验由应用的中间件统一做。
 
 金额在内核里是万分之一元的整数；接口统一换算成元，价格保留 4 位、金额保留 2 位。
 """
@@ -21,6 +23,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 LOG = logging.getLogger("ashare.platform.paper")
 SCALE = 10_000
@@ -481,14 +484,60 @@ class _Failure(Exception):
         self.status, self.message = status, message
 
 
+class CreateAccount(BaseModel):
+    """新建账户：二选一——回测结果 id，或表达式 + 设置（设置白名单与回测页相同）。"""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=64)
+    backtest: str | None = Field(None, pattern=r"^[0-9a-f]{24}$")
+    source: str | None = Field(None, max_length=16000)
+    settings: dict | None = None
+    title: str = Field("", max_length=80)
+    capital: float | None = Field(None, ge=10, le=1_000_000)  # 万元
+
+
+def _item(path: Path) -> dict:
+    from ashare.paper.ops.accounts import describe
+
+    days = sorted(
+        p.stem
+        for p in (path / "days").glob("*.json")
+        if re.fullmatch(r"[0-9]{8}", p.stem)
+    )
+    stamp = _stat(path / "status.json")
+    return dict(
+        id=path.name,
+        since=_day(days[0]) if days else None,
+        running=stamp is not None and time.time() - stamp[1] / 1e9 < RUNNING_WITHIN,
+        started=(path / "manifest.json").is_file(),
+        **{k: _plan_days(v) if k == "plan" else v for k, v in describe(path).items()},
+    )
+
+
+def _plan_days(plan):
+    return (
+        None if plan is None else {k: _day(v) if v else None for k, v in plan.items()}
+    )
+
+
 MISSING = "没有找到这个账户"
 UNREADABLE = "账户暂时读取不到，请稍后再试"
 
 
-def router(data_root=None, root: Path | None = None, reference=None) -> APIRouter:
-    """错误只回一句中文（``{"message": …}``），不带路径或异常内容；详情写进日志。"""
+def router(
+    data_root=None, root: Path | None = None, reference=None, backtests=None
+) -> APIRouter:
+    """错误只回一句中文（``{"message": …}``），不带路径或异常内容；详情写进日志。
+
+    ``backtests`` 提供「回测记录」（``get(id)``、``completed()``，约定见
+    ``ashare.paper.ops.accounts``）；缺省只读打开回测页结果库。
+    """
     api = APIRouter(prefix="/api/paper")
     reference = reference or Reference(data_root)
+    if backtests is None:
+        from ashare.paper.ops.accounts import BacktestRecords
+
+        backtests = BacktestRecords()
     accounts: dict[str, Account] = {}
     guard = threading.Lock()
 
@@ -533,24 +582,69 @@ def router(data_root=None, root: Path | None = None, reference=None) -> APIRoute
         items = []
         if directory.is_dir():
             for path in sorted(directory.iterdir()):
-                if not (
-                    NAME.fullmatch(path.name) and (path / "manifest.json").is_file()
+                if NAME.fullmatch(path.name) and (
+                    (path / "manifest.json").is_file()
+                    or (path / "strategy.json").is_file()
                 ):
-                    continue
-                days = sorted(
-                    p.stem
-                    for p in (path / "days").glob("*.json")
-                    if re.fullmatch(r"[0-9]{8}", p.stem)
+                    items.append(_item(path))
+        return {"items": items}
+
+    @api.post("/accounts", status_code=201)
+    def create_account(body: CreateAccount):
+        from ashare.paper.ops import accounts as ops
+        from ashare.paper.ops.context import Context
+        from ashare.paper.source import SystemClock
+
+        ctx = Context(Path(data_root or "."), base(), SystemClock())
+        try:
+            if (body.backtest is None) == (body.source is None):
+                raise ops.AccountError("请选择一个回测，或给出表达式")
+            if body.backtest is not None:
+                if body.settings is not None:
+                    raise ops.AccountError("从回测建账户时设置沿用回测")
+                record = backtests.get(body.backtest)
+                if record is None:
+                    raise ops.AccountError("没有找到这个回测", 404)
+                ops.from_backtest(
+                    ctx,
+                    body.name,
+                    record,
+                    capital=body.capital,
+                    display_name=body.title or None,
                 )
-                stamp = _stat(path / "status.json")
-                items.append(
-                    dict(
-                        id=path.name,
-                        since=_day(days[0]) if days else None,
-                        running=stamp is not None
-                        and time.time() - stamp[1] / 1e9 < RUNNING_WITHIN,
-                    )
+            else:
+                ops.create(
+                    ctx,
+                    body.name,
+                    source=body.source,
+                    settings=body.settings or {},
+                    display_name=body.title or None,
+                    capital=body.capital,
                 )
+        except ops.AccountError as error:
+            return JSONResponse({"message": str(error)}, error.status)
+        except Exception:
+            LOG.exception("paper_create_failed")
+            return JSONResponse({"message": "建立账户失败，请稍后重试"}, 500)
+        LOG.info("paper_account_created account=%s", body.name)
+        return _item(base() / body.name)
+
+    @api.get("/backtests")
+    def completed_backtests():
+        """可以用来建账户的已完成回测（新的在前）。"""
+        items = []
+        for record in backtests.completed():
+            settings = record.get("settings") or {}
+            items.append(
+                dict(
+                    id=record["id"],
+                    name=record.get("name") or record["id"],
+                    universe=settings.get("universe"),
+                    rebalance=settings.get("rebalance"),
+                    top_n=settings.get("top_n"),
+                    capital=settings.get("capital"),
+                )
+            )
         return {"items": items}
 
     @api.get("/accounts/{name}")

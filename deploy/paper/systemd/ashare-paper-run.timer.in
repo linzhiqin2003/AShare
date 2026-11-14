@@ -1,0 +1,10 @@
+[Unit]
+Description=AShare paper trading: start the runner before the open (Asia/Shanghai)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:55:00 Asia/Shanghai
+# 开机晚了（例如 10 点才开机）补启动一次；运行器从日志恢复，已过 --until 时立即退出。
+Persistent=true
+
+[Install]
+WantedBy=timers.target
