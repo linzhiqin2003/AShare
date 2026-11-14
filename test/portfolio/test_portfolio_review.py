@@ -256,13 +256,17 @@ def guarded(self, **kwargs):
     assert kwargs.get('ignore_dpp') is True
     return original(self, **kwargs)
 cp.Problem.solve = guarded
+def peak():
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == 'darwin' else rss * 1024
 s = SolverSession('auto')
 s.primary = SolverSession('clarabel')
 s.primary.solve = lambda *args: (None, 'NumericalError', {})
-r = optimize(fixture(1000, True), session=s)
+p = fixture(1000, True)
+before = peak()
+r = optimize(p, session=s)
 assert r.success and r.diagnostics['fallback_backend'] == 'cvxpy_clarabel'
-rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({'rss_bytes': rss if sys.platform == 'darwin' else rss*1024}))
+print(json.dumps({'before': before, 'after': peak()}))
 """
     result = subprocess.run(
         [sys.executable, "-c", script, str(ROOT)],
@@ -271,7 +275,12 @@ print(json.dumps({'rss_bytes': rss if sys.platform == 'darwin' else rss*1024}))
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["rss_bytes"] < 1_000_000_000
+    # 只量 optimize 期间峰值内存的增量。原来断言进程总峰值 < 1 GB：macOS 上约 160 MB，
+    # GitHub 的 Linux 机器上导入和夹具就接近 1 GB，测出 1.04 GB（2026-11-14 CI）。
+    # 要守的回归是 DPP 编译把 N=1000 的回退撑到 8.11 GB（docs/RISK_NOTES.md P1-1）。
+    peak = json.loads(result.stdout)
+    grown = peak["after"] - peak["before"]
+    assert grown < 1_000_000_000, (peak, grown)
 
 
 def test_reused_vectors_follow_benchmark_bounds_costs_and_masks():
