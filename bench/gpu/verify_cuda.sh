@@ -4,7 +4,7 @@
 #   bash bench/gpu/verify_cuda.sh          # 仓库根目录；结果写到 bench/gpu/results/verify_cuda.json
 #
 # 前提（docs/GPU_MINING.md「CUDA」）：Linux x86_64 或 aarch64、glibc >= 2.35、NVIDIA 驱动 >= 550
-# （mlx[cuda12]）、算力 >= SM 7.5、Rust stable、uv。没有真实数据也能跑（合成面板，与真实面板
+# （mlx[cuda12]）、算力 >= SM 7.5、C 编译器（build-essential）、Rust stable、uv。没有真实数据也能跑（合成面板，与真实面板
 # 同规模 2430 × 5923）；有数据时设 ASHARE_DATA_DIR 再加 REAL=1 另测真实面板。
 #
 # 依次：记录机器信息；装依赖（含 Rust 扩展）；确认 MLX 在 GPU 上、内核能编译；跑 GPU 测试
@@ -23,6 +23,12 @@ step() {  # step 名字 命令...
   echo "== $name" | tee -a "$LOG"
   if "$@" >> "$LOG" 2>&1; then echo "ok" > "$OUT/.step_$name"; else echo "failed" > "$OUT/.step_$name"; status=1; fi
 }
+
+# Rust 扩展要 C 链接器：GCE 的深度学习镜像（common-cu129-ubuntu-2204）只有 gcc、没有 cc，
+# 先 `sudo apt-get update && sudo apt-get install -y build-essential`（2026-11-14 首次实测踩到）。
+for tool in cc cargo uv nvidia-smi; do
+  command -v "$tool" >/dev/null || { echo "缺少 $tool，见脚本开头的前提" >&2; exit 2; }
+done
 
 step machine bash -c 'nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv; ldd --version | head -1; uname -m'
 step sync uv sync --all-packages --group dev --extra gpu --inexact

@@ -1,0 +1,63 @@
+{
+ "steps": {
+  "machine": "ok",
+  "probe": "ok",
+  "sync": "ok",
+  "tests": "ok",
+  "timing": "ok"
+ },
+ "machine": "Linux-6.8.0-1073-gcp-x86_64-with-glibc2.35",
+ "gpu": "NVIDIA L4, 23034 MiB, 580.178.04, 8.9",
+ "tests": {
+  "tests": 127,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 4
+ },
+ "failed_tests": [],
+ "screen_profile_cuda_synthetic": {
+  "peak_bandwidth_gbs": 234.93313877795745,
+  "sizes": {
+   "256": {
+    "median_s": 2.3453203969997958,
+    "per_expr_ms": 9.161407800780452,
+    "lower_bound_s": 0.45580245578384554,
+    "routed": {
+     "rounding ties": 5
+    }
+   },
+   "1024": {
+    "median_s": 9.037093120000009,
+    "per_expr_ms": 8.825286250000008,
+    "lower_bound_s": 1.6105020104362542,
+    "routed": {
+     "rounding ties": 36
+    }
+   }
+  },
+  "stages": {
+   "op:ts_zscore": 0.14948243400044703,
+   "op:negate": 0.015100556999868786,
+   "op:add": 0.00974217000043609,
+   "op:ts_rank": 0.03290387800075223,
+   "rank_ic": 1.5461437260023558,
+   "readback": 0.024200174999123192,
+   "op:ts_min": 0.024139726000385053,
+   "op:ts_mean": 0.04677968899954976,
+   "op:ts_corr": 0.11314692899986767,
+   "op:ts_std": 0.1389358680000896,
+   "op:abs": 0.013576580999824728,
+   "op:ts_delta": 0.015844701000105488,
+   "op:divide": 0.025794862000111607,
+   "op:ts_decay_linear": 0.014645204000544254,
+   "op:ts_delay": 0.022265824999976758,
+   "op:subtract": 0.011688691000244944,
+   "op:multiply": 0.010651337000354033,
+   "op:cs_rank": 0.07529775000011796,
+   "op:fused": 0.008063642000024629,
+   "op:ts_max": 0.018365277999691898,
+   "op:log": 0.005440656999780913,
+   "gpu": 2.351104813999882
+  }
+ }
+}

@@ -185,6 +185,11 @@ class MLXBackend(Backend):
         self.platform = platform
         self.device = f"{platform}:{device_name}"
         self.stream = mx.gpu
+        # Rank IC 单线程组内核每天一个线程组，线程数上限。Metal 上 1024 可以；CUDA 上每个线程要
+        # 持有 E = NP / TG 个元素的寄存器数组，1024 线程、E >= 2 时超出每块寄存器上限
+        # （L4 实测 cudaGraphInstantiate "too many resources requested for launch"，2026-11-14），
+        # 所以取 256。改小只会让 E 变大，结果不变（差分测试按多种线程数覆盖）。
+        self.rank_group = 1024 if platform == "metal" else 256
         make = mx.fast.cuda_kernel if platform == "cuda" else mx.fast.metal_kernel
         self._kernels = {}
         try:
@@ -466,7 +471,7 @@ class MLXBackend(Backend):
         t, n = values.shape
         if n <= RANK_IC_MAX_N:
             np2 = max(32, 1 << (n - 1).bit_length())
-            tg = min(np2, 1024)
+            tg = min(np2, self.rank_group)
             tmpl = [("T", t), ("N", n), ("NP", np2), ("TG", tg), ("E", np2 // tg),
                     ("NSG", tg // 32)]  # fmt: skip
             ic, noise = self._kernels["ash_rank_ic"](

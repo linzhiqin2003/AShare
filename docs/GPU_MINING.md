@@ -139,7 +139,13 @@ GPU 一共粗筛 512 个用 6.3 s（只算到验证段起点）；送 CPU 复算
 
 ## CUDA
 
-本机没有 N 卡。在一台 NVIDIA Linux 机器上（x86_64 或 aarch64、glibc ≥ 2.35、驱动 ≥ 550、算力 ≥ SM 7.5、
+2026-11-14 在 GCE 上实测通过：L4（24 GB，SM 8.9，驱动 580，Ubuntu 22.04 / glibc 2.35，深度学习镜像
+`common-cu129-ubuntu-2204-nvidia-580`，g2-standard-8 抢占式）。`test/factor/gpu` 123 过、4 个 skip（冻结摘要只在
+生成它的平台上比）；合成面板（与真实面板同规模）一代 256 个 2.35 s（本机 M5 Pro Metal 真实面板 3.0 s）、
+1024 个 9.0 s；设备带宽实测 235 GB/s。结果在 `bench/gpu/results/verify_cuda.json`、
+`screen_profile_cuda_synthetic.json`。
+
+在一台 NVIDIA Linux 机器上（x86_64 或 aarch64、glibc ≥ 2.35、驱动 ≥ 550、算力 ≥ SM 7.5、C 编译器、
 Rust stable、uv），仓库根目录：
 
 ```bash
@@ -151,12 +157,21 @@ REAL=1 ASHARE_DATA_DIR=... bash bench/gpu/verify_cuda.sh   # 另测真实面板
 跑 `test/factor/gpu`（差分、整代粗筛、选择不变性、确定性）；合成面板 256、1024 个一代的计时与分阶段耗时；
 汇总写到 `bench/gpu/results/verify_cuda.json`（步骤状态、测试计数和失败名单、带宽、耗时），任何一步失败非零退出。
 
-预期：测试全过（冻结摘要那 4 个 skip）；每代耗时取决于显存带宽和排序算力，数据中心卡应明显快于本机。
+GCE 上的准备（第一次实测踩到的）：
+
+- 项目的 22 端口只对 IAP 开放，`gcloud compute ssh/scp` 加 `--tunnel-through-iap`；
+- 深度学习镜像只有 `gcc` 没有 `cc`，Rust 扩展链接失败：先 `sudo apt-get update && sudo apt-get install -y build-essential`
+  （脚本开头会检查 `cc`、`cargo`、`uv`、`nvidia-smi`）；
+- 实例用 `--max-run-duration 3h --instance-termination-action DELETE` 兜底，测完手动删掉。
 
 可能与 Metal 不同的地方：
 
-- 内核正文没在 NVRTC 上编译过。占位符换成 CUDA 写法（`blockIdx`/`threadIdx`、`__shared__`、`__syncthreads()`、
-  `__shfl_*_sync`、`__any_sync`、`isfinite`、`sqrtf`、`logf`），假定 warp 为 32；第一次跑可能要修语法。
+- 内核正文一份，占位符换成 CUDA 写法（`blockIdx`/`threadIdx`、`__shared__`、`__syncthreads()`、
+  `__shfl_*_sync`、`__any_sync`、`isfinite`、`sqrtf`、`logf`），假定 warp 为 32；在 L4 上 NVRTC 编译通过。
+- Rank IC 单线程组内核每天的线程数：Metal 取 1024，CUDA 取 256（`MLXBackend.rank_group`）。CUDA 上 1024 线程、
+  每线程 2 个以上元素时超出每块寄存器上限，`cudaGraphInstantiate` 报 "too many resources requested for launch"
+  （第一次实测截面 1025、8192 两个差分用例失败，整代计时全部「GPU 出错」、全部交给 CPU，结果没有错但没加速）。
+  差分测试对 1024 / 256 / 64 三种线程数都覆盖。
 - 若 MLX 的 CUDA 编译开了快速数学（`--use_fast_math`），`isfinite` 可能被优化掉，差分测试的缺失位置会不一致——
   这正是差分测试要抓的。
 - 独立显存：字段经 PCIe 上传一次（8 个 float32 字段约 0.46 GB）；设备内存预算取 `device_info()` 给出的一半。

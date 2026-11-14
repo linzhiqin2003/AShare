@@ -204,10 +204,15 @@ def test_rank_ic_matches_panelops(be, data, case):
     assert np.abs(got[ok] - want[ok]).max() <= RANK_IC_TOL
 
 
+@pytest.mark.parametrize("group", [None, 256, 64])
 @pytest.mark.parametrize("n", [1, 31, 33, 1025, 8192, 8193])
-def test_rank_ic_widths_and_universe(be, n):
+def test_rank_ic_widths_and_universe(be, n, group, monkeypatch):
     """截面宽度跨过线程组边界（32、1024）、单线程组上限 8192（更宽的走 argsort 写法）；
-    股票池外的格子不参与。"""
+    股票池外的格子不参与。group：每天的线程数上限（None 为本平台默认；CUDA 默认 256，
+    因为 1024 线程在 L4 上超出每块资源上限，2026-11-14 首次 CUDA 实测发现），在 Metal 上也
+    覆盖小线程组、每线程多个元素的写法。"""
+    if group is not None:
+        monkeypatch.setattr(be, "rank_group", group)
     rng = np.random.default_rng(n)
     t = 12
     score = rng.normal(size=(t, n))

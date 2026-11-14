@@ -9,6 +9,7 @@
 - 时间窗刷子抽成共用组件 `TimeBrush.vue`：策略回测的净值图也用底部缩略图拖动、拉两端改窗口（净值按窗口起点归一、回撤窗内重算），替代「1 年 / 3 年 / 5 年 / 全部」按钮。
 
 ## 2026-11-14（GPU 粗筛）
+- CUDA 实测（GCE L4）：第一次跑 Rank IC 内核在截面 > 1024 时超出每块资源上限，CUDA 上每天的线程数改为 256（Metal 仍 1024），差分测试加线程数参数；修后 `test/factor/gpu` 123 过，合成面板一代 256 个 2.35 s。`verify_cuda.sh` 开头检查 `cc` 等工具。
 - 新增 `ashare.factor.mining.gpu`（可选依赖 `gpu`：macOS `mlx`、Linux `mlx[cuda12]`；`docs/GPU_MINING.md`）与 `mine(screen="gpu" | GpuScreen(...))`：GPU 上 float32 整代粗筛，t 值不低于 min(screen_t, z₁₋α) − 0.3 的、GPU 算不了的（不支持的算子、超出 float32 安全范围、排序由舍入决定）送 CPU 按 float64 复算，台账、统计检验与结果的数字全部来自 CPU；没送的记 `stage="gpu_screen"` 且不带指标。默认 `screen="cpu"` 与改动前逐位相同（冻结摘要守住）。MLX 自定义内核一份正文给 Metal 与 CUDA；Rank IC 一天一个线程组、不按因子 argsort；逐元素算子链用解释器内核融合；GPU 粗筛与 CPU 复算分块重叠。真实面板一代 256 个粗筛 3.0 s（CPU 4 线程 26.1 s、14 线程 11.8 s）；`mine` 端到端两代 95.4 → 59.6 s，选择完全相同。CUDA 未实测，一键验证脚本 `bench/gpu/verify_cuda.sh`。合入审查补了一条回归测试：GPU 算不了的候选必须送 CPU（当成不过线丢掉时原测试全过）。
 
 ## 2026-11-13（指数基准）
