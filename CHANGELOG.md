@@ -7,6 +7,7 @@
 - 滚动算子的线性守卫从「行数翻倍、比例 ≤ 3」改为「行数 ×4、比例 ≤ 8」：GitHub 的 4 核机器上并行跑测试时，线性的 `ts_std`、`ts_max` 也测出 3.04、3.07；翻倍时线性与平方只差 2 倍，×4 时差 4 倍（本机 4 份并行实测 3.75–4.09，平方增长的假算子 16.1）。
 - `test_auto_fallback_peak_memory` 改为只量 `optimize` 期间峰值内存的增量（< 1 GB）：Linux 上导入和夹具就接近 1 GB，进程总峰值 1.04 GB 误报；要守的是回退被 DPP 编译撑到 8.11 GB 的回归。`test/comparison.py` 的字典比较失败时列出不同的键（该文件不归 pytest 改写，原来失败消息为空）。
 - 期货混合账户与参考实现的对拍：「`cash_flow` 计数差一」的舍入种子不再写死成 {2, 1280}。生成器里的 `np.exp`、`log`、dirichlet 随 CPU 选 SIMD 和数学库路径，输入在末位就不同；Linux CI 上 seed 151 四次里失败两次（只给 exp 加 1 ulp 扰动，300 次里 172 次翻转）。现在任何种子都允许这个计数差一、其余字段必须一致，但这类种子最多 8 个（各种扰动下实测都是 2 个）；参考实现改成只数存入的变异被拦下。
+- 研究平台：任务结束时先写服务端内存事件、再把状态标成结束。原来顺序相反，轮询到「已结束」立刻读事件的调用方偶尔漏掉最后一条（ci-local 上 `test_benchmark_switch_recomputes_display_only` 失败一次）；新测试 `test_finish_writes_events_before_status_leaves_running` 在旧代码上失败。
 
 ## 2026-11-14（公开因子库并入）
 - 三套公开因子（Qlib Alpha158、WorldQuant Alpha101、国泰君安 191）从本地私有包并入本仓库：翻译、独立参考实现、注册表与已知例外在 `ashare.factor.alphas`，约定、翻译规范、参考实现说明、逐条核对报告和公式原文在 `docs/factors/`，测试在 `test/factor/alphas/`（只用合成数据）。三套作为内置因子集注册（`formula.plugins._builtin`），入口点机制留给别的因子包。论文附录、研报附录和聚宽「公用函数说明」的逐字抄录（`alpha101_defs.md`、`gtja191_defs.md`）不随仓库发布；Qlib 的源码原文按 MIT 许可保留版权声明。自己挖出来的因子仍不进仓库。

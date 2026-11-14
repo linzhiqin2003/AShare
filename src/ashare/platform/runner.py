@@ -450,7 +450,9 @@ class Manager:
 
     def _finish(self, state, status, elapsed=None):
         job = state["job"]
-        self.store.finish(job, status, elapsed)
+        # 事件先写、再标结束：状态一离开 running，这个任务的事件就已经全了。原来顺序相反，
+        # 轮询到「已结束」立刻读事件的调用方偶尔漏掉最后这条（2026-11-14 ci-local 上
+        # test_benchmark_switch_recomputes_display_only 失败一次）。
         self.store.event(
             job,
             {
@@ -460,6 +462,7 @@ class Manager:
                 "role": "server",
             },
         )
+        self.store.finish(job, status, elapsed)
         shutil.rmtree(self.store.root / "work" / job, ignore_errors=True)
         state.update(
             job=None,

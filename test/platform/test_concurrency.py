@@ -56,3 +56,27 @@ def test_ops_threads_default(monkeypatch):
 )
 def test_job_concurrency_splits_budget(budget, variants, others, expected):
     assert job_concurrency(budget, variants, others) == expected
+
+
+def test_finish_writes_events_before_status_leaves_running(tmp_path):
+    """来源：2026-11-14 ci-local 偶发失败。任务标成结束时，服务端的内存事件必须已经写进去；
+    否则轮询到「已结束」立刻读事件的调用方会漏掉它。"""
+    from ashare.platform.runner import Manager
+
+    calls = []
+
+    class Store:
+        root = tmp_path
+
+        def event(self, job, data):
+            calls.append(("event", data["kind"]))
+
+        def finish(self, job, status, elapsed=None):
+            calls.append(("finish", status))
+
+    # 不起监控线程、不跑恢复：只测 _finish 本身的写入顺序。
+    manager = Manager.__new__(Manager)
+    manager.store = Store()
+    state = {"job": "j1", "process": None}
+    manager._finish(state, "complete", 1.0)
+    assert calls == [("event", "memory"), ("finish", "complete")]
