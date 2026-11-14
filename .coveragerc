@@ -1,0 +1,33 @@
+# Python coverage for `make coverage` (bench/testing/coverage_run.py).
+# Branch coverage, measured inside pytest-xdist workers via subprocess patching.
+
+[run]
+branch = true
+parallel = true
+patch = subprocess
+relative_files = true
+data_file = .cache/testing/coverage/.coverage
+source =
+    src/ashare
+    packages/panelbt/python
+    packages/panelops/python
+    packages/paperbroker/python
+    packages/portopt/python
+omit =
+    */__main__.py
+
+[report]
+precision = 1
+skip_empty = true
+show_missing = false
+exclude_also =
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    @(abc\.)?abstractmethod
+
+[json]
+output = .cache/testing/coverage-python.json
+
+[html]
+directory = .cache/testing/htmlcov
