@@ -1,0 +1,80 @@
+{
+ "tag": "synthetic",
+ "n": 256,
+ "backends": {
+  "mlx-fused_gpu_synthetic": {
+   "thr0.5_delta0.0": {
+    "missed": 0,
+    "rechecked": 114,
+    "cpu_pass": 114,
+    "extra_rechecks": 0
+   },
+   "thr0.5_delta0.1": {
+    "missed": 0,
+    "rechecked": 122,
+    "cpu_pass": 114,
+    "extra_rechecks": 8
+   },
+   "thr0.5_delta0.25": {
+    "missed": 0,
+    "rechecked": 136,
+    "cpu_pass": 114,
+    "extra_rechecks": 22
+   },
+   "thr0.5_delta0.5": {
+    "missed": 0,
+    "rechecked": 164,
+    "cpu_pass": 114,
+    "extra_rechecks": 50
+   },
+   "thr1.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 73,
+    "cpu_pass": 73,
+    "extra_rechecks": 0
+   },
+   "thr1.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 85,
+    "cpu_pass": 73,
+    "extra_rechecks": 12
+   },
+   "thr1.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 94,
+    "cpu_pass": 73,
+    "extra_rechecks": 21
+   },
+   "thr1.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 114,
+    "cpu_pass": 73,
+    "extra_rechecks": 41
+   },
+   "thr2.0_delta0.0": {
+    "missed": 0,
+    "rechecked": 10,
+    "cpu_pass": 10,
+    "extra_rechecks": 0
+   },
+   "thr2.0_delta0.1": {
+    "missed": 0,
+    "rechecked": 12,
+    "cpu_pass": 10,
+    "extra_rechecks": 2
+   },
+   "thr2.0_delta0.25": {
+    "missed": 0,
+    "rechecked": 15,
+    "cpu_pass": 10,
+    "extra_rechecks": 5
+   },
+   "thr2.0_delta0.5": {
+    "missed": 0,
+    "rechecked": 26,
+    "cpu_pass": 10,
+    "extra_rechecks": 16
+   }
+  }
+ }
+}
