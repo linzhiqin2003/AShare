@@ -1,0 +1,6 @@
+{
+ "_note": "Produced by test/factor/gpu/gpu_cases.py on main 0482f28 (before GPU screening was added to mine()); screen='cpu' must reproduce it bit for bit. Float results are only bit-stable on the platform that recorded them.",
+ "platform": "darwin-arm64",
+ "random": "c1cb532e0909792a397bb1264b8c929813800c116e32f5a81c37f4df0ed4fe76",
+ "evolution": "5c3fe699770a4bd4ad739a053f6171122c12e3853e9e593b7f7f7c5769a1c523"
+}

@@ -8,6 +8,9 @@
 - 旧链接与旧数据：`#/backtest` 跳到研究页的策略回测视图，`#/backtest?entry=<id>`（因子库「送去回测」）新开 tab 带入条目；合并前回测页的 `ashare.backtest.tabs` 启动时迁成研究 tab（空白 tab 不迁），研究草稿多存 `mode` 和 `backtest`。后端接口不变。
 - 时间窗刷子抽成共用组件 `TimeBrush.vue`：策略回测的净值图也用底部缩略图拖动、拉两端改窗口（净值按窗口起点归一、回撤窗内重算），替代「1 年 / 3 年 / 5 年 / 全部」按钮。
 
+## 2026-11-14（GPU 粗筛）
+- 新增 `ashare.factor.mining.gpu`（可选依赖 `gpu`：macOS `mlx`、Linux `mlx[cuda12]`；`docs/GPU_MINING.md`）与 `mine(screen="gpu" | GpuScreen(...))`：GPU 上 float32 整代粗筛，t 值不低于 min(screen_t, z₁₋α) − 0.3 的、GPU 算不了的（不支持的算子、超出 float32 安全范围、排序由舍入决定）送 CPU 按 float64 复算，台账、统计检验与结果的数字全部来自 CPU；没送的记 `stage="gpu_screen"` 且不带指标。默认 `screen="cpu"` 与改动前逐位相同（冻结摘要守住）。MLX 自定义内核一份正文给 Metal 与 CUDA；Rank IC 一天一个线程组、不按因子 argsort；逐元素算子链用解释器内核融合；GPU 粗筛与 CPU 复算分块重叠。真实面板一代 256 个粗筛 3.0 s（CPU 4 线程 26.1 s、14 线程 11.8 s）；`mine` 端到端两代 95.4 → 59.6 s，选择完全相同。CUDA 未实测，一键验证脚本 `bench/gpu/verify_cuda.sh`。合入审查补了一条回归测试：GPU 算不了的候选必须送 CPU（当成不过线丢掉时原测试全过）。
+
 ## 2026-11-13（指数基准）
 - 研究平台的基准从写死的主流指数名单 `catalog.BENCHMARKS`（22 个，含红利低波：2016-06 至 2018-05 源里只有收盘价）里选，默认上证指数 `000001.SH`（`catalog.DEFAULT_BENCHMARK`）。名单里的指数与股票池指数（`INDEXES`，含义不变）一起走 `index_daily` 的逐指数逐月分区（`INDEX_DAILY_CODES`）；`Data.indexes(query)` 列出名单里本地有日线的指数，可按代码或简称搜索。`table("index_daily", symbols=…)` 只打开所请求代码、月份的分区，报告、事件研究、因子输入里取基准的地方都带上 `symbols`。第一版的全市场方案（`index_daily_all`、`index_basic`）按用户决定撤掉，真实库里的分区已删除。名单、取舍和加指数的方法见 `docs/DATA_NOTES.md`「基准指数」。窗口终点所在月份有测试守着；窗口里只有空分区时，公开长表的列给出正常的字符串、浮点类型（原来是 Null，成交量额是 Int32）。
 - 正式面板的 `code_version` 会变（`catalog.py`、`sync.py` 参与代码哈希）：下次 `build-panel` 整体重建一代，矩阵内容不变。

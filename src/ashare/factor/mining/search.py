@@ -6,9 +6,10 @@
 `SearchResult.unlock_holdout` 显式解锁一次，解锁记进台账。
 
 两段式：先在训练段算 Rank IC（便宜），训练段 IC 的 t 值不低于 ``screen_t`` 的才跑多头端
-回测；粗筛掉的同样记一次试验。去重：去重键（规范形去掉根上的单调变换）相同的只评一次；
-数值上与已入选因子（过了粗筛、不重复的）截面秩相关不低于 ``dedup_threshold`` 的标为
-重复，不计入「发现」，但照样是一次试验。
+回测；粗筛掉的同样记一次试验。``screen="gpu"`` 时先在 GPU 上按 float32 整代粗筛，只把可能
+过线的送 CPU 按 float64 复算（`ashare.factor.mining.gpu`），结果与 CPU 粗筛相同。
+去重：去重键（规范形去掉根上的单调变换）相同的只评一次；数值上与已入选因子（过了粗筛、
+不重复的）截面秩相关不低于 ``dedup_threshold`` 的标为重复，不计入「发现」，但照样是一次试验。
 
 ```python
 from ashare.factor.mining import Random, Split, mine
@@ -227,6 +228,12 @@ class SearchResult:
             f"验证段再通过 {s['significant']['valid_dsr']}",
             f"耗时 {num(s['seconds'], 1)} 秒  每秒评估 {num(s['per_second'], 1)} 个",
         ]
+        if s.get("gpu"):
+            g = s["gpu"]
+            lines.append(
+                f"GPU 粗筛（{g['device']}）{g['screened']} 个：送 CPU 复算 {g['rechecked']}、"
+                f"判为不过线 {g['dropped']}（门槛下放 {g['margin']}）"
+            )
         if show_expressions and self.selected:
             lines.append("验证段排名前列（训练段折算夏普 / 验证段折算夏普）：")
             for row in self.selected[:top]:
@@ -335,6 +342,7 @@ def mine(
     progress=None,
     sr_var="null",
     autocorr=True,
+    screen="cpu",
     **options,
 ):
     """在 panel 上按 space 和 strategy 搜索因子表达式。
@@ -363,6 +371,12 @@ def mine(
       乘自己的方差比 q ≥ 1，见 `stats.variance_ratio`，零假设方差相应取 q/(T−1)）；
       False 时按独立同分布算（原文做法，日收益正自相关时偏松）；
     - progress：每记一条台账后调用一次 ``progress(记录)``（测试用来模拟中途被杀）；
+    - screen：粗筛在哪里算。"cpu"（默认）：现行做法，每个候选在 CPU 上按 float64 算训练段
+      IC。"gpu" 或 `gpu.GpuScreen(...)`：先在 GPU 上按 float32 整代粗筛，GPU t 值不低于
+      ``min(screen_t, z_{1−α}) − margin``（边际默认 `gpu.GPU_SCREEN_T_MARGIN` = 0.3）的、
+      GPU 算不了的，送 CPU 按 float64 复算并照常判定；其余记一次阶段为 ``gpu_screen`` 的
+      试验（不带任何指标，复用台账时重算）。进台账、统计检验和结果的数字全部来自 CPU；
+      复算与下一块的 GPU 粗筛重叠进行。GPU 不可用时抛 `gpu.GpuUnavailable`，不退回 CPU；
     - 其余关键字参数交给 `FactorEvaluator`（horizons、rebalance、top、top_fraction、
       groups、universe、costs、config、benchmark、threads ...）。universe、benchmark 给
       完整长度（与 panel 同行数），这里截掉留出段。
@@ -378,6 +392,7 @@ def mine(
         raise ValueError(f"sr_var: 只能是 {SR_VAR}")
     if not callable(fitness) and fitness not in FITNESS:
         raise ValueError(f"fitness: 只能是 {FITNESS} 或函数")
+    gpu_options = _screen_options(screen)
     a, v, h = split.rows(panel.dates)
     view = Truncated(panel, h)
     opts = dict(options)
@@ -395,6 +410,23 @@ def mine(
     fe = FactorEvaluator(view, segments={"train": (a, v), "valid": (v, h)}, **opts)
     ev = evaluator or Evaluator()
     sh = fe.screen_horizon
+    gpu = None
+    if gpu_options is not None:
+        from .gpu import Screener, gate_threshold
+
+        screener = Screener(view, fe.universe, fe.returns[sh], rows=v,
+                            memory_limit=gpu_options.memory_limit)  # fmt: skip
+        gate_t = gate_threshold(screen_t, alpha, gpu_options.margin)
+        gpu = {
+            "screener": screener,
+            "record": {"device": screener.device, "kernel": screener.kernel_id,
+                       "margin": gpu_options.margin,
+                       "gate_t": gate_t if math.isfinite(gate_t) else None},
+            "gate_t": gate_t,
+            "counts": {"rechecked": 0, "dropped": 0},
+            "reasons": {},
+            "recheck_seconds": 0.0,
+        }  # fmt: skip
     # 评估定义：凡是改变指标数值的设置都进来（进入试验编号）。粗筛门槛不进编号（同一个
     # 表达式换门槛仍是同一个试验），而是在复用时按这次的门槛重判，见 `evaluate`。
     definition = {
@@ -479,7 +511,16 @@ def mine(
         return None, corr
 
     def finalize(
-        key, tid, metrics, stage, status, fp, error=None, cached=False, screen=None
+        key,
+        tid,
+        metrics,
+        stage,
+        status,
+        fp,
+        error=None,
+        cached=False,
+        screen=None,
+        gpu_note=None,
     ):
         nodes = size(exprs[key])
         fit = -math.inf
@@ -527,6 +568,8 @@ def mine(
         }
         if error is not None:
             record["error"] = error
+        if gpu_note is not None:
+            record["gpu"] = gpu_note
         led.append(record)
         if not cached and status == "ok":
             cache[tid] = record
@@ -574,7 +617,12 @@ def mine(
             tid = trial_id(key, data_version, eval_def)
             todo.append((key, tid, reuse(cache.get(tid))))
         fresh = [(key, tid) for key, tid, use in todo if use is None]
-        computed = _evaluate_batch(fresh) if fresh else {}
+        if not fresh:
+            computed = {}
+        elif gpu is None:
+            computed = _evaluate_batch(fresh)
+        else:
+            computed = _gpu_batch(fresh)
         for key, tid, use in todo:  # 按提出顺序落定：去重判定与顺序有关
             if use is not None:
                 counters["cache_hits"] += 1
@@ -585,7 +633,12 @@ def mine(
                 metrics, stage, status, fp, error, screen = computed[key]
                 if status != "ok":
                     counters["failed"] += 1
-                finalize(key, tid, metrics, stage, status, fp, error, screen=screen)
+                note = None
+                if gpu is not None:
+                    note = {**gpu["record"], "decision": "drop" if stage == "gpu_screen"
+                            else "recheck", "reason": gpu["reasons"].get(key)}  # fmt: skip
+                finalize(key, tid, metrics, stage, status, fp, error, screen=screen,
+                         gpu_note=note)  # fmt: skip
         return [rows[k]["fitness"] if rows[k]["fitness"] is not None else -math.inf
                 for k in out_keys]  # fmt: skip
 
@@ -609,11 +662,47 @@ def mine(
             except Exception as exc:  # noqa: BLE001
                 yield k, exc
 
-    def _evaluate_batch(fresh):
+    def _gpu_batch(fresh):
+        """GPU 粗筛整批，可能过线的、GPU 算不了的交给 `_evaluate_batch` 在 CPU 上复算
+        （后台线程，与下一块的 GPU 粗筛重叠）；GPU 判为不过线的记成 ``gpu_screen``。"""
+        from .gpu import pipeline
+
+        tids = dict(fresh)
+        gate_t = gpu["gate_t"]
+
+        def decide(key, outcome):
+            if outcome.ic is None:
+                gpu["reasons"][key] = outcome.reason
+                return True
+            t = fe.screen_metrics(outcome.ic)["train"]["ic"]["t"]
+            return t is None or not math.isfinite(t) or t >= gate_t
+
+        def recheck(keys):
+            t0 = time.perf_counter()
+            out = _evaluate_batch([(k, tids[k]) for k in keys], count=False)
+            gpu["recheck_seconds"] += time.perf_counter() - t0
+            return out
+
+        dropped, computed = pipeline(
+            gpu["screener"],
+            [(k, exprs[k]) for k, _ in fresh],
+            decide,
+            recheck,
+            gpu_options.chunk,
+        )
+        counters["evaluated"] += len(fresh)
+        gpu["counts"]["rechecked"] += len(computed)
+        gpu["counts"]["dropped"] += len(dropped)
+        for key in dropped:
+            computed[key] = (None, "gpu_screen", "ok", None, None, None)
+        return computed
+
+    def _evaluate_batch(fresh, count=True):
         out, partials, targets, passed = {}, {}, [], []
         tids = dict(fresh)
         for key, values in _values([k for k, _ in fresh]):
-            counters["evaluated"] += 1
+            if count:
+                counters["evaluated"] += 1
             if isinstance(values, Exception):
                 out[key] = (None, "failed", "failed", None, type(values).__name__, None)
                 continue
@@ -676,6 +765,23 @@ def mine(
             for row in selected
         } if existing else {},
     )  # fmt: skip
+    if gpu is not None:
+        sc = gpu["screener"]
+        summary["gpu"] = {
+            **gpu["record"],
+            "chunk": gpu_options.chunk,
+            "screened": int(sc.counts["screened"]),
+            "rechecked": gpu["counts"]["rechecked"],
+            "dropped": gpu["counts"]["dropped"],
+            "unsupported": int(sc.counts["unsupported"]),
+            "float32_range": int(sc.counts["range"]),
+            "errors": int(sc.counts["error"]),
+            "gpu_seconds": sc.seconds["gpu"],
+            "recheck_seconds": gpu["recheck_seconds"],
+            "rounding_ties": int(sc.counts["degenerate"]),
+            "upload_seconds": sc.seconds["upload"],
+            "peak_device_memory": sc.peak_memory,
+        }
     context = {
         "source_version": str(panel.version),
         "rows": (a, v, h),
@@ -686,6 +792,23 @@ def mine(
         **context_full,
     }
     return SearchResult(list(rows.values()), summary, selected, context)
+
+
+def _screen_options(screen):
+    """``screen`` 参数 → None（CPU 粗筛）或 `gpu.GpuScreen`。"""
+    if isinstance(screen, str):
+        if screen == "cpu":
+            return None
+        if screen == "gpu":
+            from .gpu import GpuScreen
+
+            return GpuScreen()
+    elif type(screen).__name__ == "GpuScreen":
+        from .gpu import GpuScreen
+
+        if isinstance(screen, GpuScreen):
+            return screen
+    raise ValueError('screen: 只能是 "cpu"、"gpu" 或 gpu.GpuScreen(...)')
 
 
 def _truncate_market(market, rows, exec="open"):
@@ -896,7 +1019,7 @@ def _summarize(
             "holdout": f"{dates[h]}–{dates[-1]}",
         },
         "unique": unique,
-        "screened_out": sum(1 for r in table if r["stage"] == "screen"),
+        "screened_out": sum(1 for r in table if r["stage"] in ("screen", "gpu_screen")),
         "backtested": len(back),
         "duplicates": len(back) - len(distinct),
         "distinct": len(distinct),

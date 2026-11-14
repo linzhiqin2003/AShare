@@ -6,11 +6,17 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'darwin'",
+    "python_full_version >= '3.15' and sys_platform == 'linux'",
+    "python_full_version >= '3.15' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.14.*' and sys_platform == 'linux'",
+    "python_full_version == '3.14.*' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'darwin'",
+    "python_full_version < '3.14' and sys_platform == 'linux'",
+    "python_full_version < '3.14' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 
 [manifest]
@@ -254,6 +260,10 @@ dependencies = [
 databento = [
     { name = "databento" },
 ]
+gpu = [
+    { name = "mlx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "mlx", extra = ["cuda12"], marker = "sys_platform == 'linux'" },
+]
 platform = [
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
@@ -323,6 +333,8 @@ requires-dist = [
     { name = "databento", marker = "extra == 'databento'", specifier = ">=0.90" },
     { name = "fastapi", marker = "extra == 'platform'" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'gpu'", specifier = ">=0.29" },
+    { name = "mlx", extras = ["cuda12"], marker = "sys_platform == 'linux' and extra == 'gpu'", specifier = ">=0.29" },
     { name = "osqp", specifier = ">=1.0" },
     { name = "panelbt", editable = "packages/panelbt" },
     { name = "panelops", editable = "packages/panelops" },
@@ -333,7 +345,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.14" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'platform'" },
 ]
-provides-extras = ["platform", "databento"]
+provides-extras = ["platform", "databento", "gpu"]
 
 [package.metadata.requires-dev]
 compare = [

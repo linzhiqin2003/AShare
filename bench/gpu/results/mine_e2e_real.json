@@ -1,0 +1,73 @@
+{
+ "source": {
+  "kind": "real",
+  "start": "20160101",
+  "end": "20261113",
+  "shape": [
+   2638,
+   5923
+  ]
+ },
+ "machine": {
+  "cpus": 15,
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "chip": "Apple M5 Pro",
+  "memory_gib": 24.0
+ },
+ "split": {
+  "train_start": "20160101",
+  "valid_start": "20250101",
+  "holdout_start": "20260101"
+ },
+ "population": 256,
+ "generations": 1,
+ "threads": 4,
+ "load_before": "8.03 8.77 7.47",
+ "runs": {
+  "cpu": {
+   "total_seconds": 95.36777616699692,
+   "generation_seconds": [
+    41.00985845900141,
+    53.345275458006654
+   ],
+   "proposed": 512,
+   "unique": 512,
+   "screened_out": 384,
+   "backtested": 128,
+   "failed": 0
+  },
+  "gpu": {
+   "total_seconds": 59.626237250020495,
+   "generation_seconds": [
+    22.01428445900092,
+    36.670301917009056
+   ],
+   "proposed": 512,
+   "unique": 512,
+   "screened_out": 384,
+   "backtested": 128,
+   "failed": 0,
+   "gpu": {
+    "margin": 0.3,
+    "gate_t": 0.7,
+    "chunk": 64,
+    "screened": 512,
+    "rechecked": 138,
+    "dropped": 374,
+    "unsupported": 0,
+    "float32_range": 0,
+    "errors": 0,
+    "gpu_seconds": 6.292079709004611,
+    "recheck_seconds": 55.71267245794297,
+    "rounding_ties": 8,
+    "upload_seconds": 0.17896791701787151,
+    "peak_device_memory": 1258366352
+   },
+   "device": "metal:Apple M5 Pro"
+  }
+ },
+ "same_selection": true,
+ "same_significant": true,
+ "same_backtested": true,
+ "load_after": "8.27 8.51 7.57"
+}

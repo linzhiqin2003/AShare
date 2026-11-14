@@ -10,6 +10,9 @@ platform = ["fastapi", "uvicorn[standard]"]
 # 境外期货的 Databento 来源（docs/FOREIGN_FUTURES.md），默认不装。Bloomberg 的 blpapi 只在 Bloomberg 自己的
 # 包索引上，不作可选依赖（锁文件不依赖那台主机），需要时手动装，命令见文档。
 databento = ["databento>=0.90"]
+# 因子挖掘的 GPU 粗筛（ashare.factor.mining.gpu，docs/GPU_MINING.md），默认不装：macOS 走 Metal，
+# Linux 走 CUDA 12（NVIDIA 驱动 >= 550、算力 >= SM 7.5、glibc >= 2.35）。
+gpu = ["mlx>=0.29; sys_platform == 'darwin'", "mlx[cuda12]>=0.29; sys_platform == 'linux'"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]

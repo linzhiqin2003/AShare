@@ -1,5 +1,7 @@
 # 因子挖掘 GPU 加速探针（2026-11-14）
 
+> 正式实现见 `docs/GPU_MINING.md`（`ashare.factor.mining.gpu`）。本文是选型时的测量，数字保留原样。
+
 测量与选型，不是正式实现。代码在 `bench/gpu/`，结果在 `bench/gpu/results/`（下文每个数字后面括号里是出处文件）。
 本机 Apple M5 Pro（15 核、24 GiB 统一内存），同时有别的任务：所有测量用 `nice -n 15`、CPU 对照 4 线程、不并行跑，负载如实记在每个结果文件的 `load*` 字段里（本轮 1 分钟负载约 4–14）。
 
