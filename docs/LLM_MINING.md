@@ -135,3 +135,18 @@ OpenRouter 在 `usage.cost` 里给出实际扣费，有它时预算按它算（�
 - **费用**：向量按 `usage.cost`（没有时按每百万 token 0.01 美元估）计入预算。向量按「模型 + 文本」哈希缓存在 `vectors.jsonl`（float16），同一条只请求一次。
 - 文件 `entries.jsonl` 追加写、加文件锁；文件不以换行结尾（上次写到一半断掉）时先补换行；按字节读、逐行解码，断在多字节字符中间的行和缺字段的行都只跳过它自己。每次搜索开始时重新读文件；每次搜索的编号带随机后缀（同一个转写文件被复用也不会把以往那次当成本次）。查询向量不进缓存。目录不许在仓库里（`data/` 除外）。
 - 测试 `test/factor/test_mining_llm_memory.py`；十三处变异（泄漏守卫、白名单、排除本次、评估口径、去重、费用计入预算、标签、坏行补换行、按字节读、重新读文件、编号随机后缀、笔记按口径、合成行情标签）全部抓到。变异检查找出一个真错误：新开的记忆第一次写入后读文件，那一条被算两遍（被去重掩盖）。独立审查又找出两个 P1（合成行情各种子共用记忆；断在多字节字符中间的行让记忆整个读不了）和六个小问题，均已修并有回归测试；审查确认没有验证段、留出段信息进入提示词的路径。
+
+## 经 OpenCode Go 调用
+
+```bash
+python -m ashare.factor.mining.llm --provider opencode-go --rounds 20
+```
+
+`--provider` 一次换掉地址、默认模型和密钥变量（`deepseek` 默认、`openrouter`、`opencode-go`），`--model`、`--base-url`、`--key-env` 仍可覆盖。`opencode-go` 用 OpenCode Go 订阅的 `deepseek-v4.1-flash`（`https://opencode.ai/inference/go/openai/v1`），2026-11-14 实测：
+
+- 密钥：环境变量 `OPENCODE_API_KEY`，没有时读 `opencode auth login` 存下的 `~/.local/share/opencode/auth.json` 里的 `opencode.key`（`OPENCODE_AUTH_FILE` 改位置；只读，不写回）。
+- 每个请求带自己的 `User-Agent: ashare-llm-mining/1.0` 和 `x-opencode-session`（缺这个头回 400 `MissingSessionID`）；每次搜索一个会话编号，同一次搜索里不变，便于对方路由和提示词缓存。
+- 订阅内的调用 `usage.cost` 是 0，实际扣的是套餐额度 `usage.opencode.allowance`（美元）；超出额度转按量付费时扣在 `cost` 上。预算按两者较大的计（转写记录 `cost_source: allowance`）。
+- 思考强度用 `reasoning_effort`：`--reasoning low|high|max`（没有关闭开关；`low` 思考约 190 token，`max` 约 3900）。
+- 官方说明 Go 是给 OpenCode 和「请求形态相近的编码代理」用的，流量有滥用监控；本循环每轮一次请求，量很小，但用的时候要知道这一点。
+- 向量模型不在 Go 上：跨次记忆的向量检索仍走 OpenRouter（没有 `OPENROUTER_API_KEY` 时退回按时间取最近的）。

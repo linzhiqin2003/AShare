@@ -510,3 +510,17 @@ def test_empty_truncated_reply_stops_at_once_with_reason(tmp_path):
     rnd = [r for r in rows if r["event"] == "round"][0]
     assert rnd["usage"]["reasoning_tokens"] == 4096
     assert "--reasoning" in rnd["answer_error"]
+
+
+def test_each_search_gets_its_own_session(tmp_path):
+    """OpenCode Go 按会话编号路由：每次搜索开始时换一个，编号与转写记录对得上。"""
+    sessions = []
+
+    class WithSession(Scripted):
+        def new_session(self, name):
+            sessions.append(name)
+
+    run(WithSession([answer(A)]), tmp_path, rounds=1, batch=1)
+    run(WithSession([answer(A)]), tmp_path, rounds=1, batch=1)
+    assert len(sessions) == 2 and sessions[0] != sessions[1]
+    assert all(s.startswith("t-") for s in sessions)  # 转写记录名 t.jsonl + 随机后缀

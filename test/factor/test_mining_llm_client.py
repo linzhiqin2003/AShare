@@ -237,3 +237,125 @@ def test_reported_cost_used_when_valid(reported, expect):
         assert reply.cost == pytest.approx(reported)
     else:
         assert reply.cost == pytest.approx((1000 * 1.0 + 200 * 2.0) / 1e6)
+
+
+# ---- OpenCode Go（2026-11-14 用户要求；实测：缺 x-opencode-session 回 400 MissingSessionID，
+# 订阅内 usage.cost 恒为 0、实际扣在 usage.opencode.allowance，思考强度用 reasoning_effort）------
+
+from ashare.factor.mining.llm.client import (  # noqa: E402
+    OPENCODE_GO_URL,
+    USER_AGENT,
+    client_for,
+    opencode_auth_key,
+)
+
+
+def _go(handler, **kw):
+    c = client_for("opencode-go", api_key=KEY, transport=httpx.MockTransport(handler),
+                   sleep=lambda s: None, **kw)  # fmt: skip
+    return c
+
+
+def test_opencode_go_sends_session_and_own_user_agent():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return _ok()
+
+    c = _go(handler)
+    c.complete(MSG)
+    c.complete(MSG)
+    assert seen[0].url == f"{OPENCODE_GO_URL}/chat/completions"
+    assert json.loads(seen[0].content)["model"] == "deepseek-v4.1-flash"
+    first = seen[0].headers["x-opencode-session"]
+    assert first and seen[1].headers["x-opencode-session"] == first  # 同一次搜索里不变
+    assert seen[0].headers["user-agent"] == USER_AGENT
+    c.new_session("run-2")
+    c.complete(MSG)
+    assert seen[2].headers["x-opencode-session"] == "run-2"
+
+
+def test_other_hosts_get_user_agent_but_no_session_header():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return _ok()
+
+    c, _ = _client(handler)
+    c.complete(MSG)
+    assert "x-opencode-session" not in seen[0].headers
+    assert seen[0].headers["user-agent"] == USER_AGENT
+
+
+@pytest.mark.parametrize("usage, cost, source", [
+    ({"cost": 0, "opencode": {"allowance": 0.00026667}}, 0.00026667, "allowance"),
+    ({"cost": 0.002, "opencode": {"allowance": 0.0}}, 0.002, "allowance"),  # 超额转按量付费
+    ({"cost": 0.001, "opencode": {"allowance": "x"}}, 0.001, "reported"),
+    ({"cost": 0, "opencode": None}, 0.0, "reported"),
+])  # fmt: skip
+def test_opencode_allowance_counts_toward_budget(usage, cost, source):
+    body_usage = {"prompt_tokens": 10, "completion_tokens": 20, **usage}
+
+    def handler(request):
+        body = {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": body_usage}  # fmt: skip
+        return httpx.Response(200, content=json.dumps(body).encode())
+
+    reply = _go(handler).complete(MSG)
+    assert reply.cost == pytest.approx(cost) and reply.cost_source == source
+
+
+@pytest.mark.parametrize("level", ["low", "high", "max"])
+def test_opencode_reasoning_effort(level):
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return _ok()
+
+    _go(handler, reasoning=level).complete(MSG)
+    assert seen[0]["reasoning_effort"] == level and "reasoning" not in seen[0]
+
+
+def test_reasoning_values_checked_per_provider():
+    for bad in ("off", "medium"):
+        with pytest.raises(ValueError, match="OpenCode Go"):
+            client_for("opencode-go", api_key=KEY, reasoning=bad)
+    with pytest.raises(ValueError, match="OpenRouter"):
+        client_for("openrouter", api_key=KEY, reasoning="max")
+    with pytest.raises(ValueError, match="provider"):
+        client_for("nope")
+
+
+def test_opencode_key_from_env_then_auth_file(tmp_path, monkeypatch):
+    auth = tmp_path / "auth.json"
+    auth.write_text(json.dumps({"opencode": {"type": "api", "key": "sk-from-file"},
+                                "openai": {"type": "oauth", "access": "x"}}))  # fmt: skip
+    monkeypatch.setenv("OPENCODE_AUTH_FILE", str(auth))
+    monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+    assert client_for("opencode-go")._api_key() == "sk-from-file"
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-from-env")
+    assert client_for("opencode-go")._api_key() == "sk-from-env"  # 环境变量优先
+    monkeypatch.delenv("OPENCODE_API_KEY")
+    for bad in (
+        "not json",
+        json.dumps({"opencode": {"type": "oauth", "key": "k"}}),
+        "[]",
+    ):
+        auth.write_text(bad)
+        assert opencode_auth_key() is None
+    with pytest.raises(LLMError, match="opencode auth login") as exc:
+        client_for("opencode-go")._api_key()
+    assert "sk-" not in str(exc.value)
+
+
+def test_cli_provider_presets():
+    from ashare.factor.mining.llm.__main__ import _client, parser
+
+    c = _client(parser().parse_args(["--provider", "opencode-go"]))
+    assert c.base_url == OPENCODE_GO_URL and c.model == "deepseek-v4.1-flash"
+    c = _client(parser().parse_args(["--provider", "openrouter", "--model", "x/y"]))
+    assert c.base_url.startswith("https://openrouter.ai") and c.model == "x/y"
+    assert _client(parser().parse_args([])).base_url == "https://api.deepseek.com"

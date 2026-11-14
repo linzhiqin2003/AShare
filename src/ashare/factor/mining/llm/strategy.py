@@ -180,6 +180,10 @@ class LLMResearch:
         best_fit, stall, empty = -math.inf, 0, 0
         # 同一个转写文件可能被多次搜索复用、同一秒启动的两次搜索文件名也可能相同：加随机后缀
         run_id = f"{path.stem}-{uuid.uuid4().hex[:8]}"
+        if hasattr(self.client, "new_session"):
+            self.client.new_session(
+                run_id
+            )  # 一次搜索一个会话编号（OpenCode Go 按它路由）
         ctx = (
             Context.from_task(self.memory.tag, task)
             if self.memory is not None

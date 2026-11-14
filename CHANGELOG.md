@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-11-14（大模型因子挖掘）
+- `--provider deepseek|openrouter|opencode-go`（`client.PROVIDERS`、`client_for`）：OpenCode Go 订阅可直接用，密钥读 `OPENCODE_API_KEY` 或 `opencode auth login` 存下的；请求带自己的 User-Agent 和每次搜索一个的 `x-opencode-session`；预算按 `usage.opencode.allowance`（订阅内 `usage.cost` 恒为 0）；`--reasoning` 在 Go 上映射为 `reasoning_effort`（low/high/max）。
 - 跨次研究记忆（`llm/memory.py`，`docs/LLM_MINING.md`「跨次记忆」）：每轮的假设、因子和训练段结果存进 `<root>/llm/memory/`，下一次搜索按口径取回以往最好的因子、按向量（`qwen/qwen3-embedding-8b`，OpenRouter）取回相近的以往假设，并接上上次的研究笔记；验证段起点晚于本次的以往条目不取，数据集标签不同的不取。新增 `EmbeddingClient`；`mine()` 的 `evaluate.task` 多给 `split`。提示词版本升到 `llm-research/2`。
 - `--max-tokens`（默认 32768）与 `--reasoning`（OpenRouter）：首次实跑时 DeepSeek Flash 默认思考把 4096 的输出上限用完、三轮回答全空；现在被截断成空回答会立即停下并说明。OpenRouter 的 `usage.cost` 有效时按实际扣费计入预算。
 - 新增 `ashare.factor.mining.llm`（`docs/LLM_MINING.md`）：`mine()` 的第四种策略 `LLMResearch`，参考 RD-Agent 的研究循环在本框架里重写（不依赖 RD-Agent，提示词自写）。每轮：提示词（场景、空间、语法例子、训练段最好的因子、最近几轮假设与结果、更早提交过的表达式、上一轮的校验错误、模型维护的笔记、探索或细化的建议）→ 模型回 JSON → 表达式按空间白名单解析校验（`parse`，不执行代码；不合法的不评估、不算试验，错误反馈）→ 跨轮去重 → 交 `evaluate` → 训练段反馈。停止：轮数、费用或 token 预算、连续无效轮、接口报错。`ChatClient` 是只用 httpx 的 OpenAI 兼容客户端（默认 DeepSeek 官方、`deepseek-flash`，密钥读 `DEEPSEEK_API_KEY`，429/5xx/传输错误退避重试，报错不带密钥，费用按 usage 计）。转写记录写到台账目录下的 `llm/`，落在仓库里（`data/` 除外）直接报错。命令行 `python -m ashare.factor.mining.llm`（`--synthetic`、`--screen gpu`）。

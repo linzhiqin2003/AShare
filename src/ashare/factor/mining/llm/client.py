@@ -21,11 +21,16 @@ import json
 import math
 import os
 import time
+import uuid
 from dataclasses import asdict, dataclass
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-flash"
 DEFAULT_KEY_ENV = "DEEPSEEK_API_KEY"
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+OPENCODE_GO_URL = "https://opencode.ai/inference/go/openai/v1"
+# 自己的客户端名：OpenCode Go 要求调用方用自己的 User-Agent 表明身份，不用通用 HTTP 库的名字
+USER_AGENT = "ashare-llm-mining/1.0"
 
 
 class LLMError(RuntimeError):
@@ -119,6 +124,7 @@ class ChatClient:
         max_tokens=32768,
         reasoning=None,
         send_seed=False,
+        key_fallback=None,
         transport=None,
         sleep=time.sleep,
     ):
@@ -126,13 +132,17 @@ class ChatClient:
         self.base_url = str(base_url).rstrip("/")
         self._key = api_key
         self.api_key_env = api_key_env
+        self._key_fallback = key_fallback  # 环境变量没有密钥时再问它（返回密钥或 None）
+        self.session = f"ashare-{uuid.uuid4().hex[:16]}"
         self.pricing = pricing or Pricing()
         self.timeout = float(timeout)
         self.retries = int(retries)
         self.backoff = float(backoff)
         self.temperature = float(temperature)
         self.max_tokens = int(max_tokens)
-        self.reasoning = _reasoning_field(reasoning, self.base_url)
+        self.reasoning = _reasoning_field(
+            reasoning, self.base_url
+        )  # (字段名, 值) 或 None
         self.reasoning_name = reasoning
         self.send_seed = bool(send_seed)
         self._transport = transport
@@ -149,11 +159,22 @@ class ChatClient:
             "pricing": asdict(self.pricing),
         }
 
+    def new_session(self, name):
+        """换一个会话编号（每次搜索一个；OpenCode Go 按它路由和缓存，同一次搜索里保持不变）。"""
+        self.session = str(name)[:64]
+
     def _api_key(self):
         if self._key is None:
             self._key = os.environ.get(self.api_key_env) or None
+        if self._key is None and self._key_fallback is not None:
+            self._key = self._key_fallback() or None
         if not self._key:
-            raise LLMError(f"没有找到 API 密钥：设置环境变量 {self.api_key_env}")
+            hint = (
+                "，或先运行 opencode auth login"
+                if self._key_fallback is not None
+                else ""
+            )
+            raise LLMError(f"没有找到 API 密钥：设置环境变量 {self.api_key_env}{hint}")
         return self._key
 
     def _redact(self, text):
@@ -174,7 +195,8 @@ class ChatClient:
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         if self.reasoning is not None:
-            body["reasoning"] = self.reasoning
+            field_name, value = self.reasoning
+            body[field_name] = value
         if seed is not None and self.send_seed:
             body["seed"] = int(seed)
         raw, attempt = self._call("/chat/completions", body)
@@ -185,7 +207,11 @@ class ChatClient:
         import httpx
 
         key = self._api_key()
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                   "User-Agent": USER_AGENT}  # fmt: skip
+        if _is_opencode_go(self.base_url):
+            # 缺这个头 OpenCode Go 直接回 400 MissingSessionID（2026-11-14 实测）
+            headers["x-opencode-session"] = self.session
         url = f"{self.base_url}{path}"
         last = None
         for attempt in range(1, self.retries + 2):
@@ -246,32 +272,122 @@ class ChatClient:
         raw_usage = data.get("usage")
         usage = parse_usage(raw_usage, messages, text)
         cost, source = self.pricing.cost(usage), "pricing"
-        reported = raw_usage.get("cost") if isinstance(raw_usage, dict) else None
-        if (isinstance(reported, (int, float)) and not isinstance(reported, bool)
-                and math.isfinite(reported) and reported >= 0):  # fmt: skip
-            cost, source = float(reported), "reported"
+        raw_usage = raw_usage if isinstance(raw_usage, dict) else {}
+        reported = _money(raw_usage.get("cost"))
+        oc = raw_usage.get("opencode")
+        allowance = _money(oc.get("allowance")) if isinstance(oc, dict) else None
+        # OpenCode Go 订阅内的调用 usage.cost 是 0，实际扣的是套餐额度（usage.opencode.allowance）；
+        # 超出额度转按量付费时扣在 cost 上。预算按两者较大的算，不会因为 cost=0 永远不停。
+        if allowance is not None:
+            cost, source = max(allowance, reported or 0.0), "allowance"
+        elif reported is not None:
+            cost, source = reported, "reported"
         provider = data.get("provider")
         return Reply(str(text), usage, cost, attempt, choice.get("finish_reason"),
                      source, provider if isinstance(provider, str) else None)  # fmt: skip
 
 
-REASONING = ("off", "low", "medium", "high")
+def _money(x):
+    if (
+        isinstance(x, (int, float))
+        and not isinstance(x, bool)
+        and math.isfinite(x)
+        and x >= 0
+    ):
+        return float(x)
+    return None
+
+
+def _is_opencode_go(base_url):
+    return base_url.startswith("https://opencode.ai/inference/go/")
+
+
+REASONING = ("off", "low", "medium", "high", "max")
 
 
 def _reasoning_field(reasoning, base_url):
-    """``--reasoning`` → 请求体里的 ``reasoning`` 字段。``None`` 不发（用模型默认：DeepSeek Flash 默认思考）。
+    """``--reasoning`` → 请求体里的 (字段名, 值)。``None`` 不发（用模型默认：DeepSeek Flash 默认思考）。
 
-    只在 OpenRouter 上核实过（2026-11-14 实测 deepseek/deepseek-v4.1-flash：off 时思考 0 token，
-    low / high 约 550，默认约 1400）；别的接口写法不同，传了就报错，不猜。"""
+    只支持实测过的接口（2026-11-14，DeepSeek V4.1 Flash），别的接口写法不同，传了就报错，不猜：
+    - OpenRouter：``reasoning`` 对象，off / low / medium / high（off 时思考 0 token，low/high 约 550，
+      默认约 1400）；
+    - OpenCode Go：``reasoning_effort``，low / high / max（low 约 190，max 约 3900；没有关闭开关，
+      ``reasoning`` 对象它不认）。"""
     if reasoning is None:
         return None
     if reasoning not in REASONING:
         raise ValueError(f"reasoning 只能是 {REASONING} 之一，收到 {reasoning!r}")
-    if "openrouter.ai" not in base_url:
-        raise ValueError(
-            "reasoning 只在 OpenRouter 上核实过，其他接口请不传（用模型默认）"
+    if "openrouter.ai" in base_url:
+        if reasoning == "max":
+            raise ValueError(
+                "OpenRouter 上 reasoning 只核实过 off / low / medium / high"
+            )
+        return "reasoning", (
+            {"enabled": False} if reasoning == "off" else {"effort": reasoning}
         )
-    return {"enabled": False} if reasoning == "off" else {"effort": reasoning}
+    if _is_opencode_go(base_url):
+        if reasoning not in ("low", "high", "max"):
+            raise ValueError("OpenCode Go 的 reasoning 只支持 low / high / max")
+        return "reasoning_effort", reasoning
+    raise ValueError(
+        "reasoning 只在 OpenRouter 和 OpenCode Go 上核实过，其他接口请不传（用模型默认）"
+    )
+
+
+def opencode_auth_key(path=None):
+    """读 ``opencode auth login`` 存下的 OpenCode 密钥（Go 订阅用的就是它）。只读；读不到返回 None。
+
+    位置：``OPENCODE_AUTH_FILE`` 或 ``~/.local/share/opencode/auth.json`` 里的 ``opencode.key``
+    （``type`` 为 ``api``）。"""
+    path = (
+        path
+        or os.environ.get("OPENCODE_AUTH_FILE")
+        or os.path.expanduser("~/.local/share/opencode/auth.json")
+    )
+    try:
+        with open(path, encoding="utf-8") as f:
+            entry = json.load(f).get("opencode")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if (
+        isinstance(entry, dict)
+        and entry.get("type") == "api"
+        and isinstance(entry.get("key"), str)
+    ):
+        return entry["key"] or None
+    return None
+
+
+@dataclass(frozen=True)
+class Provider:
+    """一个接口预设：地址、默认模型、密钥的环境变量，以及密钥的后备来源。"""
+
+    base_url: str
+    model: str
+    key_env: str
+    key_fallback: object = None
+
+
+PROVIDERS = {
+    "deepseek": Provider(DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_KEY_ENV),
+    "openrouter": Provider(
+        OPENROUTER_URL, "deepseek/deepseek-v4.1-flash", "OPENROUTER_API_KEY"
+    ),
+    # OpenCode Go 订阅（DeepSeek V4.1 Flash 每月 100 美元额度，按 5 小时 20%、每周 50% 限流）
+    "opencode-go": Provider(
+        OPENCODE_GO_URL, "deepseek-v4.1-flash", "OPENCODE_API_KEY", opencode_auth_key
+    ),  # fmt: skip
+}
+
+
+def client_for(provider, *, model=None, base_url=None, api_key_env=None, **kw):
+    """按预设建 `ChatClient`；显式给的 model / base_url / api_key_env 覆盖预设。"""
+    if provider not in PROVIDERS:
+        raise ValueError(f"provider 只能是 {sorted(PROVIDERS)} 之一，收到 {provider!r}")
+    p = PROVIDERS[provider]
+    return ChatClient(model or p.model, base_url=base_url or p.base_url,
+                      api_key_env=api_key_env or p.key_env,
+                      key_fallback=p.key_fallback, **kw)  # fmt: skip
 
 
 DEFAULT_EMBED_MODEL = "qwen/qwen3-embedding-8b"

@@ -24,6 +24,10 @@ def parser():
     ap.add_argument("--budget-usd", type=float, default=2.0)
     ap.add_argument("--budget-tokens", type=int, default=None)
     ap.add_argument("--patience", type=int, default=3)
+    ap.add_argument("--provider", choices=("deepseek", "openrouter", "opencode-go"),
+                    default="deepseek",
+                    help="接口预设（地址、默认模型、密钥变量）；--model/--base-url/--key-env 可覆盖。"
+                         "opencode-go 用 OpenCode Go 订阅，密钥读 OPENCODE_API_KEY 或 opencode auth login 存下的")  # fmt: skip
     ap.add_argument("--model", default=None)
     ap.add_argument("--base-url", default=None)
     ap.add_argument("--key-env", default=None)
@@ -74,23 +78,18 @@ def parser():
 def _client(args):
     from dataclasses import replace
 
-    from .client import (
-        DEFAULT_BASE_URL,
-        DEFAULT_KEY_ENV,
-        DEFAULT_MODEL,
-        ChatClient,
-        Pricing,
-    )
+    from .client import Pricing, client_for
 
     pricing = Pricing()
     for name, attr in (("price_in", "input"), ("price_cached", "cached_input"),
                        ("price_out", "output")):  # fmt: skip
         if getattr(args, name) is not None:
             pricing = replace(pricing, **{attr: getattr(args, name)})
-    return ChatClient(
-        args.model or DEFAULT_MODEL,
-        base_url=args.base_url or DEFAULT_BASE_URL,
-        api_key_env=args.key_env or DEFAULT_KEY_ENV,
+    return client_for(
+        args.provider,
+        model=args.model,
+        base_url=args.base_url,
+        api_key_env=args.key_env,
         pricing=pricing,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
