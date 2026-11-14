@@ -23,6 +23,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from . import datastatus, market
 from .access import Access, login_page
 from .analysis import plot_payload
+from .backtest.api import router as backtest_router
 from .benchmarks import Benchmarks
 from .compare import router as compare_router
 from .config import CHOICES, expand_settings, platform_dir
@@ -186,6 +187,9 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
     benchmarks = Benchmarks(data_root)
     holdings = Holdings(store, data_root)
     preferences = Preferences(store.root)
+    backtests = backtest_router(
+        store.root, data_root, default_benchmark=preferences.benchmark
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -254,7 +258,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
             metadata["at"] = time.monotonic()
         return {
             "data_date": metadata["date"],
-            "running": manager.running,
+            "running": manager.running + backtests.jobs.running,
             "max_workers": manager.limit,
         }
 
@@ -497,6 +501,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
 
     app.include_router(compare_router)
     app.include_router(paper_router(data_root))
+    app.include_router(backtests)
     if STATIC.is_dir():
         app.mount("/", StaticFiles(directory=STATIC, html=True), name="web")
     return app

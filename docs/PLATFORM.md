@@ -685,6 +685,66 @@ timeout 1400s .venv/bin/python -m bench.platform.verify_real
 最后一个脚本需要先启动服务，并设置真实数据的只读 `ASHARE_DATA_DIR` 和本 worktree 下的
 `ASHARE_PLATFORM_DIR`。它输出真实对照数字，仅用于私有最终报告，不要将输出加入仓库。
 
+## 回测页
+
+`#/backtest`（页面组件 `web/src/pages/BacktestPage.vue`，后端 `src/ashare/platform/backtest/`）。
+对一个表达式用 `panelbt` 成交模式跑完整的现金/股数回测，设计稿 `p7_backtest_light`。
+因子库工具栏「对比」旁的「送去回测」在只勾选一个因子时可用，跳到 `#/backtest?entry=<条目 id>`：页面读
+`/api/library/{id}`，带入表达式、名称，设置只带入回测页认得的股票池（TOP800 / TOP1800 / ALL）、成交时点和基准；
+同一条目已开过就切回那个 tab。默认基准跟设置页保存的默认基准一致。顶栏「N 个任务运行中」把排队和正在跑的回测也算上。
+
+计算全部复用现有模块：信号用 `analysis.evaluate_signal`（截到验证期末）；每个调仓信号日用
+`ashare.portfolio.top_equal` 取池内信号最高的前 N 只等权，`to_targets` 转稀疏目标，`ashare.backtest.execution_targets`
+移到下一交易日成交；行情与规则用 `ashare.backtest.market_inputs`、`boards`（开盘成交用面板的可买可卖掩码，
+涨停买不进、跌停卖不出、停牌都不成交，`carry_blocked` 决定逐日重试还是等下次调仓），A 股整手 `ASHARE.config`，
+费用 `ASHARE.costs`（佣金、最低佣金、滑点由页面给，印花税与过户费按历年规定）；统计全部来自
+`ashare.report.build_tearsheet`（年度归因、回撤区间、调仓记录、未成交原因、最新持仓、行业权重）。
+调仓信号日是窗口首日和每个周期（日、周、月、季、年）在面板里的最后一个交易日，下一交易日成交。
+
+「每年」与本科论文红利策略（研究 002，SPEC A.8）的口径不同：论文在每年 1 月第一个交易日 s 定名单、
+s 的下一个交易日成交；回测页沿用周、月、季的同一条规则，在上一年最后一个交易日收盘后定名单、
+1 月第一个交易日成交。名单早一个交易日确定（不含 1 月第一个交易日的行情），成交也早一个交易日；
+窗口首日另有一次建仓。要逐日复现论文请用研究 002 的脚本，不用这个页面。
+
+窗口纪律：样本内、验证期各自从窗口首日以同样初始资金独立回测；接口没有窗口、起止日期参数，
+`part` 只认 `is` / `validation`。验证期结果默认不显示，跟随全局开关（`web/src/validation.ts`，
+`localStorage['ashare.showValidation']` 为 `'1'` 时显示）：打开后净值图标题栏出现「样本内 / 验证」切换，
+否则只请求样本内。
+
+身份为 `SHA256(表达式摘要 + 规范化设置 + 数据版本)` 的前 24 位：注释、空格不同的同一表达式与设置直接复用，
+不重跑；数据更新后自动成为新回测。任务在独立进程组的 spawn 工作进程里逐个执行（排队），取消正在跑的任务
+即结束整组进程；空闲 60 秒回收，HTTP 进程消失时工作进程自行退出。结果在 `<平台目录>/backtests/`：
+`index.sqlite3` 记状态，`<id>.<part>.json` 是页面文档，`<id>.<part>.npz` 是调仓记录与逐笔成交（按页读取）。
+
+| 方法 | 路由 | 用途 |
+|---|---|---|
+| GET | `/api/backtests/options` | 默认值、选项、数字范围、两个窗口 |
+| GET | `/api/backtests/status` | 运行与排队中的回测数 |
+| POST | `/api/backtests` | 提交 `{source, name, settings}`；已完成的同一身份直接返回 |
+| GET | `/api/backtests/{id}` | 状态、进度、耗时 |
+| GET | `/api/backtests/{id}/result?part=is` | 页面文档（净值、回撤、统计、成交约束、年度、行业、回撤区间、最新持仓） |
+| GET | `/api/backtests/{id}/rebalances?part=&offset=&limit=` | 调仓记录，新的在前，每页 ≤ 200 |
+| GET | `/api/backtests/{id}/trades?part=&offset=&limit=` | 逐笔成交，新的在前，每页 ≤ 200 |
+| POST | `/api/backtests/{id}/cancel` | 取消排队或正在跑的回测 |
+
+结果目录按总大小封顶：`ASHARE_PLATFORM_BACKTEST_MAX_BYTES`（字节，默认 2 GiB）。每次回测完成和服务启动时检查，
+超出就按最近打开时间（读 result、调仓、成交时记下；没打开过按完成时间，索引里没有的孤儿文件最先）
+从旧到新删整份结果，状态改成 `evicted`。排队、正在跑和 `ASHARE_PLATFORM_BACKTEST_KEEP_SECONDS`（默认 600 秒）
+内刚完成的不删。读已清理的结果返回 410「结果已清理，请重新运行」，页面显示同样的提示；再次运行同一配置即重算。
+
+真实数据实测（本机，2026-11-14，热请求服务端耗时取 `Server-Timing`）：
+
+| 回测 | 计算（两个窗口） | result 原始 / gzip | 成交一页 原始 / gzip | 调仓一页 原始 / gzip | 服务端 |
+|---|---|---|---|---|---|
+| 沪深 300、月调仓、30 只（样本内 3403 笔成交） | 2.0 s | 97.3 KB / 31.7 KB | 8.8 KB / 2.1 KB | 7.7 KB / 1.3 KB | 0.9–4 ms |
+| 全市场、日调仓、100 只（样本内 140295 笔） | 4.4 s | 103.1 KB / 32.8 KB | 8.9 KB / 2.2 KB | 7.8 KB / 1.5 KB | 1.5–7 ms |
+
+result 大小与成交笔数无关，主要是约 2190 个交易日 × 净值、基准、回撤三条序列；日调仓的成交档案 13 MB
+（不进响应，翻页只取 50 行）。首次运行另有约 3 s 的工作进程启动与面板加载。
+
+做不到而没有放上页面的：设计稿的「红利税按持有期」——引擎每天只收一个红利税率，页面提供 20% / 10% / 不扣三档；
+「转模拟盘」——模拟盘还没有接收接口；印花税是按历年规定展开的日期表，不做成可改的单一税率。
+
 ## 验证、范围与限制
 
 第五轮 `make check` 通过：4138 项测试通过、7 项原有 Databento 可选依赖跳过，pytest 494.12 秒；Ruff、Rust 格式、clippy 和 Rust 测试通过。追加统计共享与持仓 HTTP 用例后，相关文件 18 项单独通过。`make web-check` 的 31 项和 `make web` 通过。默认结果由 `test/factor/test_groupbt_bitwise.py` 的 441 项逐位回归守住。
