@@ -53,7 +53,7 @@ describe('因子详情从右侧滑出（2026-11-14 用户要求，原先用 Spli
   })
   it('点 × 关闭；勾选框点击不打开详情', async () => {
     const { wrapper } = await mountLibrary()
-    await wrapper.get('input[aria-label="选择 factor_a"]').trigger('click')
+    await wrapper.get('[role=checkbox][aria-label="选择 factor_a"]').trigger('click')
     expect(wrapper.find('aside.detail-drawer').exists()).toBe(false)
     await wrapper.findAll('tr.entry-row')[2].trigger('click'); await flushPromises()
     await wrapper.get('button[aria-label="关闭详情"]').trigger('click')
@@ -71,9 +71,9 @@ describe('验证期默认隐藏（2026-11-14 用户要求，避免看着验证�
     await wrapper.findAll('button').find(b => b.text() === '视图')!.trigger('click')
     const columns = wrapper.findAll('.group-menu-anchor')[1]
     await columns.trigger('mouseenter')
-    const box = columns.findAll('label').find(l => l.text() === '验证')!.get('input')
+    const box = columns.findAll('label').find(l => l.text() === '验证')!.get('[role=checkbox]')
     expect(box.attributes('disabled')).toBeDefined()
-    expect((box.element as HTMLInputElement).checked).toBe(false)
+    expect(box.attributes('aria-checked')).toBe('false')
     await wrapper.findAll('tr.entry-row')[0].trigger('click'); await flushPromises()
     const drawer = wrapper.get('aside.detail-drawer')
     expect(drawer.findAll('.detail-metrics th').map(t => t.text())).toEqual(['', '样本内'])
@@ -90,7 +90,7 @@ describe('验证期默认隐藏（2026-11-14 用户要求，避免看着验证�
     await wrapper.findAll('button').find(b => b.text() === '视图')!.trigger('click')
     const columns = wrapper.findAll('.group-menu-anchor')[1]
     await columns.trigger('mouseenter')
-    await columns.findAll('label').find(l => l.text() === '验证')!.get('input').setValue(true)
+    await columns.findAll('label').find(l => l.text() === '验证')!.get('[role=checkbox]').trigger('click')
     expect(wrapper.findAll('th').map(t => t.text())).toContain('验证')
     expect(wrapper.text()).toContain('-0.77')
     await wrapper.findAll('th button').find(b => b.text() === '验证')!.trigger('click')
@@ -116,10 +116,10 @@ describe('勾选后进入对比（2026-11-14 用户要求，照 p5 设计稿）'
     const { wrapper } = await mountLibrary()
     const compare = () => wrapper.findAll('button').find(b => b.text() === '对比')!
     expect(compare().attributes('disabled')).toBeDefined()
-    await wrapper.get('input[aria-label="选择 factor_a"]').setValue(true)
+    await wrapper.get('[role=checkbox][aria-label="选择 factor_a"]').trigger('click')
     expect(wrapper.text()).toContain('已选 1 个')
     expect(compare().attributes('disabled')).toBeDefined()
-    await wrapper.get('input[aria-label="选择 factor_c"]').setValue(true)
+    await wrapper.get('[role=checkbox][aria-label="选择 factor_c"]').trigger('click')
     expect(wrapper.text()).toContain('已选 2 个')
     await compare().trigger('click')
     expect(wrapper.get('.compare-stub').text()).toBe('a,c')

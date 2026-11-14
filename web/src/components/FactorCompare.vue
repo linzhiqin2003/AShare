@@ -2,12 +2,13 @@
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { ArrowLeft, Search, ListChecks, Download } from 'lucide-vue-next'
 import { api, friendly } from '../api'
-import { colors, configLabel, fmt, unpack } from '../chart'
+import { colors, fmt, unpack } from '../chart'
 import type { ChartData, Entry, LibraryData, Line } from '../types'
 import type { CompareData, CompareItem } from '../compare'
-import { bestValues, clusters, metricColumns, METRIC_GROUPS, DEFAULT_METRICS, settingsSummary, toCsv, volatilityAligned } from '../compare'
+import { bestValues, distinctLabels, metricColumns, METRIC_GROUPS, DEFAULT_METRICS, settingsSummary, toCsv, volatilityAligned } from '../compare'
 import { showValidation } from '../validation'
 import ResultChart from './ResultChart.vue'
+import { UiCheckbox, vTip } from './ui'
 
 const props = defineProps<{ selected: Entry[] }>()
 const emit = defineEmits<{ toggle: [entry: Entry]; close: [] }>()
@@ -64,6 +65,10 @@ const list = computed(() => {
   const pinned = props.selected.filter(e => !query || e.name.toLowerCase().includes(query) || e.source.toLowerCase().includes(query))
   return [...pinned, ...candidates.value.filter(e => !chosen.has(e.id))]
 })
+// 同名因子附上它们之间不同的配置或表达式取值（2026-11-14 用户要求）。
+const listNames = computed(() => distinctLabels(list.value))
+const names = computed(() => distinctLabels(items.value))
+const nameOf = (item: { id: string; name: string }) => names.value.get(item.id) ?? item.name
 const isChosen = (entry: Entry) => props.selected.some(e => e.id === entry.id)
 
 const chart = computed<ChartData>(() => {
@@ -71,7 +76,7 @@ const chart = computed<ChartData>(() => {
   if (!data?.dates.length) return { dates: [], lines: [] }
   const days = range.value === 'all' ? data.dates.length : Math.min(data.dates.length, Number(range.value) * 242)
   const start = data.dates.length - days
-  let lines: Line[] = data.items.filter(item => data.series[item.id]).map(item => ({ id: item.id, name: item.name, color: colorOf.value.get(item.id) ?? colors[0], values: unpack(data.series[item.id]).slice(start), kind: 'long_short' as const }))
+  let lines: Line[] = data.items.filter(item => data.series[item.id]).map(item => ({ id: item.id, name: nameOf(item), color: colorOf.value.get(item.id) ?? colors[0], values: unpack(data.series[item.id]).slice(start), kind: 'long_short' as const }))
   if (align.value) lines = volatilityAligned(lines)
   return { dates: data.dates.slice(start), lines }
 })
@@ -93,7 +98,6 @@ const chooserGroups = computed(() => {
   return METRIC_GROUPS.map(group => ({ ...group, items: group.items.filter(m => !query || m.label.includes(query) || group.label.includes(query)) })).filter(g => g.items.length)
 })
 const settingsText = computed(() => settingsSummary(items.value.map(i => i.settings)))
-const correlationClusters = computed(() => clusters(items.value.map(i => i.name), result.value?.correlation ?? []))
 
 function cellColor(column: { heat?: number }, value: number | null) {
   if (!column.heat || value == null || !Number.isFinite(value)) return undefined
@@ -103,7 +107,7 @@ function cellColor(column: { heat?: number }, value: number | null) {
 const matrixColor = (value: number | null | undefined) => value == null ? 'transparent' : value >= 0 ? `rgba(31,79,191,${(Math.abs(value) * .26).toFixed(3)})` : `rgba(161,74,20,${(Math.abs(value) * .22).toFixed(3)})`
 
 function exportCsv() {
-  const blob = new Blob(['﻿' + toCsv(columns.value, items.value)], { type: 'text/csv;charset=utf-8' })
+  const blob = new Blob(['﻿' + toCsv(columns.value, items.value, names.value)], { type: 'text/csv;charset=utf-8' })
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob); link.download = 'factor-compare.csv'
   link.click(); URL.revokeObjectURL(link.href)
@@ -124,8 +128,8 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
         <ul class="runs">
           <li v-for="entry in list" :key="entry.id" :class="{ chosen: isChosen(entry) }">
             <label>
-              <input type="checkbox" :checked="isChosen(entry)" :disabled="!isChosen(entry) && selected.length >= MAX" :style="{ accentColor: colorOf.get(entry.id) ?? 'var(--ink)' }" :aria-label="`对比 ${entry.name}`" @change="emit('toggle', entry)">
-              <span class="run-text"><b class="mono">{{ entry.name }}</b><em class="mono">{{ entry.source.replaceAll('\n', ' ') }}</em></span>
+              <UiCheckbox :model-value="isChosen(entry)" :disabled="!isChosen(entry) && selected.length >= MAX" :color="colorOf.get(entry.id)" :aria-label="`对比 ${listNames.get(entry.id) ?? entry.name}`" @update:model-value="emit('toggle', entry)" />
+              <span class="run-text"><b class="mono">{{ listNames.get(entry.id) ?? entry.name }}</b><em class="mono">{{ entry.source.replaceAll('\n', ' ') }}</em></span>
               <span class="mono run-sharpe">{{ fmt(entry.sharpe) }}</span>
             </label>
           </li>
@@ -135,10 +139,9 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
         <div class="panel-header"><b>日盈亏相关</b></div>
         <div v-if="items.length > 1" class="correlation-body">
           <table class="matrix"><thead><tr><th></th><th v-for="item in items" :key="item.id"><i class="swatch" :style="{ background: colorOf.get(item.id) }"></i></th></tr></thead>
-            <tbody><tr v-for="(item, i) in items" :key="item.id"><th :title="item.name"><i class="swatch" :style="{ background: colorOf.get(item.id) }"></i><span class="mono">{{ item.name }}</span></th>
+            <tbody><tr v-for="(item, i) in items" :key="item.id"><th v-tip="nameOf(item)"><i class="swatch" :style="{ background: colorOf.get(item.id) }"></i><span class="mono">{{ nameOf(item) }}</span></th>
               <td v-for="(other, j) in items" :key="other.id" class="mono" :style="{ background: i === j ? 'transparent' : matrixColor(result?.correlation[i]?.[j]) }">{{ i === j ? '—' : fmt(result?.correlation[i]?.[j]) }}</td></tr></tbody>
           </table>
-          <p v-for="cluster in correlationClusters" :key="cluster.join()" class="cluster-note">{{ cluster.join('、') }} 两两相关都在 0.8 以上，合在一起相当于一个因子。</p>
         </div>
         <div v-else class="empty muted">至少选两个因子</div>
       </section>
@@ -147,7 +150,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
       <div class="compare-bar">
         <button class="text-button back" @click="emit('close')"><ArrowLeft :size="14" />因子库</button>
         <span class="bar-title">对比 {{ selected.length }} 个</span>
-        <span v-if="settingsText" class="push muted settings-text" :title="settingsText">{{ settingsText }}</span>
+        <span v-if="settingsText" class="push muted settings-text">{{ settingsText }}</span>
         <button class="button small" :class="{ push: !settingsText }" :disabled="!items.length" @click="exportCsv"><Download :size="13" />导出</button>
       </div>
       <section class="panel chart-panel" :aria-busy="loading">
@@ -166,7 +169,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
                 <tr class="group-head"><th></th><th v-for="group in headerGroups" :key="group.label" :colspan="group.span" class="group-start">{{ group.label }}</th></tr>
                 <tr><th>因子</th><th v-for="column in columns" :key="column.key" :class="{ 'group-start': groupStarts.has(column.key), year: column.year }">{{ column.label }}</th></tr>
               </thead>
-              <tbody><tr v-for="item in items" :key="item.id"><td class="mono factor-cell" :title="item.name"><i class="swatch" :style="{ background: colorOf.get(item.id) }"></i>{{ item.name }}</td>
+              <tbody><tr v-for="item in items" :key="item.id"><td v-tip="nameOf(item)" class="mono factor-cell"><i class="swatch" :style="{ background: colorOf.get(item.id) }"></i>{{ nameOf(item) }}</td>
                 <td v-for="column in columns" :key="column.key" class="number" :class="{ best: best.get(column.key) === item.id, 'group-start': groupStarts.has(column.key), year: column.year }" :style="{ background: cellColor(column, column.value(item)) }">{{ fmt(column.value(item), column.percent, column.digits) }}</td></tr></tbody>
             </table>
           </div>
@@ -175,7 +178,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
           <label class="find chooser-find"><Search :size="13" /><input v-model="metricSearch" placeholder="搜索指标" aria-label="搜索指标"></label>
           <div class="chooser-groups">
             <section v-for="group in chooserGroups" :key="group.label"><h5>{{ group.label }}</h5>
-              <label v-for="metric in group.items" :key="metric.key" :class="{ disabled: metric.validation && !showValidation }"><input type="checkbox" :disabled="metric.validation && !showValidation" :checked="metrics.includes(metric.key) && (!metric.validation || showValidation)" @change="toggleMetric(metric.key)">{{ metric.label }}</label>
+              <label v-for="metric in group.items" :key="metric.key" :class="{ disabled: metric.validation && !showValidation }"><UiCheckbox :disabled="metric.validation && !showValidation" :model-value="metrics.includes(metric.key) && (!metric.validation || showValidation)" @update:model-value="toggleMetric(metric.key)" />{{ metric.label }}</label>
             </section>
           </div>
           <footer><button class="button" @click="resetMetrics">恢复默认</button><button class="button primary" @click="saveMetrics">存为视图</button></footer>
@@ -211,7 +214,6 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
 .matrix td{text-align:center;height:30px;color:var(--ink2)}
 .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px;flex:none}
 .matrix thead .swatch{margin:0}
-.cluster-note{margin:10px 0 0;color:var(--ink3);font-size:11.5px;line-height:1.6}
 .empty{display:grid;place-items:center;padding:24px;font-size:12px}
 .compare-bar{display:flex;align-items:center;gap:14px;background:white;border:1px solid var(--line);border-radius:3px;padding:0 10px;min-width:0}
 .back{color:var(--ink2);font-size:12px;white-space:nowrap}

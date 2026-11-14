@@ -56,9 +56,23 @@ export function relativeLines(data: ChartData, selection: ReturnSelection): Char
 export function fmt(value: number | null | undefined, percent = false, digits = 2) {
   return value == null || !Number.isFinite(value) ? '—' : `${(percent ? value * 100 : value).toFixed(digits)}${percent ? '%' : ''}`
 }
+const NEUTRAL: Record<string, string> = { none: '无', industry: '行业', cap: '市值', 'cap+industry': '市值 + 行业' }
+/** 配置的各项显示文字；configLabel 和对比页区分同名因子共用。 */
+export function configParts(settings: Record<string, unknown>): Record<string, string> {
+  return {
+    universe: settings.universe === 'ALL' ? '全市场' : String(settings.universe),
+    group_neutralize: NEUTRAL[String(settings.group_neutralize ?? 'none')] ?? String(settings.group_neutralize),
+    decay: `衰减 ${settings.decay ?? 0}`,
+    rebalance: `调仓 ${settings.rebalance ?? 1} 天`,
+    trade_at: settings.trade_at === 'close' ? 'T+1 收盘' : 'T+1 开盘',
+    n_groups: `${settings.n_groups ?? 10} 组`,
+    weights_portfolio: settings.weights_portfolio ? '权重组合' : '分组多空',
+    trade_limitation: settings.trade_limitation === false ? '不限涨跌停' : '涨跌停限制',
+  }
+}
 export function configLabel(settings: Record<string, unknown>) {
-  const neutral: Record<string, string> = { none: '无', industry: '行业', cap: '市值', 'cap+industry': '市值 + 行业' }
-  return `${settings.universe} · ${neutral[String(settings.group_neutralize ?? 'none')]} · 衰减 ${settings.decay} · 调仓 ${settings.rebalance ?? 1} 天`
+  const parts = configParts(settings)
+  return `${settings.universe} · ${parts.group_neutralize} · ${parts.decay} · ${parts.rebalance}`
 }
 export function variantLabel(label: string) {
   return label.replace('cap+industry', '市值 + 行业').replace('industry', '行业').replace('cap', '市值')

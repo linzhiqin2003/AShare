@@ -21,13 +21,13 @@ describe('tab 设置隔离', () => {
 
   it('没开权重组合时衰减置灰（2026-11-14：衰减只作用于权重组合，界面看不出来）', async () => {
     const base = { universe: 'TOP800', group_neutralize: [null], n_groups: 10, trade_at:'open', by:'year', sub_universes:true, trade_limitation:true, decay:5 }
-    const controls = (w: ReturnType<typeof mount>) => ['减少衰减','衰减天数','增加衰减'].map(label => w.find(`[aria-label="${label}"]`).attributes('disabled') !== undefined)
+    const controls = (w: ReturnType<typeof mount>) => ['减少衰减天数','衰减天数','增加衰减天数'].map(label => w.find(`[aria-label="${label}"]`).attributes('disabled') !== undefined)
     const cases: [boolean | boolean[], boolean][] = [[false, true], [true, false], [[true, false], false]]
     for (const [weights, disabled] of cases) {
       const settings = { ...base, weights_portfolio: weights }
       const wrapper = mount(TabSettings, { props: { modelValue: settings, name: 'alpha', defaults: settings }, global: { stubs: { BenchmarkSelect:true } } })
       expect(controls(wrapper)).toEqual([disabled, disabled, disabled])
-      await wrapper.find('[aria-label="增加衰减"]').trigger('click')
+      await wrapper.find('[aria-label="增加衰减天数"]').trigger('click')
       expect(wrapper.emitted('update:modelValue')?.length ?? 0).toBe(disabled ? 0 : 1)
       wrapper.unmount()
     }
