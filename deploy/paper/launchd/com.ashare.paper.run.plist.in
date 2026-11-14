@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 模拟盘运行阶段：周一至周五 08:55（本机时间，须为北京时间）启动，跑到 17:00 自动退出；非交易日立即退出。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ashare.paper.run</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>exec /usr/bin/caffeinate -i {{PYTHON}} -m ashare.paper daily run --until 17:00</string>
+  </array>
+  <key>WorkingDirectory</key><string>{{REPO}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ASHARE_DATA_DIR</key><string>{{DATA_DIR}}</string>
+    <key>ASHARE_PAPER_DIR</key><string>{{PAPER_DIR}}</string>
+  </dict>
+  <key>StandardOutPath</key><string>{{LOG_DIR}}/com.ashare.paper.run.out.log</string>
+  <key>StandardErrorPath</key><string>{{LOG_DIR}}/com.ashare.paper.run.err.log</string>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+  </array>
+</dict>
+</plist>

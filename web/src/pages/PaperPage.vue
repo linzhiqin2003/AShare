@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import { CircleCheck, CircleMinus } from 'lucide-vue-next'
+import { CircleCheck, CircleMinus, Plus } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import { niceAxis } from '../chart'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { UiSkeleton } from '../components/ui'
+import PaperNewAccount from './PaperNewAccount.vue'
 import type { PaperAccountItem, PaperCurve, PaperFill, PaperSummary, Range } from './paper'
-import { count, money, monthTicks, percent, points, pollDelay, relative, signed, slice, statusLabel, tone } from './paper'
+import { accountLine, count, money, monthTicks, percent, points, pollDelay, rebalanceLabel, relative, signed, slice, statusLabel, tone, universeLabel } from './paper'
 
 const accounts = shallowRef<PaperAccountItem[] | null>(null)
 const selected = shallowRef<string | null>(null)
@@ -19,12 +20,21 @@ const history = shallowRef<{ items: PaperFill[]; total: number } | null>(null)
 const ranges = [{ value: '1m', label: '1 月' }, { value: '6m', label: '6 月' }, { value: '1y', label: '1 年' }, { value: 'all', label: '全部' }]
 const sideLabel = { buy: '买入', sell: '卖出' }
 const path = (id: string) => `/paper/accounts/${encodeURIComponent(id)}`
+const creating = shallowRef(false)
+const current = computed(() => accounts.value?.find(a => a.id === selected.value) ?? null)
+// 新建、还没开始运行的账户没有账本：只显示策略，定时刷新列表等它开始。
+const waiting = computed(() => current.value?.started === false)
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
 async function refresh() {
   clearTimeout(timer)
   const id = selected.value, mine = ++generation
+  if (id && waiting.value && !document.hidden) {
+    await loadAccounts()
+    if (mine === generation && !document.hidden) timer = setTimeout(refresh, 60_000)
+    return
+  }
   if (id && !document.hidden) {
     try {
       const next = await api<PaperSummary>(path(id))
@@ -45,6 +55,11 @@ async function loadAccounts() {
     try { remembered = localStorage.getItem('paper-account') } catch { /* 无痕窗口等 */ }
     if (!data.items.some(a => a.id === selected.value)) choose(data.items.find(a => a.id === remembered)?.id ?? data.items[0]?.id ?? null)
   } catch (e) { error.value = friendly(e).message; accounts.value = accounts.value ?? [] }
+}
+function created(item: PaperAccountItem) {
+  creating.value = false
+  accounts.value = [...(accounts.value ?? []).filter(a => a.id !== item.id), item].sort((a, b) => a.id.localeCompare(b.id))
+  choose(item.id)
 }
 function choose(id: string | null) {
   if (id === selected.value) return
@@ -105,23 +120,34 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
   <main class="paper-page">
     <div v-if="accounts && !accounts.length" class="empty panel">
       <b>还没有模拟账户</b>
-      <span>用命令行建立后在这里查看：<code>python -m ashare.paper start --directory $ASHARE_DATA_DIR/paper/&lt;名称&gt; --symbols &lt;代码,…&gt;</code></span>
+      <span>从回测建立，或用命令行：<code>python -m ashare.paper account create &lt;名称&gt; --expression '&lt;表达式&gt;'</code></span>
+      <button type="button" class="button create" @click="creating = true"><Plus :size="14" />从回测新建账户</button>
       <span v-if="error" class="error-text" role="alert">{{ error }}</span>
     </div>
     <template v-else-if="accounts">
       <section class="panel account-panel">
         <div class="panel-header">账户</div>
         <button v-for="item in accounts" :key="item.id" class="account" :class="{ on: item.id === selected }" :aria-pressed="item.id === selected" @click="choose(item.id)">
-          <b>{{ item.id }}</b><em>{{ item.running ? '运行中' : '实时模拟' }}<template v-if="item.since"> · 自 {{ item.since }}</template></em>
+          <b>{{ item.strategy?.name && item.strategy.name !== item.id ? item.strategy.name : item.id }}</b><em>{{ accountLine(item) }}</em>
         </button>
-        <div v-if="summary" class="side-body">
+        <div class="create-row"><button type="button" class="button create" @click="creating = true"><Plus :size="14" />从回测新建账户</button></div>
+        <div v-if="summary || current?.strategy" class="side-body">
           <h5>运行</h5>
           <div class="kv">
-            <span>状态</span>
-            <b class="state" :class="{ running: summary.running }"><CircleCheck v-if="summary.running" :size="14" /><CircleMinus v-else :size="14" />{{ summary.running ? '运行中' : '未运行' }}</b>
-            <span>时段</span><b class="plain">{{ phaseText }}</b>
-            <span>行情更新至</span><b>{{ summary.quote_time ?? '—' }}</b>
+            <template v-if="summary">
+              <span>状态</span>
+              <b class="state" :class="{ running: summary.running }"><CircleCheck v-if="summary.running" :size="14" /><CircleMinus v-else :size="14" />{{ summary.running ? '运行中' : '未运行' }}</b>
+              <span>时段</span><b class="plain">{{ phaseText }}</b>
+              <span>行情更新至</span><b>{{ summary.quote_time ?? '—' }}</b>
+            </template>
+            <template v-if="current?.strategy">
+              <span>股票池</span><b class="plain">{{ universeLabel[current.strategy.universe] ?? current.strategy.universe }} · 前 {{ current.strategy.top_n }} 只</b>
+              <span>调仓</span><b class="plain">{{ rebalanceLabel[current.strategy.rebalance] ?? current.strategy.rebalance }}</b>
+              <span>上次调仓</span><b>{{ current.plan?.last_execution_day ?? current.plan?.pending_execution_day ?? '—' }}</b>
+              <span>下次信号日</span><b>{{ current.plan?.next_signal_day ?? '—' }}</b>
+            </template>
           </div>
+          <template v-if="summary">
           <h5>集中度</h5>
           <div class="kv">
             <span>最大单只</span><b>{{ percent(summary.concentration.max_weight) }}</b>
@@ -134,6 +160,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
             <template v-for="[reason, n] in summary.risk.rejected" :key="reason"><span>拒单 · {{ reason }}</span><b class="warn">{{ n }}</b></template>
             <template v-if="!summary.risk.rejected.length"><span>当日拒单</span><b>0</b></template>
           </div>
+          </template>
           <p class="note">只做纸面记账，不向任何券商发委托。</p>
         </div>
       </section>
@@ -152,7 +179,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
               <div><span>今年</span><b>{{ percent(summary.year_return, 2, true) }}</b></div>
               <div><span>持仓</span><b>{{ positions.length }} 只</b></div>
             </div>
-            <div v-else class="hero-skeleton" aria-busy="true"><UiSkeleton shape="block" height="40px" /></div>
+            <div v-else-if="!waiting" class="hero-skeleton" aria-busy="true"><UiSkeleton shape="block" height="40px" /></div>
             <div ref="chartBox" class="chart">
               <svg v-if="visible.length > 1" :viewBox="`0 0 ${width} ${height}`" :width="width" :height="height" role="img" aria-label="权益曲线" @pointermove="move" @pointerleave="hover = -1">
                 <g v-for="t in axis.ticks" :key="t"><line :x1="left" :x2="width - right" :y1="py(t)" :y2="py(t)" :class="t === 0 ? 'zero' : 'grid'" /><text :x="left - 6" :y="py(t) + 3.5" text-anchor="end">{{ percent(t, 0) }}</text></g>
@@ -166,6 +193,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
                 </template>
               </svg>
               <div v-else-if="summary" class="chart-empty">结算一个交易日后显示曲线</div>
+              <div v-else-if="waiting" class="chart-empty">下一个交易日开盘后开始运行</div>
               <UiSkeleton v-else-if="selected && !error" shape="block" />
             </div>
           </div>
@@ -184,7 +212,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
               <tbody>
                 <tr v-for="p in positions" :key="p.symbol"><td class="mono">{{ p.symbol }}</td><td class="l">{{ p.name }}</td><td class="l dim">{{ p.industry ?? '—' }}</td><td>{{ count(p.total) }}</td><td class="opt" :class="{ dim: p.sellable < p.total }">{{ count(p.sellable) }}</td><td class="opt">{{ money(p.cost, 3) }}</td><td>{{ money(p.mark, 2) }}</td><td>{{ money(p.value / 1e4, 1) }}</td><td>{{ percent(p.weight) }}</td><td :class="tone(p.pnl)">{{ signed(p.pnl) }}</td></tr>
                 <tr v-if="summary && !positions.length"><td colspan="10" class="none">空仓</td></tr>
-                <template v-if="!summary && selected && !error"><tr v-for="n in 6" :key="n" class="skeleton-row"><td v-for="c in 10" :key="c"><UiSkeleton /></td></tr></template>
+                <template v-if="!summary && selected && !error && !waiting"><tr v-for="n in 6" :key="n" class="skeleton-row"><td v-for="c in 10" :key="c"><UiSkeleton /></td></tr></template>
               </tbody>
             </table>
             <table v-else-if="tab === 'orders'" class="grid-table">
@@ -252,6 +280,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
         <section class="panel fills-panel"><div class="panel-header">成交</div><div class="side-body skeleton-rows"><UiSkeleton :lines="5" /></div></section>
       </div>
     </template>
+    <PaperNewAccount v-if="creating" @created="created" @close="creating = false" />
   </main>
 </template>
 
@@ -269,6 +298,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:12px 0 5px}h5:first
 .kv>span{color:var(--ink3);height:24px;display:flex;align-items:center;border-bottom:1px solid var(--grid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kv>b{font-weight:500;height:24px;display:flex;align-items:center;justify-content:flex-end;gap:5px;border-bottom:1px solid var(--grid);font-family:var(--mono);font-size:12px;white-space:nowrap;padding-left:10px}
 .kv>b.plain,.kv>b.state{font-family:inherit;font-size:12.5px}.state{color:var(--ink3)}.state.running{color:var(--green)}.warn{color:var(--warn)}
+.create-row{padding:10px}.create{width:100%}.empty .create{width:auto}
 .note{color:var(--ink3);font-size:11.5px;line-height:1.6;margin:8px 0 0}
 .legend{display:flex;align-items:center;gap:6px;font-weight:400;color:var(--ink2)}.legend i{width:12px;height:2.5px;display:block}.legend i.ink{background:var(--ink)}.legend i.accent{background:var(--accent)}
 .chart-body{padding:8px 10px}

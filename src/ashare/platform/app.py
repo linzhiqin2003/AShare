@@ -505,7 +505,10 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
         return result
 
     app.include_router(compare_router)
-    app.include_router(paper_router(data_root))
+    from ashare.paper.ops.accounts import BacktestRecords
+
+    # 「从回测新建账户」读同一个平台目录里的回测结果库（只读）。
+    app.include_router(paper_router(data_root, backtests=BacktestRecords(store.root)))
     app.include_router(backtests)
     if STATIC.is_dir():
         app.mount("/", StaticFiles(directory=STATIC, html=True), name="web")

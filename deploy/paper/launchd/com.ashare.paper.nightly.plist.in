@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 模拟盘盘后阶段：每天 07:30、18:30、20:30（本机时间，须为北京时间）跑 daily nightly；已完成时立即退出。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ashare.paper.nightly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>exec /usr/bin/caffeinate -i {{PYTHON}} -m ashare.paper daily nightly</string>
+  </array>
+  <key>WorkingDirectory</key><string>{{REPO}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ASHARE_DATA_DIR</key><string>{{DATA_DIR}}</string>
+    <key>ASHARE_PAPER_DIR</key><string>{{PAPER_DIR}}</string>
+  </dict>
+  <key>StandardOutPath</key><string>{{LOG_DIR}}/com.ashare.paper.nightly.out.log</string>
+  <key>StandardErrorPath</key><string>{{LOG_DIR}}/com.ashare.paper.nightly.err.log</string>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+</dict>
+</plist>

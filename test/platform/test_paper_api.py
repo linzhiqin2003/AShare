@@ -180,7 +180,17 @@ def test_summary_matches_broker_and_is_read_only(root):
 
     with client_for(root) as client:
         listing = client.get("/api/paper/accounts").json()["items"]
-        assert listing == [dict(id="demo", since="2026-10-30", running=False)]
+        # 2026-11-14 列表加了策略与计划：手工 start 的账户没有策略定义。
+        assert listing == [
+            dict(
+                id="demo",
+                since="2026-10-30",
+                running=False,
+                started=True,
+                strategy=None,
+                plan=None,
+            )
+        ]
         response = client.get("/api/paper/accounts/demo")
         assert response.status_code == 200
         body = response.json()

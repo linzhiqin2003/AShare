@@ -938,6 +938,7 @@ REFERENCES = {"my_range": my_range}
 - **原始录制**：另有一个独立的录制任务（`data/live/tools/rt_recorder.py`，launchd 在交易日 9:05 启动），只把接口的原始响应按时间存盘（`data/live/raw/<日期>/<接口>/`），不依赖本项目的任何代码。模拟盘的回放输入由导入器从这些原始文件生成。
 - **调度**：按交易日历和交易时段运行，午休和节假日不轮询；进程常驻，崩溃后自动拉起并从日志恢复。
 - **策略对接**：每天读取研究框架给出的目标组合，在开盘后下单；可选简单的分时拆单。
+- **每日自动运行**（2026-11-14）：`python -m ashare.paper daily after-close|signal|nightly|run`，账户目录里的 `strategy.json` 绑定「表达式 + 回测页设置」，选股与回测页同一套函数；调度模板（launchd / systemd）在 `deploy/paper/`。见 `docs/PAPER_OPS.md`。
 - **日终**：结算，出日报，并与 `panelbt` 对账（见 8.7）。
 - **监控**：心跳、行情中断和轮询失败的告警。
 

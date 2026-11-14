@@ -1,0 +1,19 @@
+# 模拟盘盘后阶段（盘后取数、重建面板、校验、生成次日目标）；由 ashare-paper-nightly.timer 触发。
+[Unit]
+Description=AShare paper trading: after-close data and next-day targets
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{REPO}}
+Environment=TZ=Asia/Shanghai
+Environment=ASHARE_DATA_DIR={{DATA_DIR}}
+Environment=ASHARE_PAPER_DIR={{PAPER_DIR}}
+# 只放 TUSHARE_TOKEN=…；权限 600，不进仓库。
+EnvironmentFile={{ENV_FILE}}
+ExecStart={{PYTHON}} -m ashare.paper daily nightly
+# 3 = 已有实例在跑，4 = 数据还没发布（下一次定时再试），都不算失败。
+SuccessExitStatus=3 4
+TimeoutStartSec=2h
+Nice=5

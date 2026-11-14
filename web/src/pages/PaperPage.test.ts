@@ -1,12 +1,17 @@
 // 模拟盘页（2026-11-14 新增）：纯计算与页面行为，接口用合成数据替身。
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { monthTicks, percent, points, pollDelay, relative, signed, slice, tone } from './paper'
+import { accountLine, backtestLabel, monthTicks, percent, points, pollDelay, relative, signed, slice, suggestName, tone, validName } from './paper'
+import { pick, selectText } from '../components/ui/testing'
 import type { PaperCurve, PaperSummary } from './paper'
 import PaperPage from './PaperPage.vue'
 
 const api = vi.hoisted(() => vi.fn())
-vi.mock('../api', () => ({ api, friendly: () => ({ message: '账户暂时读取不到，请稍后再试' }) }))
+vi.mock('../api', () => ({
+  api,
+  post: (path: string, body: unknown) => api(path, { method: 'POST', body: JSON.stringify(body) }),
+  friendly: (e: unknown) => ({ message: e instanceof Error && e.message === 'conflict' ? '已有同名账户' : '账户暂时读取不到，请稍后再试' }),
+}))
 
 function summary(extra: Partial<PaperSummary> = {}): PaperSummary {
   return {
@@ -64,7 +69,7 @@ describe('页面', () => {
     const wrapper = mount(PaperPage)
     await flushPromises()
     expect(wrapper.text()).toContain('还没有模拟账户')
-    expect(wrapper.find('code').text()).toContain('python -m ashare.paper start --directory')
+    expect(wrapper.find('code').text()).toContain('python -m ashare.paper account create')
     expect(api).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
@@ -126,6 +131,98 @@ describe('页面', () => {
     await flushPromises()
     expect(wrapper.findAll('.table-panel tbody tr')).toHaveLength(3)
     expect(wrapper.find('.more').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+// 2026-11-14 模拟盘每日运行：账户与策略绑定、从回测新建账户。
+describe('账户与策略', () => {
+  beforeEach(() => { api.mockReset(); vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers(); localStorage.clear(); document.body.innerHTML = '' })
+  const strategy = { name: '低波动 30', universe: 'csi300', rebalance: 'month', top_n: 30, trade_at: 'open', initial_cash: 1e7, enabled: true, origin: 'backtest' }
+  const plan = { last_signal_day: '2026-10-30', last_execution_day: '2026-11-02', next_signal_day: '2026-11-30', pending_execution_day: null }
+
+  it('副标题、默认账户名与名称规则', () => {
+    expect(accountLine({ id: 'a', since: '2015-01-05', running: false, started: true, strategy, plan })).toBe('纸面跟踪 · 月度调仓 · 自 2015-01-05')
+    expect(accountLine({ id: 'a', since: null, running: false, started: false, strategy, plan: null })).toBe('纸面跟踪 · 月度调仓 · 等待首个交易日')
+    expect(accountLine({ id: 'a', since: null, running: false, started: true, strategy: { ...strategy, enabled: false } })).toBe('已停用 · 月度调仓')
+    expect(accountLine({ id: 'a', since: '2026-10-30', running: true })).toBe('运行中 · 自 2026-10-30')
+    expect(suggestName(' 低波动 30 / 月度 ')).toBe('低波动-30-月度')
+    expect(suggestName('...x')).toBe('x')
+    expect([validName('低波动-30'), validName('.ops'), validName('a/b'), validName('x'.repeat(65))]).toEqual([true, false, false, false])
+    expect(backtestLabel({ id: 'k', name: '回测', universe: 'csi300', rebalance: 'week', top_n: 20, capital: 1000 })).toBe('回测 · 沪深300 · 每周调仓 · 前 20 只')
+  })
+
+  it('还没开始运行的账户只显示策略和计划，不请求摘要', async () => {
+    api.mockImplementation(async (url: string) => url === '/paper/accounts' ? { items: [{ id: 'lowvol', since: null, running: false, started: false, strategy, plan: { ...plan, last_execution_day: null } }] } : summary())
+    const wrapper = mount(PaperPage)
+    await flushPromises()
+    expect(api.mock.calls.map(c => c[0])).toEqual(['/paper/accounts', '/paper/accounts'])
+    expect(wrapper.text()).toContain('下一个交易日开盘后开始运行')
+    expect(wrapper.text()).toContain('下次信号日2026-11-30')
+    expect(wrapper.find('.account b').text()).toBe('低波动 30')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(api.mock.calls.every(c => c[0] === '/paper/accounts')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('从回测新建账户：自绘下拉、默认名称和资金、建好后选中新账户', async () => {
+    const items: unknown[] = [{ id: 'old', since: '2026-10-30', running: false, started: true, strategy: null, plan: null }]
+    const backtests = [
+      { id: 'a'.repeat(24), name: '低波动 30', universe: 'csi300', rebalance: 'month', top_n: 30, capital: 2000 },
+      { id: 'b'.repeat(24), name: '动量 50', universe: 'ALL', rebalance: 'week', top_n: 50, capital: 500 },
+    ]
+    api.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/paper/accounts' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body))
+        if (body.name === 'taken') throw new Error('conflict')
+        const created = { id: body.name, since: null, running: false, started: false, strategy: { ...strategy, name: '动量 50' }, plan: null }
+        items.unshift(created) // 服务端之后的列表里有它
+        return created
+      }
+      if (url === '/paper/accounts') return { items }
+      if (url === '/paper/backtests') return { items: backtests }
+      if (url.endsWith('/curve')) return curve
+      return summary()
+    })
+    const wrapper = mount(PaperPage, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.create-row .create').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.get('[role=dialog]')
+    expect(dialog.find('select').exists()).toBe(false)
+    expect(selectText(wrapper, '回测')).toBe('低波动 30 · 沪深300 · 月度调仓 · 前 30 只')
+    expect((dialog.get('input[aria-label="账户名称"]').element as HTMLInputElement).value).toBe('低波动-30')
+    await pick(wrapper, '回测', '动量 50 · 全市场 · 每周调仓 · 前 50 只')
+    expect((dialog.get('input[aria-label="账户名称"]').element as HTMLInputElement).value).toBe('动量-50')
+    await dialog.get('input[aria-label="账户名称"]').setValue('taken')
+    await wrapper.get('.actions .primary').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role=dialog] [role=alert]').text()).toBe('已有同名账户')
+    await wrapper.get('input[aria-label="账户名称"]').setValue('../bad')
+    expect(wrapper.get('.actions .primary').attributes('disabled')).toBeDefined()
+    await wrapper.get('input[aria-label="账户名称"]').setValue('momentum')
+    await wrapper.get('.actions .primary').trigger('click')
+    await flushPromises()
+    const posts = api.mock.calls.filter(c => c[1]?.method === 'POST').map(c => JSON.parse(String(c[1].body)))
+    expect(posts.at(-1)).toEqual({ name: 'momentum', backtest: 'b'.repeat(24), capital: 500 })
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+    expect(wrapper.findAll('.account').map(b => b.find('b').text())).toEqual(['动量 50', 'old'])
+    expect(wrapper.find('.account.on b').text()).toBe('动量 50')
+    wrapper.unmount()
+  })
+
+  it('没有已完成的回测时说清楚，Esc 关闭', async () => {
+    api.mockImplementation(async (url: string) => url === '/paper/backtests' ? { items: [] } : { items: [] })
+    const wrapper = mount(PaperPage, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.empty .create').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role=dialog]').text()).toContain('还没有已完成的回测')
+    expect(wrapper.get('.actions .primary').attributes('disabled')).toBeDefined()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

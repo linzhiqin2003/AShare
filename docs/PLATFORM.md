@@ -572,21 +572,26 @@ Web 请求只传标量设置，不允许数据路径、日志路径或窗口；�
 
 ## 模拟盘页
 
-`/#/paper`（组件 `web/src/pages/PaperPage.vue`，接口 `src/ashare/platform/paper_api.py`）只读展示
-`ashare.paper` 的模拟账户：不启动或停止运行器，不改参数，不连接任何券商，不下单。账户由命令行建立：
+`/#/paper`（组件 `web/src/pages/PaperPage.vue`，接口 `src/ashare/platform/paper_api.py`）展示
+`ashare.paper` 的模拟账户：不启动或停止运行器，不改参数，不连接任何券商，不下单。唯一的写操作是
+左栏「从回测新建账户」（2026-11-14）：选一个已完成的回测、起名、定初始资金，只写策略定义
+`strategy.json`；账本由每日流水线的运行器在下一个交易日建立（见 `docs/PAPER_OPS.md`）。命令行等价于：
 
 ```sh
-python -m ashare.paper start --directory "$ASHARE_DATA_DIR/paper/<名称>" --symbols 600000.SH,000001.SZ
+python -m ashare.paper account create <名称> --backtest <回测 id> [--capital 万元]
+python -m ashare.paper account create <名称> --expression '<表达式>' --settings '{…回测页设置…}'
 ```
 
-账户根默认 `$ASHARE_DATA_DIR/paper`，`ASHARE_PAPER_DIR` 可改；根下每个含 `manifest.json` 的子目录是一个账户
+账户根默认 `$ASHARE_DATA_DIR/paper`，`ASHARE_PAPER_DIR` 可改；根下每个含 `manifest.json` 或 `strategy.json` 的子目录是一个账户
 （目录名只允许字母、数字、汉字、`.`、`_`、`-`，不跟随路径穿越）。当前状态用 `paperbroker.Broker(read_only=True)`
 从最近快照重放日志得到，与 `python -m ashare.paper status` 同一条路径；不加锁、不截尾、不写文件。
 已结算日读 `days/<日期>.json`，逐文件按大小和修改时间缓存。
 
 | 接口 | 内容 |
 |---|---|
-| `GET /api/paper/accounts` | 账户名、首个结算日、是否在运行 |
+| `GET /api/paper/accounts` | 账户名、首个结算日、是否在运行、是否已有账本（`started`）、策略摘要（名称、股票池、调仓周期、前 N 只、启用）与计划（上次信号日、上次调仓、下次信号日） |
+| `POST /api/paper/accounts` | 新建账户。参数白名单：`name`、二选一的 `backtest`（24 位回测 id）或 `source` + `settings`（回测页设置白名单）、`title`、`capital`（万元，10–1,000,000）；多余参数 422，同名 409，回测不存在 404；同源校验由应用中间件统一做（缺 Origin 或跨源 403） |
+| `GET /api/paper/backtests` | 可用来建账户的已完成回测（只读打开平台目录的回测结果库） |
 | `GET /api/paper/accounts/{名称}` | 权益、当日 / 本月 / 今年收益、持仓、当日委托、风控、成交统计与成交、行业分布、集中度 |
 | `GET /api/paper/accounts/{名称}/curve` | 已结算日单位净值与沪深 300 收盘价 |
 | `GET /api/paper/accounts/{名称}/fills?offset=&limit=` | 历史成交，新的在前，每页最多 500 |
@@ -605,9 +610,10 @@ python -m ashare.paper start --directory "$ASHARE_DATA_DIR/paper/<名称>" --sym
 没变时 304 且不重放。运行中 10 秒一轮，盘中没运行 30 秒，收盘或已结算 60 秒；页面隐藏时停，回到前台立即刷新。
 曲线只在账户日或结算状态变化时重取。
 
-设计稿里拿不到真实数据的项没有做：「从回测新建账户」（没有这条链路）、持仓「目标 / 偏离」和「下次信号日」
-（运行器的目标组合由 `--targets` 文件传入，不存进账户目录）、成交口径说明「开盘价加滑点」（模拟盘按快照撮合，见 DESIGN 8.3）。
-对应位置换成了可卖、成本、现价、浮动盈亏和当日委托、历史成交。
+设计稿里没有做的项：持仓「目标 / 偏离」两列（目标现在存在 `ops/targets/` 里，还没接到摘要接口）、
+成交口径说明「开盘价加滑点」（模拟盘按快照撮合，见 DESIGN 8.3）。对应位置换成了可卖、成本、现价、
+浮动盈亏和当日委托、历史成交。左栏「运行」在有策略定义时加了股票池、调仓周期、上次调仓、下次信号日；
+新建、还没开始运行的账户只显示这些，中栏提示「下一个交易日开盘后开始运行」，每 60 秒刷新一次账户列表。
 
 实测（2026-11-14，演示账户：真实日线驱动的 30 只、121 个结算日、最后一天盘中 1173 条日志）：
 摘要原文 13.7 KB、gzip 2.9 KB，首次重放 28–322 ms（另有首次加载名称与行业约 0.4 s，之后一小时内复用），

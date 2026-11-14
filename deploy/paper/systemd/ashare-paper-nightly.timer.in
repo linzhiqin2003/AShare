@@ -1,0 +1,12 @@
+[Unit]
+Description=AShare paper trading: after-close schedule (Asia/Shanghai)
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 Asia/Shanghai
+OnCalendar=*-*-* 18:30:00 Asia/Shanghai
+OnCalendar=*-*-* 20:30:00 Asia/Shanghai
+# 机器关着错过的触发，开机后补一次；阶段本身幂等。
+Persistent=true
+
+[Install]
+WantedBy=timers.target

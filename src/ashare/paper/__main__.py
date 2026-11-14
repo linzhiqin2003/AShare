@@ -1,8 +1,10 @@
-"""python -m ashare.paper：启动、状态、按日回放与十分钟冒烟。"""
+"""python -m ashare.paper：启动、状态、按日回放与十分钟冒烟；每日流水线、账户与调度见
+``daily`` / ``account`` / ``install-schedule``（``ashare.paper.ops``）。"""
 
 import argparse
 import json
 import logging
+import sys
 from datetime import time, timedelta
 from pathlib import Path
 
@@ -31,7 +33,15 @@ def read_state(directory: Path) -> dict:
         return report(broker, broker.history) | {"disk_bytes": disk_usage(directory)}
 
 
+OPS_COMMANDS = ("daily", "account", "install-schedule")
+
+
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] in OPS_COMMANDS:
+        from .ops.cli import main as ops_main
+
+        raise SystemExit(ops_main(argv))
     parser = argparse.ArgumentParser(description="A 股模拟盘（P1/P2）")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("start", "smoke"):
