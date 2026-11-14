@@ -14,6 +14,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Path as PathParam
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -309,11 +310,14 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
 
+    # 标签 id 由页面生成，服务端只在内存里登记；后端重启后页面没刷新也能继续用，遇到没登记的 id
+    # 直接登记（2026-11-14：重启后点运行报「研究 tab 已关闭」）。
+    TabId = PathParam(pattern=r"^[a-f0-9]{32}$")
+
     @app.post("/api/tabs/{tab}/name")
-    def rename_tab(tab: str, body: RenameRequest):
+    def rename_tab(body: RenameRequest, tab: str = TabId):
         with manager.lock:
-            if tab not in manager.tabs:
-                raise HTTPException(404, "研究 tab 已关闭")
+            manager.create_tab(tab)
             name = body.name.strip()
             if not name:
                 raise HTTPException(422, "请输入因子名")
@@ -326,7 +330,8 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
         return {"ok": True}
 
     @app.post("/api/tabs/{tab}/runs", status_code=202)
-    def run(tab: str, body: RunRequest):
+    def run(body: RunRequest, tab: str = TabId):
+        manager.create_tab(tab)
         try:
             expand_settings(body.settings)
             selected = benchmarks.selection(body.settings.get("benchmark"))

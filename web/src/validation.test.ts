@@ -96,3 +96,14 @@ describe('验证期开关（2026-11-14 用户要求默认隐藏验证期）', ()
     wrapper.unmount()
   })
 })
+
+describe('参数组的扣费年化列（2026-11-14 用户要求）', () => {
+  it('按年化 − 日均换手 × 240 × 10 bp 显示在年化后面', () => {
+    const wrapper = mount(ResearchResults, { props: { tab: tab() }, global: { stubs: { ResultChart: true, HoldingsTable: true } } })
+    const heads = wrapper.findAll('.parameters th').map(t => t.text())
+    expect(heads.indexOf('扣费年化')).toBe(heads.indexOf('年化') + 1)
+    // 年化 10%，日均换手 20%：扣 0.2 × 240 × 0.001 = 4.8 个百分点。
+    expect(wrapper.find('.parameters td.col-net').text()).toBe('5.2%')
+    wrapper.unmount()
+  })
+})

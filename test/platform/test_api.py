@@ -334,3 +334,27 @@ def test_worker_budget_queue_and_idle_reaping(tmp_path):
             )
     finally:
         manager.close()
+
+
+def test_tab_unknown_after_restart_is_registered_on_use(client):
+    """2026-11-14：后端重启后标签只在内存里丢了，没刷新的页面点运行报「研究 tab 已关闭」。
+
+    标签 id 由页面生成，服务端只做登记；运行和改名时遇到没登记的 id 直接登记。
+    """
+    tab = "ab" * 16
+    assert tab not in client.app.state.manager.tabs
+    renamed = client.post(f"/api/tabs/{tab}/name", json={"name": "x"}, headers=ORIGIN)
+    assert renamed.status_code == 200
+    run = client.post(
+        f"/api/tabs/{tab}/runs",
+        json={"source": "-ts_std(returns,20)"},
+        headers=ORIGIN,
+    )
+    assert run.status_code == 202
+    assert wait_job(client, run.json()["id"])["status"] == "complete"
+    # 不合格式的 id 仍然拒绝，不会被登记。
+    bad = client.post(
+        "/api/tabs/not-a-tab/runs", json={"source": "close"}, headers=ORIGIN
+    )
+    assert bad.status_code == 422
+    assert "not-a-tab" not in client.app.state.manager.tabs
