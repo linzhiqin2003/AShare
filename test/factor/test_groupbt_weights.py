@@ -8,6 +8,12 @@ from ashare.factor.groupbt import weights as W
 # ---- 逐行逐列的笨参考实现 --------------------------------------------------------
 
 
+# Rust 内核对 numpy 参考实现：真值为 0 的格子两边都是 ±1e-17 量级的舍入噪声，求和顺序随平台
+# （x86 与 ARM 的 numpy SIMD）不同，纯相对误差会判成 100%–200%（2026-11-14 第一次在 Linux CI 上跑）。
+# 权重量级为 1，1e-12 远小于任何有意义的差别。
+ATOL = 1e-12
+
+
 def ref_cs_demean(x):
     out = np.full(x.shape, np.nan)
     for i in range(x.shape[0]):
@@ -166,14 +172,16 @@ def test_cs_demean_hand():
             [np.nan, np.nan, np.nan, np.nan],
         ]
     )
-    np.testing.assert_allclose(W.cs_demean(x), expected, equal_nan=True)
+    np.testing.assert_allclose(W.cs_demean(x), expected, equal_nan=True, atol=ATOL)
 
 
 def test_group_demean_hand():
     x = np.array([[1.0, 3.0, 10.0, 14.0], [2.0, np.nan, 5.0, 10.0]])
     groups = np.array([0, 0, -1, 1])
     expected = np.array([[-1.0, 1.0, np.nan, 0.0], [0.0, np.nan, np.nan, 0.0]])
-    np.testing.assert_allclose(W.group_demean(x, groups), expected, equal_nan=True)
+    np.testing.assert_allclose(
+        W.group_demean(x, groups), expected, equal_nan=True, atol=ATOL
+    )
 
 
 def test_cap_buckets_hand():
@@ -181,7 +189,7 @@ def test_cap_buckets_hand():
     expected = np.array([[0, 0, 0, 1, 1], [1, -1, 0, 0, 1]], dtype=np.int64)
     got = W.cap_buckets(logcap, n=2)
     assert got.dtype == np.int64
-    np.testing.assert_allclose(got, expected, equal_nan=True)
+    np.testing.assert_allclose(got, expected, equal_nan=True, atol=ATOL)
     # 只有一只有效股票：名次 0、桶号 0
     one = np.array([[np.nan, 7.0, np.nan]])
     np.testing.assert_array_equal(W.cap_buckets(one), [[-1, 0, -1]])
@@ -191,7 +199,7 @@ def test_vector_neut_hand():
     x = np.array([[1.0, 2.0, 3.0, 4.0], [2.0, np.nan, 5.0, 8.0]])
     y = np.array([[0.0, 1.0, 0.0, 1.0], [1.0, np.nan, 2.0, 3.0]])
     expected = np.array([[-1.0, -1.0, 1.0, 1.0], [0.0, np.nan, 0.0, 0.0]])
-    np.testing.assert_allclose(W.vector_neut(x, y), expected, equal_nan=True)
+    np.testing.assert_allclose(W.vector_neut(x, y), expected, equal_nan=True, atol=ATOL)
 
 
 def test_vector_neut_inf_becomes_nan():
@@ -211,7 +219,7 @@ def test_normalize_hand():
             [-0.5, np.nan, 0.5, np.nan],
         ]
     )
-    np.testing.assert_allclose(W.normalize(x), expected, equal_nan=True)
+    np.testing.assert_allclose(W.normalize(x), expected, equal_nan=True, atol=ATOL)
     # 只有一只有效股票：不足 2 个有效值，整行 NaN
     assert np.all(np.isnan(W.normalize(np.array([[3.0, np.nan, np.nan]]))))
 
@@ -225,21 +233,25 @@ def test_decay_linear_hand():
             [np.nan, 16.0 / 3.0],
         ]
     )
-    np.testing.assert_allclose(W.decay_linear(w, 2), expected, equal_nan=True)
+    np.testing.assert_allclose(
+        W.decay_linear(w, 2), expected, equal_nan=True, atol=ATOL
+    )
 
 
 def test_decay_linear_short_history_not_renormalized():
     # n=3、t=1 时 K=1，分母仍是 3+2；过去的 NaN 当 0，不重新归一化
     w = np.array([[np.nan], [5.0]])
     expected = np.array([[np.nan], [3.0]])
-    np.testing.assert_allclose(W.decay_linear(w, 3), expected, equal_nan=True)
+    np.testing.assert_allclose(
+        W.decay_linear(w, 3), expected, equal_nan=True, atol=ATOL
+    )
 
 
 def test_decay_linear_n_le_1_is_copy():
     w = np.array([[1.0, np.nan]])
     for n in (1, 0, -2):
         got = W.decay_linear(w, n)
-        np.testing.assert_allclose(got, w, equal_nan=True)
+        np.testing.assert_allclose(got, w, equal_nan=True, atol=ATOL)
         assert got is not w
 
 
@@ -257,9 +269,13 @@ def test_build_weights_hand_order():
         out["alpha"],
         np.array([[-2.0 / 3.0, 1.0 / 3.0, np.nan, 1.0 / 3.0]]),
         equal_nan=True,
+        atol=ATOL,
     )
     np.testing.assert_allclose(
-        out["weights"], np.array([[-0.5, 0.25, np.nan, 0.25]]), equal_nan=True
+        out["weights"],
+        np.array([[-0.5, 0.25, np.nan, 0.25]]),
+        equal_nan=True,
+        atol=ATOL,
     )
 
 
@@ -269,7 +285,9 @@ def test_build_weights_hand_order():
 def test_random_cs_demean():
     rng = np.random.default_rng(0)
     x = _panel(rng, (6, 5))
-    np.testing.assert_allclose(W.cs_demean(x), ref_cs_demean(x), equal_nan=True)
+    np.testing.assert_allclose(
+        W.cs_demean(x), ref_cs_demean(x), equal_nan=True, atol=ATOL
+    )
 
 
 def test_random_group_demean():
@@ -277,12 +295,18 @@ def test_random_group_demean():
     x = _panel(rng, (6, 5))
     groups = rng.integers(-1, 3, size=(6, 5))
     np.testing.assert_allclose(
-        W.group_demean(x, groups), ref_group_demean(x, groups), equal_nan=True
+        W.group_demean(x, groups),
+        ref_group_demean(x, groups),
+        equal_nan=True,
+        atol=ATOL,
     )
     # (N,) 的组标签对每行相同
     row_groups = rng.integers(-1, 3, size=5)
     np.testing.assert_allclose(
-        W.group_demean(x, row_groups), ref_group_demean(x, row_groups), equal_nan=True
+        W.group_demean(x, row_groups),
+        ref_group_demean(x, row_groups),
+        equal_nan=True,
+        atol=ATOL,
     )
 
 
@@ -291,7 +315,10 @@ def test_random_cap_buckets_with_ties():
     logcap = np.round(_panel(rng, (6, 5), 0.15), 1)
     for n in (2, 3, 10):
         np.testing.assert_allclose(
-            W.cap_buckets(logcap, n), ref_cap_buckets(logcap, n), equal_nan=True
+            W.cap_buckets(logcap, n),
+            ref_cap_buckets(logcap, n),
+            equal_nan=True,
+            atol=ATOL,
         )
 
 
@@ -300,14 +327,16 @@ def test_random_vector_neut():
     x = _panel(rng, (6, 5))
     y = _panel(rng, (6, 5))
     np.testing.assert_allclose(
-        W.vector_neut(x, y), ref_vector_neut(x, y), equal_nan=True
+        W.vector_neut(x, y), ref_vector_neut(x, y), equal_nan=True, atol=ATOL
     )
 
 
 def test_random_normalize():
     rng = np.random.default_rng(0)
     x = _panel(rng, (6, 5))
-    np.testing.assert_allclose(W.normalize(x), ref_normalize(x), equal_nan=True)
+    np.testing.assert_allclose(
+        W.normalize(x), ref_normalize(x), equal_nan=True, atol=ATOL
+    )
 
 
 def test_random_decay_linear():
@@ -315,7 +344,7 @@ def test_random_decay_linear():
     w = _panel(rng, (6, 5))
     for n in (1, 2, 3, 5, 9):
         np.testing.assert_allclose(
-            W.decay_linear(w, n), ref_decay_linear(w, n), equal_nan=True
+            W.decay_linear(w, n), ref_decay_linear(w, n), equal_nan=True, atol=ATOL
         )
 
 
@@ -343,8 +372,12 @@ def test_random_build_weights():
     for cfg in configs:
         got = W.build_weights(factor, universe, **cfg)
         exp = ref_build_weights(factor, universe, **cfg)
-        np.testing.assert_allclose(got["alpha"], exp["alpha"], equal_nan=True)
-        np.testing.assert_allclose(got["weights"], exp["weights"], equal_nan=True)
+        np.testing.assert_allclose(
+            got["alpha"], exp["alpha"], equal_nan=True, atol=ATOL
+        )
+        np.testing.assert_allclose(
+            got["weights"], exp["weights"], equal_nan=True, atol=ATOL
+        )
 
 
 # ---- 性质与边界 -----------------------------------------------------------------
@@ -369,7 +402,9 @@ def test_vector_neut_constant_y_equals_cs_demean():
     x = np.array([[1.0, 2.0, 3.0, 4.0], [5.0, np.nan, 7.0, 9.0]])
     y = np.ones_like(x)
     y[np.isnan(x)] = np.nan
-    np.testing.assert_allclose(W.vector_neut(x, y), W.cs_demean(x), equal_nan=True)
+    np.testing.assert_allclose(
+        W.vector_neut(x, y), W.cs_demean(x), equal_nan=True, atol=ATOL
+    )
 
 
 def test_normalize_positive_sum_is_half():
@@ -386,21 +421,30 @@ def test_normalize_positive_sum_is_half():
 def test_boundaries():
     all_nan = np.full((2, 4), np.nan)
     x = np.array([[np.nan, 7.0, np.nan, np.nan]])
-    np.testing.assert_allclose(W.cs_demean(all_nan), all_nan, equal_nan=True)
+    np.testing.assert_allclose(W.cs_demean(all_nan), all_nan, equal_nan=True, atol=ATOL)
     np.testing.assert_allclose(
-        W.group_demean(all_nan, np.zeros((2, 4), int)), all_nan, equal_nan=True
+        W.group_demean(all_nan, np.zeros((2, 4), int)),
+        all_nan,
+        equal_nan=True,
+        atol=ATOL,
     )
     np.testing.assert_array_equal(W.cap_buckets(all_nan), np.full((2, 4), -1))
-    np.testing.assert_allclose(W.vector_neut(all_nan, all_nan), all_nan, equal_nan=True)
-    np.testing.assert_allclose(W.normalize(all_nan), all_nan, equal_nan=True)
+    np.testing.assert_allclose(
+        W.vector_neut(all_nan, all_nan), all_nan, equal_nan=True, atol=ATOL
+    )
+    np.testing.assert_allclose(W.normalize(all_nan), all_nan, equal_nan=True, atol=ATOL)
     # 单只有效股票：去均值后为 0，但 normalize/vector_neut 不足 2 个有效值为 NaN
     np.testing.assert_allclose(
-        W.cs_demean(x), np.array([[np.nan, 0.0, np.nan, np.nan]]), equal_nan=True
+        W.cs_demean(x),
+        np.array([[np.nan, 0.0, np.nan, np.nan]]),
+        equal_nan=True,
+        atol=ATOL,
     )
     np.testing.assert_allclose(
         W.group_demean(x, np.zeros((1, 4), int)),
         np.array([[np.nan, 0.0, np.nan, np.nan]]),
         equal_nan=True,
+        atol=ATOL,
     )
     assert np.all(np.isnan(W.normalize(x)))
     assert np.all(np.isnan(W.vector_neut(x, x)))

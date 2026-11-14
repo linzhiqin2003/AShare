@@ -14,6 +14,8 @@ from panelbt.metrics import calculate
 from panelbt.models import EXTRA_COUNTERS, METRICS
 from panelbt.reference import run as reference
 
+from .digest import frozen_platform
+
 ROOT = Path(__file__).resolve().parents[1]
 ZERO = bt.Costs(
     commission_rate=0, commission_min=0, fee_rate_buy=0, fee_rate_sell=0, slippage=0
@@ -85,6 +87,7 @@ def test_preparation_content_and_sparse_conversion():
     assert len(futures[0]) == 0 and futures[3] == []
 
 
+@frozen_platform
 def test_legacy_bitwise_fixture():
     from .generators import case
     from .legacy import capture, digest

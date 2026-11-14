@@ -12,12 +12,23 @@ against the previous build: 124 differed, every one only in the sign of zeros in
 """
 
 import hashlib
+import platform
+import sys
 from dataclasses import astuple
 
 import numpy as np
+import pytest
 from panelbt.models import METRICS
 
 from . import generators, generators_futures
+
+# 冻结的逐位摘要只在生成它们的平台上成立：引擎里的 powf、生成随机输入时 numpy 的 exp/log 走
+# 系统数学库，macOS 与 Linux glibc 在最后一位上可能不同，求和的 SIMD 顺序也不同（2026-11-14 第一次
+# 在 Linux CI 上跑，spot-0 起就不同）。别的平台上跨实现的正确性由按容差比对参考实现的测试守住。
+frozen_platform = pytest.mark.skipif(
+    not (sys.platform == "darwin" and platform.machine() == "arm64"),
+    reason="冻结的逐位摘要在 macOS arm64 上生成；系统数学库和 SIMD 求和顺序随平台不同",
+)
 
 
 def digest(result) -> str:

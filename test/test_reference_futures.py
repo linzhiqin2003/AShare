@@ -56,8 +56,9 @@ def test_rich_corpus_matches_reference_and_exercises_every_event():
             }
         try:
             assert_results_equal(actual, expected)
-        except AssertionError:
-            failures.append(seed)
+        except AssertionError as exc:
+            # 记下差在哪：2026-11-14 第一次在 Linux CI 上只报了「seed 151 不同」，看不出原因
+            failures.append((seed, " ".join(str(exc).split())[:600]))
         totals.update({k: int(expected.coverage[k]) for k in EVENTS})
         totals.update(engine.stats)
         totals["cash_account"] += int(bool(engine.classic))
@@ -66,7 +67,9 @@ def test_rich_corpus_matches_reference_and_exercises_every_event():
         )
         totals["financing"] += int(config.margin.allow_financing)
         totals["shares"] += int(targets.kind == "shares")
-    assert not failures, f"kernel differs from reference for seeds {failures}"
+    assert not failures, "kernel differs from reference:\n" + "\n".join(
+        f"seed {seed}: {why}" for seed, why in failures
+    )
     missing = [
         k
         for k in (

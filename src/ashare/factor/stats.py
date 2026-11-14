@@ -441,5 +441,9 @@ def effective_trials(returns=None, *, corr=None, method="li_ji"):
             m = 1 + (n - 1) * (1 - float(np.var(lam, ddof=1)) / n)
         else:
             a = np.abs(lam)
+            # f 在整数处跳变：离整数只差舍入误差的特征值先归到整数，否则平台间差一个 ulp 就
+            # 差一整个试验（OpenBLAS 把应为 10 的特征值算成 9.99999999999993，结果 2 而不是 1）。
+            r = np.round(a)
+            a = np.where(np.abs(a - r) <= 1e-9 * n, r, a)
             m = float(np.sum((a >= 1).astype(float) + (a - np.floor(a))))
     return float(min(max(m, 1.0), n))

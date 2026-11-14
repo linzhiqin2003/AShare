@@ -12,7 +12,7 @@ from panelbt.models import METRICS, RULE_COUNTERS
 from panelbt.reference import run as reference_run
 from panelbt.reference_rules import RulesEngine
 
-from .digest import corpora, digest
+from .digest import corpora, digest, frozen_platform
 from .generators_rules import case
 from .test_step import assert_bitwise
 
@@ -129,6 +129,7 @@ def test_batch_with_rules_equals_single_runs():
     np.testing.assert_array_equal(batch.nav[1], single.nav)
 
 
+@frozen_platform
 def test_runs_without_rules_match_frozen_pre_rules_build():
     frozen = json.loads(
         (Path(__file__).parent / "fixtures/no_rules_digest.json").read_text()

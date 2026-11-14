@@ -344,3 +344,20 @@ def test_overlap_ic_holm_calibrated():
         p = [ic_summary(ic[:, k], h)["p"] for k in range(m)]
         hits += bool(stats.reject(p, alpha, "holm").any())
     assert hits / reps <= alpha + 3 * math.sqrt(alpha * (1 - alpha) / reps)
+
+
+def test_li_ji_is_stable_at_integer_eigenvalues(monkeypatch):
+    """Li–Ji 的 f(x) = 1[x≥1] + (x − ⌊x⌋) 在整数处跳变：特征值差一个舍入误差就差一整个试验。
+
+    来源：2026-11-14 第一次在 Linux CI 上跑，10 个几乎相同的候选的最大特征值 OpenBLAS 给
+    9.99999999999993（macOS Accelerate 给 10.0），Li–Ji 算出 2.0000000000000067 而不是 1。"""
+    for top in (10.0, 10 - 7e-14, 10 + 7e-14):
+        lam = np.array([1e-15, -1e-15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, top])
+        monkeypatch.setattr(stats.np.linalg, "eigvalsh", lambda _c, lam=lam: lam)
+        got = stats.effective_trials(corr=np.eye(10), method="li_ji")
+        assert got == pytest.approx(1.0, abs=1e-9), top
+    # 不在整数附近的值照原式算：2.5 → f = 1 + 0.5
+    monkeypatch.setattr(
+        stats.np.linalg, "eigvalsh", lambda _c: np.array([0.5, 0.5, 0.5, 2.5])
+    )
+    assert stats.effective_trials(corr=np.eye(4), method="li_ji") == pytest.approx(3.0)
