@@ -1,7 +1,6 @@
 """平台可运行的设置白名单及检验门槛。"""
 
 import itertools
-import math
 import os
 import re
 from pathlib import Path
@@ -68,12 +67,19 @@ def expand_settings(settings, expression_count=1):
             if not valid:
                 raise ValueError(f"设置 {key} 的值不受支持")
         options[key] = list(dict.fromkeys(values))
-    if expression_count * math.prod(map(len, options.values())) > 8:
+    rows = {}
+    for row in itertools.product(*options.values()):
+        config = dict(zip(options, row, strict=True))
+        # 衰减只作用于全池权重组合，且 0 与 1 天等价（docs/GROUP_BACKTEST.md）；
+        # 按实际生效的值记，免得结果相同的配置在因子库里成了两个因子、扫描时重复回测。
+        if not config["weights_portfolio"] or config["decay"] <= 1:
+            config["decay"] = 0
+        rows.setdefault(tuple(config.items()), config)
+    if expression_count * len(rows) > 8:
         raise ValueError("一个 tab 最多运行 8 组，请减少参数组合")
     return [
-        dict(zip(options, row, strict=True))
-        | ({"benchmark": benchmark} if benchmark else {})
-        for row in itertools.product(*options.values())
+        config | ({"benchmark": benchmark} if benchmark else {})
+        for config in rows.values()
     ]
 
 

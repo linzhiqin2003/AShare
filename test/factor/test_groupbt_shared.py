@@ -269,3 +269,28 @@ def test_each_target_parameter_alone_prevents_sharing():
     for a, b in zip(expected, actual, strict=True):
         compare(snapshot(a), snapshot(b))
         compare(a.holdings, b.holdings)
+
+
+@pytest.mark.parametrize(
+    ("weights_portfolio", "decays"), [(False, (0, 1, 5)), (True, (0, 1))]
+)
+def test_decay_without_effect_is_bitwise_identical(weights_portfolio, decays):
+    """平台把不生效的衰减记成 0（2026-11-14），前提是它确实不改变任何结果：
+
+    没开权重组合时衰减不作用于分组多空，开了时 0 与 1 天等价。
+    """
+    panel, factor = synthetic()
+    runs = [
+        groupbt.run(
+            factor,
+            panel,
+            universe="ALL",
+            decay=d,
+            weights_portfolio=weights_portfolio,
+            record_holdings=True,
+        )
+        for d in decays
+    ]
+    for other in runs[1:]:
+        compare(snapshot(runs[0]), snapshot(other))
+        compare(runs[0].holdings, other.holdings)

@@ -126,3 +126,22 @@ def test_completions_include_signatures_and_best_sharpe():
     assert items["ts_std"]["signature"] == "ts_std(x, window)"
     assert items["returns"]["kind"] == "field"
     assert items["reversal_20"]["hint"] == "1.25"
+
+
+def test_decay_is_recorded_as_its_effective_value():
+    """衰减只作用于全池权重组合，0 与 1 天等价（2026-11-14 用户发现界面看不出衰减不生效）。
+
+    没开权重组合时记成 0，结果相同的配置不能在因子库里成为两个因子，也不能重复回测。
+    """
+    off = expand_settings({"decay": [0, 5, 10]})
+    assert [c["decay"] for c in off] == [0]
+    on = expand_settings({"decay": [0, 1, 5], "weights_portfolio": True})
+    assert [c["decay"] for c in on] == [0, 5]
+    both = expand_settings({"decay": [0, 5], "weights_portfolio": [True, False]})
+    assert [(c["weights_portfolio"], c["decay"]) for c in both] == [
+        (True, 0),
+        (False, 0),
+        (True, 5),
+    ]
+    # 上限按去重后的组数算：3 个表达式 × 4 个衰减在没开权重组合时只有 3 组。
+    assert len(expand_settings({"decay": [0, 2, 3, 4]}, 3)) == 1
