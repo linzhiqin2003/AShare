@@ -6,6 +6,7 @@ import BacktestConfig from '../backtest/BacktestConfig.vue'
 import BacktestSide from '../backtest/BacktestSide.vue'
 import BacktestTables from '../backtest/BacktestTables.vue'
 import NavChart from '../backtest/NavChart.vue'
+import { UiSkeleton } from '../components/ui'
 import { result, state } from '../backtest/api'
 import { friendly } from '../api'
 import { routeEntry, useBacktests } from '../backtest/useBacktests'
@@ -21,6 +22,9 @@ const effectivePart = computed<Part>(() => validation.value ? part.value : 'is')
 const status = computed(() => current.value?.state ?? null)
 const ENDED: Record<string, string> = { failed: '回测失败，请稍后重试', cancelled: '已取消', evicted: '结果已清理，重新运行即可' }
 const running = computed(() => !!current.value && b.active(current.value))
+// 首屏骨架：选项还没到（左侧配置、净值图、右侧统计），或已完成的回测第一次取结果；之后的刷新保留旧内容。
+const booting = shallowRef(true)
+const firstLoad = computed(() => !running.value && ((!options.value && booting.value) || (loading.value && !doc.value)))
 
 let request = 0
 async function load() {
@@ -52,7 +56,7 @@ async function route() {
 function key(event: KeyboardEvent) { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && current.value) { event.preventDefault(); void b.run(current.value) } }
 onMounted(async () => {
   window.addEventListener('hashchange', route)
-  await b.init(); await route()
+  await b.init(); booting.value = false; await route()
 })
 onUnmounted(() => { b.dispose(); window.removeEventListener('hashchange', route) })
 
@@ -88,16 +92,19 @@ watch(message, value => { clearTimeout(toast); if (value) toast = setTimeout(() 
           <button v-else class="button primary grow" :disabled="!current.source.trim()" @click="b.run(current)"><Play :size="13" />运行<span class="run-key">⌘↵</span></button>
         </div>
       </div>
+      <div v-else-if="!options && booting" class="left-body bt-skeleton" aria-busy="true"><UiSkeleton shape="block" height="132px" /><UiSkeleton :lines="10" /></div>
     </section>
     <div class="middle">
       <div class="chart-wrap">
         <NavChart :document="doc" :part="effectivePart" :show-validation="validation" :loading="loading" @part="part = $event" />
-        <div v-if="running && !doc" class="overlay muted"><LoaderCircle :size="14" class="spinning" />回测中 {{ current ? progress(current) : '' }}</div>
+        <div v-if="firstLoad" class="overlay chart-skeleton" aria-busy="true"><UiSkeleton shape="block" /></div>
+        <div v-else-if="running && !doc" class="overlay muted"><LoaderCircle :size="14" class="spinning" />回测中 {{ current ? progress(current) : '' }}</div>
         <div v-else-if="status && status.status in ENDED && !doc" class="overlay muted">{{ ENDED[status.status] }}</div>
       </div>
       <BacktestTables :document="doc" :backtest="doc ? current?.backtest ?? null : null" :part="effectivePart" />
     </div>
-    <BacktestSide :document="doc" />
+    <BacktestSide v-if="!firstLoad" :document="doc" />
+    <section v-else class="panel side-skeleton" aria-busy="true"><div class="panel-header">统计</div><div class="skeleton-body"><UiSkeleton :lines="10" /></div></section>
     <div v-if="message" class="toast" role="alert">{{ message }}<button class="icon-button push" aria-label="关闭提示" @click="message = ''"><X :size="14" /></button></div>
   </main>
 </template>
@@ -127,5 +134,6 @@ watch(message, value => { clearTimeout(toast); if (value) toast = setTimeout(() 
 .chart-wrap{position:relative;min-height:0;display:flex}
 .chart-wrap>:first-child{flex:1}
 .overlay{position:absolute;inset:30px 0 0;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;pointer-events:none}
-.toast{position:fixed;right:18px;bottom:38px;z-index:60;max-width:min(480px,calc(100vw - 36px));display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:5px;background:var(--panel);box-shadow:0 6px 25px #0002;color:var(--ink2);font-size:12px}
+.bt-skeleton{gap:18px}.chart-skeleton{align-items:stretch;padding:12px}.side-skeleton .skeleton-body{padding:12px 10px}
+.toast{position:fixed;right:18px;bottom:38px;z-index:60;max-width:min(480px,calc(100vw - 36px));display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:5px;background:var(--panel);box-shadow:0 6px 25px var(--overlay-shadow);color:var(--ink2);font-size:12px}
 </style>

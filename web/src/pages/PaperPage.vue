@@ -4,6 +4,7 @@ import { CircleCheck, CircleMinus } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import { niceAxis } from '../chart'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import { UiSkeleton } from '../components/ui'
 import type { PaperAccountItem, PaperCurve, PaperFill, PaperSummary, Range } from './paper'
 import { count, money, monthTicks, percent, points, pollDelay, relative, signed, slice, statusLabel, tone } from './paper'
 
@@ -151,7 +152,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
               <div><span>今年</span><b>{{ percent(summary.year_return, 2, true) }}</b></div>
               <div><span>持仓</span><b>{{ positions.length }} 只</b></div>
             </div>
-            <div v-else class="hero skeleton" />
+            <div v-else class="hero-skeleton" aria-busy="true"><UiSkeleton shape="block" height="40px" /></div>
             <div ref="chartBox" class="chart">
               <svg v-if="visible.length > 1" :viewBox="`0 0 ${width} ${height}`" :width="width" :height="height" role="img" aria-label="权益曲线" @pointermove="move" @pointerleave="hover = -1">
                 <g v-for="t in axis.ticks" :key="t"><line :x1="left" :x2="width - right" :y1="py(t)" :y2="py(t)" :class="t === 0 ? 'zero' : 'grid'" /><text :x="left - 6" :y="py(t) + 3.5" text-anchor="end">{{ percent(t, 0) }}</text></g>
@@ -165,6 +166,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
                 </template>
               </svg>
               <div v-else-if="summary" class="chart-empty">结算一个交易日后显示曲线</div>
+              <UiSkeleton v-else-if="selected && !error" shape="block" />
             </div>
           </div>
         </section>
@@ -182,6 +184,7 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
               <tbody>
                 <tr v-for="p in positions" :key="p.symbol"><td class="mono">{{ p.symbol }}</td><td class="l">{{ p.name }}</td><td class="l dim">{{ p.industry ?? '—' }}</td><td>{{ count(p.total) }}</td><td class="opt" :class="{ dim: p.sellable < p.total }">{{ count(p.sellable) }}</td><td class="opt">{{ money(p.cost, 3) }}</td><td>{{ money(p.mark, 2) }}</td><td>{{ money(p.value / 1e4, 1) }}</td><td>{{ percent(p.weight) }}</td><td :class="tone(p.pnl)">{{ signed(p.pnl) }}</td></tr>
                 <tr v-if="summary && !positions.length"><td colspan="10" class="none">空仓</td></tr>
+                <template v-if="!summary && selected && !error"><tr v-for="n in 6" :key="n" class="skeleton-row"><td v-for="c in 10" :key="c"><UiSkeleton /></td></tr></template>
               </tbody>
             </table>
             <table v-else-if="tab === 'orders'" class="grid-table">
@@ -237,6 +240,18 @@ const phaseText = computed(() => !summary.value ? '' : summary.value.settled ? '
       </div>
       <div v-if="error" class="toast-line" role="alert">{{ error }}</div>
     </template>
+    <template v-else>
+      <!-- 账户列表还没到：按真实三栏摆骨架，数据到了整块换成内容。 -->
+      <section class="panel account-panel" aria-busy="true"><div class="panel-header">账户</div><div class="side-body"><UiSkeleton :lines="3" /></div></section>
+      <div class="center" aria-busy="true">
+        <section class="panel"><div class="panel-header">权益</div><div class="chart-body"><div class="hero-skeleton"><UiSkeleton shape="block" height="40px" /></div><div class="chart"><UiSkeleton shape="block" /></div></div></section>
+        <section class="panel table-panel"><div class="panel-header">持仓</div><div class="scroll skeleton-rows"><UiSkeleton :lines="6" /></div></section>
+      </div>
+      <div class="side" aria-busy="true">
+        <section class="panel"><div class="panel-header">当日交易</div><div class="side-body skeleton-rows"><UiSkeleton :lines="4" /></div></section>
+        <section class="panel fills-panel"><div class="panel-header">成交</div><div class="side-body skeleton-rows"><UiSkeleton :lines="5" /></div></section>
+      </div>
+    </template>
   </main>
 </template>
 
@@ -260,8 +275,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:12px 0 5px}h5:first
 .hero{display:flex;align-items:baseline;gap:26px;padding:4px 2px 8px;min-height:40px;white-space:nowrap;overflow:hidden}
 .hero span{color:var(--ink3)}.hero b{font-family:var(--mono);font-weight:500;margin-left:6px}
 .hero .equity{font-size:24px;font-weight:500}
-.skeleton{background:linear-gradient(90deg,var(--grid),var(--chrome),var(--grid));background-size:200% 100%;border-radius:3px;height:40px;animation:sweep 1.4s ease-in-out infinite}
-@keyframes sweep{to{background-position:-200% 0}}
+.hero-skeleton{padding:4px 2px 8px}.skeleton-rows{padding:12px 10px}.skeleton-row td{padding-top:8px;padding-bottom:8px}
 .chart{height:218px;position:relative}.chart svg{display:block;font-size:10.5px;fill:var(--ink3);touch-action:none}
 .chart .grid{stroke:var(--grid)}.chart .zero{stroke:var(--line)}.chart .cursor{stroke:var(--line);stroke-dasharray:3 3}
 .chart .own{fill:none;stroke:var(--ink);stroke-width:1.7;stroke-linejoin:round}.chart .bench{fill:none;stroke:var(--accent);stroke-width:1.2;stroke-linejoin:round}
@@ -284,9 +298,8 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:12px 0 5px}h5:first
 .empty b{font-size:14px;font-weight:600}.empty span{color:var(--ink2);line-height:1.7}
 .empty code{display:block;margin-top:6px;font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--chrome);border:1px solid var(--grid);border-radius:3px;padding:6px 9px;white-space:nowrap;overflow-x:auto}
 .error-text{color:var(--red)}
-.toast-line{position:fixed;right:18px;bottom:38px;z-index:50;padding:10px 14px;border:1px solid var(--line);border-radius:5px;background:var(--panel);box-shadow:0 6px 25px #0002;color:var(--ink2)}
+.toast-line{position:fixed;right:18px;bottom:38px;z-index:50;padding:10px 14px;border:1px solid var(--line);border-radius:5px;background:var(--panel);box-shadow:0 6px 25px var(--overlay-shadow);color:var(--ink2)}
 /* 1440 以下收窄两侧栏；中栏再窄时先收起可卖、成本两列。 */
 @media (max-width:1400px){.paper-page{grid-template-columns:232px minmax(0,1fr) 360px}.hero{gap:18px}.hero .equity{font-size:22px}}
 @media (max-width:1300px){.grid-table .opt{display:none}.hero{gap:14px}}
-@media(prefers-reduced-motion:reduce){.skeleton{animation:none}}
 </style>

@@ -3,11 +3,12 @@ import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { api, friendly } from '../api'
 import type { Entry } from '../types'
 import SplitPane from './SplitPane.vue'
-import { niceAxis } from '../chart'
+import { corrColor, niceAxis } from '../chart'
 import { placeLabels } from '../scatter'
-import { vTip } from './ui'
+import { UiSkeleton, vTip } from './ui'
 
-const props = defineProps<{ entries: Entry[] }>()
+// pending：因子库第一次列表还没到，先摆骨架而不是「暂无结果」。
+const props = defineProps<{ entries: Entry[]; pending?: boolean }>()
 const matrixElement = shallowRef<HTMLElement | null>(null)
 const matrixWidth = shallowRef(700)
 let observer: ResizeObserver | undefined
@@ -56,7 +57,8 @@ const namePositions = computed(() => placeLabels(
 watch(() => namedPoints.value.map(e => `${e.id}:${e.name}`).join('|'), measureNames, { flush: 'post' })
 onMounted(() => { measureNames(); void document.fonts?.ready.then(measureNames) })
 onUnmounted(() => { disposed = true })
-const color = (value: number | null) => value === null ? 'transparent' : value >= 0 ? `rgba(59,104,161,${Math.abs(value) * .20})` : `rgba(178,116,83,${Math.abs(value) * .18})`
+// 与对比页的相关矩阵同一套颜色（原先这里单独写了一对更灰的蓝和棕）。
+const color = (value: number | null) => value === null ? 'transparent' : corrColor(value, value >= 0 ? .20 : .18)
 </script>
 <template>
   <SplitPane class="library-analytics" storage-key="library-analysis" label="调整相关矩阵与散点图宽度" :initial=".69" :min-first="350" :min-second="280"><template #first>
@@ -68,6 +70,7 @@ const color = (value: number | null) => value === null ? 'transparent' : value >
           <tr v-for="(entry, i) in shown" :key="entry.id"><th v-tip="entry.name"><span>{{ i + 1 }}</span>{{ entry.name }}</th><td v-for="(other, j) in shown" :key="other.id" :style="{ background: i === j ? 'transparent' : color(matrix[i]?.[j] ?? null) }">{{ i === j ? '·' : matrix[i]?.[j]?.toFixed(2) ?? '' }}</td></tr>
         </tbody></table>
       </div>
+      <div v-else-if="pending" class="analytics-skeleton" aria-busy="true"><UiSkeleton :lines="7" /></div>
       <div v-else class="analytics-empty">暂无结果</div>
     </section>
     </template><template #second><section class="panel scatter-panel">
@@ -83,10 +86,12 @@ const color = (value: number | null) => value === null ? 'transparent' : value >
           <text v-if="namePositions.has(entry.id)" :x="namePositions.get(entry.id)!.x + 1" :y="namePositions.get(entry.id)!.y + labelSize(entry).baseline" class="point-name placed-name">{{ entry.name }}</text>
         </g>
       </svg>
+      <div v-else-if="pending" class="analytics-skeleton" aria-busy="true"><UiSkeleton shape="block" /></div>
       <div v-else class="analytics-empty">暂无结果</div>
     </section>
   </template></SplitPane>
 </template>
 <style scoped>
-.library-analytics{min-height:0}.correlation-panel,.scatter-panel{min-height:0;overflow:hidden}.matrix-scroll{overflow-y:auto;overflow-x:hidden;padding:8px 12px;flex:1}.matrix-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:2px;font-family:var(--mono);font-size:10.5px}.matrix-table th{color:var(--ink3);font-weight:400;text-align:center;height:19px}.matrix-table th:first-child{width:118px}.matrix-table tbody th{text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-align:left;color:var(--ink2);padding-right:6px}.matrix-table tbody th span{display:inline-block;width:20px;color:var(--ink3)}.matrix-table td{height:19px;text-align:center;color:var(--ink2)}.scatter-panel svg{flex:1;min-height:0;width:100%}.scatter-panel svg line{stroke:var(--grid);stroke-width:1}.scatter-panel svg .threshold{stroke:var(--ink3);stroke-dasharray:3 4;opacity:.5}.scatter-panel svg text{font-family:var(--mono);font-size:10px;fill:var(--ink3)}.scatter-panel svg .point-number{pointer-events:none;fill:white;font-size:7px}.scatter-panel svg .point-name{fill:var(--ink2);font-size:9px}.analytics-empty{display:grid;place-items:center;flex:1;color:var(--ink3)}.analytics-error{padding:8px;color:var(--red)}
+.library-analytics{min-height:0}.correlation-panel,.scatter-panel{min-height:0;overflow:hidden}.matrix-scroll{overflow-y:auto;overflow-x:hidden;padding:8px 12px;flex:1}.matrix-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:2px;font-family:var(--mono);font-size:10.5px}.matrix-table th{color:var(--ink3);font-weight:400;text-align:center;height:19px}.matrix-table th:first-child{width:118px}.matrix-table tbody th{text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-align:left;color:var(--ink2);padding-right:6px}.matrix-table tbody th span{display:inline-block;width:20px;color:var(--ink3)}.matrix-table td{height:19px;text-align:center;color:var(--ink2)}.scatter-panel svg{flex:1;min-height:0;width:100%}.scatter-panel svg line{stroke:var(--grid);stroke-width:1}.scatter-panel svg .threshold{stroke:var(--ink3);stroke-dasharray:3 4;opacity:.5}.scatter-panel svg text{font-family:var(--mono);font-size:10px;fill:var(--ink3)}.scatter-panel svg .point-number{pointer-events:none;fill:var(--on-mark);font-size:7px}.scatter-panel svg .point-name{fill:var(--ink2);font-size:9px}.analytics-empty{display:grid;place-items:center;flex:1;color:var(--ink3)}.analytics-error{padding:8px;color:var(--red)}
+.analytics-skeleton{flex:1;min-height:0;display:flex;padding:12px}
 </style>

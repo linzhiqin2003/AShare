@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { Database, LoaderCircle, Plus, X, Play, Square, SlidersHorizontal, Settings as SettingsIcon } from 'lucide-vue-next'
 import { useResearch } from './useResearch'
+import { UiSkeleton } from './components/ui'
 import type { Completion, ReturnSelection, Settings, View } from './types'
 import ExpressionEditor from './components/ExpressionEditor.vue'
 import TabSettings from './components/TabSettings.vue'
@@ -17,7 +18,7 @@ import PaperPage from './pages/PaperPage.vue'
 import { PAGES, usePage } from './router'
 import { themeShortcut } from './appearance'
 const research = useResearch()
-const { tabs, activeId, current, metadata, completions, defaults, elapsed, message } = research
+const { tabs, activeId, current, metadata, completions, defaults, elapsed, message, loaded } = research
 const { page, navigate } = usePage()
 const settingsOpen = shallowRef(false), signature = shallowRef<Completion | null>(null)
 let debounce: ReturnType<typeof setTimeout> | undefined
@@ -43,9 +44,11 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(toastTimer); window.rem
         <SplitPane storage-key="research-columns" label="调整编辑器宽度" :initial=".292" :min-first="310" :max-first="650" :min-second="700">
         <template #first><section class="panel editor-panel"><ResearchTabs :tabs="tabs" :active="activeId" @select="activeId = $event" @close="research.closeTab" @add="research.addTab()" @rename="research.renameTab" />
           <template v-if="current"><ExpressionEditor :key="current.id" :model-value="current.source" :completions="completions" :error="current.error" @update:model-value="source" @run="research.run(current)" @signature="signature = $event" /><div v-if="current.error" class="editor-error" role="alert">{{ current.error.message }}</div><div class="signature-line"><template v-if="signature"><b class="mono">{{ signature.signature }}</b><span>{{ signature.detail }}</span></template></div><div class="runbar"><button class="button settings-toggle" :class="{ on: settingsOpen }" @click="settingsOpen = !settingsOpen"><SlidersHorizontal :size="14" />设置</button><button v-if="current.running" class="button primary push" @click="research.cancel(current)"><Square :size="12" />取消</button><button v-else class="button primary push" :disabled="!current.count" @click="research.run(current)"><Play :size="13" />运行 {{ current.count || 0 }} 组<span class="run-key">⌘↵</span></button></div><TabSettings v-if="settingsOpen" :model-value="current.settings" :name="current.name" :defaults="defaults" @update:model-value="settings" @close="settingsOpen = false" /></template>
+          <div v-else-if="!loaded" class="editor-skeleton" aria-busy="true"><UiSkeleton :lines="3" width="72%" /></div>
           <div v-else class="empty-editor"><button class="button" @click="research.addTab()"><Plus :size="14" />新建研究</button></div>
         </section></template>
-        <template #second><ResearchResults v-if="current" :key="current.id" :tab="current" @select="select" @visible="visible" @view="view" @mode="mode" @returns="returns" @chart="research.loadChart(current)" />
+        <template #second><ResearchResults v-if="current && loaded" :key="current.id" :tab="current" @select="select" @visible="visible" @view="view" @mode="mode" @returns="returns" @chart="research.loadChart(current)" />
+        <section v-else-if="!loaded" class="panel results-skeleton" aria-busy="true"><UiSkeleton shape="block" height="58%" /><UiSkeleton :lines="5" /></section>
         <section v-else class="panel"></section></template></SplitPane>
       </main>
       <FactorLibrary v-if="page === 'library'" :completions="completions" />

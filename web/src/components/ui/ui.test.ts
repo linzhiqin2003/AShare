@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick, shallowRef, withDirectives } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { UiCheckbox, UiNumberInput, UiSelect, UiSwitch, vTip, TIP_DELAY } from './index'
+import { UiCheckbox, UiMultiSelect, UiNumberInput, UiSelect, UiSwitch, vTip, TIP_DELAY } from './index'
 import { place } from './position'
 import { options } from './testing'
 
@@ -163,5 +163,80 @@ describe('v-tip（2026-11-14 用户要求替换原生 title）', () => {
     await target.trigger('mouseenter'); vi.advanceTimersByTime(TIP_DELAY)
     expect(tip.style.display).toBe('none')
     host.unmount()
+  })
+})
+
+// 2026-11-14 用户：研究台设置的分段按钮「都直接下拉选框吧」。中性化选多个就是扫参，需要多选下拉；
+// 列表逻辑与 UiSelect 共用 listbox.ts，不复制一份。
+const neutral = [{ value: null, label: '无' }, { value: 'industry', label: '行业' }, { value: 'cap', label: '市值' }, { value: 'cap+industry', label: '市值+行业' }]
+function mountMulti(value: string | null | (string | null)[]) {
+  const model = shallowRef<string | null | (string | null)[]>(value)
+  const wrapper = mount(defineComponent({ setup: () => () => h(UiMultiSelect, { modelValue: model.value, options: neutral, 'aria-label': '中性化', 'onUpdate:modelValue': (v: (string | number | boolean | null)[]) => model.value = v as (string | null)[] }) }), { attachTo: document.body })
+  return { wrapper, model }
+}
+describe('UiMultiSelect', () => {
+  it('点选项切换勾选，菜单保持打开，按选项顺序发出；触发器显示拼接文字', async () => {
+    const { wrapper, model } = mountMulti(['industry'])
+    const trigger = wrapper.get('button[aria-label="中性化"]')
+    expect(trigger.text()).toBe('行业')
+    await trigger.trigger('click'); await nextTick()
+    expect(document.querySelector('[role=listbox]')!.getAttribute('aria-multiselectable')).toBe('true')
+    options()[0].click(); await nextTick()
+    expect(model.value).toEqual([null, 'industry'])
+    expect(document.querySelector('[role=listbox]')).not.toBeNull()
+    expect(trigger.text()).toBe('无、行业')
+    expect(options().map(o => o.getAttribute('aria-selected'))).toEqual(['true', 'true', 'false', 'false'])
+    options()[1].click(); await nextTick()
+    expect(model.value).toEqual([null])
+    wrapper.unmount()
+  })
+  it('不能把最后一个取消掉；单个值也按已选处理', async () => {
+    const { wrapper, model } = mountMulti(null)
+    expect(wrapper.get('button').text()).toBe('无')
+    await wrapper.get('button').trigger('click'); await nextTick()
+    options()[0].click(); await nextTick()
+    expect(model.value).toBeNull()
+    expect(options()[0].getAttribute('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+  it('键盘：下键打开，空格和回车切换，Esc 关闭并回到触发器且不冒泡', async () => {
+    const { wrapper, model } = mountMulti(['industry'])
+    const trigger = wrapper.get('button[aria-label="中性化"]').element
+    const outer = vi.fn(); const escapes = (e: KeyboardEvent) => { if (e.key === 'Escape') outer() }; document.addEventListener('keydown', escapes)
+    key(trigger, 'ArrowDown'); await nextTick(); await nextTick()
+    const list = document.querySelector<HTMLElement>('[role=listbox]')!
+    expect(document.activeElement).toBe(list)
+    expect(list.getAttribute('aria-activedescendant')!.split('-').at(-1)).toBe('1')
+    key(list, 'ArrowDown'); key(list, ' '); await nextTick()
+    expect(model.value).toEqual(['industry', 'cap'])
+    key(list, 'ArrowDown'); key(list, 'Enter'); await nextTick()
+    expect(model.value).toEqual(['industry', 'cap', 'cap+industry'])
+    expect(document.querySelector('[role=listbox]')).not.toBeNull()
+    key(list, 'Escape'); await nextTick()
+    expect(document.querySelector('[role=listbox]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(outer).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', escapes)
+    wrapper.unmount()
+  })
+  it('点外面关闭', async () => {
+    const { wrapper } = mountMulti(['cap'])
+    await wrapper.get('button').trigger('click'); await nextTick()
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); await nextTick()
+    expect(document.querySelector('[role=listbox]')).toBeNull()
+    wrapper.unmount()
+  })
+})
+
+describe('UiSelect 的数组值（扫参或旧预设）', () => {
+  it('触发器显示拼接文字、各选中项打勾，选一项发出单个值', async () => {
+    const model = shallowRef<string | string[]>(['sum', 'compound'])
+    const wrapper = mount(defineComponent({ setup: () => () => h(UiSelect, { modelValue: model.value, options: choices, 'aria-label': '累计方式', 'onUpdate:modelValue': (v: string | number | boolean | null) => model.value = v as string }) }), { attachTo: document.body })
+    expect(wrapper.get('button').text()).toBe('累加、复利')
+    await wrapper.get('button').trigger('click'); await nextTick()
+    expect(options().slice(0, 2).map(o => o.getAttribute('aria-selected'))).toEqual(['true', 'true'])
+    options()[0].click(); await nextTick()
+    expect(model.value).toBe('sum')
+    wrapper.unmount()
   })
 })

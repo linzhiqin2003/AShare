@@ -66,6 +66,26 @@ hash 路由：`#/research`（默认）、`#/library`、`#/data`、`#/backtest`�
 `data-rise=green` 时对调（绿涨红跌）。滚动条为细滚动条，颜色 `--scroll`、`--scroll-hover`。
 `index.html` 在首帧前读 localStorage 设主题，避免闪烁。快捷键 ⌘⇧L（Ctrl⇧L）在浅色与深色间切换。
 
+组件、TS 和其他样式表里不写颜色字面量，只引用变量；`web/src/themeColors.test.ts` 扫描 `web/src`
+（style.css 和测试文件除外），出现十六进制、`rgb()`/`hsl()` 或取色属性里的颜色名就失败。
+允许 `transparent`、`currentColor`、`inherit`，半透明叠色用 `color-mix(in srgb, var(--x) N%, transparent)`。
+图表和高亮用的语义变量：
+
+| 变量 | 用途 |
+|---|---|
+| `--series-1` … `--series-8`、`--series-bench` | 曲线色板（按变体序号取）与基准虚线 |
+| `--group-1` … `--group-10` | 分组收益色阶，超过 10 组用最后一档 |
+| `--syntax-number` | 表达式里的数字；函数、字段、注释用 `--ink`、`--accent`、`--ink3` |
+| `--corr-pos`、`--corr-neg` | 相关矩阵的正负相关（因子对比与因子库分析共用） |
+| `--on-mark` | 实心圆点上的编号 |
+| `--overlay-shadow`、`--tip-shadow` | 浮层与图表悬停框的阴影 |
+| `--editor-bracket` | 编辑器括号匹配底色（CodeMirror 光标、浮层也改走变量） |
+| `--skeleton`、`--skeleton-shine` | 首屏骨架的底色与流光高光 |
+
+图表颜色写成 `var(--…)` 交给 SVG，切换主题时浏览器按新变量直接重画，不重算数据。
+设置页的主题预览固定画各自主题的颜色，用 `.theme-swatch-light`、`.theme-swatch-dark` 上的 `--sw-*` 变量。
+分年 Sharpe 等热力格的正负按 `--rise`、`--fall` 取色，跟随涨跌颜色设置。
+
 ### 设置页
 
 | 设置 | 存放 | 生效范围 |
@@ -495,12 +515,17 @@ Rank IC 使用信号在 T+1 成交时点到 T+2 同时点的收益；分组回�
 | 控件 | 写法 | 要点 |
 |---|---|---|
 | `UiSelect` | `<UiSelect v-model="x" :options="[{ value, label, disabled? }]" aria-label="…" />` | 按钮 + 挂在 body 上的 listbox，按触发器定位、下方放不下翻到上方；上下 / Home / End / 回车 / Esc / 首字母跳转，选中项打勾 |
+| `UiMultiSelect` | `<UiMultiSelect :model-value="值或数组" :options aria-label="…" @update:model-value="…" />` | 多选下拉（研究台中性化，选多个即扫参）：点选项或空格、回车切换勾选，菜单保持打开；最后一个不能取消；触发器显示「行业、市值」拼接文字；发出按选项顺序的数组 |
+| `UiSkeleton` | `<UiSkeleton shape="block" height="…" />`、`<UiSkeleton :lines="6" />` | 首屏加载占位：只在第一次还没有数据时渲染，数据到了换成内容，之后的刷新保留旧内容；流光只动 transform，颜色用 `--skeleton`、`--skeleton-shine`，减少动态效果时停掉 |
 | `UiCheckbox` | `<UiCheckbox v-model="bool" :indeterminate? :color? aria-label="…" />` | `role=checkbox`，选中填充 `--ink` 或系列颜色；放在 `<label>` 里点文字也能切换 |
 | `UiSwitch` | `<UiSwitch v-model="bool" aria-label="…" />` | `role=switch` |
 | `UiNumberInput` | `<UiNumberInput v-model="n" :min :max :step unit="天" aria-label="…" />` | 两侧 −/+（无障碍名为「减少 / 增加」加 aria-label），上下键步进，清空发出 `null`，越界在失焦时收回 |
 | `v-tip` / `UiTooltip` | `v-tip="文字"` 或 `<UiTooltip text="…">…</UiTooltip>` | 悬停或聚焦 400 ms 后出现，挂在 body 上、贴边翻转，显示时关联 `aria-describedby` |
 
 `aria-label` 声明成了 prop（开着 strictTemplates 也能直接写），转到内部可聚焦元素上。
+`UiSelect` 与 `UiMultiSelect` 的列表逻辑（定位、键盘、首字母跳转、点外部关闭）都在 `ui/listbox.ts`。值本来是数组（扫参或旧预设）时，
+单选下拉显示拼接文字、各选中项打勾，选一项后变回单个值。研究台 tab 设置的股票池、成交、分组、组合、分段用 `UiSelect`，中性化用 `UiMultiSelect`；
+`SegmentedControl` 只留给图表头和模拟盘的视图切换（时间窗、口径、区间）。
 测试里自绘下拉的菜单不在组件里，用 `ui/testing.ts` 的 `pick()`；`noNative.test.ts` 扫描页面组件，出现原生控件即失败。
 
 ### 验证期默认隐藏

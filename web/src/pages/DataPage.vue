@@ -4,7 +4,7 @@ import { Search } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import type { Completion } from '../types'
 import FieldDetailView from '../components/data/FieldDetail.vue'
-import { vTip } from '../components/ui'
+import { UiSkeleton, vTip } from '../components/ui'
 import { bytes, integer, linePath, matches, partition, percent, stamp, type Dataset, type FieldDetail, type FieldList, type Overview } from '../datastatus'
 
 const props = defineProps<{ completions: Completion[] }>()
@@ -31,7 +31,8 @@ const searchable = computed(() => tab.value === 'fields' || tab.value === 'opera
 const visibleFields = computed(() => (fields.value?.fields ?? []).filter(f => matches(f, query.value)))
 const operators = computed(() => props.completions.filter(c => c.kind === 'operator' && (!query.value.trim() || `${c.label} ${c.detail}`.toLowerCase().includes(query.value.trim().toLowerCase()))))
 const indexes = computed(() => (dataset.value?.indexes ?? []).filter(i => !query.value.trim() || `${i.symbol} ${i.name}`.toLowerCase().includes(query.value.trim().toLowerCase())))
-const showDetail = computed(() => dataset.value?.key === 'stock')
+// 概览还没到时按股票面板的三栏摆骨架，避免数据到了以后整页从两栏跳成三栏。
+const showDetail = computed(() => !overview.value ? !error.value : dataset.value?.key === 'stock')
 const verifyIssues = computed(() => dataset.value?.verify?.checks.filter(c => (c.failed ?? 0) > 0).length ?? 0)
 
 function summary(d: Dataset) {
@@ -82,7 +83,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
         <button v-for="item in overview.datasets" :key="item.key" class="dataset" :class="{ on: dataset?.key === item.key }" :aria-pressed="dataset?.key === item.key" @click="chooseDataset(item.key)"><b>{{ item.name }}</b><em v-if="dataset?.key === item.key && summary(item)">{{ summary(item) }}</em></button>
         <p v-if="!overview.datasets.length" class="empty">本地还没有数据</p>
       </template>
-      <div v-else class="skeleton-list"><i v-for="n in 4" :key="n" /></div>
+      <div v-else-if="!error" class="skeleton-list" aria-busy="true"><UiSkeleton :lines="4" /></div>
       <div v-if="dataset" class="dataset-meta">
         <h5>更新</h5>
         <div class="kv">
@@ -112,7 +113,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
               <td class="mono r">{{ field.references || '' }}</td>
             </tr>
           </tbody>
-          <tbody v-else-if="fields?.state === 'pending' || !fields" class="skeleton"><tr v-for="n in 14" :key="n"><td v-for="c in 9" :key="c"><i /></td></tr></tbody>
+          <tbody v-else-if="fields?.state === 'pending' || (!fields && !error)" class="skeleton" aria-busy="true"><tr v-for="n in 14" :key="n"><td v-for="c in 9" :key="c"><UiSkeleton /></td></tr></tbody>
         </table>
         <p v-if="fields?.state === 'pending'" class="state-line">正在统计各字段覆盖，首次约需十秒</p>
         <p v-if="fields?.state === 'failed'" class="state-line">字段统计失败，请稍后刷新重试</p>
@@ -151,7 +152,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
     <section v-if="showDetail" class="panel detail">
       <div class="panel-header"><span class="mono detail-name">{{ detail?.name ?? selected }}</span><span v-if="detail" class="push detail-sub">{{ detail.label }} · {{ detail.category }}</span></div>
       <FieldDetailView v-if="detail && detail.name === selected" :field="detail" />
-      <div v-else class="skeleton-list"><i v-for="n in 6" :key="n" /></div>
+      <div v-else-if="!error" class="skeleton-list" aria-busy="true"><UiSkeleton :lines="6" /></div>
     </section>
   </main>
 </template>
@@ -191,8 +192,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:2px 0 5px}
 .track{fill:var(--grid)}.fill{fill:var(--ink2)}
 .spark-head,.spark-cell{padding-left:14px}
 .base{stroke:var(--line)}.spark{fill:none;stroke:var(--ink2);stroke-width:1.1}
-.skeleton td i,.skeleton-list i{display:block;height:8px;border-radius:2px;background:var(--grid)}
-.skeleton-list{padding:12px 10px;display:grid;gap:14px}
+.skeleton-list{padding:12px 10px}
 .state-line{color:var(--ink3);padding:10px 0;margin:0}
 .history-table th:first-child{width:96px}.history-table th:nth-child(2){width:100px}.history-table th:nth-child(n+4){width:80px}
 .verify-line{color:var(--ink3);margin:8px 0 2px;font-size:12px}

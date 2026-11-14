@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import { ArrowLeft, Search, ListChecks, Download } from 'lucide-vue-next'
 import { api, friendly } from '../api'
-import { colors, fmt, unpack } from '../chart'
+import { colors, corrColor, fmt, unpack } from '../chart'
 import type { ChartData, Entry, LibraryData, Line } from '../types'
 import type { CompareData, CompareItem } from '../compare'
 import { bestValues, distinctLabels, metricColumns, METRIC_GROUPS, DEFAULT_METRICS, settingsSummary, toCsv, volatilityAligned } from '../compare'
@@ -102,9 +102,10 @@ const settingsText = computed(() => settingsSummary(items.value.map(i => i.setti
 function cellColor(column: { heat?: number }, value: number | null) {
   if (!column.heat || value == null || !Number.isFinite(value)) return undefined
   const alpha = Math.min(1, Math.abs(value) / column.heat) * .24
-  return value >= 0 ? `rgba(191,58,46,${alpha.toFixed(3)})` : `rgba(30,123,87,${alpha.toFixed(3)})`
+  // 正值按「涨」色、负值按「跌」色，跟随设置页的涨跌颜色和明暗主题。
+  return `color-mix(in srgb, var(${value >= 0 ? '--rise' : '--fall'}) ${(alpha * 100).toFixed(1)}%, transparent)`
 }
-const matrixColor = (value: number | null | undefined) => value == null ? 'transparent' : value >= 0 ? `rgba(31,79,191,${(Math.abs(value) * .26).toFixed(3)})` : `rgba(161,74,20,${(Math.abs(value) * .22).toFixed(3)})`
+const matrixColor = (value: number | null | undefined) => value == null ? 'transparent' : corrColor(value, value >= 0 ? .26 : .22)
 
 function exportCsv() {
   const blob = new Blob(['﻿' + toCsv(columns.value, items.value, names.value)], { type: 'text/csv;charset=utf-8' })
@@ -215,7 +216,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
 .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px;flex:none}
 .matrix thead .swatch{margin:0}
 .empty{display:grid;place-items:center;padding:24px;font-size:12px}
-.compare-bar{display:flex;align-items:center;gap:14px;background:white;border:1px solid var(--line);border-radius:3px;padding:0 10px;min-width:0}
+.compare-bar{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:0 10px;min-width:0}
 .back{color:var(--ink2);font-size:12px;white-space:nowrap}
 .back:hover{color:var(--ink)}
 .bar-title{height:100%;display:flex;align-items:center;font-weight:600;border-bottom:2px solid var(--accent);white-space:nowrap}
@@ -224,7 +225,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
 .chart-panel{min-height:0}
 .chart-panel>.result-chart{flex:1;height:0;min-height:0}
 .seg{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden;font-weight:400}
-.seg button{border:0;border-left:1px solid var(--line);background:white;padding:1px 9px;color:var(--ink3);font-size:12px;height:22px;white-space:nowrap}
+.seg button{border:0;border-left:1px solid var(--line);background:var(--panel);padding:1px 9px;color:var(--ink3);font-size:12px;height:22px;white-space:nowrap}
 .seg button:first-child{border-left:0}
 .seg button.on{background:var(--selected);color:var(--ink);font-weight:500}
 .seg+.seg{margin-left:-4px}
@@ -239,11 +240,11 @@ onUnmounted(() => { document.removeEventListener('pointerdown', outside); docume
 .metrics-table .group-start{border-left:1px solid var(--line)}
 .metrics-table td.group-start,.metrics-table th.group-start{padding-left:12px}
 .metrics-table .year{text-align:center!important;padding:0 4px!important;width:37px;font-size:11.5px}
-.metrics-table td.year{border-left:1px solid white}
+.metrics-table td.year{border-left:1px solid var(--panel)}
 .metrics-table td.year.group-start{border-left:1px solid var(--line)}
 .factor-cell{font-size:12.5px;white-space:nowrap;max-width:190px}
 .best{font-weight:600;color:var(--ink)}
-.chooser{position:absolute;right:0;bottom:calc(100% + 6px);width:min(640px,100%);background:white;border:1px solid var(--line);border-radius:4px;box-shadow:0 12px 32px #00000024;padding:12px 14px;z-index:20}
+.chooser{position:absolute;right:0;bottom:calc(100% + 6px);width:min(640px,100%);background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 12px 32px var(--overlay-shadow);padding:12px 14px;z-index:20}
 .chooser-find{margin:0}
 .chooser-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:22px;row-gap:12px;margin:12px 0}
 .chooser-groups h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:0 0 4px}
