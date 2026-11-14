@@ -5,6 +5,7 @@ import type { Entry } from '../types'
 import SplitPane from './SplitPane.vue'
 import { niceAxis } from '../chart'
 import { placeLabels } from '../scatter'
+import { vTip } from './ui'
 
 const props = defineProps<{ entries: Entry[] }>()
 const matrixElement = shallowRef<HTMLElement | null>(null)
@@ -63,8 +64,8 @@ const color = (value: number | null) => value === null ? 'transparent' : value >
       <div class="panel-header"><b>相关矩阵</b></div>
       <div v-if="error" class="analytics-error" role="alert">{{ error }}</div>
       <div v-if="shown.length" class="matrix-scroll">
-        <table class="matrix-table"><thead><tr><th></th><th v-for="(entry, i) in shown" :key="entry.id" :title="entry.name">{{ i + 1 }}</th></tr></thead><tbody>
-          <tr v-for="(entry, i) in shown" :key="entry.id"><th :title="entry.name"><span>{{ i + 1 }}</span>{{ entry.name }}</th><td v-for="(other, j) in shown" :key="other.id" :style="{ background: i === j ? 'transparent' : color(matrix[i]?.[j] ?? null) }">{{ i === j ? '·' : matrix[i]?.[j]?.toFixed(2) ?? '' }}</td></tr>
+        <table class="matrix-table"><thead><tr><th></th><th v-for="(entry, i) in shown" :key="entry.id" v-tip="entry.name">{{ i + 1 }}</th></tr></thead><tbody>
+          <tr v-for="(entry, i) in shown" :key="entry.id"><th v-tip="entry.name"><span>{{ i + 1 }}</span>{{ entry.name }}</th><td v-for="(other, j) in shown" :key="other.id" :style="{ background: i === j ? 'transparent' : color(matrix[i]?.[j] ?? null) }">{{ i === j ? '·' : matrix[i]?.[j]?.toFixed(2) ?? '' }}</td></tr>
         </tbody></table>
       </div>
       <div v-else class="analytics-empty">暂无结果</div>
@@ -76,8 +77,7 @@ const color = (value: number | null) => value === null ? 'transparent' : value >
         <g v-for="tick in ticks" :key="tick"><line x1="40" x2="428" :y1="py(tick)" :y2="py(tick)" /><text x="32" :y="py(tick) + 3" text-anchor="end">{{ tick.toFixed(1) }}</text></g>
         <g v-for="tick in turnoverTicks" :key="tick"><line :x1="px(tick)" :x2="px(tick)" y1="32" y2="207" /><text :x="px(tick)" y="225" text-anchor="middle">{{ (tick * 100).toFixed(tick < .01 ? 1 : 0) }}%</text></g>
         <line x1="40" x2="428" :y1="py(1)" :y2="py(1)" class="threshold" />
-        <g v-for="(entry,i) in points" :key="entry.id" class="scatter-point">
-          <title>{{ entry.name }} · Sharpe {{ entry.sharpe?.toFixed(2) }} · 换手 {{ (entry.turnover! * 100).toFixed(1) }}%</title>
+        <g v-for="(entry,i) in points" :key="entry.id" v-tip="`${entry.name} · Sharpe ${entry.sharpe?.toFixed(2)} · 换手 ${(entry.turnover! * 100).toFixed(1)}%`" class="scatter-point">
           <circle :cx="px(entry.turnover!)" :cy="py(entry.sharpe!)" r="5" :fill="entry.status === 'pass' ? 'var(--green)' : 'var(--ink3)'" fill-opacity=".7" />
           <text :x="px(entry.turnover!)" :y="py(entry.sharpe!)+2.5" text-anchor="middle" class="point-number">{{ i+1 }}</text>
           <text v-if="namePositions.has(entry.id)" :x="namePositions.get(entry.id)!.x + 1" :y="namePositions.get(entry.id)!.y + labelSize(entry).baseline" class="point-name placed-name">{{ entry.name }}</text>

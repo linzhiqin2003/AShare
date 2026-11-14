@@ -1,5 +1,5 @@
-// 因子对比页的纯函数：指标列、每列最优、相关聚类、设定摘要、导出和波动对齐。
-import { configLabel } from './chart'
+// 因子对比页的纯函数：指标列、每列最优、同名区分、设定摘要、导出和波动对齐。
+import { configParts } from './chart'
 import type { Line, Packed, Settings } from './types'
 import { VALIDATION_START } from './validation'
 
@@ -89,33 +89,45 @@ export function bestValues(columns: MetricColumn[], items: CompareItem[]): Map<s
   return result
 }
 
-/** 两两相关都不低于阈值的成组因子（连通且组内每对都达标）。 */
-export function clusters(names: string[], matrix: (number | null)[][], threshold = .8): string[][] {
-  const seen = new Set<number>(), groups: string[][] = []
-  const linked = (i: number, j: number) => (matrix[i]?.[j] ?? -Infinity) >= threshold
-  for (let start = 0; start < names.length; start++) {
-    if (seen.has(start)) continue
-    const component = [start]; seen.add(start)
-    for (let k = 0; k < component.length; k++) for (let j = 0; j < names.length; j++) if (!seen.has(j) && linked(component[k], j)) { seen.add(j); component.push(j) }
-    if (component.length < 2) continue
-    if (component.every(i => component.every(j => i === j || linked(i, j)))) groups.push(component.sort((a, b) => a - b).map(i => names[i]))
-  }
-  return groups
-}
-
 const SETTING_NAMES: Record<string, string> = { universe: '股票池', group_neutralize: '中性化', decay: '衰减', rebalance: '调仓', trade_at: '成交', n_groups: '分组', weights_portfolio: '组合', trade_limitation: '涨跌停' }
+// 缺省值与显式默认值视为相同，不算「真有不同」。
+const settingKey = (settings: Settings, key: string) => configParts(settings)[key]
+function differingKeys(settings: Settings[]) { return Object.keys(SETTING_NAMES).filter(key => new Set(settings.map(s => settingKey(s, key))).size > 1) }
+
+/** 只在设定真有不同时返回一句话，一致时返回空串（2026-11-14 用户要求不放多余说明）。 */
 export function settingsSummary(settings: Settings[]): string {
-  if (!settings.length) return ''
-  const differ = Object.keys(SETTING_NAMES).filter(key => new Set(settings.map(s => JSON.stringify(s[key] ?? null))).size > 1)
-  if (differ.length) return `设定不同：${differ.map(k => SETTING_NAMES[k]).join('、')}`
-  const first = settings[0]
-  return `设定一致：${configLabel(first)} · ${first.trade_at === 'close' ? 'T+1 收盘' : 'T+1 开盘'}`
+  const differ = differingKeys(settings)
+  return differ.length ? `设定不同：${differ.map(k => SETTING_NAMES[k]).join('、')}` : ''
 }
 
-export function toCsv(columns: MetricColumn[], items: CompareItem[]): string {
+const TOKEN = /[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|\S/g
+/**
+ * 同名因子附上它们之间真正不同的项，例如 `low_vol · 20 · 行业`：
+ * 表达式按记号逐个比较，取不同位置上的取值；配置只列这几个同名因子之间不同的项。名字唯一的不变。
+ */
+export function distinctLabels(rows: { id: string; name: string; source: string; settings: Settings }[]): Map<string, string> {
+  const labels = new Map(rows.map(r => [r.id, r.name]))
+  const groups = new Map<string, typeof rows>()
+  for (const row of rows) groups.set(row.name, [...(groups.get(row.name) ?? []), row])
+  for (const group of groups.values()) {
+    if (new Set(group.map(r => r.id)).size < 2) continue
+    const tokens = group.map(r => r.source.replace(/#.*$/gm, '').match(TOKEN) ?? [])
+    const aligned = tokens.every(t => t.length === tokens[0].length)
+    const positions = aligned ? tokens[0].map((_, i) => i).filter(i => new Set(tokens.map(t => t[i])).size > 1) : []
+    const keys = differingKeys(group.map(r => r.settings))
+    group.forEach((row, index) => {
+      const parts = [...positions.map(i => tokens[index][i]), ...keys.map(key => configParts(row.settings)[key])]
+      if (!parts.length && !aligned) parts.push(`表达式 ${index + 1}`)
+      if (parts.length) labels.set(row.id, `${row.name} · ${parts.join(' · ')}`)
+    })
+  }
+  return labels
+}
+
+export function toCsv(columns: MetricColumn[], items: CompareItem[], names?: Map<string, string>): string {
   const quote = (text: string) => /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
   const header = ['因子', ...columns.map(c => `${c.group} ${c.year ? c.key.split(':')[1] : c.label}`)]
-  const rows = items.map(item => [item.name, ...columns.map(c => { const v = c.value(item); return v == null || !Number.isFinite(v) ? '' : String(Number(v.toPrecision(6))) })])
+  const rows = items.map(item => [names?.get(item.id) ?? item.name, ...columns.map(c => { const v = c.value(item); return v == null || !Number.isFinite(v) ? '' : String(Number(v.toPrecision(6))) })])
   return [header, ...rows].map(row => row.map(quote).join(',')).join('\n') + '\n'
 }
 

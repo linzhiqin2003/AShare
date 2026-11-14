@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, shallowRef, watch } from 'v
 import { ChevronDown, Check, Search } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import type { IndexItem, IndexList } from '../types'
+import { vTip } from './ui'
 const props = defineProps<{ modelValue?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const root = shallowRef<HTMLElement | null>(null), open = shallowRef(false), search = shallowRef(''), items = shallowRef<IndexItem[]>([])
@@ -33,7 +34,7 @@ onUnmounted(() => { clearTimeout(timer); controller?.abort(); document.removeEve
 </script>
 <template>
   <div ref="root" class="benchmark-select" @keydown.esc="escapeMenu">
-    <button class="benchmark-button" aria-label="选择基准" :aria-expanded="open" @click="toggle"><span>{{ label }}</span><em v-if="fallback" title="本地没有上证指数，已选用列表第一项">替代默认</em><ChevronDown :size="12" /></button>
+    <button class="benchmark-button" aria-label="选择基准" :aria-expanded="open" @click="toggle"><span>{{ label }}</span><em v-if="fallback" v-tip="'本地没有上证指数，已选用列表第一项'">替代默认</em><ChevronDown :size="12" /></button>
     <div v-if="open" class="index-menu" :style="menuStyle">
       <label class="index-search"><Search :size="13" /><input ref="searchInput" v-model="search" placeholder="搜索指数名称或代码" aria-label="搜索基准指数"></label>
       <div class="index-options" role="listbox"><button v-for="item in items" :key="item.symbol" role="option" :aria-selected="item.symbol === modelValue" @click="choose(item)"><span>{{ item.name }}</span><span v-if="item.name !== item.symbol" class="mono muted">{{ item.symbol }}</span><Check v-if="item.symbol === modelValue" :size="12" /></button><div v-if="!items.length" class="index-empty">{{ error || '没有符合条件的指数' }}</div></div>
@@ -41,5 +42,5 @@ onUnmounted(() => { clearTimeout(timer); controller?.abort(); document.removeEve
   </div>
 </template>
 <style scoped>
-.benchmark-select{position:relative;max-width:78%;min-width:0}.benchmark-button{display:flex;align-items:center;gap:6px;background:white;border:1px solid var(--line);border-radius:3px;min-height:24px;padding:2px 7px;width:100%;font-size:11.5px}.benchmark-button>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.benchmark-button em{font-style:normal;font-size:10px;color:var(--warn);white-space:nowrap}.index-menu{position:fixed;width:300px;max-width:calc(100vw - 48px);z-index:30;background:white;border:1px solid var(--line);border-radius:5px;box-shadow:0 12px 32px #0002;padding:5px}.index-search{display:flex;gap:5px;align-items:center;padding:4px 7px;border-bottom:1px solid var(--grid)}.index-search input{min-width:0;width:100%;border:0;outline:0}.index-options{max-height:210px;overflow:auto}.index-options button{display:flex;align-items:center;gap:8px;width:100%;padding:6px 7px;border:0;background:white;text-align:left;font-size:11.5px}.index-options button:hover,.index-options button[aria-selected=true]{background:var(--selected)}.index-options button span:first-child{flex:1}.index-empty{padding:15px;color:var(--ink3)}
+.benchmark-select{position:relative;max-width:78%;min-width:0}.benchmark-button{display:flex;align-items:center;gap:6px;background:white;border:1px solid var(--line);border-radius:3px;min-height:24px;padding:2px 7px;width:100%;font-size:11.5px}.benchmark-button>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.benchmark-button em{font-style:normal;font-size:10px;color:var(--warn);white-space:nowrap}.index-menu{position:fixed;width:300px;max-width:calc(100vw - 48px);z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 12px 32px #00000024;padding:5px}.index-search{display:flex;gap:5px;align-items:center;padding:4px 7px;border-bottom:1px solid var(--grid)}.index-search input{min-width:0;width:100%;border:0;outline:0}.index-options{max-height:210px;overflow:auto}.index-options button{display:flex;align-items:center;gap:8px;width:100%;min-height:28px;padding:0 8px;border:0;border-radius:3px;background:var(--panel);text-align:left;font-size:12px}.index-options button:hover,.index-options button[aria-selected=true]{background:var(--selected)}.index-options button span:first-child{flex:1}.index-empty{padding:15px;color:var(--ink3)}
 </style>

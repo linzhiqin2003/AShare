@@ -404,10 +404,26 @@ Rank IC 使用信号在 T+1 成交时点到 T+2 同时点的收益；分组回�
 点 × 或按 Esc 关闭。打开时焦点移进抽屉，关闭时还给原来的行（行被翻页刷掉时找同一因子的行）。
 
 每行最前面是勾选框，跨页、跨筛选保留，最多 8 个；选两个以上后工具栏「对比」进入对比页（照 `p3_compare_light`）：
-左侧是已选因子加按 Sharpe 排序的库内因子（可筛选、可增减），下方是样本内日盈亏相关和「两两相关都在 0.8 以上」的提示；
-右侧顶栏显示设定是否一致与「导出」（CSV，内容就是指标表上看得到的列）；中间是多空累计收益，可切「按波动对齐」
+左侧是已选因子加按 Sharpe 排序的库内因子（可筛选、可增减），下方是样本内日盈亏相关；
+同名因子在列表、图、矩阵和指标表里都附上它们之间不同的表达式取值和配置（如 `low_vol · 20 · 行业`）；
+右侧顶栏只在设定真有不同时写一句「设定不同：…」，另有「导出」（CSV，内容就是指标表上看得到的列）；中间是多空累计收益，可切「按波动对齐」
 （各线按日收益标准差缩放到同一波动，只改量级）和 1 / 3 / 5 年 / 全部；下方指标表每列最优加粗、分年格按正负着色，
 「选择指标」里按组勾选，「存为视图」记在 localStorage `ashare.compare.metrics`。数据全部来自结果库里已存的结果，不重跑回测。
+
+### 自绘控件
+
+页面里不用系统原生的 select、checkbox、number input 和 `title` 提示（2026-11-14 用户要求），统一用 `web/src/components/ui/`：
+
+| 控件 | 写法 | 要点 |
+|---|---|---|
+| `UiSelect` | `<UiSelect v-model="x" :options="[{ value, label, disabled? }]" aria-label="…" />` | 按钮 + 挂在 body 上的 listbox，按触发器定位、下方放不下翻到上方；上下 / Home / End / 回车 / Esc / 首字母跳转，选中项打勾 |
+| `UiCheckbox` | `<UiCheckbox v-model="bool" :indeterminate? :color? aria-label="…" />` | `role=checkbox`，选中填充 `--ink` 或系列颜色；放在 `<label>` 里点文字也能切换 |
+| `UiSwitch` | `<UiSwitch v-model="bool" aria-label="…" />` | `role=switch` |
+| `UiNumberInput` | `<UiNumberInput v-model="n" :min :max :step unit="天" aria-label="…" />` | 两侧 −/+（无障碍名为「减少 / 增加」加 aria-label），上下键步进，清空发出 `null`，越界在失焦时收回 |
+| `v-tip` / `UiTooltip` | `v-tip="文字"` 或 `<UiTooltip text="…">…</UiTooltip>` | 悬停或聚焦 400 ms 后出现，挂在 body 上、贴边翻转，显示时关联 `aria-describedby` |
+
+`aria-label` 声明成了 prop（开着 strictTemplates 也能直接写），转到内部可聚焦元素上。
+测试里自绘下拉的菜单不在组件里，用 `ui/testing.ts` 的 `pick()`；`noNative.test.ts` 扫描页面组件，出现原生控件即失败。
 
 ### 验证期默认隐藏
 
