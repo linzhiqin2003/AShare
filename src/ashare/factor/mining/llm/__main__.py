@@ -28,6 +28,10 @@ def parser():
     ap.add_argument("--base-url", default=None)
     ap.add_argument("--key-env", default=None)
     ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--max-tokens", type=int, default=32768,
+                    help="每次回答的输出上限（含思考）")  # fmt: skip
+    ap.add_argument("--reasoning", choices=("off", "low", "medium", "high"), default=None,
+                    help="思考强度；不传用模型默认。只支持 OpenRouter")  # fmt: skip
     ap.add_argument(
         "--price-in",
         type=float,
@@ -81,6 +85,8 @@ def _client(args):
         api_key_env=args.key_env or DEFAULT_KEY_ENV,
         pricing=pricing,
         temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        reasoning=args.reasoning,
     )
 
 
@@ -140,7 +146,8 @@ def main(argv=None, client=None, out=None):
         file=out,
     )
     if run.get("error"):
-        print(f"接口错误：{run['error']}", file=out)
+        label = "接口错误" if run.get("stop") == "llm_error" else "停止说明"
+        print(f"{label}：{run['error']}", file=out)
     print(f"转写记录：{run.get('transcript')}", file=out)
     return {"summary": json.loads(json.dumps(result.summary, default=str)), "llm": run}
 

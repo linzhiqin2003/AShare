@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from dataclasses import asdict, dataclass
@@ -56,6 +57,7 @@ class Usage:
     completion_tokens: int = 0
     cached_tokens: int = 0
     estimated: bool = False
+    reasoning_tokens: int = 0  # 输出里用于思考的部分（已含在 completion_tokens 里）
 
     @property
     def total(self):
@@ -71,6 +73,8 @@ class Reply:
     cost: float
     attempts: int = 1
     finish_reason: str | None = None
+    cost_source: str = "pricing"  # "reported"：平台在 usage.cost 里给了实际扣费
+    provider: str | None = None  # OpenRouter 实际转到的服务商
 
 
 def _int(x):
@@ -87,8 +91,12 @@ def parse_usage(raw, messages, text):
         cached = raw.get("prompt_cache_hit_tokens")
         if cached is None:
             cached = (raw.get("prompt_tokens_details") or {}).get("cached_tokens")
+        details = raw.get("completion_tokens_details")
+        thinking = (
+            details.get("reasoning_tokens") if isinstance(details, dict) else None
+        )
         return Usage(_int(raw.get("prompt_tokens")), _int(raw.get("completion_tokens")),
-                     _int(cached))  # fmt: skip
+                     _int(cached), reasoning_tokens=_int(thinking))  # fmt: skip
     chars = sum(len(str(m.get("content", ""))) for m in messages)
     return Usage(chars // 2 + 1, len(text) // 2 + 1, 0, True)
 
@@ -108,7 +116,8 @@ class ChatClient:
         retries=3,
         backoff=2.0,
         temperature=1.0,
-        max_tokens=4096,
+        max_tokens=32768,
+        reasoning=None,
         send_seed=False,
         transport=None,
         sleep=time.sleep,
@@ -123,6 +132,8 @@ class ChatClient:
         self.backoff = float(backoff)
         self.temperature = float(temperature)
         self.max_tokens = int(max_tokens)
+        self.reasoning = _reasoning_field(reasoning, self.base_url)
+        self.reasoning_name = reasoning
         self.send_seed = bool(send_seed)
         self._transport = transport
         self._sleep = sleep
@@ -133,6 +144,7 @@ class ChatClient:
             "base_url": self.base_url,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "reasoning": self.reasoning_name,
             "send_seed": self.send_seed,
             "pricing": asdict(self.pricing),
         }
@@ -164,6 +176,8 @@ class ChatClient:
         }
         if json_mode:
             body["response_format"] = {"type": "json_object"}
+        if self.reasoning is not None:
+            body["reasoning"] = self.reasoning
         if seed is not None and self.send_seed:
             body["seed"] = int(seed)
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -224,6 +238,32 @@ class ChatClient:
             text = choice["message"]["content"] or ""
         except (ValueError, KeyError, IndexError, TypeError):
             raise LLMError("模型接口返回了无法解析的响应") from None
-        usage = parse_usage(data.get("usage"), messages, text)
-        return Reply(str(text), usage, self.pricing.cost(usage), attempt,
-                     choice.get("finish_reason"))  # fmt: skip
+        raw_usage = data.get("usage")
+        usage = parse_usage(raw_usage, messages, text)
+        cost, source = self.pricing.cost(usage), "pricing"
+        reported = raw_usage.get("cost") if isinstance(raw_usage, dict) else None
+        if (isinstance(reported, (int, float)) and not isinstance(reported, bool)
+                and math.isfinite(reported) and reported >= 0):  # fmt: skip
+            cost, source = float(reported), "reported"
+        provider = data.get("provider")
+        return Reply(str(text), usage, cost, attempt, choice.get("finish_reason"),
+                     source, provider if isinstance(provider, str) else None)  # fmt: skip
+
+
+REASONING = ("off", "low", "medium", "high")
+
+
+def _reasoning_field(reasoning, base_url):
+    """``--reasoning`` → 请求体里的 ``reasoning`` 字段。``None`` 不发（用模型默认：DeepSeek Flash 默认思考）。
+
+    只在 OpenRouter 上核实过（2026-11-14 实测 deepseek/deepseek-v4.1-flash：off 时思考 0 token，
+    low / high 约 550，默认约 1400）；别的接口写法不同，传了就报错，不猜。"""
+    if reasoning is None:
+        return None
+    if reasoning not in REASONING:
+        raise ValueError(f"reasoning 只能是 {REASONING} 之一，收到 {reasoning!r}")
+    if "openrouter.ai" not in base_url:
+        raise ValueError(
+            "reasoning 只在 OpenRouter 上核实过，其他接口请不传（用模型默认）"
+        )
+    return {"enabled": False} if reasoning == "off" else {"effort": reasoning}

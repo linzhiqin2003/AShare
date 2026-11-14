@@ -209,6 +209,18 @@ class LLMResearch:
             stats["cost_usd"] += reply.cost
             record.update(response=reply.text, usage=vars(reply.usage), cost_usd=reply.cost,
                           finish_reason=reply.finish_reason)  # fmt: skip
+            record.update(provider=reply.provider, cost_source=reply.cost_source)
+            if reply.finish_reason == "length" and not reply.text.strip():
+                # 思考把输出上限用完、正文是空的：同样的设置再问也一样，直接停（2026-11-14 首次实跑，
+                # OpenRouter 上 deepseek-v4.1-flash 默认思考，旧的 4096 上限三轮全空）。
+                limit = getattr(self.client, "max_tokens", None)
+                msg = (f"输出到达上限 max_tokens={limit}，其中思考 "
+                       f"{reply.usage.reasoning_tokens} token，回答为空：调大 --max-tokens "
+                       "或用 --reasoning 降低思考")  # fmt: skip
+                record["answer_error"] = msg
+                write(record)
+                stats["stop"], stats["error"] = "truncated", msg
+                break
             try:
                 answer = parse_answer(reply.text, self.batch)
             except AnswerError as exc:

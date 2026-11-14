@@ -38,7 +38,7 @@ python -m ashare.factor.mining.llm --synthetic --rounds 5 --budget-usd 0.2
 python -m ashare.factor.mining.llm --screen gpu ...           # GPU 粗筛（可选依赖 gpu）
 ```
 
-其余选项：`--model`、`--base-url`、`--key-env`、`--temperature`、`--price-in/--price-cached/--price-out`、`--budget-tokens`、`--patience`、`--root`、`--screen-t`、`--start`、`--threads`。
+其余选项：`--model`、`--base-url`、`--key-env`、`--temperature`、`--max-tokens`（每次回答的输出上限，含思考，默认 32768）、`--reasoning off|low|medium|high`（思考强度，只支持 OpenRouter；不传用模型默认）、`--price-in/--price-cached/--price-out`、`--budget-tokens`、`--patience`、`--root`、`--screen-t`、`--start`、`--threads`。
 
 ## 模型接口
 
@@ -112,3 +112,12 @@ python -m ashare.factor.mining.llm --screen gpu ...           # GPU 粗筛（可
 | `_over_budget` 永远不停 | `test_budget_usd_stops_before_next_round`、`test_budget_tokens_stops` |
 | 去掉跨轮去重 | `test_dedup_within_and_across_rounds` |
 | 连续无效轮不计数 | `test_consecutive_rounds_without_valid_candidates_stop` |
+
+## 经 OpenRouter 调用
+
+```bash
+python -m ashare.factor.mining.llm --base-url https://openrouter.ai/api/v1 \
+  --key-env OPENROUTER_API_KEY --model deepseek/deepseek-v4.1-flash --rounds 20
+```
+
+OpenRouter 在 `usage.cost` 里给出实际扣费，有它时预算按它算（转写记录 `cost_source: reported`），并记下实际转到的服务商（`provider`）。DeepSeek Flash 默认思考：旧的 4096 输出上限会被思考占满、回答为空（2026-11-14 首次实跑三轮全空），现在默认 32768；如果仍然被截断成空回答，循环会立即停下（停止原因 `truncated`）并说明思考用了多少。

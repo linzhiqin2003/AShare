@@ -168,3 +168,72 @@ def test_whole_request_deadline(monkeypatch):
     c, _ = _client(lambda r: httpx.Response(200, stream=Drip()), retries=0, timeout=60)
     with pytest.raises(LLMError, match="TimeoutError"):
         c.complete(MSG)
+
+
+# ---- 思考与实际扣费（2026-11-14 首次真实试跑：OpenRouter 上 deepseek-v4.1-flash 默认思考，
+# 旧的 4096 输出上限三轮全被思考占满、正文为空）---------------------------------------------
+
+OPENROUTER = "https://openrouter.ai/api/v1"
+
+
+def test_reasoning_tokens_parsed():
+    u = parse_usage({"prompt_tokens": 10, "completion_tokens": 4096,
+                     "completion_tokens_details": {"reasoning_tokens": 4096}}, MSG, "")  # fmt: skip
+    assert u.reasoning_tokens == 4096
+    assert u.completion_tokens == 4096
+
+
+@pytest.mark.parametrize("level, field", [("off", {"enabled": False}),
+                                          ("low", {"effort": "low"}),
+                                          ("high", {"effort": "high"})])  # fmt: skip
+def test_reasoning_sent_on_openrouter(level, field):
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return _ok()
+
+    c, _ = _client(handler, base_url=OPENROUTER, reasoning=level)
+    c.complete(MSG)
+    assert seen[0]["reasoning"] == field
+    assert c.describe()["reasoning"] == level
+
+
+def test_reasoning_default_sends_nothing_and_unverified_hosts_refuse():
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return _ok()
+
+    c, _ = _client(handler)
+    c.complete(MSG)
+    assert "reasoning" not in seen[0]
+    assert seen[0]["max_tokens"] >= 16384  # 4096 装不下默认思考加回答
+    with pytest.raises(ValueError, match="OpenRouter"):
+        ChatClient(api_key=KEY, reasoning="low")
+    with pytest.raises(ValueError, match="reasoning"):
+        ChatClient(api_key=KEY, base_url=OPENROUTER, reasoning="max")
+
+
+@pytest.mark.parametrize("reported, expect", [(0.00109872, "reported"), (None, "pricing"),
+                                              (-1.0, "pricing"), (float("nan"), "pricing"),
+                                              ("0.5", "pricing"), (True, "pricing")])  # fmt: skip
+def test_reported_cost_used_when_valid(reported, expect):
+    usage = {"prompt_tokens": 1000, "completion_tokens": 200}
+    if reported is not None:
+        usage["cost"] = reported
+
+    def handler(request):
+        body = {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": usage, "provider": "DeepInfra"}  # fmt: skip
+        return httpx.Response(200, content=json.dumps(body).encode())
+
+    c, _ = _client(handler, pricing=Pricing(input=1.0, cached_input=0.1, output=2.0))
+    reply = c.complete(MSG)
+    assert reply.cost_source == expect
+    assert reply.provider == "DeepInfra"
+    if expect == "reported":
+        assert reply.cost == pytest.approx(reported)
+    else:
+        assert reply.cost == pytest.approx((1000 * 1.0 + 200 * 2.0) / 1e6)

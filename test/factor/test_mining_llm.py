@@ -481,3 +481,32 @@ def test_truncated_answer_hint_and_zero_history(tmp_path):
     assert "被截断" in client.user(2)
     assert "## 最近几轮\n（无）" in client.user(1) and "第 1 轮（" not in client.user(1)
     assert "## 迄今训练段" not in client.user(0)
+
+
+# ---- 思考占满输出上限（2026-11-14 首次真实试跑）------------------------------------------
+
+
+class Truncated(Scripted):
+    """模型把输出上限全用在思考上：正文为空，finish_reason = length。"""
+
+    max_tokens = 4096
+
+    def complete(self, messages, *, json_mode=True, seed=None):
+        self.prompts.append(messages)
+        usage = Usage(1400, 4096, 0, reasoning_tokens=4096)
+        return Reply("", usage, 0.001, finish_reason="length")
+
+
+def test_empty_truncated_reply_stops_at_once_with_reason(tmp_path):
+    client = Truncated([])
+    s, ev = run(client, tmp_path, rounds=5, patience=3)
+    assert len(client.prompts) == 1  # 旧代码要空问满 patience 轮
+    assert s.last_run["stop"] == "truncated"
+    assert (
+        "max_tokens=4096" in s.last_run["error"] and "思考 4096" in s.last_run["error"]
+    )
+    assert ev.batches == []
+    rows = records(tmp_path / "t.jsonl")
+    rnd = [r for r in rows if r["event"] == "round"][0]
+    assert rnd["usage"]["reasoning_tokens"] == 4096
+    assert "--reasoning" in rnd["answer_error"]
