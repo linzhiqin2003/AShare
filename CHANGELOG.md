@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-15（加密货币回测：币安现货、U 本位永续与季度）
+- 设计 `docs/DESIGN.md` 4.17、6.10（经三轮对抗审查定稿），规则事实与出处 `docs/markets/BINANCE.md`。引擎一律逐小时推进，日频策略只在 `trade_hour` 那一行下单；现货账户和合约账户第一批各自独立（两钱包放第二批 C4）。
+- `panelbt` 内核（`Futures(funding=, maint_rate=, liquidation=Liquidation(...), qty_step=, min_qty=, min_notional=)`，SPEC 新增一节）：资金费按收盘持有的张数在行右边界收付；维持保证金与初始保证金分开；按标记价格强平（开盘、成交后、盘中联合压力 λ、收盘四处检查），清算费按剩余权益封顶、穿仓缺口单列；随时间变化的下单规则与只减仓豁免。不开启时旧输出、快照逐位不变（1,200 份 + 300 份快照）。独立参考实现 `reference_crypto.py`、对拍 2,220 组、变异 27/27。
+- 数据层 `ashare.data.crypto`（`docs/CRYPTO_DATA.md`）：data.binance.vision 归档 + 公开 REST，校验和、断点续跑；带 `known_at` 版本的下架 / 结算 / 迁移事件；按月分块的小时面板（资金费现金、结算价、标记价、下单规则及来源标记）；独立校验；交易所停机的半截 K 线只由成交线自证。真实数据：BTC、ETH 现货与永续 2020-01 至 2026-10-31，239,612 格、955 份归档、校验 0 错误（只在本机 `data/crypto`）。
+- 市场档案 `panelbt.markets.get("binance_spot" | "binance_usdm")`：费率按 BINANCE.md「回测口径」分段；维持保证金、分档上限、清算费只在有据区间内直接用，区间外报错，显式 `assume=` 放行并进诊断。
+- `ashare.backtest.crypto`（`docs/CRYPTO_BACKTEST.md`）：`crypto_market`、`daily_targets`（只错位一次、不在非 `trade_hour` 重试）、`top_n`（按币、真实时间窗口、含后来下架的币）、季度换月、按公告 `known_at` 的现货下架退出（含转换链、未变现单列）。例子：BTC/ETH 日频趋势（20/60/120 日动量投票、20% 波动目标）2020-01 至 2026-10，永续 2 倍上限年化 12.6%、最大回撤 18.7%，现货只做多年化 15.2%、回撤 13.5%；2021-05-19 强平价等手算逐项相符；与 Quant `account.py` 的差异逐项解释。
+- 审查：三条线各经一次 Codex 独立审查（共找出 C1 3 个、C3 4 个 P0，以及 C2 的 `known_at` 退化和夹具里的真实行情），全部返工修复并写成回归测试；主干 5,884 个测试通过。
+
 ## 2026-11-14（GitHub Actions CI）
 - `.github/workflows/ci.yml`：每个 PR 和推送 `main` 跑四个 job——检查（ruff、Rust fmt / clippy）、Rust 测试、Python 测试（Linux 上 `uv sync --locked` 从锁文件安装，pytest 并行、随机顺序）、前端（类型检查、单测、构建）。action 钉 SHA，不用任何密钥和真实数据。Rust 版本固定在 `rust-toolchain.toml`（1.95.0），本机和 CI 用同一个。
 - 第一次在 Linux 上跑暴露一个跨平台差异：引擎里外部现金流 `requested.max(-available)` 在两个零之间取大，Rust 不规定零号，x86 给 -0.0、ARM 给 +0.0，8 个逐位测试失败。现在归一成 +0.0；冻结摘要 `test/fixtures/no_rules_digest.json` 重新生成——600 个用例逐字段对比旧构建，124 个只在 `cash_flow` 的零号上不同，数值全部相同。新测试 `test_cash_flow_zeros_are_positive` 守住。
