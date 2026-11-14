@@ -5,7 +5,7 @@ import { api, friendly } from '../api'
 import type { Completion } from '../types'
 import FieldDetailView from '../components/data/FieldDetail.vue'
 import { UiSkeleton, vTip } from '../components/ui'
-import { bytes, integer, linePath, matches, partition, percent, stamp, type Dataset, type FieldDetail, type FieldList, type Overview } from '../datastatus'
+import { integer, linePath, matches, partition, percent, stamp, type Dataset, type FieldDetail, type FieldList, type Overview } from '../datastatus'
 
 const props = defineProps<{ completions: Completion[] }>()
 type Tab = 'fields' | 'indexes' | 'tables' | 'history' | 'verify' | 'operators'
@@ -33,8 +33,8 @@ const operators = computed(() => props.completions.filter(c => c.kind === 'opera
 const indexes = computed(() => (dataset.value?.indexes ?? []).filter(i => !query.value.trim() || `${i.symbol} ${i.name}`.toLowerCase().includes(query.value.trim().toLowerCase())))
 // 概览还没到时按股票面板的三栏摆骨架，避免数据到了以后整页从两栏跳成三栏。
 const showDetail = computed(() => !overview.value ? !error.value : dataset.value?.key === 'stock')
-const verifyIssues = computed(() => dataset.value?.verify?.checks.filter(c => (c.failed ?? 0) > 0).length ?? 0)
 
+// 左栏只放用户看得懂的：规模和日期范围。面板版本号、占用空间、构建时间这类内部信息不上界面（2026-11-14 用户）；校验结果在「校验」页签。
 function summary(d: Dataset) {
   if (d.key === 'index') return d.indexes?.length ? `${d.indexes.length} 个指数` : ''
   if (!d.panel) return '原始库，未构建面板'
@@ -90,20 +90,10 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
     <section class="panel datasets" aria-label="数据集">
       <div class="panel-header">数据集</div>
       <template v-if="overview">
-        <button v-for="item in overview.datasets" :key="item.key" class="dataset" :class="{ on: dataset?.key === item.key }" :aria-pressed="dataset?.key === item.key" @click="chooseDataset(item.key)"><b>{{ item.name }}</b><em v-if="dataset?.key === item.key && summary(item)">{{ summary(item) }}</em></button>
+        <button v-for="item in overview.datasets" :key="item.key" class="dataset" :class="{ on: dataset?.key === item.key }" :aria-pressed="dataset?.key === item.key" @click="chooseDataset(item.key)"><b>{{ item.name }}</b><em v-if="dataset?.key === item.key && summary(item)">{{ summary(item) }}</em><em v-if="dataset?.key === item.key && earliestDate(item)" class="mono">{{ earliestDate(item) }} 至 {{ latestDate(item) }}</em></button>
         <p v-if="!overview.datasets.length" class="empty">本地还没有数据</p>
       </template>
       <div v-else-if="!error" class="skeleton-list" aria-busy="true"><UiSkeleton :lines="4" /></div>
-      <div v-if="dataset" class="dataset-meta">
-        <h5>更新</h5>
-        <div class="kv">
-          <span>数据截至</span><b>{{ latestDate(dataset) || '—' }}</b>
-          <span>起始</span><b>{{ earliestDate(dataset) || '—' }}</b>
-          <template v-if="dataset.panel"><span>面板版本</span><b>{{ dataset.panel.version.slice(0, 12) }}</b><span>占用空间</span><b>{{ bytes(dataset.panel.size) }}</b></template>
-          <template v-if="dataset.panel?.built_at"><span>构建于</span><b>{{ stamp(dataset.panel.built_at) }}</b></template>
-          <template v-if="dataset.verify"><span>校验</span><b :class="{ stale: !dataset.verify.current }">{{ !dataset.verify.current ? '对应旧版本' : dataset.verify.verdict ? (dataset.verify.verdict === 'pass' ? '通过' : '未通过') : verifyIssues ? `${verifyIssues} 项有差异` : '全部通过' }}</b></template>
-        </div>
-      </div>
     </section>
     <section class="panel center">
       <div class="panel-header tabs-header">
@@ -146,7 +136,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
         </table>
 
         <template v-else-if="tab === 'verify' && dataset?.verify">
-          <p class="verify-line">{{ stamp(dataset.verify.generated_at) }} 生成<template v-if="!dataset.verify.current">，对应的不是当前面板版本</template></p>
+          <p class="verify-line">{{ stamp(dataset.verify.generated_at) }} 生成<template v-if="!dataset.verify.current">，对应的不是当前数据</template></p>
           <table class="grid-table verify-table">
             <thead><tr><th>检查</th><th class="r">检查数</th><th class="r">差异</th><th class="r">{{ dataset.verify.verdict ? '结论' : '通过率' }}</th><th>说明</th></tr></thead>
             <tbody><tr v-for="check in dataset.verify.checks" :key="check.name"><td class="mono">{{ check.name }}</td><td class="mono r">{{ integer(check.checked) }}</td><td class="mono r" :class="{ warn: (check.failed ?? 0) > 0 }">{{ check.failed ? integer(check.failed) : '' }}</td><td class="mono r">{{ dataset.verify.verdict ? check.verdict ?? '—' : percent(check.pass_rate, 2) }}</td><td class="note-cell">{{ check.note }}</td></tr></tbody>
@@ -174,14 +164,9 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
 .dataset{display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-bottom:1px solid var(--grid);background:var(--panel)}
 .dataset.on{background:var(--selected)}
 .dataset b{display:block;font-weight:500}
-.dataset em{font-style:normal;color:var(--ink3);font-size:11.5px}
+.dataset em{display:block;font-style:normal;color:var(--ink3);font-size:11.5px}
 .dataset:hover b{color:var(--ink)}
-.dataset-meta{padding:8px 10px}
 h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:2px 0 5px}
-.kv{display:grid;grid-template-columns:1fr auto}
-.kv>span{color:var(--ink3);height:24px;display:flex;align-items:center;border-bottom:1px solid var(--grid)}
-.kv>b{font-weight:500;height:24px;display:flex;align-items:center;justify-content:flex-end;border-bottom:1px solid var(--grid);font-family:var(--mono);font-size:12px}
-.kv>b.stale{color:var(--warn);font-family:inherit}
 .empty{padding:10px;color:var(--ink3)}
 .tabs-header{gap:14px}
 .find{height:22px;width:220px;border:1px solid var(--line);border-radius:3px;display:flex;align-items:center;gap:7px;padding:0 8px;color:var(--ink3);background:var(--panel);font-weight:400}

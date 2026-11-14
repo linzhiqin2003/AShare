@@ -41,7 +41,9 @@ describe('数据页', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('正在统计各字段覆盖')
     expect(wrapper.text()).toContain('5923 只 × 4825 个交易日，48 个字段')
-    expect(wrapper.text()).toContain('1 项有差异')
+    // 2026-11-14 用户：面板版本号、占用空间、构建时间是内部信息，不上界面；左栏只留规模和日期范围。
+    expect(wrapper.find('.datasets').text()).not.toMatch(/面板版本|占用空间|构建于/)
+    expect(wrapper.find('.dataset.on').text()).toMatch(/\d{4}-\d{2}-\d{2} 至 \d{4}-\d{2}-\d{2}/)
     ready = true
     await vi.advanceTimersByTimeAsync(1600); await flushPromises()
     const rows = wrapper.findAll('.fields-table tbody tr')
