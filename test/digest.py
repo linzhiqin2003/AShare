@@ -3,6 +3,12 @@
 The fixture `fixtures/no_rules_digest.json` was produced by the engine build
 before the stepping interface and declarative rules were added; matching it
 proves that runs without rules are unchanged bit for bit.
+
+Re-frozen on 2026-11-14 for one change only: the engine now writes +0.0 instead
+of -0.0 for a zero external cash flow (`max` of two zeros has a platform-dependent
+sign; Linux CI disagreed with macOS). All 600 cases were compared field by field
+against the previous build: 124 differed, every one only in the sign of zeros in
+`cash_flow`, with equal values everywhere.
 """
 
 import hashlib

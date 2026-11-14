@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-14（GitHub Actions CI）
+- `.github/workflows/ci.yml`：每个 PR 和推送 `main` 跑四个 job——检查（ruff、Rust fmt / clippy）、Rust 测试、Python 测试（Linux 上 `uv sync --locked` 从锁文件安装，pytest 并行、随机顺序）、前端（类型检查、单测、构建）。action 钉 SHA，不用任何密钥和真实数据。Rust 版本固定在 `rust-toolchain.toml`（1.95.0），本机和 CI 用同一个。
+- 第一次在 Linux 上跑暴露一个跨平台差异：引擎里外部现金流 `requested.max(-available)` 在两个零之间取大，Rust 不规定零号，x86 给 -0.0、ARM 给 +0.0，8 个逐位测试失败。现在归一成 +0.0；冻结摘要 `test/fixtures/no_rules_digest.json` 重新生成——600 个用例逐字段对比旧构建，124 个只在 `cash_flow` 的零号上不同，数值全部相同。新测试 `test_cash_flow_zeros_are_positive` 守住。
+
 ## 2026-11-14（公开因子库并入）
 - 三套公开因子（Qlib Alpha158、WorldQuant Alpha101、国泰君安 191）从本地私有包并入本仓库：翻译、独立参考实现、注册表与已知例外在 `ashare.factor.alphas`，约定、翻译规范、参考实现说明、逐条核对报告和公式原文在 `docs/factors/`，测试在 `test/factor/alphas/`（只用合成数据）。三套作为内置因子集注册（`formula.plugins._builtin`），入口点机制留给别的因子包。论文附录、研报附录和聚宽「公用函数说明」的逐字抄录（`alpha101_defs.md`、`gtja191_defs.md`）不随仓库发布；Qlib 的源码原文按 MIT 许可保留版权声明。自己挖出来的因子仍不进仓库。
 

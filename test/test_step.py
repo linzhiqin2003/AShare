@@ -405,3 +405,21 @@ def test_old_snapshot_format_is_reported():
     market, target, costs, config = generators.case(3)
     with pytest.raises(ValueError, match="version 1 is no longer supported"):
         bt.Simulator.restore(b"PBTSTEP1" + bytes(64), market, costs, config)
+
+
+@pytest.mark.parametrize("corpus", sorted(CORPORA))
+def test_cash_flow_zeros_are_positive(corpus):
+    """没有外部现金流的日子输出 +0.0，不是 -0.0。
+
+    来源：2026-11-14 第一次在 Linux（x86_64）CI 上跑，8 个逐位测试失败：引擎里
+    ``requested.max(-available)`` 在两个零之间取大，Rust 不规定结果的零号，x86 会给 -0.0、
+    ARM 给 +0.0，于是同一份输入在两个平台、两条代码路径上输出的字节不同。macOS 上旧代码也是
+    +0.0，这条测试在 Linux CI 上守住它。"""
+    make = CORPORA[corpus]
+    for seed in range(60):
+        market, target, costs, config = make(seed)
+        for result in (bt.run(market, target, costs, config),
+                       step_all(market, target, costs, config).result()):  # fmt: skip
+            for name in ("cash_flow", "withdrawal_shortfall"):
+                values = np.asarray(getattr(result, name))
+                assert not np.signbit(values[values == 0]).any(), (corpus, seed, name)

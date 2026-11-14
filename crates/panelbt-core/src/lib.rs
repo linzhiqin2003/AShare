@@ -702,7 +702,10 @@ impl Core {
             }
         };
         let requested = s.v(10, day);
-        *flow = requested.max(-available);
+        // 两个零之间取大时 Rust 不规定结果的零号（x86 会给 -0.0，ARM 给 +0.0）：归一成 +0.0，
+        // 输出在各平台逐位相同（2026-11-14 第一次在 Linux CI 上跑，8 个逐位测试因此失败）。
+        let f = requested.max(-available);
+        *flow = if f == 0.0 { 0.0 } else { f };
         st.cash += *flow;
         out.daily[12 * m.t + day] = *flow;
         out.daily[13 * m.t + day] = *flow - requested;
