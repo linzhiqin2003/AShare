@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import DataPage from './DataPage.vue'
 import SettingsPage from './SettingsPage.vue'
 import StatusBar from '../components/StatusBar.vue'
-import UiSelect from '../components/ui/UiSelect.vue'
+import { pick, selectText } from '../components/ui/testing'
+import { TIP_DELAY } from '../components/ui'
 import UiNumberInput from '../components/ui/UiNumberInput.vue'
 
 const field = (name: string, label: string, category = '行情') => ({ name, label, category, dtype: 'float64', unit: '元', start: '2007-01-04', latest: 0.9, spark: [0.9, 1], references: name === 'close' ? 2 : 0 })
@@ -90,6 +91,13 @@ describe('状态栏', () => {
     expect(text).toContain('银行+0.68%'); expect(text).toContain('传媒-3.19%'); expect(text).toContain('上次运行 14.6 s')
     expect(wrapper.find('.ix b.fall').text()).toBe('-0.67%')
     expect(wrapper.findAll('.cells i')).toHaveLength(2)
+    // 单格提示用共享的 v-tip，不用原生 title。
+    vi.useFakeTimers()
+    const cell = wrapper.findAll('.cells i')[1]
+    expect(cell.attributes('title')).toBeUndefined()
+    await cell.trigger('mouseenter'); vi.advanceTimersByTime(TIP_DELAY)
+    expect(document.getElementById('ui-tip')?.textContent).toBe('传媒 -3.19%')
+    await cell.trigger('mouseleave')
     wrapper.unmount()
   })
   it('没有行情时不显示行情，只留运行耗时', async () => {
@@ -115,22 +123,27 @@ describe('设置页', () => {
     await flushPromises()
     await wrapper.findAll('.theme-card')[1].trigger('click')
     expect(document.documentElement.dataset.theme).toBe('dark')
-    // 共享控件只按约定的签名交互：aria-label 找控件，update:modelValue 改值。
-    const control = (label: string) => wrapper.findAllComponents(UiSelect).concat(wrapper.findAllComponents(UiNumberInput) as never).find(c => c.attributes('aria-label') === label || c.props('ariaLabel' as never) === label)!
-    control('涨跌停与停牌').vm.$emit('update:modelValue', false); await flushPromises()
+    // 按正式共享控件操作：下拉用 pick() 点开菜单选项，数字框用组件事件模拟越界值（控件自身会夹住范围，这里验证页面的兜底校验）。
+    await pick(wrapper, '涨跌停与停牌', '不限制'); await flushPromises()
     const body = JSON.parse(String(calls.filter(c => c.init?.method === 'PUT').at(-1)!.init!.body))
     expect(body.trade_limitation).toBe(false)
     expect(Object.keys(body).sort()).toEqual(Object.keys(backtest).sort())
-    control('基准').vm.$emit('update:modelValue', '000300.SH'); await flushPromises()
-    expect(control('基准').props('modelValue')).toBe('000300.SH')
-    control('调仓周期').vm.$emit('update:modelValue', 0); await flushPromises()
+    await pick(wrapper, '基准', '沪深300'); await flushPromises()
+    expect(selectText(wrapper, '基准')).toBe('沪深300')
+    const number = (label: string) => wrapper.findAllComponents(UiNumberInput).find(c => c.props('ariaLabel' as never) === label)!
+    // 清空数字框（控件发出 null）表示还在输入：不保存、不报错（2026-11-14 接正式控件时发现）。
+    const puts = calls.filter(c => c.init?.method === 'PUT').length
+    number('调仓周期').vm.$emit('update:modelValue', null); await flushPromises()
+    expect(calls.filter(c => c.init?.method === 'PUT')).toHaveLength(puts)
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    number('调仓周期').vm.$emit('update:modelValue', 0); await flushPromises()
     expect(wrapper.find('[role=alert]').text()).toBe('调仓周期取 1–2520 个交易日')
     fail = true
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: '请求参数不受支持' }), { status: 422 })))
-    control('股票池').vm.$emit('update:modelValue', 'TOP800'); await flushPromises()
+    await pick(wrapper, '股票池', 'TOP800'); await flushPromises()
     expect(wrapper.find('[role=alert]').text()).toBe('请求参数不受支持')
-    expect(control('股票池').props('modelValue')).toBe('TOP1800')
-    control('涨跌颜色').vm.$emit('update:modelValue', 'green'); await flushPromises()
+    expect(selectText(wrapper, '股票池')).toBe('TOP1800')
+    await pick(wrapper, '涨跌颜色', '绿涨红跌'); await flushPromises()
     expect(document.documentElement.dataset.rise).toBe('green')
     document.documentElement.removeAttribute('data-theme')
   })

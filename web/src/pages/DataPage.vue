@@ -4,6 +4,7 @@ import { Search } from 'lucide-vue-next'
 import { api, friendly } from '../api'
 import type { Completion } from '../types'
 import FieldDetailView from '../components/data/FieldDetail.vue'
+import { vTip } from '../components/ui'
 import { bytes, integer, linePath, matches, partition, percent, stamp, type Dataset, type FieldDetail, type FieldList, type Overview } from '../datastatus'
 
 const props = defineProps<{ completions: Completion[] }>()
@@ -130,7 +131,7 @@ function rowKey(event: KeyboardEvent, name: string) { if (event.key === 'Enter' 
 
         <table v-else-if="tab === 'history'" class="grid-table history-table">
           <thead><tr><th>日期</th><th>时间</th><th>数据集</th><th class="r">分区</th><th class="r">行数</th><th class="r">请求</th></tr></thead>
-          <tbody><tr v-for="record in dataset?.history ?? []" :key="record.date"><td class="mono">{{ record.date }}</td><td class="mono dim">{{ stamp(record.first, false) }}–{{ stamp(record.last, false) }}</td><td class="datasets-cell">{{ datasetList(record.datasets) }}</td><td class="mono r">{{ integer(record.partitions) }}</td><td class="mono r">{{ integer(record.rows) }}</td><td class="mono r">{{ integer(record.calls) }}</td></tr></tbody>
+          <tbody><tr v-for="record in dataset?.history ?? []" :key="record.date"><td class="mono">{{ record.date }}</td><td class="mono dim">{{ stamp(record.first, false) }}–{{ stamp(record.last, false) }}</td><td v-tip="record.datasets.length > 3 ? record.datasets.join('、') : ''" class="datasets-cell">{{ datasetList(record.datasets) }}</td><td class="mono r">{{ integer(record.partitions) }}</td><td class="mono r">{{ integer(record.rows) }}</td><td class="mono r">{{ integer(record.calls) }}</td></tr></tbody>
         </table>
 
         <template v-else-if="tab === 'verify' && dataset?.verify">

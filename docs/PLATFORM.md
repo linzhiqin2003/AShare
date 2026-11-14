@@ -52,11 +52,11 @@ vue-tsc 和 Vitest；`make check` 运行 Python/Rust 检查，不依赖 Node。
 hash 路由：`#/research`（默认）、`#/library`、`#/data`、`#/backtest`、`#/paper`、`#/settings`，
 刷新停在当前页，前进后退可用，未知地址回到研究台。页面清单在 `web/src/router.ts`（`PAGES`）。
 研究台常驻（`v-show`，切页不丢草稿和运行中的任务），其余页面按需挂载。回测、模拟盘的页面组件是
-`web/src/pages/BacktestPage.vue`、`PaperPage.vue`。
+`web/src/pages/BacktestPage.vue`、`PaperPage.vue`（模拟盘见下文「模拟盘页」）。
 
 顶栏右侧：运行中的任务数、数据截至日期、设置入口。底部状态栏（`StatusBar.vue`）显示本地数据
 最近一个交易日的收盘行情：上证、深成、创业板、沪深300 的点位与涨跌幅，涨跌家数，申万一级行业
-按流通市值加权的涨跌（热力格，从高到低），以及上次运行耗时。某项当天没有数据就不显示，
+按流通市值加权的涨跌（热力格，从高到低，悬停单格用 `v-tip` 显示行业与涨跌幅），以及上次运行耗时。某项当天没有数据就不显示，
 指数日线没到面板最新交易日时不拿旧行情顶替。窄于 1380 px 时隐藏行业热力格。
 
 ### 主题
@@ -73,6 +73,8 @@ hash 路由：`#/research`（默认）、`#/library`、`#/data`、`#/backtest`�
 | 主题（浅色、深色、跟随系统） | localStorage `ashare.theme` | 当前浏览器，立即生效 |
 | 涨跌颜色（红涨绿跌、绿涨红跌） | localStorage `ashare.rise` | 当前浏览器，状态栏等使用 `--rise/--fall` 的地方 |
 | 默认回测设定：股票池、基准、调仓周期、衰减、涨跌停与停牌、成交、分组、组合、子池检验、分段 | 平台目录 `preferences.json` | 新建研究 tab 与 tab 设置里的「恢复默认」 |
+
+设置项用共享控件 `UiSelect`、`UiNumberInput`，改动即保存；数字框清空时（控件发出 null）视为还在输入，不保存也不提示。
 
 外观是每个浏览器自己的偏好，放前端；默认回测设定放服务端：默认值本来由 `/api/settings` 下发，
 校验规则（`config.CHOICES`）只在服务端有一份，研究台不用改代码就能套用，VPN 协作者看到的也是同一份。

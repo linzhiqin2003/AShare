@@ -44,7 +44,8 @@ async function save(next: BacktestDefaults, method: 'PUT' | 'DELETE' = 'PUT') {
   finally { saving.value = false }
 }
 function change(key: string, raw: Scalar) {
-  if (!defaults.value) return
+  // 数字框清空时控件发出 null：还在输入，不保存也不报错。
+  if (!defaults.value || raw === null) return
   const field = BACKTEST_FIELDS.find(f => f.key === key)!
   const value = validate(field, raw)
   if (value === undefined) { error.value = field.invalid ?? '请输入有效的值'; return }
@@ -87,7 +88,7 @@ onMounted(load)
             <div v-for="(column, index) in columns" :key="index">
               <div v-for="field in column" :key="field.key" class="sel">
                 <span class="sel-label">{{ field.label }}</span>
-                <UiNumberInput v-if="field.kind === 'number'" :model-value="numeric(defaults[field.key])" :min="field.min" :max="field.max" :step="1" :suffix="field.unit" :aria-label="field.label" @update:model-value="change(field.key, $event)" />
+                <UiNumberInput v-if="field.kind === 'number'" :model-value="numeric(defaults[field.key])" :min="field.min" :max="field.max" :step="1" :unit="field.unit" :aria-label="field.label" @update:model-value="change(field.key, $event)" />
                 <UiSelect v-else :model-value="defaults[field.key] ?? null" :options="field.key === 'benchmark' ? benchmarkOptions : field.options ?? []" :aria-label="field.label" @update:model-value="change(field.key, $event)" />
               </div>
             </div>

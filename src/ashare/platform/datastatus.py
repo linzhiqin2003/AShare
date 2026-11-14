@@ -283,6 +283,9 @@ def _spark(monthly, points=SPARK_POINTS):
 
 
 class DataStatus:
+    # 概览最多每隔这么多秒看一次文件签名（测试里可设为 0）。
+    CHECK_INTERVAL = 2.0
+
     def __init__(self, root=None, cache_dir=None, platform_store=None):
         self._root_option = root
         self._root = None
@@ -350,7 +353,7 @@ class DataStatus:
         with self.lock:
             now = time.monotonic()
             cached, signature = self._overview
-            if cached is not None and now - self._checked < 2:
+            if cached is not None and now - self._checked < self.CHECK_INTERVAL:
                 return cached
             self._checked = now
             current = self.signature()

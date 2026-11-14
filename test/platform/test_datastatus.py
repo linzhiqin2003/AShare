@@ -1,5 +1,6 @@
 """数据页、状态栏行情与默认回测设定接口（2026-11-14 新增）。全部用合成数据目录，不读真实行情。"""
 
+import gc
 import json
 import os
 import time
@@ -32,6 +33,10 @@ def data(tmp_path):
     root = tmp_path / "data"
     source = write_panel(root)
     write_indexes(root, source, codes=["000001.SH", "000300.SH"])
+    # 合成数据的写入器留下处在引用环里的可写清单连接，只有循环垃圾回收才会关闭它们；
+    # 关闭时 SQLite 把 WAL 合并进 manifest.sqlite3 并删掉 -wal/-shm。不在这里回收，
+    # 回收就会落在测试中途的任意时刻（全量并行时更常见），「数据目录没被改动」的断言随之偶发失败。
+    gc.collect()
     return root, source
 
 
@@ -42,7 +47,7 @@ def client(tmp_path, data):
         yield client
 
 
-def wait_fields(client, deadline=30):
+def wait_fields(client, deadline=120):
     started = time.monotonic()
     while time.monotonic() - started < deadline:
         body = client.get("/api/data/fields").json()
@@ -212,6 +217,14 @@ def test_data_endpoints_read_only_and_cached(tmp_path, data, client):
     assert tree(root) == before
 
 
+def test_fixture_leaves_no_pending_manifest_writes(data):
+    """2026-11-14 全量并行时 test_data_endpoints_read_only_and_cached 偶发失败的根因：
+    夹具的清单连接在测试中途被循环垃圾回收关闭、合并 WAL。夹具结束后再回收不应改动任何文件。"""
+    before = tree(data[0])
+    gc.collect()
+    assert tree(data[0]) == before
+
+
 def test_field_stats_cache_survives_restart_without_recompute(
     tmp_path, data, monkeypatch
 ):
@@ -230,7 +243,7 @@ def test_field_stats_cache_survives_restart_without_recompute(
         assert body["state"] == "ready" and body["fields"]
 
 
-def test_overview_rebuilds_when_panel_changes(tmp_path, data, client):
+def test_overview_rebuilds_when_panel_changes(tmp_path, data, client, monkeypatch):
     root, _ = data
     first = client.get("/api/data/overview").json()["datasets"][0]["panel"]["version"]
     folder = root / "cn/panel"
@@ -242,7 +255,8 @@ def test_overview_rebuilds_when_panel_changes(tmp_path, data, client):
         json.dumps(meta | {"version": "synthetic-v2"})
     )
     (folder / "current.json").write_text(json.dumps({"version": "synthetic-v2"}))
-    time.sleep(2.1)  # 概览每 2 秒才看一次文件签名
+    # 不靠墙钟等待：直接关掉签名检查的间隔。
+    monkeypatch.setattr(datastatus.DataStatus, "CHECK_INTERVAL", 0)
     second = client.get("/api/data/overview").json()["datasets"][0]["panel"]["version"]
     assert (first, second) == ("synthetic-v1", "synthetic-v2")
     assert client.get("/api/data/fields").json()["version"] == "synthetic-v2"

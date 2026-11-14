@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
 import { Clock } from 'lucide-vue-next'
+import { vTip } from './ui'
 import { api } from '../api'
 import { heatColor, signedPercent, type MarketSummary } from '../market'
 defineProps<{ elapsed: number | null }>()
@@ -20,7 +21,7 @@ onUnmounted(() => clearInterval(timer))
       <span v-if="market.breadth" class="ix"><em>涨</em><b class="rise">{{ market.breadth.up }}</b><em>跌</em><b class="fall">{{ market.breadth.down }}</b></span>
       <span v-if="industries.length > 1" class="ix heat" :aria-label="`行业涨跌：${industries.map(i => i.name + ' ' + signedPercent(i.change)).join('，')}`">
         <em>{{ industries[0].name }}</em><b :class="(industries[0].change ?? 0) >= 0 ? 'rise' : 'fall'">{{ signedPercent(industries[0].change) }}</b>
-        <span class="cells"><i v-for="item in industries" :key="item.name" :style="{ background: heatColor(item.change ?? 0, scale) }" /></span>
+        <span class="cells"><i v-for="item in industries" :key="item.name" v-tip="`${item.name} ${signedPercent(item.change)}`" :style="{ background: heatColor(item.change ?? 0, scale) }" /></span>
         <em>{{ industries[industries.length - 1].name }}</em><b :class="(industries[industries.length - 1].change ?? 0) >= 0 ? 'rise' : 'fall'">{{ signedPercent(industries[industries.length - 1].change) }}</b>
       </span>
     </div>
