@@ -18,3 +18,11 @@ __pycache__/
 /dist/
 /src/ashare/platform/static/
 /web/node_modules/
+
+# 测试体系产物
+/mutants/
+.coverage
+.coverage.*
+/htmlcov/
+/coverage.xml
+/junit*.xml
