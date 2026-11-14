@@ -43,5 +43,5 @@ A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再�
 - 待用户定：报告页设计稿（`data/research/charts/mockups_v2/`，选定前不改 `tearsheet.html` 版式）；每日信号线等模拟盘接入 `tradecore`
 - 下一个工作日的目标（用户 2026-11-14 定）：补全本地测试体系，见 `docs/TESTING_PLAN.md`（单元、集成、端到端、差分、属性、变异、并发、性能回归、冒烟等各类都要有，一条命令能跑）；要看的指标是 branch coverage、test runtime、mutation score、flaky rate；然后加 GitHub Actions CI（PR 和推送 main 时跑同一套检查，合并前必须通过）
 - 开发中出现的每个错误、审查发现的问题和排查中找到的可测试点，都写成回归测试（注明来源，先在旧代码上失败再修）
-- 2026-11-14 GitHub Actions CI 上线（`.github/workflows/ci.yml`：检查、Rust 测试、Python 测试、前端四个 job，推送 `main` 和 PR 都跑），修完 Linux 上的跨平台差异后全绿；Rust 版本钉在 `rust-toolchain.toml`。还没设为规则集的必需检查（要用户点头）。推送前照常跑 `ci-local`（本机跑时设 `UV_PROJECT_ENVIRONMENT` 指向临时 venv，免得卸掉主 venv 的 mlx）
+- 2026-11-14 GitHub Actions CI 上线（`.github/workflows/ci.yml`：检查、Rust 测试、Python 测试、前端四个 job，推送 `main` 和 PR 都跑），修完 Linux 上的跨平台差异后全绿；Rust 版本钉在 `rust-toolchain.toml`。2026-11-15 四个 job 已设为 `main` 规则集的必需检查（按 job 名匹配，改 job 名要同时改规则集，否则 PR 永远等不到检查）。推送前照常跑 `ci-local`（本机跑时设 `UV_PROJECT_ENVIRONMENT` 指向临时 venv，免得卸掉主 venv 的 mlx）
 - 下一步：P3 模拟盘接入 `tradecore`、公开因子库（Alpha158 / Alpha101 / 国泰君安 191）批量复现、步骤 4 rqalpha 对账
