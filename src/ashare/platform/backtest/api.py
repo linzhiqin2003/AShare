@@ -2,13 +2,16 @@
 
 只开放两个窗口（样本内、验证期），参数里没有窗口、起止日期；TEST 没有任何路由可达。
 页面文档按窗口分开返回，验证期只在页面打开验证结果开关时才请求。
+
+表达式里的候选列表（`ts_std(returns, [20, 60])`）展开成多组，每组一个独立任务，身份与单独
+提交那一组相同（已算过的直接复用）；组数上限与研究台一致（`language.MAX_VARIANTS`）。
 """
 
 import json
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
@@ -20,11 +23,12 @@ from ashare.factor.windows import IS, VALIDATION
 from ashare.ledger import code_version
 
 from ..benchmarks import Benchmarks
-from ..language import parse, suggested_name
+from ..language import MAX_VARIANTS, parse, suggested_name
 from . import settings as config
 from .jobs import Backtests
 
 Part = Literal["is", "validation"]
+Key = Field(pattern=r"^[0-9a-f]{24}$")
 
 
 class BacktestRequest(BaseModel):
@@ -32,6 +36,11 @@ class BacktestRequest(BaseModel):
     source: str = Field(max_length=16000)
     name: str = Field("", max_length=80)
     settings: dict = Field(default_factory=dict)
+
+
+class CancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[Annotated[str, Key]] = Field(min_length=1, max_length=MAX_VARIANTS)
 
 
 def _iso(day):
@@ -113,9 +122,8 @@ def router(root, data_root=None, *, idle_seconds=None, default_benchmark=None):
 
     @api.post("", status_code=202)
     def submit(body: BacktestRequest):
+        # 组数超过上限（与研究台同一口径）时 parse 以 422 拒绝，并指出列表位置。
         variants = parse(body.source)
-        if len(variants) != 1:
-            raise HTTPException(422, "回测一次只跑一个表达式，请去掉候选列表")
         try:
             settings = config.normalize(body.settings)
         except ValueError as error:
@@ -125,17 +133,46 @@ def router(root, data_root=None, *, idle_seconds=None, default_benchmark=None):
             settings["benchmark"] = selected["symbol"]
         else:
             settings.pop("benchmark", None)
-        key = config.identity(variants[0].expression.digest, settings, data_version())
-        jobs.submit(
-            key,
-            body.name.strip() or suggested_name(body.source),
-            body.source,
-            settings,
-            selected["name"] if selected["symbol"] else None,
-            data_version(),
-            code(),
-        )
-        return jobs.status(key)
+        name = body.name.strip() or suggested_name(body.source)
+        version = data_version()
+        groups = {}  # 身份 → (组名, 这一组的表达式)；同一身份的两组只跑一次
+        for variant in variants:
+            key = config.identity(variant.expression.digest, settings, version)
+            # 单个表达式照旧存原文（含注释）；多组存展开后的那一组，工作进程逐个解析。
+            text = body.source if len(variants) == 1 else variant.source
+            groups.setdefault(key, (" · ".join(variant.parameters), text))
+        # 同一批连续入队：工作进程依次计算，面板字段与证券上下文只读一次。
+        for key, (_, text) in groups.items():
+            jobs.submit(
+                key,
+                name,
+                text,
+                settings,
+                selected["name"] if selected["symbol"] else None,
+                version,
+                code(),
+            )
+        items = [
+            jobs.status(key) | {"label": label} for key, (label, _) in groups.items()
+        ]
+        first = {k: v for k, v in items[0].items() if k != "label"}
+        return first | ({"name": name} if len(items) > 1 else {}) | {"variants": items}
+
+    @api.get("/states")
+    def states(ids: str = Query(max_length=25 * MAX_VARIANTS)):
+        """一次问一批任务的状态；页面轮询整批进度用。"""
+        keys = ids.split(",")
+        if not 1 <= len(keys) <= MAX_VARIANTS or not all(
+            len(k) == 24 and all(c in "0123456789abcdef" for c in k) for k in keys
+        ):
+            raise HTTPException(422, "请求参数不正确")
+        found = (jobs.status(key) for key in keys)
+        return {"items": [state for state in found if state is not None]}
+
+    @api.post("/cancel")
+    def cancel_many(body: CancelRequest):
+        """取消整批：先撤下排队的，再结束正在跑的，不为批内下一组重起进程。"""
+        return {"cancelled": jobs.cancel_many(body.ids)}
 
     @api.get("/{key}")
     def detail(key: str = PathParam(pattern=r"^[0-9a-f]{24}$")):

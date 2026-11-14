@@ -220,18 +220,29 @@ class Backtests:
             return "queued"
 
     def cancel(self, key):
+        return bool(self.cancel_many([key]))
+
+    def cancel_many(self, keys):
+        """取消一批：先撤下排队的，再结束正在跑的那个。
+
+        顺序要紧：先结束进程的话，调度会把批内下一组送进新起的进程，再被取消一次。
+        返回实际取消的身份（已结束的不算）。
+        """
+        wanted = set(keys)
+        cancelled = []
         with self.lock:
-            if self.current == key:
+            for item in [item for item in self.pending if item[0] in wanted]:
+                self.pending.remove(item)
+                self._finish(item[0], "cancelled")
+                cancelled.append(item[0])
+            if self.current in wanted:
+                key = self.current
                 self._stop_process()
                 self._finish(key, "cancelled")
+                cancelled.append(key)
+            if cancelled:
                 self._schedule()
-                return True
-            for item in self.pending:
-                if item[0] == key:
-                    self.pending.remove(item)
-                    self._finish(key, "cancelled")
-                    return True
-        return False
+        return cancelled
 
     def _paths(self, key):
         return [
