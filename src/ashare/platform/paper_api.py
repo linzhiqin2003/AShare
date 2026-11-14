@@ -277,8 +277,6 @@ class Reference:
         if self.data is None:
             return None
         try:
-            from ashare.data.catalog import BENCHMARKS
-
             frame = (
                 self.data.table(
                     "index_daily", start=start, end=end, symbols=[BENCHMARK]
@@ -290,7 +288,10 @@ class Reference:
             LOG.warning("paper_benchmark_unavailable", exc_info=True)
             return None
         closes = {str(d): float(c) for d, c in frame.rows() if c is not None}
-        return dict(symbol=BENCHMARK, name=BENCHMARKS.get(BENCHMARK, BENCHMARK)), closes
+        import ashare.data
+
+        name = ashare.data.index_names().get(BENCHMARK, BENCHMARK)
+        return dict(symbol=BENCHMARK, name=name), closes
 
 
 PHASES = {

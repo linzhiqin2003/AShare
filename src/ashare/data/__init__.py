@@ -18,4 +18,50 @@ def open(root=None, market="cn", **options) -> Data:
     return Data(root, market)
 
 
-__all__ = ["Data", "Panel", "open"]
+def market_root(root=None, market="cn"):
+    """数据目录下某个市场的目录（只解析路径，不读文件）。给数据状态页这类要看文件签名的只读用途。"""
+    from .store import data_root
+
+    return data_root(root) / market
+
+
+def read_manifest(root=None, market="cn"):
+    """原始库清单（只读，不加写锁）；还没有清单时返回空字典。"""
+    from .store import Store, data_root
+
+    base = data_root(root)
+    folder = base / market
+    if not (
+        (folder / "manifest.sqlite3").exists() or (folder / "manifest.json").exists()
+    ):
+        return {}
+    return Store(base, market, readonly=True).manifest()
+
+
+def index_names():
+    """指数代码 → 简称：基准名单的中文简称，股票池指数没有中文简称的用别名（如 csi300）。"""
+    from .catalog import BENCHMARKS, INDEXES
+
+    names = dict(BENCHMARKS)
+    for alias, code in INDEXES.items():
+        names.setdefault(code, alias)
+    return names
+
+
+def field_unit(name):
+    """面板字段的单位（字段不在目录里时为空串）。"""
+    from .catalog import FIELDS
+
+    spec = FIELDS.get(name)
+    return spec.unit if spec else ""
+
+
+__all__ = [
+    "Data",
+    "Panel",
+    "field_unit",
+    "index_names",
+    "read_manifest",
+    "market_root",
+    "open",
+]

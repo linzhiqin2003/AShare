@@ -306,9 +306,9 @@ class DataStatus:
     def root(self):
         # 延迟解析：创建应用时还不读数据目录（测试与未配置数据目录时都能启动）。
         if self._root is None:
-            from ashare.data.store import data_root
+            import ashare.data
 
-            self._root = data_root(self._root_option) / "cn"
+            self._root = ashare.data.market_root(self._root_option)
         return self._root
 
     # ---- 签名与小文件 -------------------------------------------------
@@ -366,14 +366,9 @@ class DataStatus:
             return result
 
     def _manifest(self):
-        if not (
-            (self.root / "manifest.sqlite3").exists()
-            or (self.root / "manifest.json").exists()
-        ):
-            return {}
-        from ashare.data.store import Store
+        import ashare.data
 
-        return Store(self.root.parent, "cn", readonly=True).manifest()
+        return ashare.data.read_manifest(self.root.parent)
 
     def _build_overview(self):
         manifest = self._manifest()
@@ -575,13 +570,11 @@ class DataStatus:
         )
 
     def _indexes(self, months):
-        from ashare.data.catalog import BENCHMARKS, INDEXES
+        import ashare.data
 
         if not months:
             return []
-        names = dict(BENCHMARKS)
-        for alias, code in INDEXES.items():
-            names.setdefault(code, alias)
+        names = ashare.data.index_names()
         import polars as pl
 
         rows = []
@@ -770,10 +763,9 @@ def _sharpe(value):
 
 
 def _catalog_unit(name):
-    from ashare.data.catalog import FIELDS
+    import ashare.data
 
-    spec = FIELDS.get(name)
-    return spec.unit if spec else ""
+    return ashare.data.field_unit(name)
 
 
 def routes(data_root=None, platform_store=None):

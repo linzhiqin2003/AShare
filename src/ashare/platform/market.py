@@ -102,9 +102,9 @@ class Market:
         """面板版本与清单的文件签名；不打开面板，状态栏轮询时足够便宜。"""
         if self.data is not None:
             return str(self.data.version)
-        from ashare.data.store import data_root
+        import ashare.data
 
-        root = data_root(self.root) / "cn"
+        root = ashare.data.market_root(self.root)
         state = []
         for name in (
             "panel/current.json",
