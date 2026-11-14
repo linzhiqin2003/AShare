@@ -686,12 +686,12 @@ source, config = from_panel(ds, start="2023-06-01")   # 交给 model_series
 
 #### 6.2.1 外部因子包
 
-成套的公式型因子（公式、独立参考实现、约定文件、核对结果）不放在本仓库，写成单独的 Python 包，经入口点组 `ashare.factors` 被发现。本仓库的 `ashare.factor.formula` 只提供机制：
+三套公开的公式型因子（Qlib Alpha158、WorldQuant Alpha101、国泰君安 191）随仓库提供，在 `ashare.factor.alphas`：逐条翻译、独立参考实现、约定文件和核对结果（文档在 `docs/factors/`，原文出处与许可见 `docs/factors/sources/README.md`），作为内置因子集注册（2026-11-14 起公开，此前放在本地私有包）。别的成套因子仍可写成单独的 Python 包，经入口点组 `ashare.factors` 挂上来。机制在 `ashare.factor.formula`：
 
 - `dsl`：WorldQuant 式、国君式公式的翻译用语言（口径集中在这一个文件）；`qlib`：Qlib 表达式字符串到 `Expr` 的确定性转换；`ops`：用现有算子精确组合出的算子。
 - `registry_from_module(模块, 前缀, 条数, notes=..., excluded=...)`：从「一个函数一条因子」的模块构造注册表，按名字挂元数据标记 `notes`（`(标记, 编号)`），`registry.with_note(标记)` 筛选。
 - `inputs`：取数（`load_inputs`）与参考实现的输入（`reference_frames`）；`verify`：候选对独立参考实现逐格核对，支持「已知例外」（`KnownException`：只对条件成立、按正常规则不过关、候选恰为声明值的格子生效，单独计数）。
-- `plugins`：`discover()` 列出全部因子集，`load_registry(名字, **选项)` 取注册表。没装任何外部包时只有内置示例集 `example`（两条自编因子和它们的参考实现），一切功能照常。
+- `plugins`：`discover()` 列出全部因子集，`load_registry(名字, **选项)` 取注册表。内置的有示例集 `example`（两条自编因子和它们的参考实现）和 `alpha158`、`alpha101`、`gtja191`。
 
 外部包的最小写法：
 

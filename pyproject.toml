@@ -63,3 +63,8 @@ extend-exclude = ["docs", "*.md"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 翻译按规范照抄原文的括号层次（docs/factors/DSL_REFERENCE.md 第 2.4 节），多余括号是有意保留的。
+"src/ashare/factor/alphas/alpha101.py" = ["UP034"]
+"src/ashare/factor/alphas/gtja191.py" = ["UP034"]

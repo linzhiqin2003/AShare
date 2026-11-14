@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-14（公开因子库并入）
+- 三套公开因子（Qlib Alpha158、WorldQuant Alpha101、国泰君安 191）从本地私有包并入本仓库：翻译、独立参考实现、注册表与已知例外在 `ashare.factor.alphas`，约定、翻译规范、参考实现说明、逐条核对报告和公式原文在 `docs/factors/`，测试在 `test/factor/alphas/`（只用合成数据）。三套作为内置因子集注册（`formula.plugins._builtin`），入口点机制留给别的因子包。论文附录、研报附录和聚宽「公用函数说明」的逐字抄录（`alpha101_defs.md`、`gtja191_defs.md`）不随仓库发布；Qlib 的源码原文按 MIT 许可保留版权声明。自己挖出来的因子仍不进仓库。
+
 ## 2026-11-14（大模型因子挖掘）
 - `--provider deepseek|openrouter|opencode-go`（`client.PROVIDERS`、`client_for`）：OpenCode Go 订阅可直接用，密钥读 `OPENCODE_API_KEY` 或 `opencode auth login` 存下的；请求带自己的 User-Agent 和每次搜索一个的 `x-opencode-session`；预算按 `usage.opencode.allowance`（订阅内 `usage.cost` 恒为 0）；`--reasoning` 在 Go 上映射为 `reasoning_effort`（low/high/max）。
 - 跨次研究记忆（`llm/memory.py`，`docs/LLM_MINING.md`「跨次记忆」）：每轮的假设、因子和训练段结果存进 `<root>/llm/memory/`，下一次搜索按口径取回以往最好的因子、按向量（`qwen/qwen3-embedding-8b`，OpenRouter）取回相近的以往假设，并接上上次的研究笔记；验证段起点晚于本次的以往条目不取，数据集标签不同的不取。新增 `EmbeddingClient`；`mine()` 的 `evaluate.task` 多给 `split`。提示词版本升到 `llm-research/2`。

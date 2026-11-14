@@ -6,7 +6,7 @@
     mypack = "mypack.plugin:register"
 
 ``register(hub)`` 收到一个 ``Hub``，用 ``hub.add(FactorSet(...))`` 挂上一套或几套因子。
-没有装任何外部包时只有内置的示例集 ``example``。用法和最小例子见 ``docs/DESIGN.md`` 6.2.1。
+内置的有示例集 ``example`` 和三套公开因子（``ashare.factor.alphas``：alpha158、alpha101、gtja191）。用法和最小例子见 ``docs/DESIGN.md`` 6.2.1。
 
 加载出错（入口点导入失败、``register`` 抛错、集合重名）一律直接报错并指明是哪个入口点，
 不静默跳过：少了一套因子比报错更难发现。
@@ -84,9 +84,11 @@ class Hub:
 
 
 def _builtin(hub):
+    from ..alphas import plugin as alphas
     from . import example
 
     example.register(hub)
+    alphas.register(hub)  # 内置的三套公开因子：alpha158、alpha101、gtja191
 
 
 _CACHE = {}

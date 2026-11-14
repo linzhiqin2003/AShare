@@ -138,7 +138,7 @@ def _entry_point(name, target):
 
 def test_discover_with_entry_points():
     sets = discover(entry_points=[_entry_point("toy", "register_toy")])
-    assert set(sets) == {"example", "toy"}
+    assert set(sets) == {"example", "alpha158", "alpha101", "gtja191", "toy"}
     toy = sets["toy"]
     assert toy.origin == f"ashare.factors:toy = {__name__}:register_toy"
     assert toy.registry(scale="2")["toy_close"].expression == d.close * 2.0
