@@ -1,0 +1,236 @@
+{
+  "spot_ms.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "spot/klines",
+    "filename_pattern": "data/spot/monthly/klines/{symbol}/1h/{symbol}-1h-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "open_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "close_time",
+      "quote_volume",
+      "count",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "header": false,
+    "timestamp_unit": "ms",
+    "timestamp_digits": 13,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 20,
+    "decimal_places": {
+      "ohlc": 8,
+      "volume_and_taker_volume": 8,
+      "quote_and_taker_quote": 8
+    }
+  },
+  "spot_us.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "spot/klines",
+    "filename_pattern": "data/spot/monthly/klines/{symbol}/1h/{symbol}-1h-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "open_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "close_time",
+      "quote_volume",
+      "count",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "header": false,
+    "timestamp_unit": "us",
+    "timestamp_digits": 16,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 20,
+    "decimal_places": {
+      "ohlc": 8,
+      "volume_and_taker_volume": 8,
+      "quote_and_taker_quote": 8
+    }
+  },
+  "usdm_header.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "usdm/klines",
+    "filename_pattern": "data/futures/um/monthly/klines/{symbol}/1h/{symbol}-1h-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "open_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "close_time",
+      "quote_volume",
+      "count",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "header": true,
+    "timestamp_unit": "ms",
+    "timestamp_digits": 13,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 19,
+    "decimal_places": {
+      "ohlc": 2,
+      "volume_and_taker_volume": 3,
+      "quote_and_taker_quote": 5
+    }
+  },
+  "usdm_no_header.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "usdm/klines",
+    "filename_pattern": "data/futures/um/monthly/klines/{symbol}/1h/{symbol}-1h-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "open_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "close_time",
+      "quote_volume",
+      "count",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "header": false,
+    "timestamp_unit": "ms",
+    "timestamp_digits": 13,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 20,
+    "decimal_places": {
+      "ohlc": 2,
+      "volume_and_taker_volume": 3,
+      "quote_and_taker_quote": 5
+    }
+  },
+  "mark.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "usdm/markPriceKlines",
+    "filename_pattern": "data/futures/um/monthly/markPriceKlines/{symbol}/1h/{symbol}-1h-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "open_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "close_time",
+      "quote_volume",
+      "count",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "header": true,
+    "timestamp_unit": "ms",
+    "timestamp_digits": 13,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 19,
+    "decimal_places": {
+      "ohlc": 8,
+      "integer_price_cells": [
+        [
+          1,
+          2
+        ],
+        [
+          7,
+          4
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          11,
+          2
+        ],
+        [
+          12,
+          4
+        ],
+        [
+          13,
+          1
+        ],
+        [
+          13,
+          2
+        ],
+        [
+          14,
+          4
+        ],
+        [
+          17,
+          4
+        ]
+      ]
+    },
+    "integer_price_cells_indexing": "zero-based data row, zero-based CSV column",
+    "zero_integer_columns": [
+      "volume",
+      "quote_volume",
+      "taker_buy_volume",
+      "taker_buy_quote_volume",
+      "ignore"
+    ],
+    "count": 3600
+  },
+  "funding.csv": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independent constants; no real-data input or transformation",
+    "dataset": "usdm/fundingRate",
+    "filename_pattern": "data/futures/um/monthly/fundingRate/{symbol}/{symbol}-fundingRate-{YYYY-MM}.zip",
+    "format_reference": "docs/markets/BINANCE.md; C2 offline format inspection, summarized in docs/C2_NOTES.md",
+    "columns": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "header": true,
+    "timestamp_unit": "ms",
+    "timestamp_digits": 13,
+    "encoding": "ASCII (UTF-8 compatible), no BOM",
+    "line_ending": "LF, including final line",
+    "data_rows": 19,
+    "decimal_places": {
+      "last_funding_rate": 8
+    },
+    "funding_interval_hours": 8,
+    "synthetic_jitter_ms": [
+      0,
+      1,
+      5,
+      2,
+      3
+    ]
+  }
+}

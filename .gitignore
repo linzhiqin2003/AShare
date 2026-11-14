@@ -26,3 +26,4 @@ __pycache__/
 /htmlcov/
 /coverage.xml
 /junit*.xml
+/tmp/

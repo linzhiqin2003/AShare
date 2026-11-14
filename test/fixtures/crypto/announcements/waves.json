@@ -1,0 +1,19 @@
+{
+  "code": "synthetic-fake-delisting",
+  "title": "Binance Will Delist FAKE, DUMMY, MOCK, SAMPLE on 2024-06-17",
+  "publishDate": 1717376523004,
+  "lastUpdateTime": 0,
+  "body": "{\"node\":\"root\",\"child\":[{\"node\":\"element\",\"tag\":\"p\",\"child\":[{\"node\":\"text\",\"text\":\"Invented example for parser testing. These assets and actions are fictional.\"}]},{\"node\":\"element\",\"tag\":\"p\",\"child\":[{\"node\":\"text\",\"text\":\"In this exercise, Binance will delist and cease trading on all spot trading pairs at \"},{\"node\":\"text\",\"text\":\"2024-06-17 03:00 (UTC)\"},{\"node\":\"text\",\"text\":\".\"}]},{\"node\":\"element\",\"tag\":\"p\",\"child\":[{\"node\":\"text\",\"text\":\"The exact trading pairs being removed are: FAKE/USDT, FAKE/BTC, DUMMY/USDT, MOCK/USDT, SAMPLE/USDT.\"}]},{\"node\":\"element\",\"tag\":\"p\",\"child\":[{\"node\":\"text\",\"text\":\"For the mock contract, we will close all positions and conduct an automatic settlement on FAKEUSDT at \"},{\"node\":\"text\",\"text\":\"2024-06-11 09:00 (UTC)\"},{\"node\":\"text\",\"text\":\". This sentence exercises a separate lifecycle.\"}]},{\"node\":\"element\",\"tag\":\"p\",\"child\":[{\"node\":\"text\",\"text\":\"This invented notice was updated on 2024-06-03 for date-only parser coverage.\"}]}]}",
+  "fixture_provenance": {
+    "synthetic": true,
+    "generation": "generate_formats.py: independently authored text and fictional symbols",
+    "legacy_filename": "waves.json is retained only as a fixture path, not as a claim of real content",
+    "format_features": [
+      "JSON string body with node/child/text tree",
+      "publishDate milliseconds",
+      "lastUpdateTime zero sentinel",
+      "was updated on YYYY-MM-DD",
+      "spot delist and perpetual settlement grammar"
+    ]
+  }
+}
