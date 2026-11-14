@@ -1,0 +1,6 @@
+# 固定 Rust 版本：本机和 CI 用同一个，新的 stable 带来的 clippy 新规则不会让 CI 突然变红。
+# 升级时改这里，跑一遍 make check 再提交。
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
