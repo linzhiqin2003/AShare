@@ -17,9 +17,15 @@ SEEDS = range(2000)
 # affordability bisection in some seeds, operand association in the
 # futures/margin path in others, e.g. seed 26941, a margin account). One side
 # keeps about 1e-13 of residual cash where the other has 0.0, and the next
-# withdrawal flips `coverage["cash_flow"]` by one. Seed 2 still diverges after
-# its futures columns are removed. Every other field must match.
-ROUNDOFF = {2, 1280}
+# withdrawal flips `coverage["cash_flow"]` by one. Every other field must match.
+#
+# Which seeds hit it depends on the platform: the generator's np.exp / log /
+# dirichlet pick SIMD and libm paths by CPU, so inputs differ in the last bit.
+# On macOS arm64 it was seeds 2 and 1280; on GitHub's Linux runners seed 151
+# failed in two of four runs (2026-11-14; 1-ulp jitter of exp alone flips it
+# in 172 of 300 trials). So any seed may differ by one in that counter, but at
+# most ROUNDOFF_LIMIT seeds: a systematic counting bug hits far more.
+ROUNDOFF_LIMIT = 8
 EVENTS = (
     "futures_open",
     "futures_close",
@@ -39,17 +45,15 @@ EVENTS = (
 
 
 def test_rich_corpus_matches_reference_and_exercises_every_event():
-    totals, failures = Counter(), []
+    totals, failures, roundoff = Counter(), [], []
     for seed in SEEDS:
         market, targets, costs, config = rich_case(seed)
         engine = MixedEngine(market, targets, costs, config)
         expected = engine.run()
         actual = bt.run(market, targets, costs, config)
-        if seed in ROUNDOFF:
+        if abs(actual.coverage["cash_flow"] - expected.coverage["cash_flow"]) == 1:
             # Only the cash_flow counter may differ, and only by one.
-            assert (
-                abs(actual.coverage["cash_flow"] - expected.coverage["cash_flow"]) == 1
-            )
+            roundoff.append(seed)
             actual.coverage = {
                 **actual.coverage,
                 "cash_flow": expected.coverage["cash_flow"],
@@ -70,6 +74,7 @@ def test_rich_corpus_matches_reference_and_exercises_every_event():
     assert not failures, "kernel differs from reference:\n" + "\n".join(
         f"seed {seed}: {why}" for seed, why in failures
     )
+    assert len(roundoff) <= ROUNDOFF_LIMIT, ("cash_flow off by one", roundoff)
     missing = [
         k
         for k in (
