@@ -40,7 +40,7 @@ const { trigger, list, open, active, style, enabled, hide, toggle, pick, trigger
 <style>
 .ui-select{display:inline-flex;align-items:center;gap:6px;height:24px;min-width:0;max-width:100%;padding:0 7px 0 8px;border:1px solid var(--line);border-radius:3px;background:var(--panel);color:var(--ink);font-size:11.5px;font-weight:400;white-space:nowrap;text-align:left}
 .ui-select:hover:not(:disabled){border-color:var(--ink3)}
-.ui-select[aria-expanded=true]{border-color:var(--accent)}
+.ui-select[aria-expanded=true]{border-color:var(--ink3)}
 .ui-select-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ui-select-label.placeholder{color:var(--ink3)}
 .ui-select-caret{color:var(--ink3);transition:transform .12s}

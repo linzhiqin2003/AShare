@@ -49,6 +49,8 @@ const label = (prefix: string) => ariaLabel.value ? `${prefix}${ariaLabel.value}
 .ui-number>button:first-child{border-radius:3px 0 0 3px}
 .ui-number>button:nth-of-type(2){border-radius:0 3px 3px 0}
 .ui-number>button:hover:not(:disabled){color:var(--ink)}
+/* 2026-11-14 用户：聚焦时不要蓝色粗框；整组边框加深即可。 */
+.ui-number:focus-within>input,.ui-number:focus-within>button{border-color:var(--ink3)}
 .ui-number-unit{padding-left:7px;color:var(--ink3);font-size:11.5px}
 .ui-number.disabled input,.ui-number.disabled .ui-number-unit{opacity:.4}
 </style>

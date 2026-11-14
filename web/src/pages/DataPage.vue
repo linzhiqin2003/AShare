@@ -182,7 +182,7 @@ h5{font-size:11.5px;font-weight:600;color:var(--ink3);margin:2px 0 5px}
 .fields-table tbody tr{cursor:pointer}
 .fields-table tbody tr:hover td{background:var(--chrome)}
 .fields-table tbody tr.selected td{background:var(--selected)}
-.fields-table tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.fields-table tr:focus-visible{outline:1px solid var(--ink3);outline-offset:-1px}
 .c-name{width:164px}.c-label{width:auto}.c-cat{width:76px}.c-type{width:76px}.c-start{width:92px}.c-cov{width:84px}.c-bar{width:84px}.c-spark{width:134px}.c-refs{width:84px}
 .bar-cell{padding-left:10px}.bar-cell svg,.spark-cell svg{display:block}
 .track{fill:var(--grid)}.fill{fill:var(--ink2)}
