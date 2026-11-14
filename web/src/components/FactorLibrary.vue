@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
-import { Search, Filter, SlidersHorizontal, ChevronDown, ChevronRight, X, Check, CircleCheck, CircleX, CircleAlert, ArrowUp, ArrowDown, GitCompare } from 'lucide-vue-next'
+import { Search, Filter, SlidersHorizontal, ChevronDown, ChevronRight, X, Check, CircleCheck, CircleX, CircleAlert, ArrowUp, ArrowDown, GitCompare, Send } from 'lucide-vue-next'
 import { api, friendly, series } from '../api'
 import { chartData, configLabel, fmt } from '../chart'
 import type { Completion, Entry, LibraryData, PlotPart, Run } from '../types'
@@ -32,6 +32,8 @@ const MAX_COMPARE = 8
 const picked = shallowRef<Entry[]>([])
 const comparing = shallowRef(false)
 function isPicked(entry: Entry) { return picked.value.some(e => e.id === entry.id) }
+// 送去回测：回测页一次跑一个表达式，只选中一个因子时可用（接收方见 pages/BacktestPage.vue）。
+function sendToBacktest() { if (picked.value.length === 1) location.hash = `#/backtest?entry=${encodeURIComponent(picked.value[0].id)}` }
 function togglePick(entry: Entry) { picked.value = isPicked(entry) ? picked.value.filter(e => e.id !== entry.id) : picked.value.length < MAX_COMPARE ? [...picked.value, entry] : picked.value }
 const collapsed = reactive(new Set<string>())
 const definitions = [
@@ -158,6 +160,7 @@ onUnmounted(() => { document.removeEventListener('pointerdown',outside); documen
             </div>
             <span v-if="picked.length" class="picked-count muted push" aria-live="polite">已选 {{ picked.length }} 个</span>
             <button class="button toolbar-button" :class="{push: !picked.length}" :disabled="picked.length < 2" @click="comparing = true; detail && closeDetail()"><GitCompare :size="13" />对比</button>
+            <button class="button toolbar-button" :disabled="picked.length !== 1" @click="sendToBacktest"><Send :size="13" />送去回测</button>
           </div>
           <div class="library-scroll" :aria-busy="loading">
             <table class="data-table library-table"><colgroup><col :style="{width:`${SELECT_WIDTH/columnTotal*100}%`}"><col v-for="column in displayed" :key="column.key" :style="{width:`${column.width/columnTotal*100}%`}"></colgroup><thead><tr><th class="select-cell"><span class="sr-only">选择</span></th><th v-for="column in displayed" :key="column.key" v-tip="column.label" :aria-sort="query.sort === column.key ? query.descending ? 'descending' : 'ascending' : 'none'"><button @click="sort(column.key)">{{ column.label }}<component v-if="query.sort === column.key" :is="query.descending ? ArrowDown : ArrowUp" :size="10" /></button></th></tr></thead>
