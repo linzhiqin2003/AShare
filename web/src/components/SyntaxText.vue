@@ -16,4 +16,4 @@ const tokens = computed(() => {
 })
 </script>
 <template><code class="syntax-text"><span v-for="(token,index) in tokens" :key="index" :class="token.kind">{{ token.text }}</span></code></template>
-<style scoped>.syntax-text{font-family:var(--mono);font-size:inherit}.function-token{font-weight:600;color:var(--ink)}.field-token{color:var(--accent)}.number-token{color:#A14A14}.comment{color:var(--ink3)}</style>
+<style scoped>.syntax-text{font-family:var(--mono);font-size:inherit}.function-token{font-weight:600;color:var(--ink)}.field-token{color:var(--accent)}.number-token{color:var(--syntax-number)}.comment{color:var(--ink3)}</style>

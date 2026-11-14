@@ -17,9 +17,9 @@ const emit = defineEmits<{ 'update:modelValue': [value: string]; run: []; signat
 const mount = shallowRef<HTMLDivElement | null>(null)
 let editor: EditorView | undefined
 const highlight = HighlightStyle.define([
-  { tag: tags.comment, color: '#8A9199' }, { tag: tags.number, color: '#A14A14' },
-  { tag: tags.function(tags.variableName), fontWeight: '600', color: '#14171A' },
-  { tag: tags.variableName, color: '#1F4FBF' },
+  { tag: tags.comment, color: 'var(--ink3)' }, { tag: tags.number, color: 'var(--syntax-number)' },
+  { tag: tags.function(tags.variableName), fontWeight: '600', color: 'var(--ink)' },
+  { tag: tags.variableName, color: 'var(--accent)' },
 ])
 function signature() {
   if (!editor) return
@@ -66,7 +66,9 @@ onMounted(() => {
       if (update.docChanged) emit('update:modelValue', update.state.doc.toString())
       if (update.selectionSet || update.docChanged) signature()
     }),
-    EditorView.theme({ '&': { height: '100%', fontSize: '13px' }, '.cm-content': { fontFamily: 'var(--mono)', padding: '10px 0', lineHeight: '22px' }, '.cm-gutters': { background: '#fff', color: '#8A9199', border: 'none', minWidth: '36px' }, '.cm-activeLineGutter': { background: 'transparent' }, '.cm-scroller': { overflow: 'auto' }, '&.cm-focused': { outline: 'none' } }),
+    EditorView.theme({ '&': { height: '100%', fontSize: '13px' }, '.cm-content': { fontFamily: 'var(--mono)', padding: '10px 0', lineHeight: '22px', caretColor: 'var(--ink)' }, '.cm-gutters': { background: 'var(--panel)', color: 'var(--ink3)', border: 'none', minWidth: '36px' }, '.cm-activeLineGutter': { background: 'transparent' },
+      // CodeMirror 基础主题按浅色写死了光标（黑，见上面 caretColor）、括号匹配和浮层底色，深色下看不见；统一走主题变量。
+      '&.cm-focused .cm-matchingBracket': { backgroundColor: 'var(--editor-bracket)' }, '.cm-tooltip': { background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line)' }, '.cm-scroller': { overflow: 'auto' }, '&.cm-focused': { outline: 'none' } }),
   ] }) })
   signature(); diagnostic()
 })

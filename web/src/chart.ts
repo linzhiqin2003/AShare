@@ -1,5 +1,13 @@
 import type { BenchmarkData, ChartData, Line, Packed, PlotPart, ReturnSelection, Run, View } from './types'
-export const colors = ['#14171A', '#1F4FBF', '#A14A14', '#7C43B0', '#1E7B57', '#A86A12', '#487E98', '#A04668']
+// 曲线色板和分组色阶引用 style.css 的变量：亮暗各一套，切换主题时 SVG 直接重画，不用重算数据。
+export const colors = Array.from({ length: 8 }, (_, i) => `var(--series-${i + 1})`)
+export const BENCHMARK_COLOR = 'var(--series-bench)'
+/** 第 row 组（从 0 起）的颜色；色阶共 10 档，超出按最后一档。 */
+export const groupColor = (row: number) => `var(--group-${Math.min(row, 9) + 1})`
+/** 相关系数热力格：正相关 --corr-pos、负相关 --corr-neg，按 |相关| × strength 的浓度叠在面板底色上。 */
+export function corrColor(value: number, strength: number) {
+  return `color-mix(in srgb, var(${value >= 0 ? '--corr-pos' : '--corr-neg'}) ${(Math.min(1, Math.abs(value)) * strength * 100).toFixed(1)}%, transparent)`
+}
 export function unpack(p: Packed): number[] {
   const bytes = Uint8Array.from(atob(p.data), c => c.charCodeAt(0))
   const data = new DataView(bytes.buffer)
@@ -43,7 +51,7 @@ export function chartData(runs: Run[], parts: PlotPart[][], view: View): ChartDa
           if (!collection.has(key)) collection.set(key, Array(dates.length).fill(NaN))
           const values = collection.get(key)!
           part.dates.forEach((date, i) => { values[positions.get(date)!] = data[row * part.dates.length + i] })
-          if (!lines.some(l => l.id === `${run.id}:${key}`)) lines.push({ id: `${run.id}:${key}`, name: label, kind, color: view === 'groups' ? `hsl(220, 65%, ${32 + row * 5}%)` : colors[(view === 'returns' ? run.ordinal : lines.length) % colors.length], values })
+          if (!lines.some(l => l.id === `${run.id}:${key}`)) lines.push({ id: `${run.id}:${key}`, name: label, kind, color: view === 'groups' ? groupColor(row) : colors[(view === 'returns' ? run.ordinal : lines.length) % colors.length], values })
         }
       }
     }
@@ -82,7 +90,7 @@ export function withBenchmark(data: ChartData, benchmark: BenchmarkData | null):
   if (!benchmark?.symbol || !data.dates.length) return data
   const values = new Map<string,number>()
   for (const part of benchmark.parts) { const packed = part.series.benchmark; if (!packed) continue; const numbers = unpack(packed); part.dates.forEach((date,i) => values.set(date,numbers[i])) }
-  return { ...data, lines: [...data.lines, { id: 'benchmark', name: benchmark.name, color: '#8A9199', values: data.dates.map(d => values.get(d) ?? NaN), benchmark: true }] }
+  return { ...data, lines: [...data.lines, { id: 'benchmark', name: benchmark.name, color: BENCHMARK_COLOR, values: data.dates.map(d => values.get(d) ?? NaN), benchmark: true }] }
 }
 
 export function niceAxis(values: number[][], count = 4, integerPercent = false, tightLower = false): { min: number; max: number; ticks: number[] } {

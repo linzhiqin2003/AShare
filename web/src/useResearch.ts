@@ -23,6 +23,8 @@ export function useResearch() {
   const validations = new Map<string, AbortController>()
   const chartVersions = new Map<string, number>()
   let ready = false
+  // 第一次恢复标签和结果完成前，研究台显示骨架；之后的刷新不再回到骨架。
+  const loaded = shallowRef(false)
   const benchmarkVersions = new Map<string, number>()
   let metadataTimer: ReturnType<typeof setInterval> | undefined
 
@@ -171,9 +173,9 @@ export function useResearch() {
       if (!tabs.length) await addTab()
       const active = localStorage.getItem('ashare.active')
       if (tabs.some(t => t.id === active)) activeId.value = active!
-      ready = true; persist()
+      ready = true; persist(); loaded.value = true
       await refreshMeta(); metadataTimer = setInterval(refreshMeta, 5000)
-    } catch (error) { message.value = friendly(error).message }
+    } catch (error) { message.value = friendly(error).message; loaded.value = true }
   }
   function persist() {
     if (!ready) return
@@ -184,5 +186,5 @@ export function useResearch() {
   watch(activeId,persist)
   watch(showValidation, () => { for (const tab of tabs) void loadChart(tab) })
   onUnmounted(() => { clearInterval(metadataTimer); events.forEach(e => e.close()); validations.forEach(v => v.abort()) })
-  return { tabs, activeId, current, completions, defaults, metadata, message, elapsed, init, addTab, closeTab, renameTab, validate, loadChart, loadBenchmark, run, cancel }
+  return { tabs, activeId, current, completions, defaults, metadata, message, elapsed, loaded, init, addTab, closeTab, renameTab, validate, loadChart, loadBenchmark, run, cancel }
 }

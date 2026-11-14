@@ -33,6 +33,8 @@ describe('收益图实际绘制', () => {
     expect(wrapper.get('.hover-tip').text()).toContain('6.00%')
     expect(wrapper.get('.hover-tip').text()).toContain('16.00%')
     expect(wrapper.get('.hover-tip').text()).toContain('超额回撤 · 多空')
+    // 2026-11-14 暗色统一：日期和数值没写填色，SVG 默认纯黑，深色下整列看不见。每个文字都要显式填色。
+    expect(wrapper.findAll('.hover-tip text').filter(t => !t.attributes('fill'))).toHaveLength(0)
     await wrapper.setProps({relative:false})
     expect(wrapper.find('[data-kind="benchmark"]').exists()).toBe(true)
     wrapper.unmount()

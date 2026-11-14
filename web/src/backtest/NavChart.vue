@@ -166,7 +166,7 @@ const tip = computed(() => {
 .group.failed{color:var(--red)}
 .dd{fill:var(--ink3);opacity:.22}.dd-line{fill:none;stroke:var(--ink2);stroke-width:1}
 .cross{stroke:var(--ink3);stroke-dasharray:3 3}
-.tip{position:absolute;top:10px;width:160px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 6px 18px #0000001a;font-size:11.5px;display:flex;flex-direction:column;gap:2px;pointer-events:none;color:var(--ink2)}
+.tip{position:absolute;top:10px;width:160px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 6px 18px var(--overlay-shadow);font-size:11.5px;display:flex;flex-direction:column;gap:2px;pointer-events:none;color:var(--ink2)}
 .tip b{font-weight:500;color:var(--ink);margin-bottom:2px}
 .tip span{display:flex;justify-content:space-between}
 .tip em{font-style:normal;color:var(--ink)}

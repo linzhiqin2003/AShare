@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartData, curves, unpack, niceAxis, relativeLines, withBenchmark } from './chart'
+import { chartData, corrColor, curves, groupColor, unpack, niceAxis, relativeLines, withBenchmark } from './chart'
 import type { PlotPart, Run } from './types'
 
 describe('窗口重算与列式传输', () => {
@@ -99,5 +99,34 @@ describe('整刻度与基准', () => {
     expect(chart.lines[0].values[0]).toBeNaN()
     expect(curves(chart.lines[0].values,false,2,2).cumulative[0]).toBeCloseTo(.02)
     expect(curves(chart.lines[0].values,true,1,2).cumulative[1]).toBeCloseTo(.0302)
+  })
+})
+
+// 2026-11-14 暗色主题统一：曲线色板、分组色阶原先是十六进制和 hsl 字面量，深色下第 1 条曲线（近黑）贴着底色看不见，
+// 切主题也不会变。现在都引用 style.css 的变量，切换主题时浏览器直接按新变量重画。
+describe('图表颜色跟随主题', () => {
+  function part(rows: number): PlotPart {
+    const bytes = new Uint8Array(new Float32Array(Array(rows * 2).fill(.01)).buffer)
+    return { part: 'is', dates: ['20240101', '20240102'], series: { 'pnl.long_short': { shape: [2], data: btoa(String.fromCharCode(...bytes.slice(0, 8))) }, 'groups': { shape: [rows, 2], data: btoa(String.fromCharCode(...bytes)) } } }
+  }
+  it('收益曲线按变体序号取色板变量', () => {
+    const runs = [0, 1, 9].map(ordinal => ({ id: `r${ordinal}`, ordinal, label: 'a' })) as Run[]
+    const chart = chartData(runs, runs.map(() => [{ ...part(1), series: { 'pnl.long_short': part(1).series['pnl.long_short'] } }]), 'returns')
+    expect(chart.lines.map(l => l.color)).toEqual(['var(--series-1)', 'var(--series-2)', 'var(--series-2)'])
+  })
+  it('分组按组号取色阶变量，超过 10 组用最后一档', () => {
+    const chart = chartData([{ id: 'a', ordinal: 0, label: 'a' }] as Run[], [[{ ...part(10), series: { groups: part(10).series.groups } }]], 'groups')
+    expect(chart.lines.map(l => l.color)).toEqual(Array.from({ length: 10 }, (_, i) => `var(--group-${i + 1})`))
+    expect(groupColor(14)).toBe('var(--group-10)')
+  })
+  it('基准线用基准变量', () => {
+    const data = chartData([{ id: 'a', ordinal: 0, label: 'a' }] as Run[], [[{ ...part(1), series: { 'pnl.long_short': part(1).series['pnl.long_short'] } }]], 'returns')
+    const bench = withBenchmark(data, { symbol: 'X', name: '基准', parts: [{ part: 'is', dates: data.dates, series: { benchmark: part(1).series['pnl.long_short'] } }] } as never)
+    expect(bench.lines.at(-1)!.color).toBe('var(--series-bench)')
+  })
+  it('相关热力格：正负分开取色，浓度与原先 rgba 透明度一致', () => {
+    expect(corrColor(.5, .26)).toBe('color-mix(in srgb, var(--corr-pos) 13.0%, transparent)')
+    expect(corrColor(-1, .22)).toBe('color-mix(in srgb, var(--corr-neg) 22.0%, transparent)')
+    expect(corrColor(1.4, .2)).toBe('color-mix(in srgb, var(--corr-pos) 20.0%, transparent)')
   })
 })
