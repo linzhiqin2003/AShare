@@ -26,6 +26,7 @@ from .benchmarks import Benchmarks
 from .config import CHOICES, DEFAULTS, expand_settings, platform_dir
 from .holdings import Holdings
 from .language import ExpressionError, completions, parse, suggested_name
+from .paper_api import router as paper_router
 from .runner import Manager, configure_logging
 from .storage import Store, dumps
 
@@ -486,6 +487,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
             raise HTTPException(404, "没有找到这个因子")
         return result
 
+    app.include_router(paper_router(data_root))
     if STATIC.is_dir():
         app.mount("/", StaticFiles(directory=STATIC, html=True), name="web")
     return app
