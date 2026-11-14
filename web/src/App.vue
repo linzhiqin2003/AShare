@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import { Database, LoaderCircle, Plus, X, Play, Square, SlidersHorizontal, Clock, Check } from 'lucide-vue-next'
+import { Database, LoaderCircle, Plus, X, Play, Square, SlidersHorizontal, Settings as SettingsIcon } from 'lucide-vue-next'
 import { useResearch } from './useResearch'
 import type { Completion, ReturnSelection, Settings, View } from './types'
 import ExpressionEditor from './components/ExpressionEditor.vue'
@@ -9,9 +9,17 @@ import ResearchResults from './components/ResearchResults.vue'
 import FactorLibrary from './components/FactorLibrary.vue'
 import SplitPane from './components/SplitPane.vue'
 import ResearchTabs from './components/ResearchTabs.vue'
+import StatusBar from './components/StatusBar.vue'
+import DataPage from './pages/DataPage.vue'
+import SettingsPage from './pages/SettingsPage.vue'
+import BacktestPage from './pages/BacktestPage.vue'
+import PaperPage from './pages/PaperPage.vue'
+import { PAGES, usePage } from './router'
+import { themeShortcut } from './appearance'
 const research = useResearch()
 const { tabs, activeId, current, metadata, completions, defaults, elapsed, message } = research
-const page = shallowRef(location.hash === '#/library' ? 'library' : 'research'), settingsOpen = shallowRef(false), signature = shallowRef<Completion | null>(null)
+const { page, navigate } = usePage()
+const settingsOpen = shallowRef(false), signature = shallowRef<Completion | null>(null)
 let debounce: ReturnType<typeof setTimeout> | undefined
 function source(value: string) { if (current.value) { current.value.source = value; const tab = current.value; tab.error = null; clearTimeout(debounce); debounce = setTimeout(() => research.validate(tab), 600) } }
 function settings(value: Settings) { if (current.value) { const benchmarkChanged = current.value.settings.benchmark !== value.benchmark; current.value.settings = value; void research.validate(current.value); if (benchmarkChanged) void research.loadBenchmark(current.value) } }
@@ -21,16 +29,14 @@ function view(value: View) { if (current.value) { current.value.view = value; vo
 function mode(value: string) { if (current.value) { current.value.compound = value.endsWith('compound'); current.value.relative = value.startsWith('relative-'); void research.loadChart(current.value) } }
 function returns(value: ReturnSelection) { if (current.value) { current.value.returnSelection = value; void research.loadChart(current.value) } }
 watch(activeId, () => { settingsOpen.value = false; signature.value = null })
-function navigate(value: string) { location.hash = '/' + value }
-function route() { page.value = location.hash === '#/library' ? 'library' : 'research' }
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 watch(message, value => { clearTimeout(toastTimer); if (value) toastTimer = setTimeout(() => message.value = '', 5000) })
-onMounted(() => { window.addEventListener('hashchange',route); void research.init() })
-onUnmounted(() => { clearTimeout(debounce); clearTimeout(toastTimer); window.removeEventListener('hashchange',route) })
+onMounted(() => { window.addEventListener('keydown', themeShortcut); void research.init() })
+onUnmounted(() => { clearTimeout(debounce); clearTimeout(toastTimer); window.removeEventListener('keydown', themeShortcut) })
 </script>
 <template>
   <div class="app-shell">
-    <header class="topbar"><span class="brand">AShare</span><nav aria-label="主导航"><button :class="{ active: page === 'research' }" @click="navigate('research')">研究台</button><button :class="{ active: page === 'library' }" @click="navigate('library')">因子库</button></nav><div class="top-status"><span><LoaderCircle :size="13" :class="{ spinning: metadata.running > 0 }" />{{ metadata.running }} 个任务运行中</span><span><Database :size="14" />数据截至 {{ metadata.data_date ?? '—' }}</span></div></header>
+    <header class="topbar"><span class="brand">AShare</span><nav aria-label="主导航"><button v-for="item in PAGES" :key="item.id" :class="{ active: page === item.id }" :aria-current="page === item.id ? 'page' : undefined" @click="navigate(item.id)">{{ item.label }}</button></nav><div class="top-status"><span><LoaderCircle :size="13" :class="{ spinning: metadata.running > 0 }" />{{ metadata.running }} 个任务运行中</span><span><Database :size="14" />数据截至 {{ metadata.data_date ?? '—' }}</span><button class="top-icon" :class="{ active: page === 'settings' }" aria-label="设置" title="设置" @click="navigate('settings')"><SettingsIcon :size="15" /></button></div></header>
     <div v-if="message" class="toast" role="alert">{{ message }}<button class="icon-button push" aria-label="关闭提示" @click="message = ''"><X :size="14" /></button></div>
     <div class="main-area">
       <main v-show="page === 'research'" class="research-page">
@@ -43,7 +49,11 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(toastTimer); window.rem
         <section v-else class="panel"></section></template></SplitPane>
       </main>
       <FactorLibrary v-if="page === 'library'" :completions="completions" />
+      <DataPage v-else-if="page === 'data'" :completions="completions" />
+      <BacktestPage v-else-if="page === 'backtest'" />
+      <PaperPage v-else-if="page === 'paper'" />
+      <SettingsPage v-else-if="page === 'settings'" />
     </div>
-    <footer class="bottom-bar"><span v-if="elapsed !== null"><Clock :size="12" />上次运行 {{ elapsed.toFixed(1) }} s</span></footer>
+    <StatusBar :elapsed="elapsed" />
   </div>
 </template>
