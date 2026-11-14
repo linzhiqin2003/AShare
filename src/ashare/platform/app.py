@@ -20,14 +20,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.gzip import GZipMiddleware
 
+from . import datastatus, market
 from .access import Access, login_page
 from .analysis import plot_payload
 from .benchmarks import Benchmarks
 from .compare import router as compare_router
-from .config import CHOICES, DEFAULTS, expand_settings, platform_dir
+from .config import CHOICES, expand_settings, platform_dir
 from .holdings import Holdings
 from .language import ExpressionError, completions, parse, suggested_name
 from .paper_api import router as paper_router
+from .preferences import Preferences
+from .preferences import routes as preference_routes
 from .runner import Manager, configure_logging
 from .storage import Store, dumps
 
@@ -182,6 +185,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
     manager = manager_factory(store, data_root=data_root)
     benchmarks = Benchmarks(data_root)
     holdings = Holdings(store, data_root)
+    preferences = Preferences(store.root)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -231,6 +235,9 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
     async def http_error(request, error):
         return JSONResponse({"message": error.detail}, error.status_code)
 
+    app.include_router(datastatus.routes(data_root, store))
+    app.include_router(market.routes(data_root))
+    app.include_router(preference_routes(preferences, benchmarks))
     metadata = {"at": 0, "date": None}
 
     @app.get("/api/meta")
@@ -253,9 +260,9 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
 
     @app.get("/api/settings")
     def settings():
-        selected = benchmarks.selection()
+        selected = benchmarks.selection(preferences.benchmark())
         return {
-            "defaults": DEFAULTS
+            "defaults": preferences.defaults()
             | ({"benchmark": selected["symbol"]} if selected["symbol"] else {}),
             "choices": CHOICES,
             "benchmark": selected,

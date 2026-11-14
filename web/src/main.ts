@@ -10,4 +10,6 @@ import '@fontsource/noto-sans-sc/500.css'
 import '@fontsource/noto-sans-sc/600.css'
 import './style.css'
 import App from './App.vue'
+import { applyAppearance } from './appearance'
+applyAppearance()
 createApp(App).mount('#app')
