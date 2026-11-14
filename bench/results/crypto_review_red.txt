@@ -1,0 +1,360 @@
+nice: setpriority: Operation not permitted
+FFFFFFF..FFFFFFFFFFFFFFFFFFFF..FF..FF..........FF                        [100%]
+=================================== FAILURES ===================================
+______________ test_review_corpus_requires_same_row_combinations _______________
+test/test_crypto_review.py:27: in test_review_corpus_requires_same_row_combinations
+    assert all(counts[k] >= 2 for k in COMBINATIONS), counts
+E   AssertionError: Counter()
+E   assert False
+E    +  where False = all(<generator object test_review_corpus_requires_same_row_combinations.<locals>.<genexpr> at 0x10b4bb1d0>)
+____ test_review_quantity_filtered_reduction_is_not_pending[native-4-5-900] ____
+test/test_crypto_review.py:42: in test_review_quantity_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, remaining, remaining, remaining])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 4 (50%)
+E   Mismatch at indices:
+E    [2]: 4.0 (ACTUAL), 5 (DESIRED)
+E    [3]: 4.0 (ACTUAL), 5 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.2
+E    ACTUAL: array([5., 5., 4., 4.])
+E    DESIRED: array([5, 5, 5, 5])
+____ test_review_quantity_filtered_reduction_is_not_pending[native-1-2-960] ____
+test/test_crypto_review.py:42: in test_review_quantity_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, remaining, remaining, remaining])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 4 (50%)
+E   Mismatch at indices:
+E    [2]: 1.0 (ACTUAL), 2 (DESIRED)
+E    [3]: 1.0 (ACTUAL), 2 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.5
+E    ACTUAL: array([5., 2., 1., 1.])
+E    DESIRED: array([5, 2, 2, 2])
+__ test_review_quantity_filtered_reduction_is_not_pending[reference-4-5-900] ___
+test/test_crypto_review.py:42: in test_review_quantity_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, remaining, remaining, remaining])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 4 (50%)
+E   Mismatch at indices:
+E    [2]: 4.0 (ACTUAL), 5 (DESIRED)
+E    [3]: 4.0 (ACTUAL), 5 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.2
+E    ACTUAL: array([5., 5., 4., 4.])
+E    DESIRED: array([5, 5, 5, 5])
+__ test_review_quantity_filtered_reduction_is_not_pending[reference-1-2-960] ___
+test/test_crypto_review.py:42: in test_review_quantity_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, remaining, remaining, remaining])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 4 (50%)
+E   Mismatch at indices:
+E    [2]: 1.0 (ACTUAL), 2 (DESIRED)
+E    [3]: 1.0 (ACTUAL), 2 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.5
+E    ACTUAL: array([5., 2., 1., 1.])
+E    DESIRED: array([5, 2, 2, 2])
+________ test_review_minimum_filtered_reduction_is_not_pending[native] _________
+test/test_crypto_review.py:53: in test_review_minimum_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, 5, 5])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: 4.0 (ACTUAL), 5 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.2
+E    ACTUAL: array([5., 5., 4.])
+E    DESIRED: array([5, 5, 5])
+_______ test_review_minimum_filtered_reduction_is_not_pending[reference] _______
+test/test_crypto_review.py:53: in test_review_minimum_filtered_reduction_is_not_pending
+    np.testing.assert_array_equal(r.positions[:, 0], [5, 5, 5])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: 4.0 (ACTUAL), 5 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.2
+E    ACTUAL: array([5., 5., 4.])
+E    DESIRED: array([5, 5, 5])
+_ test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[native] _
+test/test_crypto_review.py:79: in test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives
+    np.testing.assert_array_equal(r.cash, [0, 0, 30])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [1]: 20.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 20.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([ 0., 20., 30.])
+E    DESIRED: array([ 0,  0, 30])
+_ test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[reference] _
+test/test_crypto_review.py:79: in test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives
+    np.testing.assert_array_equal(r.cash, [0, 0, 30])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [1]: 20.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 20.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([ 0., 20., 30.])
+E    DESIRED: array([ 0,  0, 30])
+_ test_review_reduction_to_zero_equity_cannot_finance_another_opening[native] __
+test/test_crypto_review.py:92: in test_review_reduction_to_zero_equity_cannot_finance_another_opening
+    np.testing.assert_array_equal(r.cash, [10, 0, 0])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: 20.0 (ACTUAL), 0 (DESIRED)
+E    [2]: 20.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 20.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([10., 20., 20.])
+E    DESIRED: array([10,  0,  0])
+_ test_review_reduction_to_zero_equity_cannot_finance_another_opening[reference] _
+test/test_crypto_review.py:92: in test_review_reduction_to_zero_equity_cannot_finance_another_opening
+    np.testing.assert_array_equal(r.cash, [10, 0, 0])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: 20.0 (ACTUAL), 0 (DESIRED)
+E    [2]: 20.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 20.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([10., 20., 20.])
+E    DESIRED: array([10,  0,  0])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False-1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False--1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), -1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([ 0, -1])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True-1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: 1.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([1., 1., 1.])
+E    DESIRED: array([1, 1, 0])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True--1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: -1.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([-1., -1., -1.])
+E    DESIRED: array([-1, -1,  0])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False-1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False--1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True-1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True--1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False-1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False--1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), -1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([ 0, -1])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True-1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: 1.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([1., 1., 1.])
+E    DESIRED: array([1, 1, 0])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True--1] _
+test/test_crypto_review.py:115: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    np.testing.assert_array_equal(r.positions[:, 0], expected_pos)
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: -1.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([-1., -1., -1.])
+E    DESIRED: array([-1, -1,  0])
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False-1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False--1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True-1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True--1] _
+test/test_crypto_review.py:119: in test_review_invalid_ordinary_quote_keeps_only_carryable_target
+    assert r.diagnostics["blocked_" + direction] == 1
+E   assert 0 == 1
+_ test_review_executable_intent_requires_marks_before_weight_sizing[native-weights-1] _
+test/test_crypto_review.py:138: in test_review_executable_intent_requires_marks_before_weight_sizing
+    with pytest.raises(ValueError, match="mark"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review_executable_intent_requires_marks_before_weight_sizing[native-weights--1] _
+test/test_crypto_review.py:138: in test_review_executable_intent_requires_marks_before_weight_sizing
+    with pytest.raises(ValueError, match="mark"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review_executable_intent_requires_marks_before_weight_sizing[reference-weights-1] _
+test/test_crypto_review.py:138: in test_review_executable_intent_requires_marks_before_weight_sizing
+    with pytest.raises(ValueError, match="mark"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review_executable_intent_requires_marks_before_weight_sizing[reference-weights--1] _
+test/test_crypto_review.py:138: in test_review_executable_intent_requires_marks_before_weight_sizing
+    with pytest.raises(ValueError, match="mark"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+______ test_review_old_npz_keeps_crypto_disabled_and_frame_columns[False] ______
+test/test_crypto_review.py:178: in test_review_old_npz_keeps_crypto_disabled_and_frame_columns
+    assert restored.funding is None
+E   AssertionError: assert array([0.]) is None
+E    +  where array([0.]) = Result(nav=array([1.]), cash=array([100.]), turnover=array([0.5]), commission=array([0.]), tax=array([0.]), other_fee=...utures_liquidation': 0, 'futures_expiry': 0, 'expired_target': 0, 'futures_rounded_to_zero': 0}, inputs_validated=True).funding
+______ test_review_old_npz_keeps_crypto_disabled_and_frame_columns[True] _______
+test/test_crypto_review.py:178: in test_review_old_npz_keeps_crypto_disabled_and_frame_columns
+    assert restored.funding is None
+E   AssertionError: assert array([0.]) is None
+E    +  where array([0.]) = Result(nav=array([1.]), cash=array([100.]), turnover=array([0.5]), commission=array([0.]), tax=array([0.]), other_fee=...utures_liquidation': 0, 'futures_expiry': 0, 'expired_target': 0, 'futures_rounded_to_zero': 0}, inputs_validated=True).funding
+=============================== warnings summary ===============================
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False-1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False--1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True-1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True--1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False-1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False--1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True-1]
+test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True--1]
+test/test_crypto_review.py::test_review_invalid_forced_quote_still_errors[reference]
+  packages/panelbt/python/panelbt/reference_crypto.py:93: RuntimeWarning: invalid value encountered in scalar multiply
+    fee = amount * scalar(self.f.fee_rate, d, i) + abs(q) * scalar(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/test_crypto_review.py::test_review_corpus_requires_same_row_combinations
+FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[native-4-5-900]
+FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[native-1-2-960]
+FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[reference-4-5-900]
+FAILED test/test_crypto_review.py::test_review_quantity_filtered_reduction_is_not_pending[reference-1-2-960]
+FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[native]
+FAILED test/test_crypto_review.py::test_review_minimum_filtered_reduction_is_not_pending[reference]
+FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[native]
+FAILED test/test_crypto_review.py::test_review_zero_equity_cannot_use_candidate_profit_but_deposit_revives[reference]
+FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[native]
+FAILED test/test_crypto_review.py::test_review_reduction_to_zero_equity_cannot_finance_another_opening[reference]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-False--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-True-True--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-False--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[native-False-True--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-False--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-True-True--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-False--1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True-1]
+FAILED test/test_crypto_review.py::test_review_invalid_ordinary_quote_keeps_only_carryable_target[reference-False-True--1]
+FAILED test/test_crypto_review.py::test_review_executable_intent_requires_marks_before_weight_sizing[native-weights-1]
+FAILED test/test_crypto_review.py::test_review_executable_intent_requires_marks_before_weight_sizing[native-weights--1]
+FAILED test/test_crypto_review.py::test_review_executable_intent_requires_marks_before_weight_sizing[reference-weights-1]
+FAILED test/test_crypto_review.py::test_review_executable_intent_requires_marks_before_weight_sizing[reference-weights--1]
+FAILED test/test_crypto_review.py::test_review_old_npz_keeps_crypto_disabled_and_frame_columns[False]
+FAILED test/test_crypto_review.py::test_review_old_npz_keeps_crypto_disabled_and_frame_columns[True]
+33 failed, 16 passed, 9 warnings in 0.41s

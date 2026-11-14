@@ -1,0 +1,162 @@
+packages/panelbt/python/panelbt/__init__.py
+packages/panelbt/python/panelbt/_core.abi3.so
+22a92411e5cba9e92d847f163f40b2213b0312ef348bb55a01d1214bfe890381
+actual positions: [0.0, 0.0]; expected [0, 1]
+actual blocked_buy: 0; expected 1
+nice: setpriority: Operation not permitted
+FFFF....FFFF....FFFF....FFFF....                                         [100%]
+=================================== FAILURES ===================================
+_ test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-mask] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-price] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-mask] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-price] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-mask] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-price] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-mask] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-price] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-mask] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-price] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-mask] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-price] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-mask] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-price] _
+test/test_crypto_review_intent.py:39: in test_review_first_row_inactive_nan_mark_carries_intent
+    np.testing.assert_array_equal(r.positions[:, 0], [0, int(carry)])
+E   AssertionError: 
+E   Arrays are not equal
+E   
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: 0.0 (ACTUAL), 1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0.])
+E    DESIRED: array([0, 1])
+_ test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-mask] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+_ test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-price] _
+test/test_crypto_review_intent.py:40: in test_review_first_row_inactive_nan_mark_carries_intent
+    assert r.diagnostics["blocked_buy"] == 1
+E   assert 0 == 1
+=========================== short test summary info ============================
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-True-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[native-weights-False-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-True-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[reference-weights-False-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-True-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[step-weights-False-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-True-price]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-mask]
+FAILED test/test_crypto_review_intent.py::test_review_first_row_inactive_nan_mark_carries_intent[snapshot-weights-False-price]
+16 failed, 16 passed, 8 deselected in 0.56s

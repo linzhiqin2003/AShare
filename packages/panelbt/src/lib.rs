@@ -126,13 +126,17 @@ fn assemble<'a>(
         if kind.len() != n
             || multiplier.len() != n
             || expiry.len() != n
-            || panels.len() != 6
+            || ![6, 16].contains(&panels.len())
             || panels[0].len() != t * n
-            || panels[1..]
+            || panels[1..6]
                 .iter()
                 .any(|a| ![1, n, t * n].contains(&a.len()))
         {
             return Err(PyValueError::new_err("invalid futures argument lengths"));
+        }
+        if panels.len() == 16 {
+            panelbt_core::crypto::check_shapes(&panels[6..], t, n)
+                .map_err(PyValueError::new_err)?;
         }
         Some(Futures {
             kind,
@@ -144,6 +148,7 @@ fn assemble<'a>(
             fee_per_contract: panels[3],
             delivery_fee_rate: panels[4],
             delivery_fee_per_contract: panels[5],
+            crypto: (panels.len() == 16).then(|| panelbt_core::crypto::Inputs::new(&panels[6..])),
         })
     };
     let m = Market {
@@ -179,10 +184,19 @@ fn output_dict<'py>(
     t: usize,
     n: usize,
 ) -> PyResult<Bound<'py, PyDict>> {
+    if let Some(error) = &o.error {
+        return Err(PyValueError::new_err(error.clone()));
+    }
+    let fields = o.daily.len() / t;
+    let count_len = if fields == panelbt_core::DAILY {
+        panelbt_core::COUNTS
+    } else {
+        39
+    };
     let d = PyDict::new(py);
     d.set_item(
         "daily",
-        Array2::from_shape_vec((panelbt_core::DAILY, t), o.daily)
+        Array2::from_shape_vec((fields, t), o.daily)
             .map_err(|e| PyValueError::new_err(e.to_string()))?
             .into_pyarray(py),
     )?;
@@ -198,7 +212,7 @@ fn output_dict<'py>(
     }
     d.set_item("trades", o.trades)?;
     d.set_item("events", o.events)?;
-    d.set_item("counts", o.counts.to_vec())?;
+    d.set_item("counts", o.counts[..count_len].to_vec())?;
     d.set_item("contribution", o.contribution.into_pyarray(py))?;
     d.set_item("liquidations", o.liquidations)?;
     d.set_item("bankruptcies", o.bankruptcies)?;
@@ -433,6 +447,33 @@ fn prepare_market<'py>(
         indptr.into_pyarray(py),
         cols.into_pyarray(py),
     ))
+}
+
+/// Validate optional cryptocurrency inputs in the native boundary.
+#[pyfunction]
+fn validate_crypto(
+    kind: PyReadonlyArray1<'_, u8>,
+    margin: PyReadonlyArray2<'_, f64>,
+    extras: Vec<PyReadonlyArray2<'_, f64>>,
+    liquidation: Vec<PyReadonlyArray2<'_, f64>>,
+    t: usize,
+) -> PyResult<()> {
+    let mut a: Vec<&[f64]> = extras
+        .iter()
+        .map(|x| x.as_slice())
+        .collect::<Result<_, _>>()?;
+    if a.len() != 5 || ![0, 5].contains(&liquidation.len()) {
+        return Err(PyValueError::new_err("invalid crypto arguments"));
+    }
+    if liquidation.is_empty() {
+        a.extend([&[][..]; 5]);
+    } else {
+        for x in &liquidation {
+            a.push(x.as_slice()?);
+        }
+    }
+    panelbt_core::crypto::validate(kind.as_slice()?, margin.as_slice()?, &a, t)
+        .map_err(PyValueError::new_err)
 }
 
 /// Futures content checks in the original order; shapes are checked in Python.
@@ -839,6 +880,9 @@ impl Simulator {
         weights: Option<PyReadonlyArray1<'_, f64>>,
         limits: Option<PyReadonlyArray1<'_, f64>>,
     ) -> PyResult<Vec<f64>> {
+        if let Some(error) = &self.stepper.core.out.error {
+            return Err(PyValueError::new_err(error.clone()));
+        }
         let day = self.stepper.day;
         if day >= self.t {
             return Err(PyValueError::new_err(
@@ -923,8 +967,11 @@ impl Simulator {
         with_market!(py, self, |m, s, stepper, arrays| {
             with_vectors!(py, arrays, |v| py
                 .detach(|| stepper.step(v, row, shares, &m, &s)));
+            if let Some(error) = &stepper.core.out.error {
+                return Err(PyValueError::new_err(error.clone()));
+            }
             let d = &stepper.core.out.daily;
-            Ok((0..panelbt_core::DAILY).map(|k| d[k * t + day]).collect())
+            Ok((0..d.len() / t).map(|k| d[k * t + day]).collect())
         })
     }
 
@@ -1007,6 +1054,9 @@ impl Simulator {
     }
 
     fn snapshot<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        if let Some(error) = &self.stepper.core.out.error {
+            return Err(PyValueError::new_err(error.clone()));
+        }
         let header = self.header(py)?;
         let stepper = &self.stepper;
         let blob = with_vectors!(py, self.arrays, |v| stepper.encode(&header, &v));
@@ -1045,6 +1095,7 @@ fn panelbt_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_market, m)?)?;
     m.add_function(wrap_pyfunction!(validate_futures, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_crypto, m)?)?;
     m.add_function(wrap_pyfunction!(check_plan, m)?)?;
     m.add_class::<Simulator>()?;
     m.add("VALIDATION_CHUNK", validate::CHUNK)?;

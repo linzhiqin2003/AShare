@@ -10,6 +10,8 @@ import numpy as np
 from . import _core
 from .models import (
     COUNTERS,
+    CRYPTO_COUNTERS,
+    CRYPTO_METRICS,
     EXTRA_COUNTERS,
     METRICS,
     RULE_COUNTERS,
@@ -46,6 +48,15 @@ def _panel(value, t, n, name, *, optional=False):
 
 _EMPTY = np.empty(0)
 _EMPTY.flags.writeable = False
+
+
+def _constant(value, expanded, expected):
+    """Test already-validated account terms without scanning scalar broadcasts."""
+    return (
+        value == expected
+        if type(value) in (float, int)
+        else np.all(expanded == expected)
+    )
 
 
 def _percent(value, t, n, name):
@@ -264,9 +275,9 @@ def _prepare(
     classic = (
         not margin.allow_short
         and not margin.allow_financing
-        and np.all(vectors[11] == 1)
-        and np.all(vectors[13] == 0)
-        and np.all(vectors[14] == 0)
+        and _constant(margin.long_initial, vectors[11], 1)
+        and _constant(margin.long_maintenance, vectors[13], 0)
+        and _constant(margin.short_maintenance, vectors[14], 0)
     )
     flags = [
         config.carry_blocked,
@@ -299,6 +310,32 @@ def _prepare(
                 f.delivery_fee_per_contract,
             ],
         )
+        if f.has_crypto:
+            empty = np.empty((0, 0))
+            futures[3].extend(
+                empty if getattr(f, k) is None else getattr(f, k)
+                for k in (
+                    "funding",
+                    "maint_rate",
+                    "qty_step",
+                    "min_qty",
+                    "min_notional",
+                )
+            )
+            futures[3].extend(
+                [empty] * 5
+                if f.liquidation is None
+                else [
+                    getattr(f.liquidation, k)
+                    for k in (
+                        "mark_open",
+                        "mark_high",
+                        "mark_low",
+                        "clearance_fee_rate",
+                        "tier_cap",
+                    )
+                ]
+            )
     return (
         floats,
         masks,
@@ -348,14 +385,18 @@ def _diagnostics(raw: dict[str, Any]) -> dict:
     return out
 
 
-def _result(raw: dict[str, Any], validated: bool = True) -> Result:
+def _result(
+    raw: dict[str, Any], validated: bool = True, crypto: bool = False
+) -> Result:
+    metrics = METRICS + (CRYPTO_METRICS if crypto else ())
+    counters = EXTRA_COUNTERS + (CRYPTO_COUNTERS if crypto else ())
     values = {
         k: raw["daily"][i].astype(np.int64)
         if k.startswith("n_")
         else raw["daily"][i].astype(bool)
         if k == "margin_call"
         else raw["daily"][i]
-        for i, k in enumerate(METRICS)
+        for i, k in enumerate(metrics)
     }
     return Result(
         **values,
@@ -363,7 +404,13 @@ def _result(raw: dict[str, Any], validated: bool = True) -> Result:
         trades=_trades(raw),
         delist_events=[DelistEvent(*x) for x in raw["events"]],
         diagnostics=_diagnostics(raw),
-        coverage=dict(zip(EXTRA_COUNTERS, raw["counts"][len(COUNTERS) :], strict=True)),
+        coverage=dict(
+            zip(
+                counters,
+                raw["counts"][len(COUNTERS) : len(COUNTERS) + len(counters)],
+                strict=True,
+            )
+        ),
         contribution=raw["contribution"],
         liquidation_events=[LiquidationEvent(*x) for x in raw["liquidations"]],
         bankruptcy_events=raw["bankruptcies"],
@@ -387,7 +434,11 @@ def run(
         1,
         _rule_args(market, [targets], config),
     )[0]
-    return _result(raw, _validated(market, [targets]))
+    return _result(
+        raw,
+        _validated(market, [targets]),
+        bool(market.futures and market.futures.has_crypto),
+    )
 
 
 def run_batch(
@@ -411,19 +462,22 @@ def run_batch(
         *market.shape,
         config.record_trades,
         _validated(market, targets),
+        bool(market.futures and market.futures.has_crypto),
     )
 
 
-def _batch_result(raw, t, n, record, validated=True):
+def _batch_result(raw, t, n, record, validated=True, crypto=False):
+    metrics = METRICS + (CRYPTO_METRICS if crypto else ())
+    counters = EXTRA_COUNTERS + (CRYPTO_COUNTERS if crypto else ())
     if not record:
         # Assemble one contiguous daily tensor without K intermediate Results.
         tensor = (
             np.stack([x["daily"] for x in raw])
             if raw
-            else np.empty((0, len(METRICS), t))
+            else np.empty((0, len(METRICS) + len(CRYPTO_METRICS), t))
         )
         counts = np.asarray([x["counts"] for x in raw], dtype=np.int64).reshape(
-            len(raw), len(COUNTERS) + len(EXTRA_COUNTERS)
+            len(raw), len(COUNTERS) + len(counters)
         )
         rule_counts = (
             np.asarray([x["rule_counts"] for x in raw], dtype=np.int64)
@@ -436,7 +490,7 @@ def _batch_result(raw, t, n, record, validated=True):
             else tensor[:, i].astype(bool)
             if key == "margin_call"
             else tensor[:, i]
-            for i, key in enumerate(METRICS)
+            for i, key in enumerate(metrics)
         }
         return Result(
             **daily,
@@ -449,8 +503,7 @@ def _batch_result(raw, t, n, record, validated=True):
                 else {k: rule_counts[:, i] for i, k in enumerate(RULE_COUNTERS)}
             ),
             coverage={
-                key: counts[:, len(COUNTERS) + i]
-                for i, key in enumerate(EXTRA_COUNTERS)
+                key: counts[:, len(COUNTERS) + i] for i, key in enumerate(counters)
             },
             delist_events=[[DelistEvent(*e) for e in x["events"]] for x in raw],
             liquidation_events=[
@@ -463,7 +516,7 @@ def _batch_result(raw, t, n, record, validated=True):
             else np.empty((0, n)),
             inputs_validated=validated,
         )
-    results = [_result(x, validated) for x in raw]
+    results = [_result(x, validated, crypto) for x in raw]
     daily = {
         k: np.stack([getattr(x, k) for x in results])
         if results
@@ -475,7 +528,7 @@ def _batch_result(raw, t, n, record, validated=True):
             if k.startswith("n_")
             else float,
         )
-        for k in METRICS
+        for k in metrics
     }
     return Result(
         **daily,
@@ -492,7 +545,7 @@ def _batch_result(raw, t, n, record, validated=True):
         },
         coverage={
             k: np.array([x.coverage[k] for x in results], dtype=np.int64)
-            for k in EXTRA_COUNTERS
+            for k in counters
         },
         contribution=np.stack([x.contribution for x in results])
         if results

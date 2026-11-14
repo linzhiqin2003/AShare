@@ -1,0 +1,122 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+__________________ test_opening_includes_execution_mark_loss ___________________
+test/test_crypto.py:41: in test_opening_includes_execution_mark_loss
+    r = bt.run(*scenario([[100]], [[1]], cash=10, marks=[[90]]))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+_______________ test_post_trade_reduction_liquidates_at_equality _______________
+test/test_crypto.py:48: in test_post_trade_reduction_liquidates_at_equality
+    r = bt.run(*scenario([[100], [98]], [[2], [1]], cash=3,
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+______________________ test_tier_cap_uses_high_for_longs _______________________
+test/test_crypto.py:57: in test_tier_cap_uses_high_for_longs
+    r = bt.run(*scenario([[100]], [[1]], high=[[200]], low=[[99]], cap=150))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+___________ test_open_gap_cannot_be_rescued_by_target_or_later_rally ___________
+test/test_crypto.py:63: in test_open_gap_cannot_be_rescued_by_target_or_later_rally
+    r = bt.run(*scenario([[100], [80], [100]], [[1], [0], [1]], cash=10,
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+____ test_funding_boundary_signed_and_no_charge_after_intraday_liquidation _____
+test/test_crypto.py:73: in test_funding_boundary_signed_and_no_charge_after_intraday_liquidation
+    r = bt.run(*scenario([[100], [100], [100]], [[1], [-1], [0]],
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+__________ test_funding_then_close_risk_uses_settlement_not_next_open __________
+test/test_crypto.py:84: in test_funding_then_close_risk_uses_settlement_not_next_open
+    r = bt.run(*scenario([[100], [110]], [[1], [np.nan]], cash=1.1,
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+______ test_delivery_uses_delivery_price_once_and_expires_before_funding _______
+test/test_crypto.py:93: in test_delivery_uses_delivery_price_once_and_expires_before_funding
+    r = bt.run(*scenario([[100]], [[1]], high=[[101]], low=[[99]],
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+____ test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit _____
+test/test_crypto.py:104: in test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit
+    r = bt.run(*scenario([[100]], [[1]], cash=10, low=[[80]], clearance=0.1))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+__________________ test_lambda_short_and_multi_column_formula __________________
+test/test_crypto.py:116: in test_lambda_short_and_multi_column_formula
+    r = bt.run(*scenario([[100]], [[-1]], cash=10, high=[[120]], maint=0.02))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+______________________ test_lambda_one_and_nondecreasing _______________________
+test/test_crypto.py:126: in test_lambda_one_and_nondecreasing
+    r = bt.run(*scenario([[100]], [[1]], cash=10, maint=0.1, initial=0.1))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+____ test_liquidation_clears_other_columns_pending_and_allows_later_target _____
+test/test_crypto.py:136: in test_liquidation_clears_other_columns_pending_and_allows_later_target
+    r = bt.run(*scenario([[100, 100]] * 3, [[1, 1], [np.nan, np.nan], [1, 0]],
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+____________ test_non_trade_hour_never_retries_with_carry_disabled _____________
+test/test_crypto.py:146: in test_non_trade_hour_never_retries_with_carry_disabled
+    r = bt.run(*scenario([[100], [100]], [[1], [np.nan]],
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+_____________ test_scaled_order_rules_reversal_and_full_close_dust _____________
+test/test_crypto.py:152: in test_scaled_order_rules_reversal_and_full_close_dust
+    r = bt.run(*scenario([[100]], [[10]], cash=1000,
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+________________ test_lifecycle_nan_marks_only_error_when_held _________________
+test/test_crypto.py:167: in test_lifecycle_nan_marks_only_error_when_held
+    args = scenario([[np.nan], [100], [np.nan]], [[np.nan], [1], [np.nan]],
+test/test_crypto.py:30: in scenario
+    liquidation=bt.Liquidation(o, h, l, clearance, cap),
+                ^^^^^^^^^^^^^^
+E   AttributeError: module 'panelbt' has no attribute 'Liquidation'
+=========================== short test summary info ============================
+FAILED test/test_crypto.py::test_opening_includes_execution_mark_loss - Attri...
+FAILED test/test_crypto.py::test_post_trade_reduction_liquidates_at_equality
+FAILED test/test_crypto.py::test_tier_cap_uses_high_for_longs - AttributeErro...
+FAILED test/test_crypto.py::test_open_gap_cannot_be_rescued_by_target_or_later_rally
+FAILED test/test_crypto.py::test_funding_boundary_signed_and_no_charge_after_intraday_liquidation
+FAILED test/test_crypto.py::test_funding_then_close_risk_uses_settlement_not_next_open
+FAILED test/test_crypto.py::test_delivery_uses_delivery_price_once_and_expires_before_funding
+FAILED test/test_crypto.py::test_clearance_capped_after_ordinary_commission_and_no_fee_on_deficit
+FAILED test/test_crypto.py::test_lambda_short_and_multi_column_formula - Attr...
+FAILED test/test_crypto.py::test_lambda_one_and_nondecreasing - AttributeErro...
+FAILED test/test_crypto.py::test_liquidation_clears_other_columns_pending_and_allows_later_target
+FAILED test/test_crypto.py::test_non_trade_hour_never_retries_with_carry_disabled
+FAILED test/test_crypto.py::test_scaled_order_rules_reversal_and_full_close_dust
+FAILED test/test_crypto.py::test_lifecycle_nan_marks_only_error_when_held - A...
+14 failed in 0.74s

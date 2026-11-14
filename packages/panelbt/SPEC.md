@@ -475,7 +475,7 @@ modified through the public interface. Writing to the simulator's memory by
 bypassing that protection (for example through the views' `.base` chain) is
 undefined behaviour. `result()` requires every row to be stepped.
 
-`snapshot()` returns a binary blob (format version 2, closed by a CRC-32 of
+`snapshot()` returns a binary blob (format version 3, closed by a CRC-32 of
 all preceding bytes); `Simulator.restore(blob, market, costs, config, kind)`
 checks the checksum first, then the fingerprint, and continues bit for bit.
 The fingerprint covers shapes, account type, target kind, every cost and
@@ -489,7 +489,8 @@ market); a change confined to unsampled cells of a larger panel is not
 detected. `fingerprint="full"` hashes every cell (about 0.8–1.2 s on the same
 market). Restore with the choice used when the snapshot was taken. `bt.run`
 computes no digest. Any truncated, extended or corrupted blob, a blob of an
-older format and any mismatch raise `ValueError`; a failed restore leaves no
+unsupported older format and any mismatch raise `ValueError`; format 2 is
+accepted for unchanged legacy inputs. A failed restore leaves no
 half-loaded simulator.
 
 Threads: `step` releases the GIL, so independent simulators may advance in
@@ -845,3 +846,229 @@ mixed-account reference.
   counts only `futures_margin_scaled`. Among several contract reductions on
   one row, a margin account processes longs before shorts (by column), and the
   cash specialization processes them by column.
+
+## Hourly crypto futures (opt-in)
+
+These inputs extend `Futures`, without changing any existing arithmetic when
+all are omitted. `funding`, `maint_rate`, `qty_step` and `min_qty` may also be
+used without exchange liquidation, including in a mixed spot/futures market.
+The exchange liquidation model requires **every column to be a future** and
+`Futures(exec_at_open=True)`: this is the caller's declaration that ordinary
+execution occurs at the left boundary. Its execution quote can differ from
+the mark; the declaration does not assert that the two prices are equal.
+No timestamp inference, exchange schedule, signals, wallets or spot-crypto
+filters are implemented here. `FuturesBook` keeps its existing interface;
+call `Market(..., futures=Futures(...))` for these new inputs.
+
+| Input | Shape and unit | Omission / missing values |
+|---|---|---|
+| `funding` | exactly T×N, signed settlement currency **per internal contract** | None disables it; 0 is no event; NaN is allowed only when no position survives to funding; infinity is rejected |
+| `maint_rate` | scalar, (1,N), (T,1), T×N; nonnegative finite fraction | None uses `margin_rate`; does not replace initial margin |
+| `qty_step` | exactly T×N, positive integer contracts | None is 1; no NaN |
+| `min_qty` | exactly T×N, nonnegative integer contracts | None is 1; no NaN |
+| `min_notional` | exactly T×N, nonnegative finite settlement currency | None is 0; requires `liquidation.mark_open` as the reference price; no NaN |
+| `Liquidation.mark_open/high/low` | exactly T×N, positive price per underlying unit | NaN allowed while unheld; all three must be finite when held or opening; finite triples require low ≤ open ≤ high |
+| `Liquidation.clearance_fee_rate` | scalar, (1,N), (T,1), T×N; nonnegative finite fraction | required; no NaN |
+| `Liquidation.tier_cap` | scalar, (1,N), (T,1), T×N; positive finite settlement currency | required; no NaN (use a documented large finite number for an intentionally unbounded research scenario) |
+
+The last two fields belong to
+`Liquidation(mark_open, mark_high, mark_low, clearance_fee_rate, tier_cap)`.
+Rate vectors of shape (N,) or (T,) remain ambiguous and are rejected. Shapes,
+integer units and the structural liquidation requirements are checked even
+with `Market(validate=False)`. The optional inputs' content checks also run
+in that mode; missing held marks/funding always raise `ValueError` at runtime.
+Spot columns ignore the values of futures-only inputs. Contract multiplier
+is fixed, never a time series: underlying quantity = contracts × multiplier;
+volume must be in contracts. Fees per amount already include the multiplier.
+
+**Time and lifecycle.** Row t is `[s_t, s_t+1h)`. `funding[t,i]` is the
+right-boundary event at s_(t+1), before the next row's ordinary execution.
+The caller calculates rate × event-associated mark × multiplier. The engine
+neither constructs this fee nor shifts it. At the final row, the caller must
+have the required right-boundary observation or truncate the row; no event
+means zero, missing event data does not. Funding is charged on the signed
+contracts still held *after expiry*: `cash -= contracts * funding[t,i]`.
+A position liquidated earlier in the row pays/receives none of that event.
+
+Every futures settlement remains finite and positive on every row. Before
+listing, fill it with the first valid settlement solely as the legacy sizing
+placeholder; after expiry/delisting, retain the terminal settlement. Disable
+ordinary execution outside the lifecycle with quotes/masks. Mark OHLC can
+be NaN there; funding is zero. An active-life gap must be rejected upstream,
+or explicitly modeled by unchanged valuation and disabled trading; there
+is no implicit kernel forward fill or quality-flag inference.
+
+**Seven stages with `liquidation` enabled:**
+
+1. After the usual pre-open cash flow, value held positions at mark_open,
+   without changing their cash/basis. Let Q = contracts × multiplier,
+   E = cash + Σ Q(M−basis), MM = Σ r|Q|M and D = E−MM. If held and
+   D ≤ 1e−12 Σ|Q|M, liquidate all contracts at mark_open and suppress all
+   ordinary trading in this row. An empty account is never liquidated.
+2. Ordinary reductions precede openings. Weights use that marked E and
+   mark_open × multiplier as the denominator (with the existing cash buffer).
+   Shares remain integer contract targets. For candidate openings, include
+   execution-to-mark P&L, commission and initial margin on all resulting
+   positions. Apply the existing common scale and prefix affordability check;
+   current marked equity must be strictly positive before simulating an
+   opening basket and before each opening fill, including after reductions.
+   exchange collateral cannot be financed even if the generic margin model
+   enables financing. A reduction can realize a loss without passing an
+   opening affordability check.
+3. Recompute D after ordinary executions. Equality triggers immediate
+   liquidation at mark_open; a later rally cannot undo it.
+4. Interpolate each held mark from its open to its adverse extreme (long:
+   low; short: high). `D1 = Σ (Q − r|Q|) × (extreme−open)`. D1 ≥ 0 does not
+   trigger. Otherwise λ = −D/D1 triggers at λ ≤ 1, at each column's
+   interpolated mark. An endpoint within the same relative-notional tolerance
+   is treated as touched and λ is clamped to 1. This is a joint stress path,
+   not a lower bound on multi-asset returns or a reconstruction of tick order.
+5. A forced fill ignores masks, participation caps and quantity filters. It
+   uses the trigger mark plus ordinary slippage, impact and futures commission.
+   If the resulting price is nonpositive/nonfinite, raise `ValueError` instead
+   of inventing a fill; with impact configured a valid volume denominator is
+   still required. Sum clearance-rate × **effective fill notional** across
+   columns; charge min(total, max(remaining cash,0)). Allocate the actual fee
+   to column contributions pro rata to their assessed fees. A negative
+   remaining balance receives a separately reported deficit credit, becomes
+   zero and permanently latches bankruptcy. A fee that exactly exhausts cash
+   does not latch bankruptcy. Clear all carried targets across all columns.
+   Later new targets may reopen only when bankruptcy is not latched and
+   current marked equity is positive. An unbankrupt zero-balance account can
+   reopen after a later deposit; prospective execution gains cannot revive it.
+6. Settle variation at `settlement`, cash-deliver expiring positions, then
+   apply funding. Check maintenance again at settlement and liquidate there
+   if necessary. Interest/financing retain their existing closing stage after
+   these events. The funding-associated mark need not equal settlement or the
+   next open; this risk check at settlement is the explicit boundary-price
+   approximation. On a delivery/delisting row, settlement is the **actual
+   delivery price**, replacing the ordinary mark close. The existing expiry
+   path already realizes the entire difference exactly once and charges the
+   supplied delivery fee; no separate delivery-price field is needed. For the
+   crypto convention, supply `delivery_fee_rate` equal to the applicable taker
+   rate and per-contract fees equal to zero; rates are never inferred or copied
+   implicitly from ordinary fees.
+7. Count tier coverage once per row, across all columns: check notional at
+   opening, after executions, and at closing (including pre-expiry holdings),
+   and check |Q| × mark_high for the intraday range, for both signs. An
+   intraday liquidation makes that row conservatively exceed coverage because
+   the high's order relative to the exit is unknown. An ordinary opening-time
+   close is known to precede the range. `coverage['tier_cap_exceeded']` is a
+   row count, not a column or phase count; the kernel reports it rather than
+   rejecting the result. Upstream strict mode must reject it.
+
+With liquidation absent, `maint_rate` only changes the existing close-time
+maintenance trigger; the legacy next-row proportional liquidation continues
+to restore **initial** margin. Available cash and interest always reserve
+initial margin. With liquidation present the old next-row call is disabled;
+`margin_call` remains false and the immediate events carry the risk outcome.
+
+**Quantity rules.** Round new/additional orders toward zero to multiples of
+the current step, then test minimum quantity and mark-open notional. Repeat
+these checks after volume or funding-capacity scaling. The minimum is a
+threshold, not an offset to the step lattice: minimum 3 and step 2 permit 4,
+6, ... . Partial reductions obey step/minimum and bypass only minimum
+notional. A complete close bypasses step and minimum (an explicit odd-lot
+model assumption); its volume cap still applies. A reversal closes the old
+side first, then separately filters and finances the new side. The same
+rules apply to `kind='shares'`. A nonzero order filtered to zero increments
+`futures_rounded_to_zero`; it is not retried merely because of a quantity or
+cash filter. Price/mask/volume blocking keeps the existing carry behavior.
+For daily signals on hourly rows the caller must set `carry_blocked=False`.
+
+**Ordinary-order decisions (with liquidation).** These predicates apply to
+both shares and weights, and to both signs; the reference oracle implements
+them separately from its ledger simulation.
+
+1. Classify market obstacles independently of the rounded quantity: missing
+   execution price, disabled directional mask, or a participation cap smaller
+   than the requested order. Only such obstacles (including item 2) increment
+   `blocked_buy/sell` and save the original target when `carry_blocked=True`.
+   A step/minimum/minimum-notional/collateral filter alone never creates a
+   pending target, whether it leaves zero or a smaller nonzero fill. If a
+   market obstacle and a quantity filter coexist, the market obstacle still
+   justifies carrying. A newly scheduled target replaces old pending targets.
+2. A nonfinite/nonpositive ordinary effective quote (including impact with a
+   zero/missing volume denominator) is a price obstacle. Increment
+   `invalid_quote`/`n_invalid_quote` **and** the directional blocked count;
+   retain the target only if carrying is enabled. This applies to reductions
+   and openings. Forced liquidation has no retry: its invalid quote raises.
+3. Recompute actual account equity at mark_open after reductions. Require
+   `E > 0` before considering candidate opening gains, then apply the basket
+   and per-fill initial-margin checks. Recheck the positive-equity predicate
+   at each opening prefix. Rejection on equity is a collateral filter, not a
+   market obstacle; zero equity does not itself latch bankruptcy.
+4. Before converting a nonzero weight to contracts, validate all three marks
+   for an unheld column whose execution price is finite, directional mask is
+   open and expiry has not passed. This is an **intent** check, before lot,
+   participation and collateral filtering: even an eventually rounded-to-zero
+   order cannot hide a missing sizing price. Held columns always require all
+   marks at the initial risk stage. Unheld zero targets, expired commands,
+   masked or unquoted columns permit NaN marks. Lifecycle gating is upstream
+   through quotes/masks; an executable nonzero intent with missing marks is
+   never silently interpreted as zero or sized using a previous settlement.
+   For an unheld, blocked column with missing marks, the previous settlement
+   (row 0's finite settlement on the first row) is only the legacy sizing
+   placeholder for classifying the blocked target. A carried target retains
+   its original weight and is resized with valid marks when trading resumes.
+
+Post-trade liquidation precedes expiry and funding and empties the entire
+account. If an expiry and a funding debit are scheduled in that same row,
+both are suppressed on the liquidated positions. At close-time liquidation,
+expiry has already released its initial margin and funding has already been
+debited on surviving positions. Tests distinguish these two combinations;
+actual expiry/funding after post-trade liquidation would violate the sequence.
+
+**Results and conservation.** New daily fields are `funding` (positive paid,
+negative received), `clearance_fee` (nonnegative, also included once in
+`other_fee`) and `bankruptcy_deficit` (nonnegative model credit, never an
+external `cash_flow`). Ordinary liquidation commission remains `commission`;
+all liquidation variation remains `futures_pnl`. Contributions subtract
+funding and clearance; deficit credit is account-level, not security profit.
+For a futures-only run, final cash is initial cash + external flow + futures
+P&L − commission − delivery_fee − clearance_fee − funding + deficit credit
++ cash interest − financing interest. Delivery fees or closing interest that
+leave negative cash outside an exchange liquidation keep that debt and latch
+bankruptcy without an invented deficit credit. A quote/mark/funding runtime error
+invalidates the simulator; do not continue or snapshot that failed run.
+
+The new Result fields are None and new coverage keys are absent when no new
+input is supplied; `METRICS` and `EXTRA_COUNTERS` keep the legacy schema.
+Enabled runs additionally use `CRYPTO_METRICS` and `CRYPTO_COUNTERS`.
+Version-1 NPZ archives missing these three crypto fields load them as None,
+so `to_frame()` retains the legacy column set. This differs intentionally
+from the existing pre-futures migration, which fills missing futures P&L,
+margin, delivery fees and expired-target counts with zeros. Explicit enabled
+zero arrays in a current archive remain enabled zero arrays after loading.
+Additional `coverage` counters: `funding_paid`,
+`funding_received` (nonzero column events); `liquidation_open`,
+`liquidation_post_trade`, `liquidation_intraday`, `liquidation_close` (account
+episodes); `liquidation_single`, `liquidation_multi`, `liquidation_mixed`,
+`liquidation_lambda_one` (intraday episodes); `liquidation_nondecreasing`
+(held rows with D1 ≥ 0); `clearance_capped`, `bankruptcy_deficit` (episodes);
+`tier_cap_exceeded` (rows); `futures_rule_scaled` (opening-filter stages that
+reduce quantity, including final funding scaling), `futures_min_notional`
+(opening orders rejected before basket scaling), `futures_reduce_exempt`
+(reducing fills below minimum notional), `futures_full_close` (ordinary full
+closes), `futures_reopen` (opening fills after an earlier liquidation).
+The old `liquidation_events`, `bankruptcy_events`, `expiry_events`, trade and
+funding counters remain available through run, run_batch and Simulator.
+
+**Step and restore.** Liquidation checks are part of the trade phase,
+executed by `step(t)`, not by construction or the previous step's pre-open.
+Thus row t's OHLC/funding are never exposed before step t. Snapshots include
+all new metrics/counters and bankruptcy/pending state; their fingerprint
+includes every new panel under the existing full/sample digest policy.
+Format 3 writes the applicable output layout and can read format-2 snapshots
+for unchanged legacy inputs; CRC and all input fingerprints remain checked.
+
+**Non-hourly rules and upstream responsibilities.** The kernel consumes rows
+and knows no wall-clock schedule. C3 moves a 09:35 change to 10:00, supplies
+that row's new terms, validates maximum allowed leverage, and reports actual
+symbols/time ranges using approximations. Grandfathering of old positions is
+not modeled and its diagnostic window can extend until those positions close.
+C2/C3 keep absence, zero events, and missing data distinct. They also own
+funding provenance, missing settlement-price fallbacks, lifecycle quality,
+rule-version knowledge times and the daily signal shift. No binance market
+preset, listing inference, daily-target scheduler, spot delisting exit or
+cross-wallet transfer is added by this kernel extension.

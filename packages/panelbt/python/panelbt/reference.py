@@ -704,7 +704,33 @@ class Engine:
             cash = self.cash - reserved
             q = opening(desired * scale, i) if scale < 1 else desired
             if q > 0 and -movement(q, i, day) > cash:
-                if step(i) == 0:
+                costs = self.costs
+                if (
+                    costs.impact_k is None
+                    and costs.commission_per_share == 0
+                    and v[5][day] == 0
+                    and costs.commission_max_rate is None
+                ):
+                    # Two fee regimes give two cash caps. Keep the analytical
+                    # cap's rounding: a maximal bisection fill can spend an
+                    # extra ULP and alter exact-zero withdrawal diagnostics.
+                    price = float(self.market.exec_price[day, i]) * (
+                        1 + rate(costs.slippage, day, i)
+                    )
+                    proportional = cash / (
+                        price * (1 + v[1][day] + v[3][day] + costs.commission_rate)
+                    )
+                    minimum = (cash - (costs.commission_min or 0.0)) / (
+                        price * (1 + v[1][day] + v[3][day])
+                    )
+                    q = min(q, opening(max(0.0, min(proportional, minimum)), i))
+                    while q > 0 and -movement(q, i, day) > cash:
+                        q = (
+                            math.nextafter(q, -math.inf)
+                            if step(i) == 0
+                            else opening(q - step(i), i)
+                        )
+                elif step(i) == 0:
                     lo, hi = 0.0, q
                     for _ in range(80):
                         mid = (lo + hi) / 2
@@ -772,10 +798,14 @@ class Engine:
                     else:
                         hi = mid
                 q = math.copysign(self.opening(lo, i), q)
+            self.opening_filtered(i, q)
             if abs(q) > 1e-9 * max(abs(quantities[i] + desired), abs(quantities[i]), 1):
                 account = self.project(account, i, q, day)
                 self.execute(i, q, day, d.rebalance, False)
         d.account = account
+
+    def opening_filtered(self, i, quantity):
+        pass
 
     def basket_scaled(self, orders):
         self.coverage["margin_scaled"] += 1
@@ -851,7 +881,8 @@ class Engine:
         required = v[11][day] * long + v[12][day] * short + fc
         tolerance = 1e-10 * max(abs(equity), long, short, 1)
         self.call = self.supervised() and (
-            v[13][day] * long + v[14][day] * short + fc > equity + tolerance
+            v[13][day] * long + v[14][day] * short + self.closing_maintenance(day, fc)
+            > equity + tolerance
             or d.unfilled
         )
         coverage["margin_call"] += int(self.call)
@@ -891,6 +922,9 @@ class Engine:
         self.previous = equity
         if self.positions is not None:
             self.positions[day] = self.quantities
+
+    def closing_maintenance(self, day, collateral):
+        return collateral
 
     def margin_called(self, call):
         """Hook for instrument-specific call diagnostics."""

@@ -25,11 +25,21 @@ from collections import Counter
 
 import numpy as np
 
-from .models import ExpiryEvent, LiquidationEvent, Trade
+from .models import (
+    CRYPTO_COUNTERS,
+    CRYPTO_METRICS,
+    ExpiryEvent,
+    LiquidationEvent,
+    Trade,
+)
 from .reference import Engine, rate
 
 
 def run(market, targets, costs=None, config=None):
+    if market.futures.liquidation is not None:
+        from .reference_crypto import run as run_crypto
+
+        return run_crypto(market, targets, costs, config)
     return MixedEngine(market, targets, costs, config).run()
 
 
@@ -70,6 +80,9 @@ class MixedEngine(Engine):
     def __init__(self, market, targets, costs=None, config=None):
         self.book = None
         super().__init__(market, targets, costs, config)
+        if market.futures.has_crypto:
+            self.data.update({k: np.zeros(self.t) for k in CRYPTO_METRICS})
+            self.coverage.update(dict.fromkeys(CRYPTO_COUNTERS, 0))
         self.book = FuturesBook(market.futures, self.n)
         self.is_future = [bool(x) for x in market.futures.is_future]
         self.spot = [i for i in range(self.n) if not self.is_future[i]]
@@ -88,16 +101,27 @@ class MixedEngine(Engine):
             raise ValueError("futures shares: target contracts must be integers")
 
     # ------------------------------------------- per-instrument fill rules
+    def quantity_rules(self):
+        f = self.market.futures
+        return f.qty_step is not None or f.min_qty is not None
+
+    def opening_filtered(self, i, quantity):
+        if self.is_future[i] and self.quantity_rules() and quantity == 0:
+            self.coverage["futures_rounded_to_zero"] += 1
+
     def opening(self, q, i):
         if not self.is_future[i]:
             return super().opening(q, i)
-        # Whole contracts, rounded toward zero.
-        return float(math.floor(q)) if q >= 1 else 0.0
+        f = self.market.futures
+        step = 1 if f.qty_step is None else float(f.qty_step[self._row, i])
+        minimum = 1 if f.min_qty is None else float(f.min_qty[self._row, i])
+        rounded = math.floor(max(q, 0) / step) * step
+        return rounded if rounded >= minimum else 0.0
 
     def closing(self, q, pos, i):
         if not self.is_future[i]:
             return super().closing(q, pos, i)
-        return min(q, pos) if q >= pos else 0.0 if q < 1 else float(math.floor(q))
+        return min(q, pos) if q >= pos else self.opening(q, i)
 
     def cap(self, i, day):
         if not self.is_future[i]:
@@ -108,7 +132,13 @@ class MixedEngine(Engine):
         volume = float(market.volume[day, i])
         if not (math.isfinite(volume) and volume > 0):
             return 0.0
-        return float(math.floor(volume * config.max_participation))
+        f = market.futures
+        step = 1 if f.qty_step is None else float(f.qty_step[day, i])
+        return (
+            volume * config.max_participation
+            if f.qty_step is not None or f.min_qty is not None
+            else float(math.floor(volume * config.max_participation / step) * step)
+        )
 
     def quote(self, q, i, day):
         """(price, notional, commission, tax, other_fee, slippage, impact)."""
@@ -238,6 +268,10 @@ class MixedEngine(Engine):
             )
 
     # --------------------------------------------------------- daily sequence
+    def cash_flow(self, day):
+        self._row = day
+        return super().cash_flow(day)
+
     def day(self, day):
         flow = self.cash_flow(day)
         self.corporate_actions(day)
@@ -357,6 +391,14 @@ class MixedEngine(Engine):
             reduction = self.closing(min(target, 0) - current, -current, i)
         else:
             reduction = 0.0
+        if (
+            self.quantity_rules()
+            and reduction == 0
+            and (
+                (current > 0 and target < current) or (current < 0 and target > current)
+            )
+        ):
+            coverage["futures_rounded_to_zero"] += 1
         blocked_buy = blocked_sell = False
         used = 0.0
         if reduction != 0:
@@ -370,6 +412,8 @@ class MixedEngine(Engine):
                 if allowed
                 else 0.0
             )
+            if self.quantity_rules() and allowed and q == 0:
+                coverage["futures_rounded_to_zero"] += 1
             if q != reduction:
                 blocked_buy = reduction > 0
                 blocked_sell = reduction < 0
@@ -399,6 +443,17 @@ class MixedEngine(Engine):
             wanted = -self.opening(after - target, i)
         else:
             wanted = 0.0
+        if (
+            self.quantity_rules()
+            and wanted == 0
+            and not forced
+            and not self.bankrupt
+            and (
+                (target > after and target > current and after >= 0)
+                or (target < after and target < current and after <= 0)
+            )
+        ):
+            coverage["futures_rounded_to_zero"] += 1
         if wanted != 0 and not forced and not self.bankrupt:
             # Future shorts borrow nothing: no allow_short or can_short check.
             allowed = math.isfinite(p) and (
@@ -411,6 +466,8 @@ class MixedEngine(Engine):
                 if allowed
                 else 0.0
             )
+            if self.quantity_rules() and allowed and q == 0:
+                coverage["futures_rounded_to_zero"] += 1
             if q != 0:
                 price = self.quote(q, i, day)[0]
                 if not math.isfinite(price) or price <= 0:
@@ -490,6 +547,38 @@ class MixedEngine(Engine):
             self.expiries.append(ExpiryEvent(day, i, q, price, fee))
             self.coverage["futures_expiry"] += 1
             self.quantities[i] = 0.0
+
+        self.fund(day)
+
+    def fund(self, day):
+        f = self.market.futures
+        if f.funding is not None:
+            for i in self.book.columns:
+                q = self.quantities[i]
+                if q == 0:
+                    continue
+                fee = float(f.funding[day, i])
+                if not math.isfinite(fee):
+                    raise ValueError("funding: missing held value")
+                paid = q * fee
+                self.cash -= paid
+                self.contribution[i] -= paid
+                self.data["funding"][day] += paid
+                self.coverage["funding_paid"] += int(paid > 0)
+                self.coverage["funding_received"] += int(paid < 0)
+
+    def closing_maintenance(self, day, collateral):
+        f = self.market.futures
+        if f.maint_rate is None:
+            return collateral
+        return sum(
+            abs(self.quantities[i])
+            * self.book.multiplier[i]
+            * float(f.settlement[day, i])
+            * per_contract(f.maint_rate, day, i)
+            for i in self.book.columns
+            if self.quantities[i] != 0
+        )
 
     def closing_collateral(self, day):
         fc = self.collateral(day)

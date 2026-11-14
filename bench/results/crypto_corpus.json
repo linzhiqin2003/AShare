@@ -1,0 +1,47 @@
+{
+  "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
+  "random_cases": 2000,
+  "directed_cases": 20,
+  "branches": {
+    "funding_paid": 5741,
+    "funding_received": 5650,
+    "liquidation_open": 378,
+    "liquidation_post_trade": 3,
+    "liquidation_intraday": 1098,
+    "liquidation_close": 4,
+    "liquidation_single": 427,
+    "liquidation_multi": 671,
+    "liquidation_mixed": 464,
+    "liquidation_lambda_one": 1,
+    "liquidation_nondecreasing": 26,
+    "clearance_capped": 546,
+    "bankruptcy_deficit": 326,
+    "futures_reopen": 343,
+    "futures_expiry": 964,
+    "futures_rule_scaled": 25990,
+    "futures_min_notional": 9976,
+    "futures_reduce_exempt": 1089,
+    "futures_full_close": 2707,
+    "reversal": 998,
+    "tier_cap_exceeded": 4498
+  },
+  "combinations": {
+    "post_trade.multi_mixed_fees": 2,
+    "post_trade.expiry_suppressed": 2,
+    "post_trade.funding_suppressed": 2,
+    "post_trade.pending_and_reopen": 2,
+    "post_trade.all_interactions": 2,
+    "close.multi_mixed_fees": 2,
+    "close.expiry_released": 2,
+    "close.funding_debited": 2,
+    "close.pending_and_reopen": 2,
+    "close.all_interactions": 2
+  },
+  "mixed_cases": 200,
+  "mixed_branches": {
+    "futures_open": 459,
+    "funding_paid": 538,
+    "funding_received": 528,
+    "futures_rounded_to_zero": 486
+  }
+}

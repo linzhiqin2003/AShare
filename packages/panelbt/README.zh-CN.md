@@ -303,3 +303,24 @@ assert not fast.inputs_validated
 
 需要 Python 3.13+ 和稳定版 Rust。源码包包含 Rust 路径依赖，可在本项目以外用 `uv build` 或 `pip wheel .` 构建；wheel 的运行依赖只有 NumPy。
 不需要本项目其他模块、行情服务、凭据或本机绝对路径。当前不发布到 PyPI。
+
+### 加密货币合约内核
+
+通过 `Market(..., futures=Futures(...))` 可选传入逐小时 `funding`（每张收付金额）、
+`maint_rate` 和 T×N 的 `qty_step`／`min_qty`／`min_notional`。
+`Liquidation(mark_open, mark_high, mark_low, clearance_fee_rate, tier_cap)`
+配合 `Futures(exec_at_open=True)` 开启纯期货账户的开盘、成交后、盘中与收盘强平。
+最小名义使用它提供的标记开盘价；其他新字段可以独立使用。
+
+资金费在该行右边界、到期结算后收付；交割行的 `settlement` 直接填交割价。
+结果新增 `funding`、`clearance_fee`、`bankruptcy_deficit`，分档超限在
+`coverage['tier_cap_exceeded']` 中报告。不开启新输入时沿用旧行为。
+数量仍是整数张，乘数固定；上游负责把币数量和成交量换成张，负责小时对齐、历史规则、
+最大杠杆检查和近似范围诊断。精确事件顺序及缺失值口径见 SPEC 的
+“Hourly crypto futures (opt-in)”。
+
+数量或资金过滤本身不顺延；价格、方向掩码、成交量受阻（包括普通冲击报价无效）才按
+`carry_blocked` 保留目标。强平报价无效仍报错。可执行的非零开仓意图在权重换算前
+检查标记价；开仓前的已有标记权益必须大于零，不能靠候选浮盈启动零余额账户。
+清算费扣至零但未爆仓的账户可在后续入金后重开。旧 NPZ 缺失的新字段恢复为 `None`，
+不会给 `to_frame()` 增加三列零值。
