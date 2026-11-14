@@ -25,12 +25,14 @@ import hashlib
 import json
 import math
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..ledger import default_root
 from ..space import dedup_key
 from .client import LLMError
+from .memory import Context, recall_text
 from .parse import ParseError, parse, render
 from .prompt import (
     TEMPLATE_VERSION,
@@ -109,6 +111,7 @@ class LLMResearch:
         recent=40,
         notes_limit=1500,
         transcript=None,
+        memory=None,
         clock=time.time,
     ):
         if rounds < 1 or batch < 1:
@@ -125,6 +128,7 @@ class LLMResearch:
         )
         self.recent = int(recent)
         self.transcript = None if transcript is None else check_location(transcript)
+        self.memory = memory  # `memory.Memory`：跨次研究记忆，None 不用
         self._clock = clock
         self.last_run = None
 
@@ -147,6 +151,7 @@ class LLMResearch:
             "history": self.history,
             "recent": self.recent,
             "notes_limit": self.notes_limit,
+            "memory": self.memory.describe() if self.memory is not None else None,
         }
 
     # ---- 运行 ---------------------------------------------------------------------
@@ -173,6 +178,20 @@ class LLMResearch:
                  "transcript": str(path)}  # fmt: skip
         self.last_run = stats
         best_fit, stall, empty = -math.inf, 0, 0
+        # 同一个转写文件可能被多次搜索复用、同一秒启动的两次搜索文件名也可能相同：加随机后缀
+        run_id = f"{path.stem}-{uuid.uuid4().hex[:8]}"
+        ctx = (
+            Context.from_task(self.memory.tag, task)
+            if self.memory is not None
+            else None
+        )
+        seeded = None
+        if ctx is not None:
+            self.memory.refresh()
+            seeded = self.memory.seed_notes(ctx, run_id)
+            if seeded:
+                state.notes = seeded.strip()[: self.notes_limit]
+            stats["memory_cost_usd"] = 0.0
 
         def write(record):
             with path.open("a", encoding="utf-8") as f:
@@ -180,7 +199,9 @@ class LLMResearch:
 
         write({"event": "start", "time": self._clock(), "strategy": self.describe(),
                "task": {k: task.get(k) for k in ("fitness", "complexity", "screen_t")},
-               "space": space.digest})  # fmt: skip
+               "space": space.digest,
+               "memory": None if ctx is None else {"usable": ctx.usable,
+                                                   "seeded_notes": bool(seeded)}})  # fmt: skip
         for r in range(1, self.rounds + 1):
             reason = self._over_budget(stats)
             if reason:
@@ -189,11 +210,25 @@ class LLMResearch:
             advice = (
                 "探索新假设" if r == 1 or stall >= self.stall else "细化当前最好的因子"
             )
+            memo, recalled = None, None
+            if ctx is not None:
+                # 查询：上一轮的假设 + 当前笔记；第一轮只有（接上的）笔记
+                query = "\n".join(x for x in ((state.rounds[-1]["hypothesis"]
+                                                if state.rounds else ""),
+                                               state.notes[:300]) if x)  # fmt: skip
+                recalled = self.memory.recall(ctx, run_id, query)
+                stats["memory_cost_usd"] += recalled.cost
+                stats["cost_usd"] += recalled.cost
+                memo = recall_text(recalled)
             messages = build_messages(space=space, task=task, state=state, round_no=r,
                                       rounds=self.rounds, batch=self.batch, advice=advice,
-                                      notes_limit=self.notes_limit)  # fmt: skip
+                                      notes_limit=self.notes_limit, memory=memo)  # fmt: skip
             record = {"event": "round", "round": r, "time": self._clock(),
                       "prompt_sha": messages_sha(messages), "advice": advice}  # fmt: skip
+            if recalled is not None:
+                record["memory"] = {"mode": recalled.mode, "picked": recalled.picked,
+                                    "best": len(recalled.best), "cost_usd": recalled.cost,
+                                    "warning": recalled.warning}  # fmt: skip
             try:
                 reply = self.client.complete(
                     messages, json_mode=True, seed=self.seed * 1000 + r
@@ -299,9 +334,13 @@ class LLMResearch:
                           rationale=answer["rationale"], notes=state.notes, results=results,
                           invalid=invalid, duplicates=dups)  # fmt: skip
             write(record)
+            if ctx is not None:
+                self.memory.record_round(ctx, run_id, r, answer, results, len(invalid))
             if empty >= self.patience:
                 stats["stop"] = "no_valid"
                 break
+        if ctx is not None:
+            self.memory.record_notes(ctx, run_id, state.notes)
         write({"event": "end", "time": self._clock(),
                **{k: v for k, v in stats.items() if k != "transcript"}})  # fmt: skip
 

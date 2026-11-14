@@ -50,6 +50,14 @@ def parser():
     ap.add_argument(
         "--root", default=None, help="台账与转写记录目录，默认数据根目录下的 mining/"
     )
+    ap.add_argument("--memory", default=None,
+                    help="跨次研究记忆的目录，默认 <root>/llm/memory；写 off 不用")  # fmt: skip
+    ap.add_argument("--memory-tag", default=None,
+                    help="数据集标签，只取同标签的以往条目；默认 cn（--synthetic 时 synthetic）")  # fmt: skip
+    ap.add_argument("--embed-model", default=None,
+                    help="记忆检索用的向量模型，默认 qwen/qwen3-embedding-8b；写 off 不用向量")  # fmt: skip
+    ap.add_argument("--embed-base-url", default=None)
+    ap.add_argument("--embed-key-env", default=None)
     ap.add_argument("--screen", choices=("cpu", "gpu"), default="cpu")
     ap.add_argument("--screen-t", type=float, default=1.0)
     ap.add_argument("--start", default="20160101", help="真实数据面板的起始日")
@@ -114,7 +122,35 @@ def _data(args, space):
     return panel, Split.standard(), {"market": market}
 
 
-def main(argv=None, client=None, out=None):
+def _memory(args, embedder=None):
+    from ..ledger import default_root
+    from .client import (
+        DEFAULT_EMBED_BASE_URL,
+        DEFAULT_EMBED_KEY_ENV,
+        DEFAULT_EMBED_MODEL,
+        EmbeddingClient,
+    )
+    from .memory import Memory, default_path
+
+    if args.memory == "off":
+        return None
+    path = args.memory or default_path(args.root or default_root())
+    # 标签区分数据集：合成行情按种子与规模（同一个埋入信号，不能让别的种子的「答案」流进来），
+    # 真实行情按面板起始日
+    if args.memory_tag:
+        tag = args.memory_tag
+    elif args.synthetic:
+        tag = f"synthetic:seed{args.seed}:days{args.days}:stocks{args.stocks}"
+    else:
+        tag = f"cn:{args.start}"
+    if embedder is None and args.embed_model != "off":
+        embedder = EmbeddingClient(args.embed_model or DEFAULT_EMBED_MODEL,
+                                   base_url=args.embed_base_url or DEFAULT_EMBED_BASE_URL,
+                                   api_key_env=args.embed_key_env or DEFAULT_EMBED_KEY_ENV)  # fmt: skip
+    return Memory(path, tag=tag, embedder=embedder)
+
+
+def main(argv=None, client=None, out=None, embedder=None):
     from ..search import mine
     from ..space import Space
     from .strategy import LLMResearch
@@ -133,6 +169,7 @@ def main(argv=None, client=None, out=None):
         budget_usd=args.budget_usd,
         budget_tokens=args.budget_tokens,
         patience=args.patience,
+        memory=_memory(args, embedder),
     )
     result = mine(panel, split=split, space=space, strategy=strategy, root=args.root,
                   screen=args.screen, screen_t=args.screen_t, **extra)  # fmt: skip

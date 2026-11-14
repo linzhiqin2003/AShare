@@ -754,6 +754,8 @@ def mine(
         "complexity": complexity,
         "screen_t": screen_t,
         "root": str(root),
+        "split": split.describe(),  # 跨次记忆按它判断以往条目会不会越过本次的验证段
+        "evaluation": eval_def,  # 跨次记忆只把评估定义相同的数字放在一起比
     }
     evaluate.train_feedback = lambda e: _train_feedback(rows.get(dedup_key(e)))
     strategy.run(space, evaluate)

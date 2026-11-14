@@ -164,9 +164,6 @@ class ChatClient:
 
     def complete(self, messages, *, json_mode=True, seed=None):
         """发一次请求，返回 `Reply`；失败抛 `LLMError`。"""
-        import httpx
-
-        key = self._api_key()
         body = {
             "model": self.model,
             "messages": messages,
@@ -180,8 +177,16 @@ class ChatClient:
             body["reasoning"] = self.reasoning
         if seed is not None and self.send_seed:
             body["seed"] = int(seed)
+        raw, attempt = self._call("/chat/completions", body)
+        return self._reply(raw, messages, attempt)
+
+    def _call(self, path, body):
+        """POST 一次（带重试），返回 (200 的正文, 第几次尝试)；失败抛 `LLMError`。"""
+        import httpx
+
+        key = self._api_key()
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-        url = f"{self.base_url}/chat/completions"
+        url = f"{self.base_url}{path}"
         last = None
         for attempt in range(1, self.retries + 2):
             wait = None
@@ -192,7 +197,7 @@ class ChatClient:
                 wait = self.backoff ** (attempt - 1)
             else:
                 if status == 200:
-                    return self._reply(raw, messages, attempt)
+                    return raw, attempt
                 detail = self._detail(raw)
                 last = f"模型接口返回 {status}" + (f"：{detail}" if detail else "")
                 if status == 429 or status >= 500:
@@ -267,3 +272,53 @@ def _reasoning_field(reasoning, base_url):
             "reasoning 只在 OpenRouter 上核实过，其他接口请不传（用模型默认）"
         )
     return {"enabled": False} if reasoning == "off" else {"effort": reasoning}
+
+
+DEFAULT_EMBED_MODEL = "qwen/qwen3-embedding-8b"
+DEFAULT_EMBED_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_EMBED_KEY_ENV = "OPENROUTER_API_KEY"
+
+
+class EmbeddingClient(ChatClient):
+    """OpenAI 兼容的 ``/embeddings`` 客户端（默认 OpenRouter 上的 qwen3-embedding-8b，4096 维），
+    与聊天客户端共用密钥处理、超时和重试。``embed(texts)`` 返回 (float32 向量列表, 费用美元)。
+
+    费用：响应 ``usage.cost`` 有效时用它，否则按 ``price_per_m``（每百万输入 token 美元，
+    2026-11-14 OpenRouter 价目 0.01）估。"""
+
+    def __init__(self, model=DEFAULT_EMBED_MODEL, *, base_url=DEFAULT_EMBED_BASE_URL,
+                 api_key_env=DEFAULT_EMBED_KEY_ENV, price_per_m=0.01, timeout=60.0,
+                 **kw):  # fmt: skip
+        super().__init__(model, base_url=base_url, api_key_env=api_key_env,
+                         timeout=timeout, **kw)  # fmt: skip
+        self.price_per_m = float(price_per_m)
+
+    def describe(self):
+        return {"model": self.model, "base_url": self.base_url}
+
+    def embed(self, texts):
+        import numpy as np
+
+        texts = [str(t) for t in texts]
+        if not texts:
+            return [], 0.0
+        raw, _ = self._call("/embeddings", {"model": self.model, "input": texts})
+        try:
+            data = json.loads(raw)
+            items = sorted(data["data"], key=lambda d: d["index"])
+            vectors = [np.asarray(d["embedding"], dtype=np.float32) for d in items]
+        except (ValueError, KeyError, TypeError):
+            raise LLMError("向量接口返回了无法解析的响应") from None
+        if len(vectors) != len(texts) or any(
+            v.ndim != 1 or v.size == 0 or not np.isfinite(v).all() for v in vectors
+        ):
+            raise LLMError("向量接口返回的条数或数值不对")
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        reported = usage.get("cost")
+        if (isinstance(reported, (int, float)) and not isinstance(reported, bool)
+                and math.isfinite(reported) and reported >= 0):  # fmt: skip
+            cost = float(reported)
+        else:
+            tokens = _int(usage.get("prompt_tokens")) or sum(len(t) for t in texts)
+            cost = tokens * self.price_per_m / 1e6
+        return vectors, cost

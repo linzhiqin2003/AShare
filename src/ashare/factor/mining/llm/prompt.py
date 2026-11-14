@@ -18,7 +18,7 @@ from ..space import CATALOG, Unit
 from ..strategies import random_candidate
 from .parse import ParseError, parse, render
 
-TEMPLATE_VERSION = "llm-research/1"
+TEMPLATE_VERSION = "llm-research/2"
 
 SYSTEM = """你是 A 股量化研究员，任务是在给定的表达式语言里提出截面选股因子，并根据回测反馈迭代改进。
 工作方式：先提出一个可检验的市场假设（为什么某种量价形态会预测下一段收益），再把它落成几个具体的因子表达式；
@@ -110,6 +110,13 @@ HISTORY = """## 迄今训练段上最好的因子
 ## 更早提交过的其他表达式（不要再交，也不要只换写法）
 {earlier}"""
 
+MEMORY = """## 以往研究（之前几次搜索，同一份数据，训练段上的结果）
+以往共 {runs} 次搜索、{rounds} 轮、{factors} 个因子。
+### 以往训练段上最好的因子（已经评估过，不要原样或只换写法再交；可以在它们的基础上改进）
+{best}
+### 与当前方向相近的以往假设及结果（避免重复已经失败的方向）
+{similar}"""
+
 FEEDBACK_HEAD = """## 上一轮的结果
 {last}"""
 
@@ -129,7 +136,7 @@ TEMPLATES = (SYSTEM, SCENARIO, json.dumps(FITNESS_TEXT, ensure_ascii=False, sort
              json.dumps(UNIT_TEXT, ensure_ascii=False, sort_keys=True),
              json.dumps(FIELD_TEXT, ensure_ascii=False, sort_keys=True),
              json.dumps(OP_TEXT, ensure_ascii=False, sort_keys=True),
-             SYNTAX, RULES, HISTORY, FEEDBACK_HEAD, NOTES, TASK)  # fmt: skip
+             SYNTAX, RULES, MEMORY, HISTORY, FEEDBACK_HEAD, NOTES, TASK)  # fmt: skip
 
 
 def template_sha():
@@ -289,7 +296,9 @@ def feedback_line(text, fitness, details):
 # ---- 拼装 -------------------------------------------------------------------------
 
 
-def build_messages(*, space, task, state, round_no, rounds, batch, advice, notes_limit):
+def build_messages(
+    *, space, task, state, round_no, rounds, batch, advice, notes_limit, memory=None
+):
     """拼出一轮的 messages（system + user）。state 是 `strategy._State`。"""
     fit = task.get("fitness")
     fitness = FITNESS_TEXT.get(fit, "训练段上自定义的适应度，越大越好")
@@ -306,6 +315,8 @@ def build_messages(*, space, task, state, round_no, rounds, batch, advice, notes
         SYNTAX.format(examples="\n".join(f"  - {e}" for e in examples(space))),
         rules(space),
     ]
+    if memory:
+        parts.append(MEMORY.format(**memory))
     if round_no > 1:
         best = (
             "\n".join(feedback_line(t, f, d) for f, t, d in state.best)
