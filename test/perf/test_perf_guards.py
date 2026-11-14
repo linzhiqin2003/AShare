@@ -78,12 +78,17 @@ def test_run_many_batches_ledger_scan(alpha, source):
 
 @pytest.mark.parametrize("op", ["std", "mean", "sum", "min", "max", "rank"])
 def test_rolling_operator_linear_in_rows(single_thread, op):
-    """行数翻倍，耗时约翻倍（实测 1.93–2.14），不能变成平方。"""
+    """行数 ×4，耗时约 ×4，不能变成平方（×16）；上限 8，两边各留 2 倍。
+
+    原来是 2T / T ≤ 3：GitHub 的 4 核机器上 `-n auto` 同时跑别的测试，大数组更吃内存
+    带宽，线性的 ts_std、ts_max 也测出 3.04、3.07（2026-11-14 CI 第 3 次运行）。翻倍时
+    线性和平方只差 2 倍，阈值夹在中间没有余量；×4 时差 4 倍。本机 4 份并行实测
+    3.75–4.09；按行数平方增长的假算子测出 16.1，被拦下。"""
     x = np.random.default_rng(1).normal(size=(4800, 1500))
-    half = np.ascontiguousarray(x[:2400])
+    quarter = np.ascontiguousarray(x[:1200])
     fn = getattr(po, "ts_" + op)
-    ratio, small, large = paired_ratio(lambda: fn(half, 20), lambda: fn(x, 20))
-    assert ratio <= 3.0, f"ts_{op}: {describe(('T', '2T'), ratio, small, large)}"
+    ratio, small, large = paired_ratio(lambda: fn(quarter, 20), lambda: fn(x, 20))
+    assert ratio <= 8.0, f"ts_{op}: {describe(('T', '4T'), ratio, small, large)}"
 
 
 @pytest.mark.parametrize("op", ["std", "mean", "sum", "min", "max"])

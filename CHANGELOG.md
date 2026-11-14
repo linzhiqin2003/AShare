@@ -4,6 +4,7 @@
 - `.github/workflows/ci.yml`：每个 PR 和推送 `main` 跑四个 job——检查（ruff、Rust fmt / clippy）、Rust 测试、Python 测试（Linux 上 `uv sync --locked` 从锁文件安装，pytest 并行、随机顺序）、前端（类型检查、单测、构建）。action 钉 SHA，不用任何密钥和真实数据。Rust 版本固定在 `rust-toolchain.toml`（1.95.0），本机和 CI 用同一个。
 - 第一次在 Linux 上跑暴露一个跨平台差异：引擎里外部现金流 `requested.max(-available)` 在两个零之间取大，Rust 不规定零号，x86 给 -0.0、ARM 给 +0.0，8 个逐位测试失败。现在归一成 +0.0；冻结摘要 `test/fixtures/no_rules_digest.json` 重新生成——600 个用例逐字段对比旧构建，124 个只在 `cash_flow` 的零号上不同，数值全部相同。新测试 `test_cash_flow_zeros_are_positive` 守住。
 - 第二轮 Linux 失败的处理：Li–Ji 有效试验数对整数特征值不连续（OpenBLAS 给 9.99999999999993、Accelerate 给 10，结果差 1），现在把距整数 1e-9·n 以内的特征值视为整数，新测试 `test_li_ji_is_stable_at_integer_eigenvalues`；分组回测两份实现对比的 `assert_allclose` 加 `atol=1e-12`（近零值的差来自 numpy 按平台不同的 SIMD 求和顺序）；两份在 macOS arm64 上冻结的逐位摘要只在该平台上比对，其他平台明确跳过；期货与参考实现对拍失败时逐个种子打印差在哪个字段、差多少。
+- 滚动算子的线性守卫从「行数翻倍、比例 ≤ 3」改为「行数 ×4、比例 ≤ 8」：GitHub 的 4 核机器上并行跑测试时，线性的 `ts_std`、`ts_max` 也测出 3.04、3.07；翻倍时线性与平方只差 2 倍，×4 时差 4 倍（本机 4 份并行实测 3.75–4.09，平方增长的假算子 16.1）。
 
 ## 2026-11-14（公开因子库并入）
 - 三套公开因子（Qlib Alpha158、WorldQuant Alpha101、国泰君安 191）从本地私有包并入本仓库：翻译、独立参考实现、注册表与已知例外在 `ashare.factor.alphas`，约定、翻译规范、参考实现说明、逐条核对报告和公式原文在 `docs/factors/`，测试在 `test/factor/alphas/`（只用合成数据）。三套作为内置因子集注册（`formula.plugins._builtin`），入口点机制留给别的因子包。论文附录、研报附录和聚宽「公用函数说明」的逐字抄录（`alpha101_defs.md`、`gtja191_defs.md`）不随仓库发布；Qlib 的源码原文按 MIT 许可保留版权声明。自己挖出来的因子仍不进仓库。
