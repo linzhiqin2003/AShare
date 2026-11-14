@@ -8,6 +8,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try { response = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } }) }
   catch (e) { if (e instanceof DOMException && e.name === 'AbortError') throw e; throw new RequestError({ message: '连接失败，请检查本地服务' }) }
+  // 经 VPN 访问时登录过期或口令更换：回到登录页。
+  if (response.status === 401) { location.assign('/login'); throw new RequestError({ message: '请先登录' }) }
   const data = await response.json()
   if (!response.ok) throw new RequestError(data)
   return data as T

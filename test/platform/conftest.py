@@ -3,5 +3,7 @@
 import importlib.util
 
 collect_ignore = (
-    [] if importlib.util.find_spec("fastapi") else ["test_api.py", "test_benchmarks.py"]
+    []
+    if importlib.util.find_spec("fastapi")
+    else ["test_api.py", "test_benchmarks.py", "test_access.py"]
 )

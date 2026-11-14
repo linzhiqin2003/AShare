@@ -1,15 +1,17 @@
-"""仅面向本机的 HTTP API。错误响应不含内部异常、SQL 或本地路径。"""
+"""研究平台 HTTP API：默认只面向本机，可经访问口令开放给指定网卡。
+
+错误响应不含内部异常、SQL 或本地路径。
+"""
 
 import asyncio
 import hashlib
 import logging
-import re
 import time
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.gzip import GZipMiddleware
 
+from .access import Access, login_page
 from .analysis import plot_payload
 from .benchmarks import Benchmarks
 from .config import CHOICES, DEFAULTS, expand_settings, platform_dir
@@ -30,54 +33,86 @@ LOG = logging.getLogger("ashare.platform")
 STATIC = Path(__file__).parent / "static"
 
 
-class LocalOnly:
-    """在读取正文前检查 Host / Origin，流式累计限制正文长度。"""
+def _same_origin(scope, host):
+    origin = dict(scope["headers"]).get(b"origin", b"").decode("latin1")
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    return not (
+        parsed.scheme != "http"
+        or parsed.netloc != host
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or sum(k == b"origin" for k, _ in scope["headers"]) != 1
+    )
 
-    def __init__(self, app):
+
+async def _read_body(receive):
+    """读完正文并限长；客户端断开返回 None，超长返回 False。"""
+    messages, size = [], 0
+    while True:
+        message = await receive()
+        if message["type"] == "http.disconnect":
+            return None
+        size += len(message.get("body", b""))
+        if size > 32768:
+            return False
+        messages.append(message)
+        if not message.get("more_body", False):
+            return messages
+
+
+def _redirect(location, cookie=None):
+    headers = {"Location": location, "Cache-Control": "no-store"}
+    if cookie:
+        headers["Set-Cookie"] = cookie
+    return Response(status_code=303, headers=headers)
+
+
+class LocalOnly:
+    """在读取正文前检查 Host / Origin 和登录状态，流式累计限制正文长度。"""
+
+    def __init__(self, app, access=None):
         self.app = app
+        self.access = access or Access()
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        access = self.access
         headers = dict(scope["headers"])
         host = headers.get(b"host", b"").decode("latin1")
-        valid_host = re.fullmatch(r"(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?", host)
-        origin = headers.get(b"origin", b"").decode("latin1")
-        if not valid_host or sum(k == b"host" for k, _ in scope["headers"]) != 1:
-            return await JSONResponse({"message": "仅支持本机访问"}, 403)(
+        if not access.host_allowed(host) or (
+            sum(k == b"host" for k, _ in scope["headers"]) != 1
+        ):
+            return await JSONResponse({"message": "访问地址不受支持"}, 403)(
                 scope, receive, send
             )
+        client = (scope.get("client") or ("", 0))[0]
+        if access.token is not None and scope["path"] == "/login":
+            return await self.login(scope, receive, send, host, client)
+        if access.needs_login(client, host) and not access.logged_in(
+            headers.get(b"cookie", b"").decode("latin1")
+        ):
+            if scope["path"].startswith("/api/"):
+                response = JSONResponse({"message": "请先登录"}, 401)
+            else:
+                response = _redirect("/login")
+            return await response(scope, receive, send)
         if scope["method"] not in ("GET", "HEAD", "OPTIONS"):
-            try:
-                parsed = urlsplit(origin)
-            except ValueError:
+            if not _same_origin(scope, host):
                 return await JSONResponse({"message": "请求来源不受支持"}, 403)(
                     scope, receive, send
                 )
-            if (
-                parsed.scheme != "http"
-                or parsed.netloc != host
-                or parsed.path
-                or parsed.query
-                or parsed.fragment
-                or sum(k == b"origin" for k, _ in scope["headers"]) != 1
-            ):
-                return await JSONResponse({"message": "请求来源不受支持"}, 403)(
+            messages = await _read_body(receive)
+            if messages is None:
+                return
+            if messages is False:
+                return await JSONResponse({"message": "请求过长"}, 413)(
                     scope, receive, send
                 )
-            messages, size = [], 0
-            while True:
-                message = await receive()
-                if message["type"] == "http.disconnect":
-                    return
-                size += len(message.get("body", b""))
-                if size > 32768:
-                    return await JSONResponse({"message": "请求过长"}, 413)(
-                        scope, receive, send
-                    )
-                messages.append(message)
-                if not message.get("more_body", False):
-                    break
             iterator = iter(messages)
 
             async def replay():
@@ -88,6 +123,36 @@ class LocalOnly:
 
             return await self.app(scope, replay, send)
         return await self.app(scope, receive, send)
+
+    async def login(self, scope, receive, send, host, client):
+        access = self.access
+        if scope["method"] in ("GET", "HEAD"):
+            code = parse_qs(scope.get("query_string", b"").decode("latin1")).get(
+                "e", [""]
+            )[0]
+            response = Response(
+                login_page(code),
+                media_type="text/html; charset=utf-8",
+                headers={"Cache-Control": "no-store"},
+            )
+        elif scope["method"] != "POST" or not _same_origin(scope, host):
+            response = JSONResponse({"message": "请求来源不受支持"}, 403)
+        else:
+            messages = await _read_body(receive)
+            if messages is None:
+                return
+            if messages is False:
+                response = JSONResponse({"message": "请求过长"}, 413)
+            elif access.locked(client):
+                response = _redirect("/login?e=2")
+            else:
+                body = b"".join(m.get("body", b"") for m in messages)
+                given = parse_qs(body.decode("utf-8", "replace")).get("token", [""])[0]
+                if access.check(client, given):
+                    response = _redirect("/", access.cookie())
+                else:
+                    response = _redirect("/login?e=1")
+        return await response(scope, receive, send)
 
 
 class RenameRequest(BaseModel):
@@ -109,7 +174,7 @@ class TabRequest(BaseModel):
     id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
-def create_app(root=None, *, data_root=None, manager_factory=Manager):
+def create_app(root=None, *, data_root=None, manager_factory=Manager, access=None):
     store = Store(root or platform_dir())
     configure_logging(store.root)
     manager = manager_factory(store, data_root=data_root)
@@ -126,7 +191,7 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager):
     app.state.store, app.state.manager = store, manager
     app.state.benchmarks = benchmarks
     app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
-    app.add_middleware(LocalOnly)
+    app.add_middleware(LocalOnly, access=access)
 
     @app.middleware("http")
     async def timing(request, call_next):

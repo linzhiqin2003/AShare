@@ -20,7 +20,19 @@ timeout 3600s .venv/bin/python -m ashare.platform --port 8765
 ```
 
 浏览器打开 `http://127.0.0.1:8765`。激活虚拟环境后也可以直接运行
-`python -m ashare.platform`；默认端口 8765。只绑定 127.0.0.1，不提供外网绑定开关。
+`python -m ashare.platform`；默认端口 8765，只绑定 127.0.0.1。
+
+让同一 VPN 里的协作者访问时，再加一块具体网卡的地址，并用环境变量设访问口令（至少 16 个字符）：
+
+```sh
+export ASHARE_PLATFORM_TOKEN=…   # 放在本机密钥文件里，不进仓库
+python -m ashare.platform --host <VPN 网卡地址>
+```
+
+此时同时监听 127.0.0.1 和该地址；不支持 0.0.0.0 和 IPv6。Host 只认本机名和这个地址
+（经域名访问再加 `--allow-host 名字`）。非本机来的请求先进 `/login` 输入口令，登录后
+靠 HttpOnly、SameSite=Strict 的 cookie 保持 30 天（存口令的派生值，换口令即全部失效）；
+同一来源 10 分钟内输错 10 次锁 10 分钟。本机回环连接用本机名访问免登录。写操作仍要求同源。
 没有前端构建产物时只输出一行 `make web` 提示，不启动服务、不报栈。
 只安装 Python 平台依赖可以使用 `uv sync --extra platform`。
 
