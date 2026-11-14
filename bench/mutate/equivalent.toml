@@ -1,0 +1,114 @@
+# 等价变异登记：逐个看过、确认任何输入下行为都不变的存活变异。
+# 登记后 make mutate-report（或下一次运行）会把它们移出分母，记为 equivalent。
+#
+# 按 (file, function, change) 匹配，change 照抄 .cache/testing/mutation_survivors.md 里的
+# 「变异」一列；这样变异编号或行号变了也还能对上。函数改了导致对不上的条目会列在
+# 存活清单开头，要么删掉，要么重新确认后改写。
+#
+# 只登记真正等价的：「测试没覆盖到」「影响很小」都不算，那些要补测试。
+#
+# [[mutant]]
+# file = "src/ashare/..."            # 仓库相对路径
+# function = "Class.method"          # Python：函数或 类.方法；Rust：cargo-mutants 的函数名
+# change = "..."                     # 照抄存活清单
+# reason = "为什么等价"
+
+# ---------------------------------------------------------------- src/ashare/platform/config.py
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "expand_settings"
+change = "config = dict(zip(options, row, strict=True))  ->  config = dict(zip(options, row, strict=None))"
+reason = "row comes from itertools.product(*options.values()), so it always has len(options) items; strict never fires"
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "expand_settings"
+change = "config = dict(zip(options, row, strict=True))  ->  config = dict(zip(options, row, ))"
+reason = "same as strict=None: the two iterables always have equal length"
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "expand_settings"
+change = "config = dict(zip(options, row, strict=True))  ->  config = dict(zip(options, row, strict=False))"
+reason = "same as strict=None: the two iterables always have equal length"
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "max_workers"
+change = "min(4, max(1, (os.cpu_count() or 2) // 2)),  ->  min(4, max(1, (os.cpu_count() or 2) / 2)),"
+reason = "the default goes through int(); for a positive integer c, int(min(4, max(1, c / 2))) == min(4, max(1, c // 2))"
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "max_workers"
+change = "min(4, max(1, (os.cpu_count() or 2) // 2)),  ->  min(4, max(1, (os.cpu_count() or 3) // 2)),"
+reason = "only differs when cpu_count() is None, and then 2 // 2 == 3 // 2 == 1"
+
+[[mutant]]
+file = "src/ashare/platform/config.py"
+function = "parallel_budget"
+change = "cores = os.cpu_count() or 2  ->  cores = os.cpu_count() or 3"
+reason = "only differs when cpu_count() is None: cores // 3 is then 0 or 1, and max(1, min(4, cores // 3, ...)) is 1 either way"
+
+# ---------------------------------------------------------------- src/ashare/factor/groupbt/
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "group_demean"
+change = "width = int(g[valid].max()) + 1  ->  width = int(g[valid].max()) + 2"
+reason = "a wider stride still gives every (row, group) pair its own key; only existing keys are read back through total[key] / count[key]"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "group_demean"
+change = "total = np.bincount(key, weights=x[valid], minlength=size)  ->  total = np.bincount(key, weights=x[valid], )"
+reason = "total is only read at existing keys (total[key]), all below len(total) without minlength"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "group_demean"
+change = "count = np.bincount(key, minlength=size)  ->  count = np.bincount(key, )"
+reason = "count is only read at existing keys (count[key]), all below len(count) without minlength"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/metrics.py"
+function = "risk_exposure"
+change = "w = np.array(weights, dtype=np.float64, copy=True)  ->  w = np.array(weights, dtype=np.float64, copy=None)"
+reason = "w is rebound by np.where on the next line and never written in place, so whether np.array copies does not matter"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/metrics.py"
+function = "risk_exposure"
+change = "w = np.array(weights, dtype=np.float64, copy=True)  ->  w = np.array(weights, dtype=np.float64, )"
+reason = "copy defaults to True: identical call"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/metrics.py"
+function = "risk_exposure"
+change = "mean = np.divide(total, count, out=np.zeros_like(total), where=count > 0)  ->  mean = np.divide(total, count, out=None, where=count > 0)"
+reason = "entries skipped by where stay uninitialised, but they belong to rows with count == 0, where valid is all False and np.where(valid, ..., 0.0) discards them"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/metrics.py"
+function = "risk_exposure"
+change = "mean = np.divide(total, count, out=np.zeros_like(total), where=count > 0)  ->  mean = np.divide(total, count, where=count > 0)"
+reason = "same as out=None: the unwritten entries belong to rows with no valid cell and are discarded by np.where(valid, ...)"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "cap_buckets"
+change = "order = cols[np.argsort(lc[i, cols], kind=\"stable\")]  ->  order = cols[np.argsort(lc[i, cols], kind=\"STABLE\")]"
+reason = "numpy reads the sort kind case-insensitively from its first letter; checked: argsort(kind='STABLE') == argsort(kind='stable') on tied input"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "decay_linear"
+change = "if n <= 1:  ->  if n < 1:"
+reason = "only n == 1 changes path; the general loop with n = 1 has den = 1 and returns w with NaN restored, bit-identical to w.copy()"
+
+[[mutant]]
+file = "src/ashare/factor/groupbt/weights.py"
+function = "group_demean"
+change = "size = x.shape[0] * width  ->  size = x.shape[1] * width"
+reason = "size is only the minlength of the two bincounts, which are read at existing keys only (see the minlength entries above); any minlength gives the same values at those keys"

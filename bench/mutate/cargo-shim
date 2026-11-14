@@ -1,0 +1,3 @@
+#!/bin/sh
+# cargo-mutants calls this instead of cargo; see cargo_shim.py.
+exec "$MUTATE_PYTHON" "$(dirname "$0")/cargo_shim.py" "$@"

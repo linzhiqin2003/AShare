@@ -1,0 +1,172 @@
+# 变异测试的分片。每片：要变异的代码 + 能测到它的测试。
+# make mutate MODULE=<分片名或文件/目录路径>；路径会落到包含它的分片，只变异这个路径。
+#
+# Python 分片（mutmut）：
+#   root    被变异的源码根（src 或 packages/<包>/python），在工作目录里映射成 src/
+#   mutate  相对 root 的 glob（fnmatch，* 也匹配 /）；exclude 从中剔除
+#   tests   pytest 选择（相对仓库根）；mutmut 先用它统计每个函数被哪些测试碰到，
+#           之后每个变异只跑碰到它的测试。选宽一点只多花一次统计的时间。
+# Rust 分片（cargo-mutants + bench/mutate/cargo_shim.py）：
+#   package cargo 包；files 要变异的文件；tests 每个变异体重建扩展后要跑的 pytest 选择
+#   （之前先跑这个包自己的 cargo test）。每个变异体都要跑一遍，选窄一点。
+#   扩展绑定层 packages/*/src/lib.rs 不变异：cargo-mutants 27 解析其中的宏时内存爆掉，
+#   而且它只是参数转换，逻辑都在 crates/ 里。
+
+# ---------------------------------------------------------------- Python: ashare
+
+[python.ashare-allocation]
+root = "src"
+mutate = ["ashare/allocation/*"]
+tests = ["test/allocation"]
+
+[python.ashare-analysis]
+root = "src"
+mutate = ["ashare/analysis/*"]
+tests = ["test/analysis"]
+
+[python.ashare-backtest]
+root = "src"
+mutate = ["ashare/backtest/*"]
+tests = ["test/backtest", "test/test_futures_book.py"]
+
+[python.ashare-data]
+root = "src"
+mutate = ["ashare/data/*"]
+tests = ["test/data"]
+
+[python.ashare-events]
+root = "src"
+mutate = ["ashare/events/*"]
+tests = ["test/events"]
+
+[python.ashare-factor-groupbt]
+root = "src"
+mutate = ["ashare/factor/groupbt/*"]
+tests = ["test/factor/test_groupbt_api.py", "test/factor/test_groupbt_bitwise.py", "test/factor/test_groupbt_metrics.py", "test/factor/test_groupbt_plot.py", "test/factor/test_groupbt_portfolio.py", "test/factor/test_groupbt_rebalance.py", "test/factor/test_groupbt_shared.py", "test/factor/test_groupbt_weights.py", "test/test_weight_inputs.py"]
+
+[python.ashare-factor]
+root = "src"
+mutate = ["ashare/factor/*"]
+exclude = ["ashare/factor/groupbt/*"]
+tests = ["test/factor"]
+
+[python.ashare-ml]
+root = "src"
+mutate = ["ashare/ml/*", "ashare/labels.py", "ashare/ledger.py"]
+tests = ["test/ml", "test/factor/test_mining_search.py", "test/factor/test_mining_space.py", "test/factor/test_mining_stats.py", "test/factor/test_factor_evaluate.py"]
+
+[python.ashare-paper]
+root = "src"
+mutate = ["ashare/paper/*"]
+tests = ["test/paper"]
+
+[python.ashare-platform]
+root = "src"
+mutate = ["ashare/platform/*"]
+tests = ["test/platform"]
+
+[python.ashare-portfolio]
+root = "src"
+mutate = ["ashare/portfolio/*"]
+tests = ["test/portfolio"]
+
+[python.ashare-report]
+root = "src"
+mutate = ["ashare/report/*"]
+tests = ["test/report"]
+
+[python.ashare-risk]
+root = "src"
+mutate = ["ashare/risk/*"]
+tests = ["test/risk"]
+
+# ---------------------------------------------------------------- Python: 扩展包的 Python 层
+
+[python.panelbt-py]
+root = "packages/panelbt/python"
+mutate = ["panelbt/*"]
+tests = ["test/test_*.py"]
+
+[python.panelops-py]
+root = "packages/panelops/python"
+mutate = ["panelops/*"]
+tests = ["test/panelops"]
+
+[python.paperbroker-py]
+root = "packages/paperbroker/python"
+mutate = ["paperbroker/*"]
+tests = ["packages/paperbroker/tests", "test/paper"]
+
+[python.portopt-py]
+root = "packages/portopt/python"
+mutate = ["portopt/*"]
+tests = ["test/portfolio", "test/risk"]
+
+# ---------------------------------------------------------------- Rust 内核
+
+[rust.panelbt-engine]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/lib.rs", "crates/panelbt-core/src/codec.rs"]
+tests = ["test/test_engine.py", "test/test_extended.py", "test/test_review.py", "test/test_random.py", "test/test_step.py", "test/test_ashare_fees.py", "test/test_cleanup.py", "test/test_markets_hkus.py"]
+
+[rust.panelbt-rules]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/rules.rs"]
+tests = ["test/test_rules.py", "test/test_exit_rules.py", "test/test_exit_rules_hand.py", "test/test_exit_rules_futures.py", "test/test_rules_examples.py"]
+
+[rust.panelbt-futures]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/futures.rs"]
+tests = ["test/test_futures.py", "test/test_futures_book.py", "test/test_futures_invariance.py", "test/test_reference_futures.py"]
+
+[rust.panelbt-validate]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/validate.rs"]
+tests = ["test/test_validation.py", "test/test_inputs.py", "test/test_weight_inputs.py"]
+
+[rust.panelbt-weights]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/weights.rs"]
+tests = ["test/test_weight_mode.py", "test/test_weight_inputs.py", "test/factor/test_groupbt_bitwise.py"]
+
+[rust.panelbt-group-weights]
+package = "panelbt-core"
+files = ["crates/panelbt-core/src/group_weights.rs"]
+# 快的在前：-x 下被杀的变异体早早停；逐位对照（约 43 秒）放最后
+tests = ["test/factor/test_groupbt_weights.py", "test/factor/test_groupbt_rebalance.py", "test/factor/test_groupbt_shared.py", "test/factor/test_groupbt_bitwise.py"]
+
+[rust.panelops-element]
+package = "panelops-core"
+files = ["crates/panelops-core/src/element.rs"]
+# elementwise 算子的测试；滚动窗口类（test_streaming 等）测不到这里，省掉每个变异体约 25 秒
+tests = ["test/panelops/test_independent.py", "test/panelops/test_adversarial.py", "test/panelops/test_operators.py", "test/panelops/test_edge_cases.py"]
+
+[rust.panelops-evaluation]
+package = "panelops-core"
+files = ["crates/panelops-core/src/evaluation.rs"]
+tests = ["test/panelops", "test/factor/test_factor_evaluate.py"]
+
+[rust.panelops-time]
+package = "panelops-core"
+files = ["crates/panelops-core/src/time.rs", "crates/panelops-core/src/numpy_exact.rs"]
+tests = ["test/panelops"]
+
+[rust.panelops-cross]
+package = "panelops-core"
+files = ["crates/panelops-core/src/lib.rs"]
+tests = ["test/panelops"]
+
+[rust.tradecore]
+package = "tradecore"
+files = ["crates/tradecore/src/lib.rs"]
+tests = ["test/test_engine.py", "test/test_ashare_fees.py", "packages/paperbroker/tests"]
+
+[rust.paperbroker-core]
+package = "paperbroker-core"
+files = ["crates/paperbroker-core/src/lib.rs"]
+tests = ["packages/paperbroker/tests", "test/paper"]
+
+[rust.portopt-core]
+package = "portopt-core"
+files = ["crates/portopt-core/src/lib.rs"]
+tests = ["test/portfolio"]
