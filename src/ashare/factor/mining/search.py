@@ -184,6 +184,24 @@ def _compact(report, sh, long):
     return out
 
 
+def _train_feedback(row):
+    """一个候选在本次搜索里的训练段反馈（给策略看）：阶段、训练段 IC 均值与 t 值、训练段
+    多头端信息比率与年化超额、是否与已入选因子数值重复。只读 ``row["train"]``，不碰验证段。"""
+    if row is None:
+        return None
+    train = row.get("train") or {}
+    ic = train.get("ic") or {}
+    long = train.get("long") or {}
+    return {
+        "stage": row["stage"],
+        "ic_mean": _num(ic.get("mean")),
+        "ic_t": _num(ic.get("t")),
+        "long_ir": _num(long.get("information_ratio")),
+        "long_excess": _num(long.get("excess_return")),
+        "duplicate": row["duplicate_of"] is not None,
+    }
+
+
 def _num(x):
     return (
         x
@@ -729,6 +747,15 @@ def mine(
                 out[key] = (metrics, "backtest", "ok", fp, None, screen)
         return out
 
+    # 给需要反馈细节的策略（`llm.LLMResearch`）的两个只读入口；只含训练段的信息。
+    # 其余策略不读它们，结果与没有这两行逐位相同。
+    evaluate.task = {
+        "fitness": getattr(fitness, "__qualname__", fitness),
+        "complexity": complexity,
+        "screen_t": screen_t,
+        "root": str(root),
+    }
+    evaluate.train_feedback = lambda e: _train_feedback(rows.get(dedup_key(e)))
     strategy.run(space, evaluate)
     elapsed = time.perf_counter() - started
     total = led.trials()

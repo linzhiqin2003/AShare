@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-14（大模型因子挖掘）
+- 新增 `ashare.factor.mining.llm`（`docs/LLM_MINING.md`）：`mine()` 的第四种策略 `LLMResearch`，参考 RD-Agent 的研究循环在本框架里重写（不依赖 RD-Agent，提示词自写）。每轮：提示词（场景、空间、语法例子、训练段最好的因子、最近几轮假设与结果、更早提交过的表达式、上一轮的校验错误、模型维护的笔记、探索或细化的建议）→ 模型回 JSON → 表达式按空间白名单解析校验（`parse`，不执行代码；不合法的不评估、不算试验，错误反馈）→ 跨轮去重 → 交 `evaluate` → 训练段反馈。停止：轮数、费用或 token 预算、连续无效轮、接口报错。`ChatClient` 是只用 httpx 的 OpenAI 兼容客户端（默认 DeepSeek 官方、`deepseek-flash`，密钥读 `DEEPSEEK_API_KEY`，429/5xx/传输错误退避重试，报错不带密钥，费用按 usage 计）。转写记录写到台账目录下的 `llm/`，落在仓库里（`data/` 除外）直接报错。命令行 `python -m ashare.factor.mining.llm`（`--synthetic`、`--screen gpu`）。
+- `mine()` 给策略加两个只读入口：`evaluate.task`（适应度设置、粗筛门槛、台账目录）和 `evaluate.train_feedback(expr)`（只读结果行的训练段）；其余策略不读，CPU 路径与改动前逐位相同（冻结摘要测试通过）。
+- 测试 `test/factor/test_mining_llm*.py`：解析、客户端、停止条件、去重、白名单、合成行情端到端找到埋入的信号、改动验证段与留出段后提示词逐字不变（改动训练段则变）；六处变异全部抓到。
+
 ## 2026-11-14（平台常驻服务）
 - 研究平台改由 launchd 常驻（`make platform-service`，模板 `deploy/platform/launchd/com.ashare.platform.plist.in`，目标在 `mk/platform.mk`）：登录即启动，退出后自动拉起。新增 `--host-subnet <网段>`：监听本机在该网段上的地址，地址出现、消失或变化时以 75 退出由服务管理器按新地址重启（VPN 晚连、重连换地址都不用人管）。测试 `test/platform/test_service.py`（读网卡失败跳过本轮、不退出）。本机访问用 127.0.0.1：从本机访问自己的 VPN 地址会绕隧道，每个请求慢 1 秒以上。
 

@@ -13,6 +13,7 @@ print(result.text())
 """
 
 from .ledger import default_root, open_ledger, record_trial, trial_id
+from .llm import LLMResearch
 from .search import SearchResult, Split, Truncated, mine
 from .space import CATALOG, Space, Unit, canonical, dedup_key
 from .strategies import Enumerate, Evolution, Random
@@ -21,6 +22,7 @@ __all__ = [
     "CATALOG",
     "Enumerate",
     "Evolution",
+    "LLMResearch",
     "Random",
     "SearchResult",
     "Space",
