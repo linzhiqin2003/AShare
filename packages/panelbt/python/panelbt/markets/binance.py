@@ -211,6 +211,10 @@ FAQ_LEVERAGE_2019_09 = (
     WB
     + "20190918184207/https://binance.zendesk.com/hc/en-us/articles/360033162192-Leverage-Overview"
 )
+FAQ_TIERS_2020_05 = (
+    WB
+    + "20200519164655im_/https://binance.zendesk.com/hc/article_attachments/360054347892/mceclip2.png"
+)
 NOW = "2026-11-15T00"  # live snapshots were taken on this UTC day
 
 # Evidence classes. EVIDENCE records are used by default; INFERRED spans (the
@@ -379,6 +383,18 @@ _RISK = {
             "official",
         ),
         ("clearance_fee_rate", "2021-06-10T04", None, 0.012, A2021_0610, "official"),
+        # announcement / snapshot points inside the inferred spans above
+        ("maint_rate", "2021-06-22T03:30", None, 0.004, R2021, "official"),
+        ("maint_rate", "2023-12-24T09:35", None, 0.004, R2023, "official"),
+        ("maint_rate", "2025-06-17T06:30", None, 0.004, R2025_06, "official"),
+        ("maint_rate", "2025-08-19T06:30", None, 0.004, R2025, "official"),
+        ("tier_cap", "2021-06-22T03:30", None, 50000, R2021, "official"),
+        ("tier_cap", "2023-12-24T09:35", None, 50000, R2023, "official"),
+        ("tier_cap", "2025-06-17T06", None, 50000, R2025_06, "official_prior_value"),
+        ("max_leverage", "2021-06-22T03:30", None, 125, R2021, "official"),
+        ("max_leverage", "2023-12-24T09:35", None, 125, R2023, "official"),
+        ("max_leverage", "2025-06-17T06:30", None, 125, R2025_06, "official"),
+        ("max_leverage", "2025-08-19T06", None, 125, R2025, "official_prior_value"),
     ),
     "ETHUSDT": (
         (
@@ -386,7 +402,7 @@ _RISK = {
             "2020-05-19T16:46:55",
             None,
             0.0065,
-            FAQ_TIERS_2020,
+            FAQ_TIERS_2020_05,
             "dated_snapshot",
         ),
         (
@@ -429,7 +445,7 @@ _RISK = {
             "2020-05-19T16:46:55",
             None,
             10000,
-            FAQ_TIERS_2020,
+            FAQ_TIERS_2020_05,
             "dated_snapshot",
         ),
         (
@@ -474,7 +490,7 @@ _RISK = {
         ),
         ("tier_cap", "2023-12-24T09:35", None, 50000, R2023, "official"),
         ("tier_cap", "2025-08-19T06", None, 300000, R2025, "official_prior_value"),
-        ("tier_cap", "2025-08-19T07", None, 300000, R2025, "official"),
+        ("tier_cap", "2025-08-19T06:30", None, 300000, R2025, "official"),
         (
             "tier_cap",
             "2025-08-19T08",
@@ -577,6 +593,59 @@ _RISK = {
             "official",
         ),
         ("clearance_fee_rate", "2021-05-20T09", None, 0.005, A2021_05, "official"),
+        # announcement / snapshot points inside the inferred spans above
+        (
+            "maint_rate",
+            "2023-01-09T20:41:58",
+            None,
+            0.005,
+            BRACKETS.format("20230109204158"),
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2023-12-12T14:27:39",
+            None,
+            0.005,
+            BRACKETS.format("20231212142739"),
+            "dated_snapshot",
+        ),
+        ("maint_rate", "2023-12-24T09", None, 0.005, R2023, "official_prior_value"),
+        ("maint_rate", "2025-08-19T06:30", None, 0.004, R2025, "official"),
+        (
+            "tier_cap",
+            "2023-01-09T20:41:58",
+            None,
+            100000,
+            BRACKETS.format("20230109204158"),
+            "dated_snapshot",
+        ),
+        (
+            "tier_cap",
+            "2023-12-12T14:27:39",
+            None,
+            200000,
+            BRACKETS.format("20231212142739"),
+            "dated_snapshot",
+        ),
+        ("tier_cap", "2023-12-24T09", None, 200000, R2023, "official_prior_value"),
+        (
+            "max_leverage",
+            "2023-01-09T20:41:58",
+            None,
+            100,
+            BRACKETS.format("20230109204158"),
+            "dated_snapshot",
+        ),
+        (
+            "max_leverage",
+            "2023-12-12T14:27:39",
+            None,
+            100,
+            BRACKETS.format("20231212142739"),
+            "dated_snapshot",
+        ),
+        ("max_leverage", "2023-12-24T09", None, 100, R2023, "official_prior_value"),
     ),
 }
 # Adverse direction for the "conservative" gap policy.
@@ -629,10 +698,14 @@ def _observations(symbol):
         )
         result[field].append((lo, hi, value, source, confidence, timing))
     for field in result:
-        result[field].sort(key=lambda r: r[0])
-        for a, b in zip(result[field], result[field][1:], strict=False):
-            if b[0] < a[1]:
-                raise AssertionError(f"overlapping {symbol} {field} records")
+        # Evidence points may sit inside inferred spans (evidence wins there);
+        # records of the same class must not overlap.
+        result[field].sort(key=lambda r: (r[0], r[4] in INFERRED))
+        for group in (EVIDENCE, INFERRED):
+            same = [r for r in result[field] if r[4] in group]
+            for a, b in zip(same, same[1:], strict=False):
+                if b[0] < a[1]:
+                    raise AssertionError(f"overlapping {symbol} {field} records")
     return result
 
 
@@ -687,6 +760,7 @@ def _fill_gaps(column, j, dates, missing, records, policy, symbol, field):
             reason=reason,
             policy=policy,
             side=side,
+            **chosen[5],
             chosen=_describe(chosen),
             candidates=[_describe(r) for r in near],
         )

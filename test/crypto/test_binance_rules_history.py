@@ -102,8 +102,11 @@ def test_non_hourly_effective_times_apply_from_the_next_hour():
 def test_evidence_records_are_sorted_and_disjoint():
     for symbol in ("BTCUSDT", "ETHUSDT", "BTCUSDT_261225"):
         for field, records in binance._observations(symbol).items():
-            for a, b in zip(records, records[1:], strict=False):
-                assert a[0] < a[1] <= b[0], (symbol, field)
+            # 同一类（证据 / 推断）之间不重叠；证据点可以落在推断区间里面。
+            for group in (binance.EVIDENCE, binance.INFERRED):
+                same = [r for r in records if r[4] in group]
+                for a, b in zip(same, same[1:], strict=False):
+                    assert a[0] < a[1] <= b[0], (symbol, field)
             for _lo, _hi, value, source, confidence, _timing in records:
                 assert source.startswith("https://") and confidence
                 assert np.isfinite(value) and value > 0
@@ -185,3 +188,49 @@ def test_conservative_notes_list_candidates_review_p2():
     _, notes = rules(["BTCUSDT"], ["2027-01-01T00"], assume="conservative")
     late = [n for n in notes if n["parameter"] == "clearance_fee_rate"][0]
     assert late["side"] == "after_last" and len(late["candidates"]) == 1
+
+
+# 以下来自规则分支第二轮复核（.review/review_rules_r2.out）。
+
+
+def test_evidence_points_inside_inferred_spans_win_review_r2_p1():
+    # P1：2025-08-19 公告写明 BTC 第一档维持 0.40%；「只补缺口」的映射不能改掉它。
+    mapped = dict(
+        policy="conservative",
+        rules={
+            "BTCUSDT": dict(
+                maint_rate=0.001,
+                reason="fill gaps only",
+                source_url="https://example.test",
+            )
+        },
+    )
+    r, notes = rules(["BTCUSDT"], ["2025-08-19T07"], assume=mapped, leverage=100)
+    assert r["maint_rate"][0, 0] == 0.004
+    mmr = [n for n in notes if n["parameter"] == "maint_rate"][0]
+    assert mmr["confidence"] == "official"
+    # ETH 档位接口快照 2023-12-12 14:27:39 是证据点（15 点起），不是推断。
+    r, notes = rules(["ETHUSDT"], ["2023-12-12T15"], assume="conservative")
+    assert r["tier_cap"][0, 0] == 200000
+    cap = [n for n in notes if n["parameter"] == "tier_cap"][0]
+    assert cap["confidence"] == "dated_snapshot"
+
+
+def test_gap_notes_carry_rounding_fields_review_r2_p2():
+    # P2：缺口说明要把整点近似字段带到顶层，下游诊断只看顶层。
+    for policy in ("previous", "conservative"):
+        _, notes = rules(["BTCUSDT"], ["2021-10-01T00"], assume=policy)
+        gap = [n for n in notes if n["parameter"] == "clearance_fee_rate"][0]
+        assert gap["approximation"] is True and gap["rounding"] == "ceil_to_hour"
+
+
+def test_sources_and_effective_times_review_r2_p2():
+    # P2：2020-05 观测引用五月的存档；ETH 2025-08-19 上限保留 06:30 原始生效时刻。
+    _, notes = rules(["ETHUSDT"], ["2020-05-19T17"], assume="conservative")
+    for n in notes:
+        if n["parameter"] in ("maint_rate", "tier_cap"):
+            assert "20200519164655" in n["source_url"]
+    _, notes = rules(["ETHUSDT"], ["2025-08-19T07"], assume="conservative")
+    cap = [n for n in notes if n["parameter"] == "tier_cap"][0]
+    assert cap["effective_at"].startswith("2025-08-19T06:30")
+    assert cap["approximation"] is True
