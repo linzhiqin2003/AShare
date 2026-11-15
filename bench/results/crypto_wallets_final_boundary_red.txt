@@ -1,0 +1,29 @@
+nice: setpriority: Operation not permitted
+FF.F..                                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_combined_diagnostics_preserve_single_wallet_fields ____________
+test/test_crypto_wallets_contract.py:400: in test_combined_diagnostics_preserve_single_wallet_fields
+    assert diag['bankruptcy_deficit'] == 10
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'bankruptcy_deficit'
+_ test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.07-0.07] _
+test/test_crypto_wallets_contract.py:418: in test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step
+    assert r.positions[0, 0] == pytest.approx(expected, rel=0, abs=1e-16)
+E   assert np.float64(0.0) == 0.07 ± 1.0e-16
+E
+E     comparison failed
+E     Obtained: 0.0
+E     Expected: 0.07 ± 1.0e-16
+_ test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.29-0.29] _
+test/test_crypto_wallets_contract.py:418: in test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step
+    assert r.positions[0, 0] == pytest.approx(expected, rel=0, abs=1e-16)
+E   assert np.float64(0.28) == 0.29 ± 1.0e-16
+E
+E     comparison failed
+E     Obtained: 0.28
+E     Expected: 0.29 ± 1.0e-16
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_contract.py::test_combined_diagnostics_preserve_single_wallet_fields
+FAILED test/test_crypto_wallets_contract.py::test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.07-0.07]
+FAILED test/test_crypto_wallets_contract.py::test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.29-0.29]
+3 failed, 3 passed, 22 deselected in 0.90s

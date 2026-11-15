@@ -1,0 +1,13 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_c4_oracle_seed5_full_withdrawal_does_not_create_bankruptcy ________
+test/test_crypto_wallets_contract.py:242: in test_c4_oracle_seed5_full_withdrawal_does_not_create_bankruptcy
+    assert r.usdm.bankruptcy_events == []
+E   assert [10] == []
+E
+E     Left contains one more item: 10
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_contract.py::test_c4_oracle_seed5_full_withdrawal_does_not_create_bankruptcy
+1 failed, 13 deselected in 0.92s

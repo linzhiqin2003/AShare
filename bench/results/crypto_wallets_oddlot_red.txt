@@ -1,0 +1,10 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_crypto_spot_full_close_keeps_odd_lot_after_volume_limit _________
+test/test_crypto_wallets_contract.py:279: in test_crypto_spot_full_close_keeps_odd_lot_after_volume_limit
+    assert r.positions[-1, 0] == 0
+E   assert np.float64(0.05000000000000002) == 0
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_contract.py::test_crypto_spot_full_close_keeps_odd_lot_after_volume_limit
+1 failed, 15 deselected in 1.12s

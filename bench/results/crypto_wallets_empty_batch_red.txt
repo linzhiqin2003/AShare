@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from test.test_crypto_wallets_contract import test_empty_wallet_batch_keeps_enabled_output_shape as check; check(False)
+                                                                                                               ~~~~~^^^^^^^
+  File "<worktree>/test/test_crypto_wallets_contract.py", line 387, in test_empty_wallet_batch_keeps_enabled_output_shape
+    assert result.wallet_balance is not None
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

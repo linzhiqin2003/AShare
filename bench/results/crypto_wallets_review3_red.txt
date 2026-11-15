@@ -1,0 +1,163 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFFFFFFFF.                                                    [100%]
+=================================== FAILURES ===================================
+__________ test_review3_prefund_fee_subtraction_hand_expected[native] __________
+test/test_crypto_wallets_review3.py:38: in test_review3_prefund_fee_subtraction_hand_expected
+    np.testing.assert_array_equal(positions, [0, -1, -1])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: 0.0 (ACTUAL), -1 (DESIRED)
+E    [2]: 0.0 (ACTUAL), -1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0., 0.])
+E    DESIRED: array([ 0, -1, -1])
+__________ test_review3_prefund_fee_subtraction_hand_expected[oracle] __________
+test/test_crypto_wallets_review3.py:38: in test_review3_prefund_fee_subtraction_hand_expected
+    np.testing.assert_array_equal(positions, [0, -1, -1])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: 0.0 (ACTUAL), -1 (DESIRED)
+E    [2]: 0.0 (ACTUAL), -1 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 1.
+E    ACTUAL: array([0., 0., 0.])
+E    DESIRED: array([ 0, -1, -1])
+_ test_review3_fraction_prefund_random_prices_fees_multipliers_targets[native] _
+test/test_crypto_wallets_review3.py:83: in test_review3_fraction_prefund_random_prices_fees_multipliers_targets
+    assert actual == -theoretical, case
+E   AssertionError: {'seed': 22, 'price': '20', 'multiplier': '1', 'quantity': 2, ...}
+E   assert np.float64(-1.0) == -2
+_ test_review3_fraction_prefund_random_prices_fees_multipliers_targets[oracle] _
+test/test_crypto_wallets_review3.py:83: in test_review3_fraction_prefund_random_prices_fees_multipliers_targets
+    assert actual == -theoretical, case
+E   AssertionError: {'seed': 22, 'price': '20', 'multiplier': '1', 'quantity': 2, ...}
+E   assert np.float64(-1.0) == -2
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[version] __
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:832: in restore
+    if data["version"] != 1 or data["fingerprint"] != fresh._fingerprint:
+       ^^^^^^^^^^^^^^^
+E   KeyError: 'version'
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[fingerprint] _
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:832: in restore
+    if data["version"] != 1 or data["fingerprint"] != fresh._fingerprint:
+                               ^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'fingerprint'
+___ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[day] ____
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:850: in restore
+    day = data["day"]
+          ^^^^^^^^^^^
+E   KeyError: 'day'
+___ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[spot] ___
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:835: in restore
+    base64.b64decode(data["spot"], validate=True),
+                     ^^^^^^^^^^^^
+E   KeyError: 'spot'
+___ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[usdm] ___
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:843: in restore
+    base64.b64decode(data["usdm"], validate=True),
+                     ^^^^^^^^^^^^
+E   KeyError: 'usdm'
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[transfers] _
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:864: in restore
+    fresh.transfers = copy.deepcopy(data["transfers"])
+                                    ^^^^^^^^^^^^^^^^^
+E   KeyError: 'transfers'
+__ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[ratio] ___
+test/test_crypto_wallets_review3.py:110: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    TwoWallet.restore(missing, s, u)
+src/ashare/backtest/crypto_wallets.py:862: in restore
+    fresh._ratio[:] = data["ratio"]
+                      ^^^^^^^^^^^^^
+E   KeyError: 'ratio'
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[exit_pending] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+__ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[equity] __
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[residual] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[residual_value] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[rounding_value] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[underfill_value] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[transfer_state] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_snapshot_requires_every_schema_field_even_at_day_zero[target_state] _
+test/test_crypto_wallets_review3.py:109: in test_review3_snapshot_requires_every_schema_field_even_at_day_zero
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_review3_cancelled_delist_snapshot_preserves_exit_or_rejects_missing_field _
+test/test_crypto_wallets_review3.py:130: in test_review3_cancelled_delist_snapshot_preserves_exit_or_rejects_missing_field
+    with pytest.raises(ValueError, match="schema|字段"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_review3.py::test_review3_prefund_fee_subtraction_hand_expected[native]
+FAILED test/test_crypto_wallets_review3.py::test_review3_prefund_fee_subtraction_hand_expected[oracle]
+FAILED test/test_crypto_wallets_review3.py::test_review3_fraction_prefund_random_prices_fees_multipliers_targets[native]
+FAILED test/test_crypto_wallets_review3.py::test_review3_fraction_prefund_random_prices_fees_multipliers_targets[oracle]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[version]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[fingerprint]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[day]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[spot]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[usdm]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[transfers]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[ratio]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[exit_pending]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[equity]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[residual]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[residual_value]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[rounding_value]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[underfill_value]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[transfer_state]
+FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[target_state]
+FAILED test/test_crypto_wallets_review3.py::test_review3_cancelled_delist_snapshot_preserves_exit_or_rejects_missing_field
+20 failed, 1 passed in 0.76s
+
+Counterexample inputs (regenerated from RNG 34017, case 22):
+price=20; multiplier=1; target=2; fee=9 bp; margin=1/10; initial=2.8
+Fraction required=1009/250; exact flow=173951535607185433/140737488355328000
+Expected contracts=-2; baseline native and independent oracle both=-1.
+The 20 failures above were captured before the production fixes.

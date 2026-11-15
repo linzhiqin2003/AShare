@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from test.test_crypto_wallets_contract import test_crypto_spot_marker_belongs_only_to_market as check; check()
+                                                                                                           ~~~~~^^
+  File "<worktree>/test/test_crypto_wallets_contract.py", line 379, in test_crypto_spot_marker_belongs_only_to_market
+    assert 'crypto_spot' not in {f.name for f in fields(bt.Targets)}
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

@@ -3,7 +3,120 @@
 
 use super::{Core, Market, Row, Settings, State, futures};
 use futures::{Book, rate};
-use tradecore::{round_close, round_open};
+use tradecore::{futures_charge, futures_margin, round_close, round_open};
+
+/// The two existing floating-point evaluation orders are intentional: retain
+/// both when checking the basket and each individual opening. Preview and
+/// execution must call these same methods, without a collateral epsilon.
+#[derive(Clone, Copy)]
+struct OpeningBudget {
+    equity: f64,
+    margin: f64,
+}
+
+struct Opening {
+    quantity: f64,
+    multiplier: f64,
+    mark: f64,
+    price: f64,
+    fee: f64,
+    rate: f64,
+}
+
+impl OpeningBudget {
+    fn project(&mut self, x: &Opening) {
+        self.equity += x.quantity * x.multiplier * (x.mark - x.price) - x.fee;
+        self.margin += x.quantity.abs() * x.multiplier * x.mark * x.rate;
+    }
+
+    fn allows(&self, x: &Opening) -> bool {
+        self.equity > 0.0
+            && self.equity + x.quantity * x.multiplier * (x.mark - x.price) - x.fee
+                >= self.margin + x.quantity.abs() * x.multiplier * x.mark * x.rate
+    }
+}
+
+/// Collateral-only preview at caller-supplied reference marks/execution prices.
+/// Reductions precede the opening basket. Rates/fees are today's known terms;
+/// no current bar prices, masks, volume or liquidation stress are consulted.
+/// Targets are already quantized contracts. This does not promise execution
+/// through liquidity, quantity filters, expiry, price gaps or liquidation.
+pub fn opening_feasible(
+    day: usize,
+    cash: f64,
+    shares: &[f64],
+    basis: &[f64],
+    targets: &[f64],
+    prices: &[f64],
+    m: &Market<'_>,
+) -> bool {
+    let f = m.futures.as_ref().unwrap();
+    let mut balance = cash;
+    let mut remaining = shares.to_vec();
+    let mut orders = Vec::new();
+    for i in 0..m.n {
+        let delta = targets[i] - shares[i];
+        let close = if shares[i] * delta < 0.0 {
+            -shares[i].signum() * shares[i].abs().min(delta.abs())
+        } else {
+            0.0
+        };
+        let fee = |q| {
+            futures_charge(
+                q,
+                f.multiplier[i],
+                prices[i],
+                rate(f.fee_rate, day, i, m),
+                rate(f.fee_per_contract, day, i, m),
+            )
+        };
+        if close != 0.0 {
+            balance += futures::realized(shares[i], close, basis[i], prices[i], f.multiplier[i])
+                - fee(close);
+            remaining[i] += close;
+        }
+        let quantity = targets[i] - remaining[i];
+        if quantity != 0.0 {
+            orders.push(Opening {
+                quantity,
+                multiplier: f.multiplier[i],
+                mark: prices[i],
+                price: prices[i],
+                fee: fee(quantity),
+                rate: rate(f.margin_rate, day, i, m),
+            });
+        }
+    }
+    let mut budget = OpeningBudget {
+        equity: balance,
+        margin: 0.0,
+    };
+    for i in 0..m.n {
+        if remaining[i] != 0.0 {
+            budget.equity += remaining[i] * f.multiplier[i] * (prices[i] - basis[i]);
+            budget.margin += futures_margin(
+                remaining[i],
+                f.multiplier[i],
+                prices[i],
+                rate(f.margin_rate, day, i, m),
+            );
+        }
+    }
+    let mut basket = budget;
+    for order in &orders {
+        basket.project(order);
+    }
+    if basket.equity < basket.margin {
+        return false;
+    }
+    for order in &orders {
+        if !budget.allows(order) {
+            return false;
+        }
+        budget.project(order);
+    }
+    true
+}
 
 pub struct Inputs<'a> {
     pub funding: &'a [f64],
@@ -262,10 +375,16 @@ fn liquidate(
         }
     }
     st.cash -= fee;
+    if let Some(w) = core.out.wallet.as_mut() {
+        w.balance -= fee;
+    }
     core.out.daily[31 * m.t + day] += fee;
     core.out.daily[5 * m.t + day] += fee;
     if st.cash < 0.0 {
         core.out.daily[32 * m.t + day] += -st.cash;
+        if let Some(w) = core.out.wallet.as_mut() {
+            w.balance += -st.cash;
+        }
         core.out.counts[51] += 1;
         if !core.bankrupt {
             core.out.bankruptcies.push(day);
@@ -542,7 +661,10 @@ pub(super) fn trade(
     // execution-to-mark loss change equity, not the accounting cash basis.
     let v = value(day, false, m, st, book);
     let project = |orders: &[(usize, f64)], scale: f64| {
-        let (mut equity, mut im) = (v.0, v.3);
+        let mut budget = OpeningBudget {
+            equity: v.0,
+            margin: v.3,
+        };
         for &(i, qty) in orders {
             let q = rounded(day, i, qty * scale, m);
             if q == 0.0 {
@@ -550,10 +672,16 @@ pub(super) fn trade(
             }
             let x = futures::quote(q, i, day, m, s);
             let mark = c.open[base + i];
-            equity += q * f.multiplier[i] * (mark - x.price) - x.fees.commission;
-            im += q.abs() * f.multiplier[i] * mark * rate(f.margin_rate, day, i, m);
+            budget.project(&Opening {
+                quantity: q,
+                multiplier: f.multiplier[i],
+                mark,
+                price: x.price,
+                fee: x.fees.commission,
+                rate: rate(f.margin_rate, day, i, m),
+            });
         }
-        equity >= im
+        budget.equity >= budget.margin
     };
     // Candidate execution gains cannot bootstrap an empty collateral account,
     // including one just exhausted by ordinary reductions.
@@ -575,18 +703,22 @@ pub(super) fn trade(
         }
         lo
     };
-    let (mut equity, mut im) = (v.0, v.3);
+    let mut budget = OpeningBudget {
+        equity: v.0,
+        margin: v.3,
+    };
     for &(i, qty) in &core.orders {
         let mut q = rounded(day, i, qty * scale, m);
         let feasible = |q: f64| {
             let x = futures::quote(q, i, day, m, s);
-            equity > 0.0
-                && equity + q * f.multiplier[i] * (c.open[base + i] - x.price) - x.fees.commission
-                    >= im
-                        + q.abs()
-                            * f.multiplier[i]
-                            * c.open[base + i]
-                            * rate(f.margin_rate, day, i, m)
+            budget.allows(&Opening {
+                quantity: q,
+                multiplier: f.multiplier[i],
+                mark: c.open[base + i],
+                price: x.price,
+                fee: x.fees.commission,
+                rate: rate(f.margin_rate, day, i, m),
+            })
         };
         if q != 0.0 && !feasible(q) {
             let (mut lo, mut hi) = (0.0, q.abs());
@@ -609,8 +741,14 @@ pub(super) fn trade(
             continue;
         }
         let x = futures::quote(q, i, day, m, s);
-        equity += q * f.multiplier[i] * (c.open[base + i] - x.price) - x.fees.commission;
-        im += q.abs() * f.multiplier[i] * c.open[base + i] * rate(f.margin_rate, day, i, m);
+        budget.project(&Opening {
+            quantity: q,
+            multiplier: f.multiplier[i],
+            mark: c.open[base + i],
+            price: x.price,
+            fee: x.fees.commission,
+            rate: rate(f.margin_rate, day, i, m),
+        });
         if core.out.counts[41..45].iter().sum::<u64>() > 0 {
             core.out.counts[57] += 1;
         }
@@ -688,6 +826,10 @@ pub(super) fn trade(
     let interest = own.max(0.0) * s.v(9, day);
     let financing = (-own).max(0.0) * s.v(15, day);
     st.cash += interest - financing;
+    if let Some(w) = core.out.wallet.as_mut() {
+        w.balance += interest - financing;
+        w.close(day, st.shares, m);
+    }
     if interest > 1e-10 {
         core.out.counts[14] += 1;
     }

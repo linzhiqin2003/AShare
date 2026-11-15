@@ -856,8 +856,8 @@ The exchange liquidation model requires **every column to be a future** and
 `Futures(exec_at_open=True)`: this is the caller's declaration that ordinary
 execution occurs at the left boundary. Its execution quote can differ from
 the mark; the declaration does not assert that the two prices are equal.
-No timestamp inference, exchange schedule, signals, wallets or spot-crypto
-filters are implemented here. `FuturesBook` keeps its existing interface;
+No timestamp inference, exchange schedule or signals are implemented here.
+The C4 wallet ledger and opt-in spot quantity filters are described below. `FuturesBook` keeps its existing interface;
 call `Market(..., futures=Futures(...))` for these new inputs.
 
 | Input | Shape and unit | Omission / missing values |
@@ -1061,6 +1061,114 @@ all new metrics/counters and bankruptcy/pending state; their fingerprint
 includes every new panel under the existing full/sample digest policy.
 Format 3 writes the applicable output layout and can read format-2 snapshots
 for unchanged legacy inputs; CRC and all input fingerprints remain checked.
+
+### C4 wallet ledger and dynamic boundary flows
+
+`Simulator.step(target=None, *, flow=None)` accepts a finite settlement-currency
+amount: positive deposits, negative withdrawals. Omission preserves the old
+path. Explicit `flow=0` is still an invocation of the new path. Any nonzero value
+anywhere in `Config.cash_flow` makes **every** explicit `flow=` call fail before
+mutation. `run` and `run_batch` retain their existing signatures and static-flow
+policy. Target and flow validation precede flow application.
+
+The previous step has already prepared this row's static pre-open actions.
+Dynamic flow is applied once, at the beginning of this step, before exchange
+opening liquidation checks or ordinary trading. It cannot undo the preceding
+row's funding or liquidation. `State` between calls therefore describes the
+static-prepared, dynamic-not-yet-applied boundary. `cash` and holdings include
+this row's static actions; `equity` remains the previous completed close.
+`cash_flow` records the actual amount; `withdrawal_shortfall` records
+**actual minus requested**, so a rejected deposit has a negative difference.
+Returns remove the actual flow exactly as with the existing static-flow column.
+A failed trade phase invalidates the simulator under the existing error policy.
+
+Exchange-liquidation futures automatically maintain a parallel Rust ledger:
+
+- `entry_price[i]` is the quantity-weighted effective fill price including
+  slippage and impact, excluding commission. It differs from the raw execution
+  `State.cost` and from the hourly settlement `futures_basis`. Addition averages
+  the entry, reduction leaves it unchanged, full close resets it to zero, and
+  the opening part of a reversal starts at its own effective fill price.
+- `W = initial + actual flows + realized P&L - commission - funding
+  - clearance fees - delivery fees + bankruptcy deficit credit`. Realization
+  on ordinary reduction, liquidation, expiry or delisting uses signed closed
+  quantity times multiplier times `(exit - entry)`. If explicitly configured,
+  cash interest and financing interest also enter W with their existing signs.
+- `U = sum(contracts * multiplier * (settlement - entry_price))` at the completed
+  close. Deficit credits remain separately reported and never become flows.
+  `W + U` equals existing equity within 1e-12 relative to notional, including
+  liquidation and bankruptcy. The parallel ledger never changes legacy trading
+  arithmetic or existing result columns.
+
+`State` adds `wallet_balance`, `unrealized`, `entry_price`, `transferable`,
+`notional` and `initial_margin`. W includes prepared static flows; U and notional
+use the previous settlement. Initial margin uses that same **previous** price
+and the **next-to-execute row's** effective margin rate. After the last row it
+uses the final available rate. Entry prices are read-only copies; the other
+existing array fields remain live read-only views.
+
+For liquidation futures the dynamic limit is
+`max(0, W + min(U, 0) - IM)`, where
+`IM = sum(abs(contracts) * multiplier * previous_settlement * current_margin_rate)`.
+It is an **unverified transfer-model assumption**, not an established replica
+of Binance `maxWithdrawAmount`, nor a proven conservative bound. A numerical
+cap at `max(0, settled_cash - IM)` prevents a few ulps of ledger disagreement
+from making cash negative on full withdrawal; in exact arithmetic this cannot
+reduce the stated limit. Bankrupt liquidation wallets reject both directions.
+A solvent flat account at exactly zero is not bankrupt and may receive funds.
+Cash-only spot wallets expose nonnegative cash. Other legacy account types
+retain their existing own-cash/collateral restriction for dynamic withdrawals.
+Static withdrawals retain their original limits, even when different from W/U.
+
+`Simulator.opening_feasible(target, prices, *, flow=0.0)` is a read-only
+collateral query for a current exchange-liquidation wallet. Dense targets are
+finite integer contract counts, already quantized to valid contract steps;
+prices are caller-supplied reference marks and execution prices, positive and
+finite wherever a holding or target is nonzero. Starting from prepared cash
+plus the hypothetical flow, it evaluates reductions followed by openings with
+the next row's effective fee and margin terms. Both the basket projection and
+the sequential opening checks share the exact Rust routines used by trading,
+including their original floating-point evaluation order and strict collateral
+comparison. This query does not clip flow or mutate any state; callers must
+enforce transfer limits themselves. It does not check liquidity, quantity or
+notional filters, expiry, slippage, price gaps, or liquidation stress, and is
+not a guarantee of execution under those constraints. Bankrupt wallets return
+false. Finished simulators and unavailable legacy ledgers reject the query.
+
+`Result.wallet_balance` and `Result.unrealized` have shape T, or B×T in batch,
+only for exchange-liquidation futures; otherwise both are None. They are
+available with or without trade/position recording. The corresponding stepped
+record appends both values. Old metrics and coverage schemas are unchanged;
+NPZ saves the optional fields and loads missing fields as None. Snapshots with
+this ledger use format 4 and contain all entries and historical W/U. Other
+snapshots retain format 3 and its format-2 compatibility, byte for byte.
+Pre-C4 liquidation snapshots restore through the original format-2/3 path.
+Their entry ledger is unavailable: accessing any added wallet state field
+(including W/U, entries, transferable funds, notional or initial margin), or
+supplying any explicit `flow=` (including zero), raises ValueError.
+For these legacy objects, `repr`, `print`, and `dataclasses.asdict` omit the
+unavailable wallet fields. Regular State/Result dataclass fields are unchanged.
+Existing state fields, records, results and re-encoded snapshots keep their old
+behavior and bits. No entry history is fabricated. New snapshots with a ledger
+resume with W/U intact.
+
+`Market(..., crypto_spot=True)` enables the C4 spot quantity rule; it is rejected
+for futures markets. For `kind="shares"`, initial sizing and final cash/volume
+scaling truncate toward zero to the zero-anchored quantity lattice and check
+the minimum quantity again. Quantity subtraction and grid/capacity comparisons
+allow an absolute tolerance of 1e-9 times the quantity step. An adjacent legal
+grid point within this tolerance is accepted; genuinely fractional steps are
+truncated. The cash affordability comparison remains strict, without this
+quantity tolerance. A full close clears an off-lattice remainder when capacity
+covers it within the same step-relative tolerance. The flag defaults to false and changes no other market.
+The exchange adapter marks its spot markets; historical filters and spot
+minimum notional remain the adapter's documented limitations.
+
+The independent `reference_wallets.py` implements a wallet model directly from
+these equations, without importing the native engine or `reference_crypto`.
+The application-level paired scheduler, transfer policy, coin conversion,
+merged diagnostics and atomic paired snapshots live in `ashare.backtest.crypto_wallets`,
+not in this numpy-only package.
 
 **Non-hourly rules and upstream responsibilities.** The kernel consumes rows
 and knows no wall-clock schedule. C3 moves a 09:35 change to 10:00, supplies

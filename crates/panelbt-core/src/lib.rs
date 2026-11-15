@@ -79,6 +79,7 @@ pub type Trade = (usize, usize, f64, f64, f64, f64, f64, f64, f64);
 pub type DelistEvent = (usize, usize, f64, f64, f64);
 #[derive(Clone)]
 pub struct Output {
+    pub wallet: Option<wallets::Ledger>,
     pub daily: Vec<f64>,
     pub positions: Option<Vec<f64>>,
     pub trades: Option<Vec<Trade>>,
@@ -332,6 +333,16 @@ fn capacity(m: &Market<'_>, s: &Settings<'_>, day: usize, i: usize, step: f64) -
 fn quantity_tolerance(a: f64, b: f64) -> f64 {
     1e-9 * a.abs().max(b.abs()).max(1.0)
 }
+/// Quantity comparisons tolerate 1e-9 of one grid step, never cash overspending.
+#[inline]
+fn spot_quantity(quantity: f64, minimum: f64, step: f64, enabled: bool) -> f64 {
+    if !enabled || step == 0.0 {
+        return lot(quantity, minimum, step);
+    }
+    let units = (quantity / step + 1e-9).floor();
+    let rounded = units * step;
+    if rounded < minimum { 0.0 } else { rounded }
+}
 fn projected(
     mut a: Account,
     i: usize,
@@ -360,7 +371,9 @@ fn affordable(
     min: f64,
     m: &Market<'_>,
     s: &Settings<'_>,
+    crypto_spot: bool,
 ) -> f64 {
+    let lot = |q, min, step| spot_quantity(q, min, step, crypto_spot);
     let cost = |q: f64| {
         if q == 0.0 {
             0.0
@@ -443,7 +456,12 @@ fn lot_terms<const FUT: bool, const C: bool>(
             (1.0, 1.0)
         }
     } else {
-        (s.vectors[6][i], if shares { 0.0 } else { s.vectors[7][i] })
+        let step = if shares && !s.flags.get(7).copied().unwrap_or(false) {
+            0.0
+        } else {
+            s.vectors[7][i]
+        };
+        (s.vectors[6][i], step)
     }
 }
 /// Initial-margin and own-cash test; `fm` is the futures collateral (0 for spot).
@@ -505,6 +523,8 @@ fn open_basket<const FUT: bool, const T: bool, const C: bool>(
     rb: &mut rules::RuleBook,
     out: &mut Output,
 ) {
+    let crypto_spot = shares && s.flags.get(7).copied().unwrap_or(false);
+    let lot = |q, min, step| spot_quantity(q, min, step, crypto_spot);
     if FUT {
         // Hedge openings reserve collateral before short sales and spot buys.
         orders.sort_by_key(|&(i, q)| (!is_future::<FUT>(m, i), q > 0.0, i));
@@ -634,12 +654,19 @@ pub struct Core {
     fm_before: f64,
     flow: f64,
     pub rb: rules::RuleBook,
+    static_flow: bool,
 }
 impl Core {
     /// `track` allocates the rule state (stepping interface, rules).
     pub fn new(m: &Market<'_>, s: &Settings<'_>, track: bool) -> Core {
         Core {
             out: Output {
+                wallet: m
+                    .futures
+                    .as_ref()
+                    .and_then(|f| f.crypto.as_ref())
+                    .filter(|c| c.liquidation())
+                    .map(|_| wallets::Ledger::new(s.scalars[5], m.t, m.n)),
                 daily: vec![
                     0.0;
                     if m.futures.as_ref().is_some_and(|f| f.crypto.is_some()) {
@@ -660,6 +687,7 @@ impl Core {
                 rule_counts: Vec::new(),
                 error: None,
             },
+            static_flow: s.vectors[10].iter().any(|&x| x != 0.0),
             pending: Vec::new(),
             commands: Vec::new(),
             orders: Vec::new(),
@@ -732,6 +760,9 @@ impl Core {
         let f = requested.max(-available);
         *flow = if f == 0.0 { 0.0 } else { f };
         st.cash += *flow;
+        if let Some(w) = out.wallet.as_mut() {
+            w.balance += *flow;
+        }
         out.daily[12 * m.t + day] = *flow;
         out.daily[13 * m.t + day] = *flow - requested;
         if *flow != 0.0 {
@@ -821,6 +852,19 @@ impl Core {
         book: &mut futures::Book<'_>,
         trk: &mut Track<'_>,
     ) {
+        let crypto_spot = shares && s.flags.get(7).copied().unwrap_or(false);
+        let lot = |q, min, step| spot_quantity(q, min, step, crypto_spot);
+        let round_close = |q: f64, position: f64, min, step| {
+            if crypto_spot {
+                if q >= position || (step > 0.0 && position - q <= step * 1e-9) {
+                    position
+                } else {
+                    spot_quantity(q, min, step, true)
+                }
+            } else {
+                round_close(q, position, min, step)
+            }
+        };
         if C && FUT
             && m.futures
                 .as_ref()
@@ -848,6 +892,7 @@ impl Core {
             fm_before,
             flow,
             rb,
+            ..
         } = self;
         let base = day * m.n;
         let rebalance = row.is_some();
@@ -1092,14 +1137,15 @@ impl Core {
                 out.counts[38] += 1;
             }
             let current = st.shares[i];
-            let cap_step = if C
-                && future
-                && m.futures
-                    .as_ref()
-                    .unwrap()
-                    .crypto
-                    .as_ref()
-                    .is_some_and(|c| !c.step.is_empty() || !c.minimum.is_empty())
+            let cap_step = if (shares && s.flags.get(7).copied().unwrap_or(false))
+                || (C
+                    && future
+                    && m.futures
+                        .as_ref()
+                        .unwrap()
+                        .crypto
+                        .as_ref()
+                        .is_some_and(|c| !c.step.is_empty() || !c.minimum.is_empty()))
             {
                 0.0
             } else {
@@ -1388,15 +1434,14 @@ impl Core {
                     1.0
                 };
                 for &(i, desired) in orders.iter() {
-                    let step = if shares { 0.0 } else { s.vectors[7][i] };
-                    let min = s.vectors[6][i];
+                    let (min, step) = lot_terms::<FUT, C>(m, s, shares, i, day);
                     let mut q = if scale < 1.0 {
                         lot(desired * scale, min, step)
                     } else {
                         desired
                     };
                     if q > 0.0 && -movement(q, quote(q, i, day, m, s)) > free(st.cash) {
-                        q = affordable(free(st.cash), q, i, day, step, min, m, s);
+                        q = affordable(free(st.cash), q, i, day, step, min, m, s, crypto_spot);
                     }
                     if q > quantity_tolerance(st.shares[i] + desired, st.shares[i]) {
                         fill::<T>(
@@ -1694,6 +1739,7 @@ pub mod futures;
 pub mod group_weights;
 pub mod rules;
 pub mod validate;
+pub mod wallets;
 pub mod weights;
 pub fn run_batch(
     m: &Market<'_>,
@@ -1756,6 +1802,7 @@ impl Stepper {
         Stepper {
             core: Core {
                 out: Output {
+                    wallet: None,
                     daily: Vec::new(),
                     positions: None,
                     trades: None,
@@ -1769,6 +1816,7 @@ impl Stepper {
                     rule_counts: Vec::new(),
                     error: None,
                 },
+                static_flow: false,
                 pending: Vec::new(),
                 commands: Vec::new(),
                 orders: Vec::new(),
@@ -1845,6 +1893,84 @@ impl Stepper {
             }),
         }
     }
+    /// Dynamic-flow limit at the prepared boundary, before this row's marks.
+    pub fn transferable(
+        &self,
+        shares: &[f64],
+        last: &[f64],
+        m: &Market<'_>,
+        s: &Settings<'_>,
+    ) -> f64 {
+        if self.core.bankrupt && self.core.out.wallet.is_some() {
+            return 0.0;
+        }
+        if let Some(w) = &self.core.out.wallet {
+            let f = m.futures.as_ref().unwrap();
+            let mark_row = self.day.saturating_sub(1).min(m.t - 1);
+            let rule_row = self.day.min(m.t - 1);
+            let im: f64 = self
+                .book_held
+                .iter()
+                .map(|&i| {
+                    futures::margin(shares[i], f.settlement[mark_row * m.n + i], rule_row, i, m)
+                })
+                .sum();
+            // Equivalent in exact arithmetic; guard a ledger rounding excess
+            // from creating debt (and a spurious bankruptcy) on full withdrawal.
+            return (w.balance + w.unrealized.min(0.0) - im)
+                .max(0.0)
+                .min((self.cash - im).max(0.0));
+        }
+        let restricted: f64 = if s.flags[4] {
+            0.0
+        } else {
+            self.held
+                .iter()
+                .map(|&i| (-shares[i]).max(0.0) * last[i])
+                .sum()
+        };
+        (self.cash - restricted - self.core.fm_before).max(0.0)
+    }
+
+    pub fn apply_flow(
+        &mut self,
+        requested: f64,
+        shares: &[f64],
+        last: &[f64],
+        m: &Market<'_>,
+        s: &Settings<'_>,
+    ) -> Result<(), String> {
+        if m.futures
+            .as_ref()
+            .is_some_and(|f| f.crypto.as_ref().is_some_and(|c| c.liquidation()))
+            && self.core.out.wallet.is_none()
+        {
+            return Err("flow: wallet ledger unavailable after legacy snapshot restore".into());
+        }
+        if !requested.is_finite() {
+            return Err("flow: expected finite scalar".into());
+        }
+        if self.core.static_flow {
+            return Err("flow: cannot combine with nonzero Config.cash_flow".into());
+        }
+        let actual = if self.core.bankrupt && self.core.out.wallet.is_some() {
+            0.0
+        } else {
+            requested.max(-self.transferable(shares, last, m, s))
+        };
+        let actual = if actual == 0.0 { 0.0 } else { actual };
+        self.cash += actual;
+        if let Some(w) = self.core.out.wallet.as_mut() {
+            w.balance += actual;
+        }
+        self.core.flow = actual;
+        self.core.out.daily[12 * m.t + self.day] = actual;
+        self.core.out.daily[13 * m.t + self.day] = actual - requested;
+        self.core.out.counts[12] += u64::from(actual != 0.0);
+        self.core.out.counts[13] += u64::from(actual != requested);
+        Ok(())
+    }
+
     /// Trade and close the current row, then open the next one.
     pub fn step(
         &mut self,
@@ -1899,7 +2025,11 @@ impl Stepper {
     }
     /// Serialize; `header` fingerprints the inputs the snapshot belongs to.
     pub fn encode(&self, header: &[u64], v: &Vectors<'_>) -> Vec<u8> {
-        let mut w = SNAPSHOT_MAGIC.to_vec();
+        let mut w = if self.core.out.wallet.is_some() {
+            b"PBTSTEP4".to_vec()
+        } else {
+            SNAPSHOT_MAGIC.to_vec()
+        };
         header.to_vec().put(&mut w);
         let c = &self.core;
         let o = &c.out;
@@ -1970,6 +2100,9 @@ impl Stepper {
             b.counts,
         )
             .put(&mut w);
+        if let Some(wallet) = &o.wallet {
+            wallet.put(&mut w);
+        }
         let crc = codec::crc32(&w);
         w.extend_from_slice(&crc.to_le_bytes());
         w
@@ -1982,8 +2115,21 @@ impl Stepper {
             );
         }
         let old = blob.starts_with(b"PBTSTEP2");
+        let wallet_format = blob.starts_with(b"PBTSTEP4");
+        if wallet_format && self.core.out.wallet.is_none() {
+            return Err("snapshot: incompatible wallet ledger".into());
+        }
         let body = blob
-            .strip_prefix(if old { b"PBTSTEP2" } else { SNAPSHOT_MAGIC }.as_slice())
+            .strip_prefix(
+                if wallet_format {
+                    b"PBTSTEP4"
+                } else if old {
+                    b"PBTSTEP2"
+                } else {
+                    SNAPSHOT_MAGIC
+                }
+                .as_slice(),
+            )
             .ok_or("snapshot: not a panelbt simulator snapshot (or an older format)")?;
         if body.len() < 4 {
             return Err("snapshot: truncated".into());
@@ -2092,6 +2238,19 @@ impl Stepper {
         {
             return Err("snapshot: inconsistent sizes".into());
         }
+        let wallet = if wallet_format {
+            let w = wallets::Ledger::take(&mut r)?;
+            let expected = self.core.out.wallet.as_ref().unwrap();
+            if w.entry.len() != expected.entry.len()
+                || w.balances.len() != expected.balances.len()
+                || w.unrealized_rows.len() != expected.unrealized_rows.len()
+            {
+                return Err("snapshot: inconsistent wallet sizes".into());
+            }
+            Some(w)
+        } else {
+            None
+        };
         if !r.is_empty() {
             return Err("snapshot: trailing bytes".into());
         }
@@ -2119,6 +2278,7 @@ impl Stepper {
             return Err("snapshot: inconsistent sizes".into());
         }
         self.core.out = Output {
+            wallet,
             daily,
             positions,
             trades,

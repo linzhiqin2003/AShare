@@ -18,8 +18,13 @@ from .crypto_schedule import (
     roll_time,
     top_n,
 )
+from .crypto_wallets import MarginBand, TwoWallet, TwoWalletResult, two_wallet
 
 __all__ = [
+    "MarginBand",
+    "TwoWallet",
+    "TwoWalletResult",
+    "two_wallet",
     "crypto_market",
     "daily_targets",
     "top_n",
@@ -377,6 +382,7 @@ def crypto_market(
         can_sell=a["tradable"],
         volume=a["volume_engine"],
         futures=futures,
+        crypto_spot=kind == "spot",
     )
     signals = np.full(a["close"].shape, np.nan)
     signals[1:] = np.where(active[:-1], a["close"][:-1], np.nan)

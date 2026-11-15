@@ -1,0 +1,10 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_prefund_independent_oracle_ignores_unheld_missing_mark __________
+test/test_crypto_wallets_prefund_boundary.py:71: in test_prefund_independent_oracle_ignores_unheld_missing_mark
+    assert row["actual"] == 16
+E   assert 0.0 == 16
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_prefund_boundary.py::test_prefund_independent_oracle_ignores_unheld_missing_mark
+1 failed, 2 deselected in 0.77s

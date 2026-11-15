@@ -80,8 +80,14 @@ fn assemble<'a>(
     multiplier: &'a [f64],
     expiry: &'a [i64],
     panels: &[&'a [f64]],
+    validate_actions: bool,
 ) -> PyResult<(Market<'a>, Settings<'a>)> {
-    if fs.len() != 8 || ms.len() != 4 || vs.len() != 16 || scalars.len() != 10 || flags.len() != 7 {
+    if fs.len() != 8
+        || ms.len() != 4
+        || vs.len() != 16
+        || scalars.len() != 10
+        || !(7..=8).contains(&flags.len())
+    {
         return Err(PyValueError::new_err("invalid internal argument lengths"));
     }
     for (i, a) in fs.iter().enumerate() {
@@ -112,8 +118,9 @@ fn assemble<'a>(
     if action_indptr.len() != t + 1
         || action_indptr.first() != Some(&0)
         || action_indptr.last().copied() != Some(action_cols.len() as i64)
-        || action_indptr.windows(2).any(|w| w[0] > w[1])
-        || action_cols.iter().any(|&i| i < 0 || i as usize >= n)
+        || (validate_actions
+            && (action_indptr.windows(2).any(|w| w[0] > w[1])
+                || action_cols.iter().any(|&i| i < 0 || i as usize >= n)))
     {
         return Err(PyValueError::new_err("invalid corporate-action index"));
     }
@@ -194,6 +201,10 @@ fn output_dict<'py>(
         39
     };
     let d = PyDict::new(py);
+    if let Some(wallet) = o.wallet {
+        d.set_item("wallet_balance", wallet.balances.into_pyarray(py))?;
+        d.set_item("unrealized", wallet.unrealized_rows.into_pyarray(py))?;
+    }
     d.set_item(
         "daily",
         Array2::from_shape_vec((fields, t), o.daily)
@@ -287,6 +298,7 @@ fn run<'py>(
         future.1.as_slice()?,
         future.2.as_slice()?,
         &panels,
+        true,
     )?;
     if let Some((_, terms)) = rule_spec {
         s.rules = Some(rules(t, n, &rule_arrays, terms)?);
@@ -617,6 +629,7 @@ struct Simulator {
     rule_terms: Option<RuleTerms>,
     /// Digest of the market panels, computed by the Python layer.
     market_digest: Vec<u8>,
+    action_index_validated: bool,
     stepper: Stepper,
     arrays: Arrays,
 }
@@ -649,6 +662,7 @@ macro_rules! with_market {
             n,
             rule_arrays,
             rule_terms,
+            action_index_validated,
             stepper: $stepper,
             arrays: $arrays,
             ..
@@ -680,8 +694,21 @@ macro_rules! with_market {
         let rs: Vec<&[f64]> = rr.iter().map(|x| x.as_slice()).collect::<Result<_, _>>()?;
         #[allow(unused_mut)]
         let ($m, mut $s) = assemble(
-            *t, *n, &fs, &ms, vs, scalars, flags, first, indptr, cols, kind, multiplier, expiry,
+            *t,
+            *n,
+            &fs,
+            &ms,
+            vs,
+            scalars,
+            flags,
+            first,
+            indptr,
+            cols,
+            kind,
+            multiplier,
+            expiry,
             &ps,
+            !*action_index_validated,
         )?;
         if let Some(terms) = *rule_terms {
             $s.rules = Some(rules(*t, *n, &rs, terms)?);
@@ -853,6 +880,7 @@ impl Simulator {
                 .unwrap_or_default(),
             rule_terms: rule_spec.as_ref().map(|x| x.1),
             market_digest,
+            action_index_validated: false,
             stepper: Stepper::new_empty(),
             arrays: Arrays {
                 shares: PyArray1::zeros(py, n, false).unbind(),
@@ -867,18 +895,20 @@ impl Simulator {
             *stepper = Stepper::new(&m, &s);
             with_vectors!(py, arrays, |v| stepper.begin(v, &m, &s));
         });
+        sim.action_index_validated = true;
         Ok(sim)
     }
 
     /// Trade and close the current row with an optional target row, then
     /// open the next row. Returns that day's daily metric values.
-    #[pyo3(signature = (cols=None, weights=None, limits=None))]
+    #[pyo3(signature = (cols=None, weights=None, limits=None, flow=None))]
     fn step(
         &mut self,
         py: Python<'_>,
         cols: Option<PyReadonlyArray1<'_, i64>>,
         weights: Option<PyReadonlyArray1<'_, f64>>,
         limits: Option<PyReadonlyArray1<'_, f64>>,
+        flow: Option<f64>,
     ) -> PyResult<Vec<f64>> {
         if let Some(error) = &self.stepper.core.out.error {
             return Err(PyValueError::new_err(error.clone()));
@@ -965,13 +995,23 @@ impl Simulator {
         let shares = self.shares_kind;
         let t = self.t;
         with_market!(py, self, |m, s, stepper, arrays| {
-            with_vectors!(py, arrays, |v| py
-                .detach(|| stepper.step(v, row, shares, &m, &s)));
+            with_vectors!(py, arrays, |v| {
+                if let Some(flow) = flow {
+                    stepper
+                        .apply_flow(flow, v.shares, v.last, &m, &s)
+                        .map_err(PyValueError::new_err)?;
+                }
+                py.detach(|| stepper.step(v, row, shares, &m, &s));
+            });
             if let Some(error) = &stepper.core.out.error {
                 return Err(PyValueError::new_err(error.clone()));
             }
             let d = &stepper.core.out.daily;
-            Ok((0..d.len() / t).map(|k| d[k * t + day]).collect())
+            let mut values: Vec<f64> = (0..d.len() / t).map(|k| d[k * t + day]).collect();
+            if let Some(w) = &stepper.core.out.wallet {
+                values.extend([w.balances[day], w.unrealized_rows[day]]);
+            }
+            Ok(values)
         })
     }
 
@@ -985,6 +1025,117 @@ impl Simulator {
             c.margin_call(),
             c.bankrupt(),
         )
+    }
+
+    /// Read-only collateral check using caller-supplied reference prices.
+    fn opening_feasible(
+        &mut self,
+        py: Python<'_>,
+        targets: PyReadonlyArray1<'_, f64>,
+        prices: PyReadonlyArray1<'_, f64>,
+        flow: f64,
+    ) -> PyResult<bool> {
+        let targets = targets.as_slice()?;
+        let prices = prices.as_slice()?;
+        if targets.len() != self.n
+            || prices.len() != self.n
+            || !flow.is_finite()
+            || targets.iter().any(|q| !q.is_finite() || q.fract() != 0.0)
+        {
+            return Err(PyValueError::new_err(
+                "opening_feasible: expected N finite contract targets/prices and finite flow",
+            ));
+        }
+        with_market!(py, self, |m, _s, stepper, arrays| {
+            if stepper.core.out.wallet.is_none() {
+                return Err(PyValueError::new_err(
+                    "opening_feasible requires an available liquidation wallet ledger",
+                ));
+            }
+            if stepper.day >= m.t {
+                return Err(PyValueError::new_err(
+                    "opening_feasible: simulator finished",
+                ));
+            }
+            let shares = arrays.shares.bind(py).readonly();
+            let basis = arrays.basis.bind(py).readonly();
+            let held = shares.as_slice()?;
+            if prices.iter().enumerate().any(|(i, p)| {
+                (held[i] != 0.0 || targets[i] != 0.0) && (!p.is_finite() || *p <= 0.0)
+            }) {
+                return Err(PyValueError::new_err(
+                    "opening_feasible: held/target columns need positive finite reference prices",
+                ));
+            }
+            Ok(!stepper.core.bankrupt()
+                && panelbt_core::crypto::opening_feasible(
+                    stepper.day,
+                    stepper.cash + flow,
+                    held,
+                    basis.as_slice()?,
+                    targets,
+                    prices,
+                    &m,
+                ))
+        })
+    }
+
+    /// Wallet fields use the prepared boundary, never this row's mark_open.
+    #[allow(clippy::type_complexity)]
+    fn wallet<'py>(
+        &mut self,
+        py: Python<'py>,
+    ) -> PyResult<(
+        Option<f64>,
+        Option<f64>,
+        f64,
+        Bound<'py, PyArray1<f64>>,
+        f64,
+        f64,
+    )> {
+        with_market!(py, self, |m, s, stepper, arrays| {
+            if m.futures
+                .as_ref()
+                .is_some_and(|f| f.crypto.as_ref().is_some_and(|c| c.liquidation()))
+                && stepper.core.out.wallet.is_none()
+            {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "wallet ledger unavailable after legacy snapshot restore",
+                ));
+            }
+            let shares = arrays.shares.bind(py).readonly();
+            let last = arrays.last.bind(py).readonly();
+            let q = shares.as_slice()?;
+            let mut nominal = 0.0;
+            let mut initial = 0.0;
+            if let Some(f) = &m.futures {
+                let mark_row = stepper.day.saturating_sub(1).min(m.t - 1);
+                let rule_row = stepper.day.min(m.t - 1);
+                for &i in &stepper.book_held {
+                    let value = q[i].abs() * f.multiplier[i] * f.settlement[mark_row * m.n + i];
+                    nominal += value;
+                    let r = if f.margin_rate.len() == 1 {
+                        f.margin_rate[0]
+                    } else if f.margin_rate.len() == m.n {
+                        f.margin_rate[i]
+                    } else {
+                        f.margin_rate[rule_row * m.n + i]
+                    };
+                    initial += value * r;
+                }
+            }
+            let transferable = stepper.transferable(q, last.as_slice()?, &m, &s);
+            let w = stepper.core.out.wallet.as_ref();
+            Ok((
+                w.map(|w| w.balance),
+                w.map(|w| w.unrealized),
+                transferable,
+                w.map_or_else(Vec::new, |w| w.entry.clone())
+                    .into_pyarray(py),
+                nominal,
+                initial,
+            ))
+        })
     }
 
     /// Carried blocked orders as (columns, targets) arrays.

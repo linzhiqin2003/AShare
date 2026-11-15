@@ -1,6 +1,6 @@
 # 币安加密货币回测
 
-`ashare.backtest.crypto` 把数据层的小时面板接到 `panelbt`。现货现金账户与 U 本位全仓账户各自运行；结果仍是 `panelbt.Result`。规则依据是 [BINANCE.md](markets/BINANCE.md)，数据字段见 [CRYPTO_DATA.md](CRYPTO_DATA.md)，实现选择与验收见 [C3_NOTES.md](C3_NOTES.md)。
+`ashare.backtest.crypto` 把数据层的小时面板接到 `panelbt`。现货现金账户与 U 本位全仓账户可各自运行，也可通过 C4 两钱包同步推进；单腿结果仍是 `panelbt.Result`。规则依据是 [BINANCE.md](markets/BINANCE.md)，数据字段见 [CRYPTO_DATA.md](CRYPTO_DATA.md)，实现选择与验收见 [C3_NOTES.md](C3_NOTES.md)。
 
 ## 最短例子
 
@@ -27,7 +27,7 @@ print(r.nav[-1], r.diagnostics["crypto"])
 print(m.daily_result(r))
 ```
 
-现货换成 `kind="spot"`，目标非负且总权重不超过 1；不需要合约风险规则 `assume`。现货只开放权重目标，避免内核 `shares` 模式绕过数量快照；合约可用 `shares`。账户不收资金费、不执行交易所合约强平。`r.nav` 是相对初始资金的净值，`r.equity`、`r.cash` 是 USDT 金额，两者不能直接混着比较。
+现货换成 `kind="spot"`，目标非负且总权重不超过 1；不需要合约风险规则 `assume`。单账户便捷接口的现货仍只开放权重目标；C4 两钱包在内核的加密现货标记下开放按币数量并执行步长规则。合约单账户可用 `shares`。账户不收资金费、不执行交易所合约强平。`r.nav` 是相对初始资金的净值，`r.equity`、`r.cash` 是 USDT 金额，两者不能直接混着比较。
 
 `crypto_market` 的其他参数：`allow_missing=False`、`max_participation=0`（0 关闭成交量上限）、`slippage=0`、`fee_switch=None`、`config=None`。`config` 可传 `panelbt.Config` 配置现金缓冲、记录成交等；数量规则仍由档案决定，不允许把现货融资、借币或通用退出规则混入本接口。普通 `run` 不额外移动目标；`kind="shares"` 表示合约张数，默认 `weights` 表示名义 / 权益。
 
@@ -138,4 +138,141 @@ nice -n 15 .venv/bin/pytest -q test/crypto test/test_crypto*.py -n 4
 
 趋势例使用 20/60/120 日动量符号投票、30 日样本标准差、365 日年化、20% 波动预算均分给 BTC/ETH。前 120 日空仓。合约允许多空、调仓目标总名义最多 2 倍；现货截掉负目标、总权重最多 1。盘中名义会随价格漂移，2 倍是调仓目标上限。初始资金 1,000 USDT；未做参数搜索，也没有样本外收益声明。资金费和费用占比均以初始资金为分母，正资金费表示净支付。
 
-未实现：C4 两钱包划转、逐仓、完整维持档位、组合保证金、现货借币、币本位、ADL、闲置 USDT 收益。结果与 Quant 的两钱包引擎不同是模型口径差异，不以数值对齐为目标。
+未实现：逐仓、完整维持档位、组合保证金、现货借币、币本位、ADL、闲置 USDT 收益。结果与 Quant 的两钱包引擎不同是模型口径差异，不以数值对齐为目标。
+
+
+## 两钱包（C4）
+
+```python
+from ashare.data import crypto
+from ashare.backtest.crypto import crypto_market, TwoWallet, MarginBand
+
+ds = crypto.open("data/crypto")
+spot = crypto_market(ds, ["BTCUSDT"], "2024-01-01", "2024-02-01",
+                     kind="spot", initial_cash=700)
+usdm = crypto_market(ds, ["BTCUSDT"], "2024-01-01", "2024-02-01",
+                     kind="usdm", initial_cash=300, leverage=2, assume="previous")
+pair = TwoWallet(spot, usdm, initial=(700, 300), hedge="follow_spot",
+                 transfer=MarginBand(.5, .25, 1), residual_limit=10)
+pair.step()  # 首行没有上一完成小时的价格，非零目标会报错。
+pair.step({"BTC": (.005, -.005)})  # 两边单位都是 BTC，不是合约张数。
+result = pair.run()
+print(result.nav[-1], result.diagnostics)
+```
+
+`two_wallet(spot, usdm, targets, **kwargs)` 是一次跑完版本。`targets` 可为
+`T×C×2` 数组、两个 `DailyTargets`，或 `target(t, spot_state, usdm_state)` 回调；
+C 的顺序见 `pair.coins`。`step` 接受单行 `C×2` 或币名映射。`kind="coins"`
+为基础币数量；`kind="weights"` 为每腿名义占**合计权益**的权重。两腿统一用上一根
+已完成的现货收盘折成币数；没有现货列才用上一标记结算。随后分别换算报价单位和张数，
+包括 `coin_units` 与合约乘数。首行和新上市缺上一价时拒绝非零目标，不能偷用本行开盘。
+每钱包每币只允许一列，季度/永续的选择由调用方先明确；C4 不隐式路由多个季度列。
+
+`follow_spot` 将合约目标改为“负对冲比例 × 现货本行实际持币量”，比例由成对目标确定。
+`independent` 让两腿分别成交。合约受资金、成交量、掩码和强平影响仍会失配。
+`residual_coins` 是每币两腿数量之和，`residual_notional` 用同一个上一参考价估值；
+下架残仓失去信号价格时仅为诊断沿用上一已知持仓估值，不能据此下新目标。
+默认 `residual_limit=1e-8` USDT，按每行各币绝对名义之和检查；超过即抛
+`InvalidCryptoResult`，完整结果在异常的 `result`。研究时可显式
+`allow_residual=True`，但 `diagnostics["valid"]` 仍为 False。
+
+日频传入一对 `daily_targets(...)`，或显式 `trade_hour`（UTC）。日线标签只移动一次；
+非调仓小时普通目标为 None、两边均禁用 `carry_blocked`，划转仍每小时运行。
+公告下架退出继续每小时生效，`follow_spot` 同行更新对应合约；逐币保留退出意图，
+直到现货与对应合约两腿的持仓、挂起订单都处理完。现货先卖完而合约平仓受阻时，
+之后每小时只重试退出币的对冲腿，无关币仍等下一次调仓。该退出状态也写入快照。`result.daily()`
+输出完整 24 小时区间末值；小时/日频年化因子分别 8760/365。
+
+### 划转与钱包口径
+
+每行先复制并冻结两边边界状态，算出目标和划转请求，再按付款方限额和接收方资格
+确定唯一金额。`transfer(t, spot_state, usdm_state) -> float` 正数从现货划入合约，
+负数反向；两边实际流逐行严格互为相反数。第二边失败或实际流不匹配时，整个协调器
+失效，不能再读取半行状态、续跑或快照。不得同时使用非零静态 `Config.cash_flow`。
+
+边界状态在本行静态盘前动作之后、动态划转之前。内核 `step(target, flow=x)`
+先应用动态流再做本行开盘检查；上一行收盘资金费与强平不能撤销。各腿的
+`cash_flow` 为实际流，`withdrawal_shortfall` 为“实际−请求”，拒收入金时为负。
+各腿收益扣除各自实际流；合计权益为现货权益加合约 W+U，合计收益不把内部划转当收入。
+
+合约 W 独立累计初始余额、实际流、已实现盈亏、手续费、资金费、清算费、交割费和穿仓
+缺口补记；U 按开仓均价和结算价算。开仓均价含滑点/冲击，不含费用；加仓加权、减仓
+不变、反手重置。`W+U` 等于内核权益；穿仓补记单列，不能当作存入资金。
+`State` 新字段为 `wallet_balance/unrealized/transferable/entry_price/notional/initial_margin`，
+结果逐行增加 W/U；只有开启交易所强平的合约账户提供 W/U。
+
+可划转额是**未验证的划转模型假设**：现货为非负现金；合约为
+`max(0, W + min(U, 0) - IM)`。IM 用上一行 settlement 和本行已生效的保证金率；
+浮盈不能划走，浮亏要扣。该式与币安 `maxWithdrawAmount` 的大小关系没有证据，
+不能称为保守下界。`transfer_margin_factor=1.5` 仅把出金限额中的 IM 放大，便于敏感性分析。
+已爆仓合约既不能收也不能付，付款方不先扣款。零余额但未穿仓的空仓账户仍可收款。
+
+`MarginBand(.5, .25, 1, pre_fund=True, buffer=.02)` 保留原有逐小时保证金带：
+`(W+U)/上一结算总绝对名义` 越界时申请回到 .5，空仓的带规则不划转。
+另外默认在有新目标的调仓行补资：按新目标张数、上一结算价和当行生效保证金率计算 IM，
+保留新旧仓 IM 的较大者，加上预计成交手续费及新目标名义的 2% 缓冲。
+最终请求是带规则请求与 `所需资金−(W+U)` 的较大者，因此也会限制过度出金。
+协调器调用 Rust 的 `Simulator.opening_feasible(target, prices, flow=...)` 回验实际入账、
+减仓和扣费后的资金。这个只读查询与成交共用篮子和逐单保证金判定，使用上一结算价与
+当行已知费率，不读取本行未来价格。浮点舍入不足时向上步进请求，直到判定通过或达到
+现货可划转额；请求为零时也直接步进到下一个可表示的入账余额，避免无效的微小增量。
+`buffer=0` 同样执行回验，不放宽内核现金或保证金限制；达到上限仍不足时记录救援失败。
+`pre_fund=False` 可关闭这项补资；`buffer` 是名义比例。它不看本行未来价格，也不能保证
+跳空超过缓冲、最小下单名义、容量或交易掩码限制下全部成交。函数式策略仍只由回调返回请求。
+现货现金不足时截断，不为救援临时卖币兑现利润。救援失败记录后续强平只表示时间先后。
+
+现货固定规则快照、不执行现货最小名义、费用现金扣除、风险参数外推、联合盘中压力和
+第一档强平等已知偏差继续存在。例子对低于合约最小下单名义 1.5 倍的小额增仓整组延后，
+只在下一个日频决策边界重新判断；该决定也只使用上一结算价格。
+
+### 快照和合并诊断
+
+`blob = pair.snapshot()`；使用原始市场、原始目标和相同初始参数调用
+`TwoWallet.restore(blob, spot, usdm, targets, **kwargs)`。只在两边完成同一行后允许快照，
+内容包括两内核、开仓均价、日志、对冲比例、已累计输出和策略状态。指纹包括时间轴、
+列/币/单位映射、目标语义、hedge、trade_hour、初始策略参数和市场输入。
+自定义目标或划转策略必须提供 `config()` 返回**全部固定参数**，以及
+`state()/restore(state)` 覆盖全部可变决策状态；两者均须可 JSON 序列化，无固定参数时
+`config()` 返回 `{}`。策略身份与固定参数参与指纹，参数不同会拒绝恢复。
+传入策略的当前可变状态不参与身份校验；恢复从快照载入状态，调用方不需要手工回退计数器。
+缺协议时 `snapshot()` 报错，普通运行不要求协议。恢复先建临时对象，再整体返回；
+函数闭包通过协议隔离状态，不支持策略的外部副作用。
+`TWALLET1` 尚未发布，不迁移开发期的旧两钱包快照：所有 schema 字段都必须存在，
+包括逐币 `exit_pending`；缺字段、未知字段或旧 `initial_state` 指纹均明确拒绝。
+已经开始的退出任务保留到两腿持仓及挂起订单都清除，即使后续公告撤销也不丢弃退出意图。
+C4 前的交易所强平快照仍可恢复和继续旧接口，但无法重建原始均价，故全部新增钱包状态字段
+（含 W/U、开仓均价、可划转额、notional/initial_margin）及任何显式 `flow=` 会报错；不读这些字段时原有数值、输出和快照字节保持不变。
+旧快照的 `repr`、`print`、`dataclasses.asdict` 跳过不可用的新字段；普通新快照的字段集不变。
+
+`TwoWalletResult` 包含 `spot/usdm` 两个原生 Result，以及
+`times/coins/equity/nav/returns/residual_coins/residual_notional/transfers/diagnostics`。
+`follow_spot` 另提供 `rounding_residual_notional`（按当前数量规则量化的误差）和
+`underfill_residual_notional`（实际合约与量化后理想对冲的差）。后者包括受阻、资金不足、
+最小订单名义和非调仓小时未重试带来的不足；独立模式两字段为零。
+比例为 1 时两项之和等于总残余，其他对冲比例还包含策略主动保留的方向敞口。
+合并诊断如下；两腿原诊断保留在 `spot/usdm` 子键，各腿 Result 的 `diagnostics["crypto"]`
+也附上对应诊断。
+
+| 字段 | 含义 |
+|---|---|
+| `transfers / transfer_requests` | 实际非零划转次数 / 非零请求次数 |
+| `requested_total / actual_total` | 双向绝对金额之和，不是净流量 |
+| `truncated_count / truncated_amount` | 被截断请求的次数和短缺总额，含完全拒绝 |
+| `rejected_deposits` | 已爆仓接收方拒绝入金次数 |
+| `rescue_failed_count / rescue_failed_amount` | 现货到合约请求未完全满足的次数和短缺额 |
+| `rescue_failures_followed_by_liquidation` | 后续存在强平的失败请求数；可多次指向同一次强平 |
+| `residual_max / residual_rows / residual_exceeded_rows` | 每行绝对名义之和最大值 / 非零行数 / 超阈值行数 |
+| `rounding_residual_max / underfill_residual_max` | 两类残余各币绝对名义之和的最大值 |
+| `transfer_model / transfer_margin_factor / valid` | 假设标签 / IM 敏感性倍数 / 残余与第一档规则是否均通过 |
+
+`transfers` 日志含 `row/time/direction/requested/actual/reason/rescue_failed`，失败救援另有
+`next_liquidation_row`。拒收、付款方爆仓和余额不足分别标识。
+
+复现例子和性能：`nice -n 15 .venv/bin/python bench/crypto_wallets_example.py --data tmp/crypto`。
+BTC 例子初始 30,000 USDT，保证金目标 .5、现金储备率 1，`h=.4`，
+每次调仓两腿各自目标名义为合计权益×h；初始现货钱包 24,000、合约钱包 6,000，
+杠杆 5，每日 UTC 00:00 决策，小额不合规则的增仓整组延后。调仓前补资默认开启，
+残余限额 250 USDT，并独立断言成交不足残余为零、第一档上限未超、`valid=True`。
+BTC 单腿目标名义峰值约 16,007 USDT，明显低于 50,000 第一档上限。默认路径是 `data/crypto`，也支持
+`CRYPTO_DATA_ROOT`。结果与独立原始输入手算核对见 `bench/results/crypto_wallets_example.json`，
+双钱包/单账户/逐行开销见 `crypto_wallets_performance.json`；验收记录见 [C4_NOTES.md](C4_NOTES.md)。

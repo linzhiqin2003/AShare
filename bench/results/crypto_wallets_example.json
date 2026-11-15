@@ -1,0 +1,86 @@
+{
+  "version": "255bd79371cf3907ca33a11056e2dbafdf09f46883fab0a7d82584bc1108f1b6",
+  "start_ms": 1577836800000,
+  "end_exclusive_ms": 1793487600000,
+  "hours": 59903,
+  "parameters": {
+    "capital": 30000.0,
+    "initial": [
+      24000.0,
+      6000.0
+    ],
+    "h": 0.4,
+    "cash_reserve_ratio": 1.0,
+    "target_margin_ratio": 0.5,
+    "rebalance_hours": 24,
+    "trade_hour_utc": 0,
+    "leverage": 5,
+    "pre_fund": true,
+    "pre_fund_buffer": 0.02,
+    "min_order_safety_factor": 1.5,
+    "small_order_deferred": 162,
+    "max_target_per_leg_per_coin": 16007.435317909578
+  },
+  "sensitivity": {
+    "1": {
+      "final_nav": 1.3340385137811117,
+      "annualized": 0.04304770887248566,
+      "funding_income": 11132.667640317326,
+      "fees": 1085.8941228190001,
+      "max_drawdown": 0.010862665915082004,
+      "transfers": 29,
+      "rescue_failures": 0,
+      "liquidations": 0,
+      "residual_max_usdt": 108.97305019976332,
+      "rounding_residual_max_usdt": 108.97305019976332,
+      "underfill_residual_max_usdt": 0.0,
+      "residual_rows": 59879,
+      "tier_exceeded": 0,
+      "valid": true,
+      "seconds": 3.2681146250106394
+    },
+    "1.5": {
+      "final_nav": 1.334038513781113,
+      "annualized": 0.04304770887248588,
+      "funding_income": 11132.667640317326,
+      "fees": 1085.8941228190001,
+      "max_drawdown": 0.010862665915082004,
+      "transfers": 30,
+      "rescue_failures": 0,
+      "liquidations": 0,
+      "residual_max_usdt": 108.97305019976332,
+      "rounding_residual_max_usdt": 108.97305019976332,
+      "underfill_residual_max_usdt": 0.0,
+      "residual_rows": 59879,
+      "tier_exceeded": 0,
+      "valid": true,
+      "seconds": 3.6611531249945983
+    }
+  },
+  "hand_checks": {
+    "prefund": {
+      "source": "raw previous mark close; new-target IM, fee and buffer",
+      "initial_wallet": 29.01348,
+      "expected_amount": 34.93222992,
+      "engine_amount": 34.93222992,
+      "difference": 0.0
+    },
+    "rescue": {
+      "source": "independent raw trade opens, mark closes, funding events; fixed coin position",
+      "expected_amount": 92.12309262296917,
+      "pre_wallet": 149.56692731413088,
+      "pre_unrealized": -64.41001329140003,
+      "pre_nominal": 354.5600132914,
+      "engine_amount": 92.12309262296917,
+      "difference": 0.0,
+      "pre_margin_ratio": 0.2401763053656687
+    },
+    "funding_day": {
+      "source": "independent raw fundingRate and event-associated mark prices",
+      "events": 3,
+      "expected_income": 0.20488769058528228,
+      "engine_income": 0.20488769058528228
+    }
+  },
+  "interpretation": "调仓前补资与现金储备救援；分别报告取整与成交不足残余"
+}

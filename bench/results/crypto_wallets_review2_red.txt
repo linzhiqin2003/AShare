@@ -1,0 +1,272 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+__ test_review2_exit_retries_blocked_future_only_until_both_legs_close[False] __
+test/test_crypto_wallets_review2.py:38: in test_review2_exit_retries_blocked_future_only_until_both_legs_close
+    np.testing.assert_array_equal(r.usdm.positions[24:27, 0], [-5, -5, 0])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: -5.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 5.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([-5., -5., -5.])
+E    DESIRED: array([-5, -5,  0])
+__ test_review2_exit_retries_blocked_future_only_until_both_legs_close[True] ___
+test/test_crypto_wallets_review2.py:38: in test_review2_exit_retries_blocked_future_only_until_both_legs_close
+    np.testing.assert_array_equal(r.usdm.positions[24:27, 0], [-5, -5, 0])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 1 / 3 (33.3%)
+E   Mismatch at index:
+E    [2]: -5.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 5.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([-5., -5., -5.])
+E    DESIRED: array([-5, -5,  0])
+_ test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected[native] _
+test/test_crypto_wallets_review2.py:69: in test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected
+    np.testing.assert_array_equal(positions, [0, -7, -7])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: -6.0 (ACTUAL), -7 (DESIRED)
+E    [2]: -6.0 (ACTUAL), -7 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.14285714
+E    ACTUAL: array([ 0., -6., -6.])
+E    DESIRED: array([ 0, -7, -7])
+_ test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected[oracle] _
+test/test_crypto_wallets_review2.py:69: in test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected
+    np.testing.assert_array_equal(positions, [0, -7, -7])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: -6.0 (ACTUAL), -7 (DESIRED)
+E    [2]: -6.0 (ACTUAL), -7 (DESIRED)
+E   Max absolute difference among violations: 1.
+E   Max relative difference among violations: 0.14285714
+E    ACTUAL: array([ 0., -6., -6.])
+E    DESIRED: array([ 0, -7, -7])
+_____ test_review2_restore_advanced_policy_checks_config_not_mutable_state _____
+test/test_crypto_wallets_review2.py:99: in test_review2_restore_advanced_policy_checks_config_not_mutable_state
+    restored = TwoWallet.restore(blob, spot, usdm, transfer=policy)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_wallets.py:818: in restore
+    raise ValueError("两钱包快照的时间轴、映射、策略或配置指纹不一致")
+E   ValueError: 两钱包快照的时间轴、映射、策略或配置指纹不一致
+__ test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-state] __
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+            ^^^^^^^^^^^
+<python-stdlib>/reprlib.py:21: in wrapper
+    result = user_function(self)
+             ^^^^^^^^^^^^^^^^^^^
+<string>:23: in __repr__
+    ???
+packages/panelbt/python/panelbt/models.py:917: in __getattribute__
+    raise ValueError("wallet ledger unavailable after legacy snapshot restore")
+E   ValueError: wallet ledger unavailable after legacy snapshot restore
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-result] __
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+            ^^^^^^^^^^^
+<python-stdlib>/reprlib.py:21: in wrapper
+    result = user_function(self)
+             ^^^^^^^^^^^^^^^^^^^
+<string>:50: in __repr__
+    ???
+packages/panelbt/python/panelbt/models.py:917: in __getattribute__
+    raise ValueError("wallet ledger unavailable after legacy snapshot restore")
+E   ValueError: wallet ledger unavailable after legacy snapshot restore
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-state] _
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+                                                  ^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1359: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1370: in _asdict_inner
+    f.name: _asdict_inner(getattr(obj, f.name), dict)
+                          ^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:917: in __getattribute__
+    raise ValueError("wallet ledger unavailable after legacy snapshot restore")
+E   ValueError: wallet ledger unavailable after legacy snapshot restore
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-result] _
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+                                                  ^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1359: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1370: in _asdict_inner
+    f.name: _asdict_inner(getattr(obj, f.name), dict)
+                          ^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:917: in __getattribute__
+    raise ValueError("wallet ledger unavailable after legacy snapshot restore")
+E   ValueError: wallet ledger unavailable after legacy snapshot restore
+_______ test_function_protocol_restore_does_not_mutate_callers_strategy ________
+test/test_crypto_wallets_contract.py:338: in test_function_protocol_restore_does_not_mutate_callers_strategy
+    restored = TwoWallet.restore(blob, spot, usdm, transfer=transfer)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/backtest/crypto_wallets.py:818: in restore
+    raise ValueError("两钱包快照的时间轴、映射、策略或配置指纹不一致")
+E   ValueError: 两钱包快照的时间轴、映射、策略或配置指纹不一致
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_review2.py::test_review2_exit_retries_blocked_future_only_until_both_legs_close[False]
+FAILED test/test_crypto_wallets_review2.py::test_review2_exit_retries_blocked_future_only_until_both_legs_close[True]
+FAILED test/test_crypto_wallets_review2.py::test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected[native]
+FAILED test/test_crypto_wallets_review2.py::test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected[oracle]
+FAILED test/test_crypto_wallets_review2.py::test_review2_restore_advanced_policy_checks_config_not_mutable_state
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-state]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-result]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-state]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-result]
+FAILED test/test_crypto_wallets_contract.py::test_function_protocol_restore_does_not_mutate_callers_strategy
+10 failed in 0.87s
+
+Development regression: first display fix recursively accessed its own field guard.
+Source: the same legacy-display regressions and legacy restore guards, before correction.
+nice: setpriority: Operation not permitted
+.....FFFF...................................F.....F...                   [100%]
+=================================== FAILURES ===================================
+__ test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-state] __
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+            ^^^^^^^^^^^
+<python-stdlib>/reprlib.py:21: in wrapper
+    result = user_function(self)
+             ^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:928: in __repr__
+    f"{f.name}={getattr(self, f.name)!r}" for f in fields(self) if f.repr
+                                                   ^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1317: in fields
+    fields = getattr(class_or_instance, _FIELDS)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-result] __
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+            ^^^^^^^^^^^
+<python-stdlib>/reprlib.py:21: in wrapper
+    result = user_function(self)
+             ^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:928: in __repr__
+    f"{f.name}={getattr(self, f.name)!r}" for f in fields(self) if f.repr
+                                                   ^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1317: in fields
+    fields = getattr(class_or_instance, _FIELDS)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-state] _
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+                                                  ^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1359: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1371: in _asdict_inner
+    for f in fields(obj)
+             ^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1317: in fields
+    fields = getattr(class_or_instance, _FIELDS)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+_ test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-result] _
+test/test_crypto_wallets_review2.py:121: in test_review2_legacy_dataclass_display_omits_unavailable_fields
+    shown = repr(value) if display == "repr" else asdict(value)
+                                                  ^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1359: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1371: in _asdict_inner
+    for f in fields(obj)
+             ^^^^^^^^^^^
+<python-stdlib>/dataclasses.py:1317: in fields
+    fields = getattr(class_or_instance, _FIELDS)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+____________ test_review_p2_5_old_liquidation_snapshot_legacy_path _____________
+test/test_crypto_wallets_review.py:156: in test_review_p2_5_old_liquidation_snapshot_legacy_path
+    assert sim.state.shares[0] == 1
+           ^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+_____ test_review_legacy_missing_ledger_does_not_report_false_zero_margin ______
+test/test_crypto_wallets_review.py:275: in test_review_legacy_missing_ledger_does_not_report_false_zero_margin
+    getattr(sim.state, field)
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/models.py:933: in __getattribute__
+    if name in self._unavailable_fields:
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E   RecursionError: maximum recursion depth exceeded
+!!! Recursion detected (same locals & position)
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-state]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-result]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-state]
+FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-result]
+FAILED test/test_crypto_wallets_review.py::test_review_p2_5_old_liquidation_snapshot_legacy_path
+FAILED test/test_crypto_wallets_review.py::test_review_legacy_missing_ledger_does_not_report_false_zero_margin
+6 failed, 48 passed in 1.40s
