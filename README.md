@@ -102,7 +102,7 @@ A 股量化研究框架。回测、因子算子、风险模型、组合优化和
 
 | 模块 | 做什么 | 说明 |
 |---|---|---|
-| `ashare.data` | Tushare 数据仓库与时点面板：A 股（公司行为与复权因子对账）、境内期货（合约表、结算参数、连续合约）、基金与可转债；境外期货的 Databento、Bloomberg 适配器（未用真实账号验证） | [数据](docs/DATA_NOTES.md) · [期货](docs/FUTURES_DATA.md) · [基金与可转债](docs/FUND_CB_DATA.md) · [境外期货](docs/FOREIGN_FUTURES.md) |
+| `ashare.data` | Tushare 数据仓库与时点面板：A 股（公司行为与复权因子对账）、境内期货（合约表、结算参数、连续合约）、基金与可转债；境外期货的 Databento、Bloomberg 适配器（未用真实账号验证） | [数据](docs/DATA_NOTES.md) · [期货](docs/FUTURES_DATA.md) · [基金与可转债](docs/FUND_CB_DATA.md) · [境外期货](docs/FOREIGN_FUTURES.md) · [接入自己的数据](docs/DATA_SPEC.md) |
 | `ashare.factor` | 因子表达式、求值与缓存、因子注册与加载；单因子评估；表达式搜索（枚举、随机、进化），带试验台账、留出段和多重检验（折算夏普、Holm、BH、回测过拟合概率） | [因子挖掘](docs/MINING_NOTES.md) |
 | `ashare.ml` | 样本集构造与防前视、滚动训练、线性模型与 LightGBM（可选依赖）、预测即因子、试验留痕 | [机器学习](docs/ML_NOTES.md) |
 | `ashare.events` | 事件表转目标持仓；事件研究（公告前后的累计超额收益） | [事件](docs/EVENTS_NOTES.md) |
