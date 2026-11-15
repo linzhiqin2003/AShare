@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import IntEnum
+from reprlib import recursive_repr
 from typing import Any
 
 import numpy as np
@@ -276,6 +277,7 @@ class Market:
     open: ArrayLike | None = None
     high: ArrayLike | None = None
     low: ArrayLike | None = None
+    crypto_spot: bool = field(default=False, kw_only=True)
     validate: bool = field(default=True, kw_only=True)
     first_delist: IntArray = field(init=False, repr=False)
     action_indptr: IntArray = field(init=False, repr=False)
@@ -326,6 +328,10 @@ class Market:
             raise ValueError(
                 "Market: exec_price, close, can_buy and can_sell are required"
             )
+        if not isinstance(self.crypto_spot, bool) or (
+            self.crypto_spot and self.futures is not None
+        ):
+            raise ValueError("crypto_spot: expected bool, spot-only market")
         if not isinstance(self.validate, bool):
             raise ValueError("validate: expected bool")
         bars = [getattr(self, k) for k in ("open", "high", "low")]
@@ -799,6 +805,8 @@ class Result:
     funding: FloatArray | None = None
     clearance_fee: FloatArray | None = None
     bankruptcy_deficit: FloatArray | None = None
+    wallet_balance: FloatArray | None = None
+    unrealized: FloatArray | None = None
     contribution: FloatArray | None = None
     liquidation_events: list = field(default_factory=list)
     bankruptcy_events: list = field(default_factory=list)
@@ -884,5 +892,55 @@ class Result:
 
         if self.nav.ndim != 1:
             raise ValueError("to_frame requires a single-strategy Result")
-        names = (*METRICS, *(k for k in CRYPTO_METRICS if getattr(self, k) is not None))
+        names = (
+            *METRICS,
+            *(
+                k
+                for k in (*CRYPTO_METRICS, "wallet_balance", "unrealized")
+                if vars(self).get(k) is not None
+            ),
+        )
         return pd.DataFrame({k: getattr(self, k) for k in names}, index=index)
+
+
+class _MissingWallet:
+    """Old snapshots retain all old fields but cannot reconstruct entry P&L."""
+
+    _unavailable_fields = frozenset(
+        (
+            "wallet_balance",
+            "unrealized",
+            "transferable",
+            "entry_price",
+            "notional",
+            "initial_margin",
+        )
+    )
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, "__dataclass_fields__"):
+            # Own metadata only: never mutate the regular State/Result schema.
+            cls.__dataclass_fields__ = {
+                name: value
+                for name, value in cls.__dataclass_fields__.items()
+                if name not in cls._unavailable_fields
+            }
+
+    @recursive_repr()
+    def __repr__(self):
+        if not hasattr(type(self), "__dataclass_fields__"):
+            return super().__repr__()
+        values = ", ".join(
+            f"{f.name}={getattr(self, f.name)!r}" for f in fields(self) if f.repr
+        )
+        return f"{type(self).__qualname__}({values})"
+
+    def __getattribute__(self, name):
+        if name in type(self)._unavailable_fields:
+            raise ValueError("wallet ledger unavailable after legacy snapshot restore")
+        return super().__getattribute__(name)
+
+
+class _LegacyWalletResult(_MissingWallet, Result):
+    pass

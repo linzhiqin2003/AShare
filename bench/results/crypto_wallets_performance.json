@@ -1,0 +1,188 @@
+{
+  "hours": 59903,
+  "symbols": 2,
+  "two_wallet_seconds": [
+    3.4897587089799345,
+    3.2444149579969235,
+    3.270489791990258
+  ],
+  "single_crypto_run_seconds": [
+    0.008510375046171248,
+    0.007911083986982703,
+    0.00797395798144862
+  ],
+  "single_simulator_loop_seconds": [
+    0.22997695801313967,
+    0.22373850003350526,
+    0.22417175001464784
+  ],
+  "median_two_wallet_seconds": 3.270489791990258,
+  "median_single_crypto_run_seconds": 0.00797395798144862,
+  "median_single_loop_seconds": 0.22417175001464784,
+  "coordinator_extra_us_per_row": 47.11193582893949,
+  "gross_us_per_row": 54.59642742417338,
+  "ratio_to_single_run": 410.14635386830963,
+  "profiled_seconds": 5.765335749951191,
+  "profile_top": [
+    {
+      "function": "step",
+      "file": "crypto_wallets.py",
+      "calls": 59903,
+      "self_seconds": 1.112962699,
+      "cumulative_seconds": 5.593457862
+    },
+    {
+      "function": "_frozen",
+      "file": "crypto_wallets.py",
+      "calls": 119806,
+      "self_seconds": 0.665119197,
+      "cumulative_seconds": 1.519756721
+    },
+    {
+      "function": "nan_to_num",
+      "file": "_type_check_impl.py",
+      "calls": 121882,
+      "self_seconds": 0.319718826,
+      "cumulative_seconds": 0.720297442
+    },
+    {
+      "function": "<method 'step' of 'panelbt._core.Simulator' objects>",
+      "file": "~",
+      "calls": 119806,
+      "self_seconds": 0.278093476,
+      "cumulative_seconds": 0.278093476
+    },
+    {
+      "function": "_reference",
+      "file": "crypto_wallets.py",
+      "calls": 59903,
+      "self_seconds": 0.203269062,
+      "cumulative_seconds": 0.28053932400000003
+    },
+    {
+      "function": "<method 'wallet' of 'panelbt._core.Simulator' objects>",
+      "file": "~",
+      "calls": 119808,
+      "self_seconds": 0.202108791,
+      "cumulative_seconds": 0.202108791
+    },
+    {
+      "function": "<method 'copy' of 'numpy.ndarray' objects>",
+      "file": "~",
+      "calls": 1022510,
+      "self_seconds": 0.17973275300000002,
+      "cumulative_seconds": 0.17973275300000002
+    },
+    {
+      "function": "fields",
+      "file": "dataclasses.py",
+      "calls": 119807,
+      "self_seconds": 0.17232228400000002,
+      "cumulative_seconds": 0.29106223200000003
+    },
+    {
+      "function": "_contracts",
+      "file": "crypto_wallets.py",
+      "calls": 66128,
+      "self_seconds": 0.126832852,
+      "cumulative_seconds": 0.130878554
+    },
+    {
+      "function": "<built-in method builtins.isinstance>",
+      "file": "~",
+      "calls": 2412770,
+      "self_seconds": 0.125026608,
+      "cumulative_seconds": 0.125026608
+    },
+    {
+      "function": "<built-in method builtins.getattr>",
+      "file": "~",
+      "calls": 2280650,
+      "self_seconds": 0.122725075,
+      "cumulative_seconds": 0.122725075
+    },
+    {
+      "function": "step",
+      "file": "step.py",
+      "calls": 119806,
+      "self_seconds": 0.113922859,
+      "cumulative_seconds": 0.530539954
+    },
+    {
+      "function": "state",
+      "file": "step.py",
+      "calls": 119808,
+      "self_seconds": 0.11110038100000001,
+      "cumulative_seconds": 0.674765803
+    },
+    {
+      "function": "isposinf",
+      "file": "_ufunclike_impl.py",
+      "calls": 121882,
+      "self_seconds": 0.104430491,
+      "cumulative_seconds": 0.104430491
+    },
+    {
+      "function": "<genexpr>",
+      "file": "dataclasses.py",
+      "calls": 2276320,
+      "self_seconds": 0.09970071700000001,
+      "cumulative_seconds": 0.09970071700000001
+    },
+    {
+      "function": "<method 'reduce' of 'numpy.ufunc' objects>",
+      "file": "~",
+      "calls": 271202,
+      "self_seconds": 0.088043884,
+      "cumulative_seconds": 0.088043884
+    },
+    {
+      "function": "run",
+      "file": "crypto_wallets.py",
+      "calls": 1,
+      "self_seconds": 0.08688179900000001,
+      "cumulative_seconds": 5.709891833
+    },
+    {
+      "function": "isneginf",
+      "file": "_ufunclike_impl.py",
+      "calls": 121882,
+      "self_seconds": 0.071472458,
+      "cumulative_seconds": 0.071472458
+    }
+  ],
+  "summary": {
+    "final_nav": 1.3669529310832047,
+    "annualized": 0.0467720406618215,
+    "funding_income": 12342.470493159253,
+    "fees": 1262.2230551115001,
+    "max_drawdown": 0.008558040869478534,
+    "transfers": 45,
+    "rescue_failures": 0,
+    "liquidations": 0,
+    "residual_max_usdt": 119.17419150014838,
+    "rounding_residual_max_usdt": 119.17419150014838,
+    "underfill_residual_max_usdt": 0.0,
+    "residual_rows": 59879,
+    "tier_exceeded": 0,
+    "valid": true
+  },
+  "parameters": {
+    "capital": 30000.0,
+    "initial": [
+      24000.0,
+      6000.0
+    ],
+    "h": 0.4,
+    "cash_reserve_ratio": 1.0,
+    "target_margin_ratio": 0.5,
+    "rebalance_hours": 24,
+    "trade_hour_utc": 0,
+    "leverage": 5,
+    "pre_fund": true,
+    "pre_fund_buffer": 0.02,
+    "min_order_safety_factor": 1.5,
+    "small_order_deferred": 420,
+    "max_target_per_leg_per_coin": 8201.429522025092
+  }
+}

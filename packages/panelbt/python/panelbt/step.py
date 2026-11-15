@@ -21,10 +21,16 @@ from .models import (
     IntArray,
     Market,
     Result,
+    _LegacyWalletResult,
+    _MissingWallet,
 )
 
 DayRecord = namedtuple("DayRecord", ("day", *METRICS))
 CryptoDayRecord = namedtuple("CryptoDayRecord", ("day", *METRICS, *CRYPTO_METRICS))
+WalletDayRecord = namedtuple(
+    "WalletDayRecord",
+    ("day", *METRICS, *CRYPTO_METRICS, "wallet_balance", "unrealized"),
+)
 DayRecord.__doc__ = "Daily metrics of one stepped row (the same fields as Result)."
 
 
@@ -67,8 +73,8 @@ class State:
     `.copy()` anything you want to keep.
 
     - `day`: the row the next `step` executes.
-    - `cash`: cash after row `day`'s external flow, dividends and delisting
-      proceeds (known before the open).
+    - `cash`: cash after row `day`'s static external flow, dividends and delisting
+      proceeds, but before the next `step(flow=...)` (known before the open).
     - `equity`: equity at the close of row `day - 1` (initial cash on row 0).
     - `shares`: holdings after row `day`'s splits and delistings.
     - `cost`: quantity-weighted raw execution price of each open position
@@ -82,6 +88,14 @@ class State:
       orders still being retried (`carry_blocked`).
     - `margin_call`: a maintenance call at the last close; row `day` will be
       a forced-liquidation row. `bankrupt`: the account has failed.
+    - `wallet_balance`, `unrealized`: exchange futures W and previous-close U;
+      None without exchange liquidation. W includes prepared static flows.
+    - `entry_price`: effective opening averages, excluding fees, distinct from
+      `cost`; a read-only copy (empty for non-wallet accounts).
+    - `notional`, `initial_margin`: absolute futures notional at the previous
+      settlement, and margin at that price with the next row's effective rate.
+    - `transferable`: dynamic withdrawal limit at this prepared boundary;
+      cash for cash-only spot, max(0, W + min(U, 0) - IM) for exchange futures.
     """
 
     day: int
@@ -96,6 +110,20 @@ class State:
     futures_basis: FloatArray
     pending_cols: IntArray
     pending_targets: FloatArray
+    wallet_balance: float | None = None
+    unrealized: float | None = None
+    transferable: float = 0.0
+    entry_price: FloatArray | None = None
+    notional: float = 0.0
+    initial_margin: float = 0.0
+
+
+class _LegacyWalletState(_MissingWallet, State):
+    pass
+
+
+class _LegacyWalletDay(_MissingWallet, CryptoDayRecord):
+    pass
 
 
 class Simulator:
@@ -155,6 +183,7 @@ class Simulator:
             rules,
             digest,
         )
+        self._legacy_wallet = False
         self._core = _core.Simulator(*self._args)
         self._market, self._costs, self._config, self.kind = market, costs, config, kind
         self.n_days, self.n_securities = market.shape
@@ -165,12 +194,33 @@ class Simulator:
         """The next row to step (equals `n_days` when finished)."""
         return self._core.scalars()[0]
 
+    def opening_feasible(self, target, prices, *, flow=0.0) -> bool:
+        """Preview collateral at supplied reference prices using Rust fill checks.
+
+        Dense targets are contract counts. The prepared cash plus hypothetical
+        flow funds reductions and then openings at the supplied prices, using
+        effective fee/margin terms. This is read-only, does not clip the flow,
+        and excludes liquidity, filters, price gaps, slippage and liquidation.
+        Only available with a current exchange-liquidation wallet ledger.
+        """
+        return self._core.opening_feasible(
+            np.ascontiguousarray(target, dtype=float).reshape(-1),
+            np.ascontiguousarray(prices, dtype=float).reshape(-1),
+            float(flow),
+        )
+
     @property
     def state(self) -> State:
         day, cash, equity, call, bankrupt = self._core.scalars()
         shares, last, basis, cost, _peak, entry = self._views
         cols, targets = self._core.pending()
-        return State(
+        wallet, unrealized, transferable, entry_price, notional, initial_margin = (
+            (None, None, 0.0, np.empty(0), 0.0, 0.0)
+            if self._legacy_wallet
+            else self._core.wallet()
+        )
+        state_type = _LegacyWalletState if self._legacy_wallet else State
+        return state_type(
             day,
             cash,
             equity,
@@ -183,6 +233,12 @@ class Simulator:
             basis,
             cols,
             targets,
+            wallet,
+            unrealized,
+            transferable,
+            _view(entry_price),
+            notional,
+            initial_margin,
         )
 
     def _row(self, target: Any):
@@ -234,11 +290,25 @@ class Simulator:
         cols = np.flatnonzero((row != 0) & ~nan)
         return cols.astype(np.int64), np.ascontiguousarray(row[cols]), None
 
-    def step(self, target: Any = None) -> DayRecord:
-        """Trade and close the current row, then open the next one."""
+    def step(self, target: Any = None, *, flow: float | None = None) -> DayRecord:
+        """Apply optional flow before opening checks, trade, close, prepare next row.
+
+        Positive flow deposits, negative flow withdraws up to `transferable`.
+        Any explicit flow conflicts with a nonzero static Config.cash_flow.
+        Bankrupt exchange wallets reject both directions. The returned
+        cash_flow is actual; withdrawal_shortfall is actual minus requested.
+        Omitting flow preserves the existing static-flow path.
+        """
         cols, values, limits = self._row(target)
         day = self.day
-        values = self._core.step(cols, values, limits)
+        values = self._core.step(cols, values, limits, flow)
+        if self._legacy_wallet:
+            return _LegacyWalletDay(day, *values)
+        if (
+            self._market.futures is not None
+            and self._market.futures.liquidation is not None
+        ):
+            return WalletDayRecord(day, *values)
         if self._market.futures is not None and self._market.futures.has_crypto:
             return CryptoDayRecord(day, *values)
         return DayRecord(day, *values[: len(METRICS)])
@@ -251,11 +321,15 @@ class Simulator:
 
     def result(self) -> Result:
         """The finished Result; every row must have been stepped."""
-        return _result(
+        result = _result(
             self._core.result(),
             self._market.validated,
             bool(self._market.futures and self._market.futures.has_crypto),
         )
+
+        if self._legacy_wallet:
+            result.__class__ = _LegacyWalletResult
+        return result
 
     def snapshot(self) -> bytes:
         """Serialize the simulation; restore it with `Simulator.restore`."""
@@ -283,4 +357,9 @@ class Simulator:
         """
         sim = cls(market, costs, config, kind=kind, fingerprint=fingerprint)
         sim._core.load(bytes(snapshot))
+        sim._legacy_wallet = bool(
+            market.futures
+            and market.futures.liquidation is not None
+            and not snapshot.startswith(b"PBTSTEP4")
+        )
         return sim

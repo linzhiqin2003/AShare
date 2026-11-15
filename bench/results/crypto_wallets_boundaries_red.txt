@@ -1,0 +1,30 @@
+nice: setpriority: Operation not permitted
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_delisted_stranded_spot_keeps_finite_residual_and_snapshot ________
+test/test_crypto_wallets_contract.py:309: in test_delisted_stranded_spot_keeps_finite_residual_and_snapshot
+    assert tw.snapshot().startswith(b'TWALLET1')
+           ^^^^^^^^^^^^^
+src/ashare/backtest/crypto_wallets.py:626: in snapshot
+    payload = _json(data)
+              ^^^^^^^^^^^
+src/ashare/backtest/crypto_wallets.py:67: in _json
+    return json.dumps(
+<python-stdlib>/json/__init__.py:242: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+<python-stdlib>/json/encoder.py:202: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<python-stdlib>/json/encoder.py:263: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+E   ValueError: Out of range float values are not JSON compliant: nan
+_______ test_function_protocol_restore_does_not_mutate_callers_strategy ________
+test/test_crypto_wallets_contract.py:331: in test_function_protocol_restore_does_not_mutate_callers_strategy
+    assert counter['count'] == 0
+E   assert 1 == 0
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_contract.py::test_delisted_stranded_spot_keeps_finite_residual_and_snapshot
+FAILED test/test_crypto_wallets_contract.py::test_function_protocol_restore_does_not_mutate_callers_strategy
+2 failed, 1 passed, 16 deselected in 1.00s

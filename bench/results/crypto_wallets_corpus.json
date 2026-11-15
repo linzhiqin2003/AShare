@@ -1,0 +1,28 @@
+{
+  "seeds": 500,
+  "rows_per_seed": 12,
+  "branches": {
+    "spot_to_usdm": 1186,
+    "usdm_to_spot": 1172,
+    "truncated": 1509,
+    "rejected": 584,
+    "rescue_success": 32,
+    "rescue_failure": 24,
+    "bankrupt_deposit_rejected": 128,
+    "reversal": 358,
+    "delivery": 149,
+    "delisting": 130,
+    "residual": 4789
+  },
+  "decimal_daily_seeds": 120,
+  "decimal_daily_branches": {
+    "multiple_coins": 120,
+    "step_0.1": 60,
+    "step_0.001": 60,
+    "daily_trade_hour": 120,
+    "spot_delist": 120,
+    "unrelated_blocked_not_retried": 120,
+    "prefunded_target": 432
+  },
+  "total_rows": 15540
+}

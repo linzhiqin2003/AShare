@@ -1,0 +1,17 @@
+nice: setpriority: Operation not permitted
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_prefund_unused_missing_mark_does_not_poison_other_coin __________
+test/test_crypto_wallets_prefund_boundary.py:24: in test_prefund_unused_missing_mark_does_not_poison_other_coin
+    assert prefund_with_missing_mark([.5, 0]) == 16
+E   assert 0.0 == 16
+E    +  where 0.0 = prefund_with_missing_mark([0.5, 0])
+________ test_prefund_required_missing_mark_rejects_before_either_step _________
+test/test_crypto_wallets_prefund_boundary.py:28: in test_prefund_required_missing_mark_rejects_before_either_step
+    with pytest.raises(ValueError, match="结算价"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_prefund_boundary.py::test_prefund_unused_missing_mark_does_not_poison_other_coin
+FAILED test/test_crypto_wallets_prefund_boundary.py::test_prefund_required_missing_mark_rejects_before_either_step
+2 failed in 1.77s

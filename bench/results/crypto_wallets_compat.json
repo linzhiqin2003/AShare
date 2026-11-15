@@ -1,0 +1,32 @@
+{
+  "seeds_per_account": 100,
+  "cases": 400,
+  "compared_api_outputs": 1600,
+  "old_snapshots_restored": 400,
+  "old_npz_migrations_and_frame_schemas": 400,
+  "bitwise_identical": true,
+  "builds": [
+    {
+      "touched": {
+        "cash": 97,
+        "margin": 98,
+        "held_futures": 383,
+        "crypto": 95
+      },
+      "package": ".cache/crypto-wallets-baseline/panelbt/__init__.py",
+      "extension": ".cache/crypto-wallets-baseline/panelbt/_core.abi3.so",
+      "source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723"
+    },
+    {
+      "touched": {
+        "cash": 97,
+        "margin": 98,
+        "held_futures": 383,
+        "crypto": 95
+      },
+      "package": "packages/panelbt/python/panelbt/__init__.py",
+      "extension": "packages/panelbt/python/panelbt/_core.abi3.so",
+      "source": "5bd1622c2ae3252068c9b35e50ae7d8f79a4ac7c68201dbf3e4457b20f026755"
+    }
+  ]
+}

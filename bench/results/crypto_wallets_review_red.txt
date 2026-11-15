@@ -1,0 +1,77 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+___ test_review_p1_1_decimal_reduction_native_and_independent_oracle[native] ___
+test/test_crypto_wallets_review.py:25: in test_review_p1_1_decimal_reduction_native_and_independent_oracle
+    np.testing.assert_allclose(r.positions[:, 0], [1, .8, .8], atol=1e-15, rtol=0)
+E   AssertionError:
+E   Not equal to tolerance rtol=0, atol=1e-15
+E
+E   Mismatched elements: 2 / 3 (66.7%)
+E   Mismatch at indices:
+E    [1]: 0.9 (ACTUAL), 0.8 (DESIRED)
+E    [2]: 0.9 (ACTUAL), 0.8 (DESIRED)
+E   Max absolute difference among violations: 0.1
+E   Max relative difference among violations: 0.125
+E    ACTUAL: array([1. , 0.9, 0.9])
+E    DESIRED: array([1. , 0.8, 0.8])
+___ test_review_p1_1_decimal_reduction_native_and_independent_oracle[oracle] ___
+test/test_crypto_wallets_review.py:31: in test_review_p1_1_decimal_reduction_native_and_independent_oracle
+    assert oracle.position[0] == pytest.approx(.8, abs=1e-15)
+E   assert np.float64(0.9) == 0.8 ± 1.0e-15
+E
+E     comparison failed
+E     Obtained: 0.9
+E     Expected: 0.8 ± 1.0e-15
+___________ test_review_p1_1_decimal_capacity_full_close_after_split ___________
+test/test_crypto_wallets_review.py:41: in test_review_p1_1_decimal_capacity_full_close_after_split
+    assert r.positions[-1, 0] == 0
+E   assert np.float64(0.05000000000000002) == 0
+_____ test_review_p1_2_decimal_coin_contract_integer_boundary[follow_spot] _____
+test/test_crypto_wallets_review.py:52: in test_review_p1_2_decimal_coin_contract_integer_boundary
+    assert r.usdm.positions[1, 0] == -3
+E   assert np.float64(-2.0) == -3
+_____ test_review_p1_2_decimal_coin_contract_integer_boundary[independent] _____
+test/test_crypto_wallets_review.py:52: in test_review_p1_2_decimal_coin_contract_integer_boundary
+    assert r.usdm.positions[1, 0] == -3
+E   assert np.float64(-2.0) == -3
+__________ test_review_p1_3_daily_delist_only_rehedges_affected_coin ___________
+test/test_crypto_wallets_review.py:85: in test_review_p1_3_daily_delist_only_rehedges_affected_coin
+    np.testing.assert_array_equal(r.usdm.positions[24:26, 1], [0, 0])
+E   AssertionError:
+E   Arrays are not equal
+E
+E   Mismatched elements: 1 / 2 (50%)
+E   Mismatch at index:
+E    [1]: -5.0 (ACTUAL), 0 (DESIRED)
+E   Max absolute difference among violations: 5.
+E   Max relative difference among violations: inf
+E    ACTUAL: array([ 0., -5.])
+E    DESIRED: array([0, 0])
+____________ test_review_p2_4_snapshot_checks_fixed_strategy_config ____________
+test/test_crypto_wallets_review.py:111: in test_review_p2_4_snapshot_checks_fixed_strategy_config
+    with pytest.raises(ValueError, match="参数|配置|fingerprint"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+____________ test_review_p2_5_old_liquidation_snapshot_legacy_path _____________
+test/test_crypto_wallets_review.py:123: in test_review_p2_5_old_liquidation_snapshot_legacy_path
+    sim = bt.Simulator.restore(blob, m, cost, cfg, kind="shares")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+packages/panelbt/python/panelbt/step.py:324: in restore
+    sim._core.load(bytes(snapshot))
+E   ValueError: snapshot: wallet ledger missing or incompatible; recreate pre-C4 liquidation snapshots
+_______ test_review_p2_6_prefund_rebalance_target_before_spot_execution ________
+test/test_crypto_wallets_review.py:147: in test_review_p2_6_prefund_rebalance_target_before_spot_execution
+    assert tw.state[1].shares[0] == -1000
+E   assert np.float64(-800.0) == -1000
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_reduction_native_and_independent_oracle[native]
+FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_reduction_native_and_independent_oracle[oracle]
+FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_capacity_full_close_after_split
+FAILED test/test_crypto_wallets_review.py::test_review_p1_2_decimal_coin_contract_integer_boundary[follow_spot]
+FAILED test/test_crypto_wallets_review.py::test_review_p1_2_decimal_coin_contract_integer_boundary[independent]
+FAILED test/test_crypto_wallets_review.py::test_review_p1_3_daily_delist_only_rehedges_affected_coin
+FAILED test/test_crypto_wallets_review.py::test_review_p2_4_snapshot_checks_fixed_strategy_config
+FAILED test/test_crypto_wallets_review.py::test_review_p2_5_old_liquidation_snapshot_legacy_path
+FAILED test/test_crypto_wallets_review.py::test_review_p2_6_prefund_rebalance_target_before_spot_execution
+9 failed in 0.94s

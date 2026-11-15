@@ -1,0 +1,19 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_example_cli_does_not_import_bench_profile_as_stdlib ___________
+test/test_crypto_wallets_contract.py:263: in test_example_cli_does_not_import_bench_profile_as_stdlib
+    assert p.returncode == 0, p.stderr
+E   AssertionError: Traceback (most recent call last):
+E       File "<worktree>/bench/crypto_wallets_example.py", line 6, in <module>
+E         import cProfile
+E       File "<python-stdlib>/cProfile.py", line 24, in <module>
+E         run.__doc__ = _pyprofile.run.__doc__
+E                       ^^^^^^^^^^^^^^
+E     AttributeError: module 'profile' has no attribute 'run' (consider renaming '<worktree>/bench/profile.py' since it has the same name as the standard library module named 'profile' and prevents importing that standard library module)
+E
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['<worktree>/.venv/bin/python', 'bench/crypto_w...the same name as the standard library module named \'profile\' and prevents importing that standard library module)\n').returncode
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets_contract.py::test_example_cli_does_not_import_bench_profile_as_stdlib
+1 failed, 14 deselected in 1.08s

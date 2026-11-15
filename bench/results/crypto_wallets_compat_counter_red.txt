@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from test.test_crypto_wallets_compat import test_bitwise_digest_includes_old_crypto_coverage as check; check("funding_paid")
+                                                                                                           ~~~~~^^^^^^^^^^^^^^^^
+  File "<worktree>/test/test_crypto_wallets_compat.py", line 19, in test_bitwise_digest_includes_old_crypto_coverage
+    assert digest(original) != digest(changed)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

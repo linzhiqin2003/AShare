@@ -1,0 +1,134 @@
+{
+  "review_round": 3,
+  "rust_source": "5bd1622c2ae3252068c9b35e50ae7d8f79a4ac7c68201dbf3e4457b20f026755",
+  "rust_tests": {
+    "command": "cargo test -j 2 --workspace",
+    "passed": 33,
+    "failed": 0
+  },
+  "python_core": {
+    "command": "pytest -q test/test_*.py test/crypto test/backtest test/factor/test_groupbt*.py -n 4",
+    "passed": 1795,
+    "warnings": 12,
+    "seconds": 47.71,
+    "failed": 0,
+    "skipped": 0
+  },
+  "checks": {
+    "ruff": true,
+    "ruff_format": true,
+    "cargo_fmt": true,
+    "clippy": true
+  },
+  "compatibility": {
+    "outputs": 1600,
+    "old_snapshots": 400,
+    "old_liquidation_snapshots": 100,
+    "archives": 400,
+    "bitwise": true
+  },
+  "mutations": {
+    "total": 28,
+    "killed": 28,
+    "added_this_round": 2,
+    "tested_this_round": 2,
+    "restored_tests_passed": true
+  },
+  "deterministic_review_red": {
+    "failed_before_fix": 9,
+    "additional_prefund_boundary_failures": 3,
+    "legacy_metadata_failures": 1
+  },
+  "source_sha256": {
+    "crates/panelbt-core/src/lib.rs": "832bc834f9145984e2a2f78c5c00a615adadd07c471706ba3d630bade1896227",
+    "crates/panelbt-core/src/wallets.rs": "dc4cddb232745cd02b9f6aa002811ddb25b01792b5115679d687b13228126abe",
+    "crates/panelbt-core/src/crypto.rs": "e149deb85f27c45e025059e8e7cd5a011a1059a6f023c79e3a6852a6d9a9e4a5",
+    "crates/panelbt-core/src/futures.rs": "6c9c162dbe5d38ae45a9e1af31fa9b36f75b70ff4f35a2b8281d0f4905b3f626",
+    "packages/panelbt/src/lib.rs": "4eb42897b97823acd6baf220eeeaa583b8c9732770d0a1b964196f4074efbb7a",
+    "packages/panelbt/python/panelbt/api.py": "3a0456ba78f1a2bee4d76bafbb66e487df772b908cb320e61cb50f7b9fa9343e",
+    "packages/panelbt/python/panelbt/models.py": "9cc952d5d4a5db1efe96e8d05b3d9fe7a129716e6cce32697b6c57748d461e0f",
+    "packages/panelbt/python/panelbt/step.py": "a14f732468f9a549a216cd03c041cafdafed405606c43d6b1fd2789383c1e470",
+    "packages/panelbt/python/panelbt/reference_wallets.py": "9534b186a3ef17c249f0e71d81920f8144c93f12ca9175e29ae05b6a83a23d1b",
+    "src/ashare/backtest/crypto.py": "0638ee72ba645e2d46d2ac206c325027b1d4dda10ff1720e0651550bdf4e1b40",
+    "src/ashare/backtest/crypto_wallets.py": "bd0e2d1b22ddc69d1d14d77126053df2e360cc757b0178ece81db50f65028525",
+    "bench/crypto_wallets_compat.py": "7e50fbca629fc3d9439086ee752630dc1acc17fdc82a9ee6d1030975a0dfeaee",
+    "bench/crypto_wallets_example.py": "a3041228ad7915f201d6fba7775ecf45c31faf560876c2b34525cafb29100620",
+    "bench/mutations_crypto_wallets.py": "a3e30b91b6a045cf2a93eac099dd6b61ff5d40e8c0a92711e818eb04145c0f48",
+    "test/generators_wallets.py": "4957b297eec870e2cdbb16ea03b5bc109bd4b0783ca3594aa32057ad5142b1e9",
+    "test/test_crypto_wallets.py": "a4dfcb1aec99631a0bad83ddc5df69b5e5b169714ee66f4d7424bd5c00528f79",
+    "test/test_crypto_wallets_contract.py": "eae5fe911645d533c155308ab5d964f68d94fbac7e3d6ae202881cedea00bca3",
+    "test/test_crypto_wallets_compat.py": "8a3b3a93d6a5a8c54063ac74710cb1277974a69f8e43accedcb259260eb489e6",
+    "test/test_crypto_wallets_oracle.py": "ed528cb733113f326b85dedfef41471d2bdd5804f0b038b5b3a3d1546ecb68a2",
+    "test/test_crypto_wallets_review.py": "52eec98b0f48dfd20b7226ff698b9c7c892691f531ec33817027b25f68ef6361",
+    "test/test_crypto_wallets_prefund_boundary.py": "5484e1f082d08a53d42b368dc33f16394c26ebedd668309349ade1f6aeb13ec4",
+    "test/fixtures/c4_legacy_snapshot.txt": "931b1b28ec566b4f810593e88416c5e6d810dc868dc0321656bc466e5f9e23b8",
+    "docs/CRYPTO_BACKTEST.md": "3a16b505477ac17d458bb352f8954fc1cad9f0756f9a4ad7eb426007a21e3d42",
+    "docs/C4_NOTES.md": "59b425c627aba9f562ad5354636d1042e4098fe6decc53fbf3792148cd6f0b33",
+    "packages/panelbt/SPEC.md": "a84503c432d6a47d5d2153bbf28c7c636965db97ef97badb7358bcb844a1ce0e",
+    "test/test_crypto_wallets_review2.py": "03628a920f284b305bf622607bce2abd6c0d39f2429d26c628bac20f1ed71971",
+    "test/test_crypto_wallets_review3.py": "9ab754be2074db6358865e98adecd8160050e42983e6bde7491c7501928c9cb2"
+  },
+  "wallet_tests": {
+    "passed": 118,
+    "mutation_restored_functional": 114
+  },
+  "deterministic_review2_red": {
+    "failed_before_fix": 10,
+    "intermediate_display_guard_failures": 6,
+    "log": "bench/results/crypto_wallets_review2_red.txt"
+  },
+  "build": {
+    "command": "UV_OFFLINE=1 make dev",
+    "offline_worktree_cache": true,
+    "worktree_import_guard": true
+  },
+  "results_sha256": {
+    "bench/results/crypto_wallets_compat.json": "8236c4f8f49d446b87d251949317010316c6da3cb811654c8b620f711b698f3a",
+    "bench/results/crypto_wallets_corpus.json": "abd2ad2c3a5122ab0c8b06ad6759fd57eec4cb18618649d4252aded063250fbc",
+    "bench/results/crypto_wallets_example.json": "ad3e642d3cb0ca1fe0d1cbac3019801a12ccdaeb7ebc0a11a2ae49f14c8d872f",
+    "bench/results/crypto_wallets_performance.json": "8bb35b7a6bf1aaf32736962511b76d926c4ab6579a0ef8b13497132fd983a272",
+    "bench/results/mutations_crypto_wallets.json": "cf8aac3f13371652f94b04919a6956c37a2d50f0bb6ad5bd06680df89a7d63e6",
+    "bench/results/crypto_wallets_review2_red.txt": "a824d3bb3c03159d9c0b5f589cb74b59bf699e0ab32247d6af92e4afbf3a0c91",
+    "bench/results/crypto_wallets_review3_red.txt": "5e0592d13d1a0c8fe1f4d5682529468503a83d66a1df31ad971055449e8c551c"
+  },
+  "deterministic_review3_red": {
+    "failed_before_fix": 20,
+    "passed_before_fix": 1,
+    "log": "bench/results/crypto_wallets_review3_red.txt",
+    "new_tests": 24,
+    "fraction_property_cases_per_engine": 2048,
+    "engines": [
+      "native",
+      "independent_oracle"
+    ],
+    "fee_bp_coverage": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "adjacent_float_preview_checks": 256,
+    "counterexample": {
+      "rng": 34017,
+      "case": 22,
+      "price": "20",
+      "multiplier": "1",
+      "quantity": 2,
+      "fee_bp": 9,
+      "margin": "1/10",
+      "initial": 2.8,
+      "exact_required": "1009/250",
+      "exact_flow": "173951535607185433/140737488355328000",
+      "expected": -2,
+      "before_fix_native": -1,
+      "before_fix_oracle": -1
+    }
+  }
+}

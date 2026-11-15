@@ -1,0 +1,197 @@
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_c4_01_profit_cannot_be_transferred ____________________
+test/test_crypto_wallets.py:58: in test_c4_01_profit_cannot_be_transferred
+    assert sim.state.wallet_balance == 100
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'wallet_balance'
+_____________________ test_c4_02_loss_reduces_transferable _____________________
+test/test_crypto_wallets.py:71: in test_c4_02_loss_reduces_transferable
+    assert sim.state.wallet_balance == 100
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'wallet_balance'
+________________ test_c4_03_dynamic_deposit_precedes_open_check ________________
+test/test_crypto_wallets.py:80: in test_c4_03_dynamic_deposit_precedes_open_check
+    sim.step(flow=flow)
+E   TypeError: Simulator.step() got an unexpected keyword argument 'flow'
+______________ test_c4_04_cannot_undo_previous_close_liquidation _______________
+test/test_crypto_wallets.py:88: in test_c4_04_cannot_undo_previous_close_liquidation
+    sim.step(flow=10)
+E   TypeError: Simulator.step() got an unexpected keyword argument 'flow'
+__________________ test_c4_05_internal_transfer_is_not_return __________________
+test/test_crypto_wallets.py:96: in test_c4_05_internal_transfer_is_not_return
+    from ashare.backtest.crypto import two_wallet
+E   ImportError: cannot import name 'two_wallet' from 'ashare.backtest.crypto' (<worktree>/src/ashare/backtest/crypto.py)
+_______________ test_c4_06_receiver_bankrupt_neither_side_moves ________________
+test/test_crypto_wallets.py:106: in test_c4_06_receiver_bankrupt_neither_side_moves
+    from ashare.backtest.crypto import TwoWallet
+E   ImportError: cannot import name 'TwoWallet' from 'ashare.backtest.crypto' (<worktree>/src/ashare/backtest/crypto.py)
+_______________ test_c4_07_entry_add_reduce_reverse_close_reopen _______________
+test/test_crypto_wallets.py:128: in test_c4_07_entry_add_reduce_reverse_close_reopen
+    assert sim.state.entry_price[0] == entry
+           ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+_____________ test_c4_08_fees_funding_affect_wallet_not_unrealized _____________
+test/test_crypto_wallets.py:136: in test_c4_08_fees_funding_affect_wallet_not_unrealized
+    assert (row.wallet_balance, row.unrealized, row.equity) == (97, 10, 107)
+            ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CryptoDayRecord' object has no attribute 'wallet_balance'
+____________ test_c4_09_deficit_credit_and_bankrupt_flow_rejection _____________
+test/test_crypto_wallets.py:144: in test_c4_09_deficit_credit_and_bankrupt_flow_rejection
+    assert row.wallet_balance == row.unrealized == row.equity == 0
+           ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CryptoDayRecord' object has no attribute 'wallet_balance'
+_________ test_c4_10_transfer_uses_previous_settlement_current_margin __________
+test/test_crypto_wallets.py:152: in test_c4_10_transfer_uses_previous_settlement_current_margin
+    assert sim.state.transferable == 100
+           ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'transferable'
+___________________ test_c4_11_follow_actual_spot_half_fill ____________________
+test/test_crypto_wallets.py:156: in test_c4_11_follow_actual_spot_half_fill
+    from ashare.backtest.crypto import TwoWallet
+E   ImportError: cannot import name 'TwoWallet' from 'ashare.backtest.crypto' (<worktree>/src/ashare/backtest/crypto.py)
+______________ test_c4_12_crypto_spot_shares_scaled_then_rounded _______________
+test/test_crypto_wallets.py:169: in test_c4_12_crypto_spot_shares_scaled_then_rounded
+    m = bt.Market([[110]], [[110]], [[True]], [[True]], crypto_spot=True)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: Market.__init__() got an unexpected keyword argument 'crypto_spot'
+____________________ test_c4_13_first_row_nonzero_rejected _____________________
+test/test_crypto_wallets.py:180: in test_c4_13_first_row_nonzero_rejected
+    from ashare.backtest.crypto import TwoWallet
+E   ImportError: cannot import name 'TwoWallet' from 'ashare.backtest.crypto' (<worktree>/src/ashare/backtest/crypto.py)
+___________________ test_c4_14_wallet_conservation_random[0] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[1] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[2] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[3] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[4] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[5] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[6] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[7] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[8] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+___________________ test_c4_14_wallet_conservation_random[9] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[10] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[11] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[12] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[13] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[14] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[15] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[16] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[17] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[18] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+__________________ test_c4_14_wallet_conservation_random[19] ___________________
+test/test_crypto_wallets.py:199: in test_c4_14_wallet_conservation_random
+    u = sum(state.shares * (prices[i] - state.entry_price))
+                                        ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'State' object has no attribute 'entry_price'
+=========================== short test summary info ============================
+FAILED test/test_crypto_wallets.py::test_c4_01_profit_cannot_be_transferred
+FAILED test/test_crypto_wallets.py::test_c4_02_loss_reduces_transferable - At...
+FAILED test/test_crypto_wallets.py::test_c4_03_dynamic_deposit_precedes_open_check
+FAILED test/test_crypto_wallets.py::test_c4_04_cannot_undo_previous_close_liquidation
+FAILED test/test_crypto_wallets.py::test_c4_05_internal_transfer_is_not_return
+FAILED test/test_crypto_wallets.py::test_c4_06_receiver_bankrupt_neither_side_moves
+FAILED test/test_crypto_wallets.py::test_c4_07_entry_add_reduce_reverse_close_reopen
+FAILED test/test_crypto_wallets.py::test_c4_08_fees_funding_affect_wallet_not_unrealized
+FAILED test/test_crypto_wallets.py::test_c4_09_deficit_credit_and_bankrupt_flow_rejection
+FAILED test/test_crypto_wallets.py::test_c4_10_transfer_uses_previous_settlement_current_margin
+FAILED test/test_crypto_wallets.py::test_c4_11_follow_actual_spot_half_fill
+FAILED test/test_crypto_wallets.py::test_c4_12_crypto_spot_shares_scaled_then_rounded
+FAILED test/test_crypto_wallets.py::test_c4_13_first_row_nonzero_rejected - I...
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[0]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[1]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[2]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[3]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[4]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[5]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[6]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[7]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[8]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[9]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[10]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[11]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[12]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[13]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[14]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[15]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[16]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[17]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[18]
+FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[19]
+33 failed in 6.89s

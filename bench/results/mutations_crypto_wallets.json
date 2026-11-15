@@ -1,0 +1,399 @@
+{
+  "original_source": "5bd1622c2ae3252068c9b35e50ae7d8f79a4ac7c68201dbf3e4457b20f026755",
+  "total": 28,
+  "tested_this_run": [
+    "review3_preview_omits_opening_fee",
+    "review3_missing_exit_schema_defaults_empty"
+  ],
+  "mutants": [
+    {
+      "name": "spot_decimal_lattice_uses_legacy_rounding",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_contract.py::test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.08-0.08]",
+        "FAILED test/test_crypto_wallets_contract.py::test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.07-0.29-0.29]",
+        "FAILED test/test_crypto_wallets_contract.py::test_decimal_spot_lattice_does_not_raise_minimum_or_lose_step[0.075-0.08-0.08]",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_reduction_native_and_independent_oracle[native]",
+        "FAILED test/test_crypto_wallets_review.py::test_review_residual_classifies_min_notional_underfill_separately"
+      ],
+      "source": "9da3861474c8bcfbfce628579c90710a61fbae20b09cfb8b2e307bccd8da6f3e",
+      "file_sha256": "fc3573d8d79f872ea47a5027409a3b8df53d36e6257570ea320d639ee7dea425"
+    },
+    {
+      "name": "dynamic_flow_after_open_check",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_03_dynamic_deposit_precedes_open_check",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "8425394d00c02311bea01b4942ed21ae7b48902fb7d787bd5bc169ca2fd7e3cc",
+      "file_sha256": "e7965df8e21037019471d5ff4e82b6e0e80a23e65e4f79718ca8ba2a29d8741f"
+    },
+    {
+      "name": "unrealized_profit_transferable",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_01_profit_cannot_be_transferred"
+      ],
+      "source": "9c1449e2776453ba02909404b602cf2f1d3d41b5fa85fb909a0f443fce0fc7a4",
+      "file_sha256": "6622e4d0b7e2c8bb14857972bdd3113a736e4d7d3a20302cc2bffbea0d31c532"
+    },
+    {
+      "name": "im_current_mark_not_previous_settlement",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_10_transfer_uses_previous_settlement_current_margin",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "6992e724cd416d8672b3885039dbaf2fb5285152fdbe5c2b0524949ed7430515",
+      "file_sha256": "1ee88ddcd92cf8c456d30aee4f33911cd40c938beabce4f8931d6006a2084a3a"
+    },
+    {
+      "name": "im_previous_rule_row",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_10_transfer_uses_previous_settlement_current_margin",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "2037190e9d6224804bcbae01418c66f6001a573d6c854c17edf18f691b56f4b1",
+      "file_sha256": "1a6204d1e9b0c211771634bd380c0a1ba5db77c3a708cc8f3d1b5c9c0e37a411"
+    },
+    {
+      "name": "reduction_changes_entry",
+      "file": "crates/panelbt-core/src/wallets.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_07_entry_add_reduce_reverse_close_reopen",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[0]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[1]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[2]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[3]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[4]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[5]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[6]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[7]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[8]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[9]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[10]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[11]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[12]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[13]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[14]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[15]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[16]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[17]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[18]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[19]",
+        "FAILED test/test_crypto_wallets_contract.py::test_wallet_entry_uses_effective_price_not_raw_cost",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p2_6_prefund_rebalance_target_before_spot_execution",
+        "FAILED test/test_crypto_wallets_review.py::test_review_prefund_hand_amounts_off_switch_and_cash_cap"
+      ],
+      "source": "2102d3fb8e65dcd1673871f759a56e73373e79e0bcb16ce1e345050df7464576",
+      "file_sha256": "e63bfacabc8fbbef495a64c2c4a22fd1ced5fa6858bbed9154b6d664aae1b63a"
+    },
+    {
+      "name": "reversal_keeps_old_entry",
+      "file": "crates/panelbt-core/src/wallets.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_07_entry_add_reduce_reverse_close_reopen",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[0]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[1]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[2]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[3]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[4]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[5]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[6]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[7]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[8]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[9]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[10]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[11]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[12]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[13]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[14]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[15]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[16]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[17]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[18]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[19]",
+        "FAILED test/test_crypto_wallets_contract.py::test_wallet_expiry_realizes_original_entry_and_fee",
+        "FAILED test/test_crypto_wallets_contract.py::test_dynamic_flow_and_entry_snapshot_each_boundary",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "80d8601f58e2744fab3fea98bc3a3606e9730f3fc16b1a63a940c55b756a4b6d",
+      "file_sha256": "06dcb5545471d654dab2c8472304b66cdddd08e97ab3caae80d1f8272fe6a4c0"
+    },
+    {
+      "name": "omit_deficit_credit",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_09_deficit_credit_and_bankrupt_flow_rejection",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[4]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[5]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[6]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[9]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[10]",
+        "FAILED test/test_crypto_wallets.py::test_c4_14_wallet_conservation_random[13]",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "4e369d994fe8d8adaa5b06c2e8ad0a8226a3093825453366b90eb84840c2d4ac",
+      "file_sha256": "1814d0a90841c2015ee52943fde324581caa7625140cc2e296c6a5191c3dc8d3"
+    },
+    {
+      "name": "internal_flow_counted_as_return",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_05_internal_transfer_is_not_return",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "ef8946d9ef8777274a9dd2927afa4bc3768e9f4d1f44e6884e82a90e4cff1e58"
+    },
+    {
+      "name": "unequal_transfer_amounts",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_05_internal_transfer_is_not_return",
+        "FAILED test/test_crypto_wallets_contract.py::test_decisions_are_frozen_and_half_row_failure_invalidates",
+        "FAILED test/test_crypto_wallets_contract.py::test_pair_snapshot_fingerprint_and_custom_protocol",
+        "FAILED test/test_crypto_wallets_contract.py::test_c4_oracle_seed5_full_withdrawal_does_not_create_bankruptcy",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p2_6_prefund_rebalance_target_before_spot_execution",
+        "FAILED test/test_crypto_wallets_review.py::test_review_prefund_hand_amounts_off_switch_and_cash_cap"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "1f6e61e81fa46e287b44fc5477201b56b0175c7a825d0a8a3d12a608f1098e6d"
+    },
+    {
+      "name": "bankrupt_accepts_deposit",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_09_deficit_credit_and_bankrupt_flow_rejection"
+      ],
+      "source": "4b3381542d86a0bb25f9a073ebb73aa6873b0a279e3ac64042557c6ae32477e2",
+      "file_sha256": "f10b522492127d01b781c8986b61c4245763e4d2469ef348b63700ca96f7b3ba"
+    },
+    {
+      "name": "follow_target_not_actual_fill",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets.py::test_c4_11_follow_actual_spot_half_fill",
+        "FAILED test/test_crypto_wallets_contract.py::test_daily_blocked_targets_do_not_retry_and_exit_overrides_schedule",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "0201d6c20adaae6c765f8c242b4b013a3ec0f57fb9c00eff4112a148498b9649"
+    },
+    {
+      "name": "omit_snapshot_entry",
+      "file": "crates/panelbt-core/src/wallets.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_contract.py::test_dynamic_flow_and_entry_snapshot_each_boundary",
+        "FAILED test/test_crypto_wallets_contract.py::test_pair_snapshot_fingerprint_and_custom_protocol"
+      ],
+      "source": "ab7097ea3fe9af9543d959a289b0c9653e1803fbdbefafb6839bd935c2a0525c",
+      "file_sha256": "b2f94861dbddc6f00ef2fd7751891f7bf566a9353f4e54429f8620294c3e6f87"
+    },
+    {
+      "name": "reference_wrong_funding_direction",
+      "file": "packages/panelbt/python/panelbt/reference_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_independent_random_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "b0ad7b83facda8c5f1e079ea25a855e4ec862b4982b0235504d2b4fb12ec19a3"
+    },
+    {
+      "name": "review_p1_1_subtraction_one_ulp_only",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_reduction_native_and_independent_oracle[native]",
+        "FAILED test/test_crypto_wallets_review.py::test_review_residual_classifies_min_notional_underfill_separately"
+      ],
+      "source": "ae106280de5d1db5ac560b8c9b834ed82511d5767f287c78a04f1c089f0fe2ab",
+      "file_sha256": "babeb5779745dffbdefba954ee7ceaca9839188812a1deef96e13e2fb4452ae9"
+    },
+    {
+      "name": "review_p1_1_capacity_no_quantity_tolerance",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_1_decimal_capacity_full_close_after_split"
+      ],
+      "source": "f89a7e4d1db5af5c149653d5b08f5fabcbe00584740b9a174fbc48de025e9e49",
+      "file_sha256": "41231a5cb5b39c596e8f090fb5bc69c77b06acf9c558fb4ce438727a15bdab95"
+    },
+    {
+      "name": "review_p1_2_raw_contract_truncation",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_2_decimal_coin_contract_integer_boundary[follow_spot]",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_2_decimal_coin_contract_integer_boundary[independent]",
+        "FAILED test/test_crypto_wallets_review.py::test_review_residual_classifies_min_notional_underfill_separately"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "a5d18e3f2c4e259815300859e815f9c9840bdf0a73407c4ae0b482253b58b552"
+    },
+    {
+      "name": "review_p1_3_global_exit_override",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p1_3_daily_delist_only_rehedges_affected_coin"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "6d27994ca1c0b5c38c6bb8bb892a61463869b577e3e8d162113b966f4504ae76"
+    },
+    {
+      "name": "review_p2_4_ignore_fixed_config",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review.py::test_review_p2_4_snapshot_checks_fixed_strategy_config"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "afdfffeb4dbde73e3fce89d96e7c96147fc19fb29d55e95173651a3bf6b9e182"
+    },
+    {
+      "name": "review_p2_6_skip_prefunding",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review.py::test_review_p2_6_prefund_rebalance_target_before_spot_execution",
+        "FAILED test/test_crypto_wallets_review.py::test_review_prefund_hand_amounts_off_switch_and_cash_cap"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "5fcef1cd13a04041303c1306dc0c1d14e850bbc524dd81e12c4ea1e4834424ab"
+    },
+    {
+      "name": "review_p2_5_reject_legacy_liquidation_snapshot",
+      "file": "crates/panelbt-core/src/lib.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review.py::test_review_p2_5_old_liquidation_snapshot_legacy_path",
+        "FAILED test/test_crypto_wallets_review.py::test_review_legacy_missing_ledger_does_not_report_false_zero_margin"
+      ],
+      "source": "c627c81b1ce23adbf57381617136760dc971f32a9739c74233667c54ee097ab9",
+      "file_sha256": "09f255e063b3844518618f41b75427d5acdc48004eb2364b8ff67f07189b1227"
+    },
+    {
+      "name": "prefund_unused_missing_mark_poison",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_prefund_boundary.py::test_prefund_unused_missing_mark_does_not_poison_other_coin"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "a409f68026337c3251fe9b5f78003522949fd864d450d33c5190ae2725798e8b"
+    },
+    {
+      "name": "review2_exit_drops_flat_spot_blocked_future",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_contract.py::test_daily_blocked_targets_do_not_retry_and_exit_overrides_schedule",
+        "FAILED test/test_crypto_wallets_oracle.py::test_c4_decimal_multicoin_daily_delisting_corpus_all_branches",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_exit_retries_blocked_future_only_until_both_legs_close[False]",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_exit_retries_blocked_future_only_until_both_legs_close[True]"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "26cc60c5605fab2b96322a9e4598420a0e8c10e246eea2dacc1b879815e1e5ab"
+    },
+    {
+      "name": "review2_zero_buffer_skip_actual_credit_check",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_zero_buffer_prefund_credits_seven_contracts_hand_expected[native]",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_zero_buffer_rounding_topup_never_exceeds_spot_cash"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "32b3b2052e4a99cc90b273c008985c26f89de440939c4842f5a2885c8e2e39e8"
+    },
+    {
+      "name": "review2_fingerprint_includes_mutable_state",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_contract.py::test_function_protocol_restore_does_not_mutate_callers_strategy",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_restore_advanced_policy_checks_config_not_mutable_state"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "5a501a69f4f27c1a65d2cfc0e7089aaef4fcf49582f4a6e566317154617eb986"
+    },
+    {
+      "name": "review2_legacy_display_includes_missing_fields",
+      "file": "packages/panelbt/python/panelbt/models.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-state]",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[repr-result]",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-state]",
+        "FAILED test/test_crypto_wallets_review2.py::test_review2_legacy_dataclass_display_omits_unavailable_fields[asdict-result]"
+      ],
+      "source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "file_sha256": "a9ea8ba4f17eb982b56369958a149c3f34a815651116af89bfd56b05bc256854"
+    },
+    {
+      "name": "review3_preview_omits_opening_fee",
+      "file": "crates/panelbt-core/src/crypto.rs",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_prefund_fee_subtraction_hand_expected[native]",
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_fraction_prefund_random_prices_fees_multipliers_targets[native]",
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_zero_request_steps_credited_cash_without_subnormal_loop[native]",
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_rust_preview_matches_fill_on_adjacent_float_budgets"
+      ],
+      "source": "3e4fafbb430699e8a5359d27248f844c77465aae539b91ac863f644deeccb1e3",
+      "file_sha256": "8b697b0e4dc37d3938f4bff8671ddec0c5718f33f7a0cad935fc27a0ffbf0ed2"
+    },
+    {
+      "name": "review3_missing_exit_schema_defaults_empty",
+      "file": "src/ashare/backtest/crypto_wallets.py",
+      "killed": true,
+      "failures": [
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_snapshot_requires_every_schema_field_even_at_day_zero[exit_pending]",
+        "FAILED test/test_crypto_wallets_review3.py::test_review3_cancelled_delist_snapshot_preserves_exit_or_rejects_missing_field"
+      ],
+      "source": "5bd1622c2ae3252068c9b35e50ae7d8f79a4ac7c68201dbf3e4457b20f026755",
+      "file_sha256": "f1eb54f4b690eab6d7b0031a71d9471f573c82e138566cc6a164dcdb48dcb0a6"
+    }
+  ],
+  "previous_runs": [
+    {
+      "original_source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "restored_source": "2ec28f041f6685d6ed372ca66d4b071f34da66c4f2df47b7e663ed90aedde03c",
+      "total": 26,
+      "killed": 26,
+      "restored_tests_passed": true
+    }
+  ],
+  "restored_source": "5bd1622c2ae3252068c9b35e50ae7d8f79a4ac7c68201dbf3e4457b20f026755",
+  "restored_tests_passed": true,
+  "killed": 28
+}

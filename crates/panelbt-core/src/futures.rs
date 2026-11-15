@@ -87,7 +87,7 @@ pub(super) fn quote_at(
 
 /// Realized P&L of the contracts closed by `q` against their settlement basis.
 #[inline]
-fn realized(before: f64, q: f64, basis: f64, price: f64, multiplier: f64) -> f64 {
+pub(super) fn realized(before: f64, q: f64, basis: f64, price: f64, multiplier: f64) -> f64 {
     if before * q < 0.0 {
         futures_variation(
             before.signum() * before.abs().min(q.abs()),
@@ -173,6 +173,9 @@ impl Book<'_> {
         debug_assert!(before == 0.0 || after == 0.0 || before.signum() == after.signum());
         let mult = m.futures.as_ref().unwrap().multiplier[i];
         let pnl = realized(before, q, self.basis[i], x.price, mult);
+        if let Some(w) = out.wallet.as_mut() {
+            w.fill(i, before, q, x.price, mult, x.fees.commission);
+        }
         *cash += pnl - x.fees.commission;
         out.contribution[i] += pnl - x.fees.commission;
         shares[i] = after;
@@ -254,6 +257,9 @@ impl Book<'_> {
                     rate(f.delivery_fee_rate, day, i, m),
                     rate(f.delivery_fee_per_contract, day, i, m),
                 );
+                if let Some(w) = out.wallet.as_mut() {
+                    w.fill(i, qty, -qty, settlement, f.multiplier[i], fee);
+                }
                 *cash -= fee;
                 out.contribution[i] -= fee;
                 out.daily[5 * m.t + day] += fee;
@@ -279,6 +285,9 @@ impl Book<'_> {
                     }
                     let paid = shares[i] * per;
                     *cash -= paid;
+                    if let Some(w) = out.wallet.as_mut() {
+                        w.balance -= paid;
+                    }
                     out.contribution[i] -= paid;
                     out.daily[30 * m.t + day] += paid;
                     if paid > 0.0 {

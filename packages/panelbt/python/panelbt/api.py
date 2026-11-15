@@ -288,6 +288,8 @@ def _prepare(
         margin.margin_call == "liquidate",
         classic,
     ]
+    if market.crypto_spot:
+        flags.append(True)
     if market.futures is None:
         futures = (
             np.empty(0, dtype=np.uint8),
@@ -400,6 +402,8 @@ def _result(
     }
     return Result(
         **values,
+        wallet_balance=raw.get("wallet_balance"),
+        unrealized=raw.get("unrealized"),
         positions=raw["positions"],
         trades=_trades(raw),
         delist_events=[DelistEvent(*x) for x in raw["events"]],
@@ -463,10 +467,11 @@ def run_batch(
         config.record_trades,
         _validated(market, targets),
         bool(market.futures and market.futures.has_crypto),
+        bool(market.futures and market.futures.liquidation),
     )
 
 
-def _batch_result(raw, t, n, record, validated=True, crypto=False):
+def _batch_result(raw, t, n, record, validated=True, crypto=False, wallet=False):
     metrics = METRICS + (CRYPTO_METRICS if crypto else ())
     counters = EXTRA_COUNTERS + (CRYPTO_COUNTERS if crypto else ())
     if not record:
@@ -494,6 +499,14 @@ def _batch_result(raw, t, n, record, validated=True, crypto=False):
         }
         return Result(
             **daily,
+            **{
+                k: np.stack([x[k] for x in raw])
+                if raw and k in raw[0]
+                else np.empty((0, t))
+                if wallet
+                else None
+                for k in ("wallet_balance", "unrealized")
+            },
             positions=None,
             trades=None,
             diagnostics={key: counts[:, i] for i, key in enumerate(COUNTERS)}
@@ -517,6 +530,9 @@ def _batch_result(raw, t, n, record, validated=True, crypto=False):
             inputs_validated=validated,
         )
     results = [_result(x, validated, crypto) for x in raw]
+    metrics += tuple(
+        k for k in ("wallet_balance", "unrealized") if wallet or (raw and k in raw[0])
+    )
     daily = {
         k: np.stack([getattr(x, k) for x in results])
         if results
