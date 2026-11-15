@@ -13,7 +13,16 @@ from .timeutil import DAY, HOUR, millis
 
 
 def write_panel(
-    root, frame, *, profiles, events, data, notes, raw_version=None, exceptions=()
+    root,
+    frame,
+    *,
+    profiles,
+    events,
+    data,
+    notes,
+    raw_version=None,
+    exceptions=(),
+    recent=None,
 ):
     root = Path(root)
     inputs = dict(
@@ -24,6 +33,9 @@ def write_panel(
         raw_version=raw_version,
         exceptions=list(exceptions),
     )
+    if recent is not None:
+        inputs["recent"] = recent
+    inferred = bool(recent and recent["allow_inferred_funding"])
     # JSON 不写 NaN；原始规则中缺清算费等参数保持 null，由 C3 明确处理。
     payload = encoded(inputs)
     import io
@@ -60,16 +72,31 @@ def write_panel(
                 notes=notes,
                 coverage=coverage(data),
             )
+            if recent is not None:
+                meta.update(allow_inferred_funding=inferred, recent=recent)
             atomic_json(folder / "meta.json", meta)
-        atomic_json(root / "latest.json", dict(version=version))
+        atomic_json(
+            root / ("latest_inferred.json" if inferred else "latest.json"),
+            dict(version=version),
+        )
     return CryptoDataset(root, version)
 
 
 class CryptoDataset:
-    def __init__(self, root, version=None):
+    def __init__(self, root, version=None, *, allow_inferred_funding=False):
         self.root = Path(root)
         self.version = (
-            version or json.loads((self.root / "latest.json").read_text())["version"]
+            version
+            or json.loads(
+                (
+                    self.root
+                    / (
+                        "latest_inferred.json"
+                        if allow_inferred_funding
+                        else "latest.json"
+                    )
+                ).read_text()
+            )["version"]
         )
         if len(self.version) != 64 or any(
             c not in "0123456789abcdef" for c in self.version
@@ -239,5 +266,5 @@ def rank_coins(frame, profiles, at, *, n, lookback="30D", min_age="30D"):
     )
 
 
-def open(root, version=None):
-    return CryptoDataset(root, version)
+def open(root, version=None, *, allow_inferred_funding=False):
+    return CryptoDataset(root, version, allow_inferred_funding=allow_inferred_funding)

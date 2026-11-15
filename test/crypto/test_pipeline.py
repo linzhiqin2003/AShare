@@ -85,6 +85,8 @@ def test_offline_sync_build_verify_cli(tmp_path, fixture, monkeypatch, capsys):
     def handle(request):
         requests.append(str(request.url))
         path = request.url.path
+        if path == "/fapi/v1/fundingInfo":
+            return httpx.Response(200, json=[])
         if path == "/fapi/v1/exchangeInfo":
             return httpx.Response(200, json=dict(symbols=symbols))
         if path == "/data.binance.vision":
@@ -112,8 +114,14 @@ def test_offline_sync_build_verify_cli(tmp_path, fixture, monkeypatch, capsys):
         if path == "/fapi/v1/fundingRate":
             return httpx.Response(
                 200,
-                json=fixture["data"]["usdm:" + request.url.params["symbol"]][
-                    "funding_prices"
+                json=[
+                    r
+                    for r in fixture["data"]["usdm:" + request.url.params["symbol"]][
+                        "funding_prices"
+                    ]
+                    if int(request.url.params["startTime"])
+                    <= int(r["fundingTime"])
+                    <= int(request.url.params["endTime"])
                 ],
             )
         if path == "/futures/data/delivery-price":

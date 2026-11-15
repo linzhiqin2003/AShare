@@ -1,0 +1,91 @@
+{
+  "task": "C5 review round 2",
+  "tests": {
+    "command": "pytest -q test/crypto test/test_crypto.py test/test_crypto_review.py test/test_crypto_review_intent.py test/test_markets_hkus.py test/backtest test/test_step.py -n 4",
+    "passed": 556,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 10.85
+  },
+  "ruff_check": "pass",
+  "ruff_format": {
+    "verdict": "pass",
+    "files": 781
+  },
+  "diff_check": "pass",
+  "mutations": {
+    "killed": 22,
+    "total": 22,
+    "invalid": 0,
+    "restored_baseline": true
+  },
+  "real_versions": {
+    "strict": {
+      "version": "5ae4f191bcedc22e7755eb85c0096351e02853c6740a1e17bf4801aeef3e4b20",
+      "start": "2020-01-01T00:00:00+00:00",
+      "end": "2026-10-31T23:00:00+00:00",
+      "rows": 239612,
+      "verdict": "pass",
+      "error_count": 0,
+      "archives_checked": 963,
+      "funding_reconciliation_count": 0
+    },
+    "inferred": {
+      "version": "bf894f27e18302dafc4cc054999fcd2b915b0fbc9364e08588315f99577633da",
+      "start": "2020-01-01T00:00:00+00:00",
+      "end": "2026-11-15T00:00:00+00:00",
+      "rows": 240960,
+      "verdict": "pass",
+      "error_count": 0,
+      "archives_checked": 963,
+      "funding_reconciliation_count": 0
+    }
+  },
+  "historical_prefix_bitwise_equal": true,
+  "strict_original_bitwise_equal": true,
+  "limitations": [
+    "nice requested; sandbox rejected setpriority",
+    "No Rust source changed; related make check Python parts completed",
+    "OneContext history database unavailable",
+    "No files outside worktree modified; task record in docs/C5_NOTES.md"
+  ],
+  "public_artifacts": "summary-only; no local absolute paths or raw market rows",
+  "committed": false,
+  "pushed": false,
+  "inferred_before_review_bitwise_equal": true,
+  "examples_equal_before_review": {
+    "strict": true,
+    "inferred": true
+  },
+  "review_r1": {
+    "addressed": [
+      "P1-1",
+      "P1-2",
+      "P2-3",
+      "P2-4"
+    ],
+    "red_regression_instances": 12,
+    "pinned_synthetic_baseline_commit": "04c37867d641fd51bc1af09cce54fdd8435f4958",
+    "raw_source_contract": 1,
+    "new_funding_archives": 0,
+    "changed_funding_archives": 0,
+    "sync_downloaded_bytes": 19547820,
+    "sync_refresh": false,
+    "sync_announcements": false,
+    "raw_refreshed_prices_test": "test_sync_refetches_prices_when_archive_published",
+    "full_month_refetch_test": "test_sync_archive_refetch_uses_full_declared_month"
+  },
+  "review_r2": {
+    "addressed": [
+      "P1 short-horizon REST inspection"
+    ],
+    "red_regression_instances": 12,
+    "positive_boundary_controls": 6,
+    "used_frozen_sync_plan": true,
+    "sync_performed": false,
+    "strict_version_unchanged": true,
+    "inferred_version_unchanged": true,
+    "strict_examples_identical": true,
+    "inferred_examples_identical": true
+  }
+}

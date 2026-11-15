@@ -1,0 +1,255 @@
+--- initial: regression before fix ---
+nice: setpriority: Operation not permitted
+FFFFFFFFFFFFFFFFFF                                                       [100%]
+=================================== FAILURES ===================================
+______________ test_strict_unchanged_default_and_separate_latest _______________
+test/crypto/test_recent.py:48: in test_strict_unchanged_default_and_separate_latest
+    strict = crypto.build(tmp_path)
+             ^^^^^^^^^^^^^^^^^^^^^^
+tmp/c5-baseline/src/ashare/data/crypto/build.py:12: in build
+    frame, notes = build_frame(
+tmp/c5-baseline/src/ashare/data/crypto/panel.py:368: in build_frame
+    values, note = build_instrument(
+tmp/c5-baseline/src/ashare/data/crypto/panel.py:98: in build_instrument
+    funding_schedule(
+tmp/c5-baseline/src/ashare/data/crypto/funding.py:50: in funding_schedule
+    raise ValueError(f"缺少末笔资金费: {expected_last}")
+E   ValueError: 缺少末笔资金费: 1719878400000
+_______________________ test_equal_intervals_and_quality _______________________
+test/crypto/test_recent.py:64: in test_equal_intervals_and_quality
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+__________ test_stop_at_first_untrusted_settlement[missing_middle-24] __________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+____________ test_stop_at_first_untrusted_settlement[changed_4h-24] ____________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+___________ test_stop_at_first_untrusted_settlement[info_changed-23] ___________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+_________ test_stop_at_first_untrusted_settlement[info_missing_4h-19] __________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+___________ test_stop_at_first_untrusted_settlement[missing_last-40] ___________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+___________ test_stop_at_first_untrusted_settlement[missing_mark-24] ___________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+_____________ test_stop_at_first_untrusted_settlement[off_grid-24] _____________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+______________ test_stop_at_first_untrusted_settlement[jitter-24] ______________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+_________ test_stop_at_first_untrusted_settlement[missing_snapshot-23] _________
+test/crypto/test_recent.py:102: in test_stop_at_first_untrusted_settlement
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+_____________________ test_info_listed_same_and_daily_cap ______________________
+test/crypto/test_recent.py:111: in test_info_listed_same_and_daily_cap
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+______________ test_verifier_independent_conditions_and_terminal _______________
+test/crypto/test_recent.py:117: in test_verifier_independent_conditions_and_terminal
+    ds = inferred(tmp_path)
+         ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+________ test_archive_reconciliation_keeps_old_and_does_not_block[None] ________
+test/crypto/test_recent.py:140: in test_archive_reconciliation_keeps_old_and_does_not_block
+    old = inferred(tmp_path)
+          ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+________ test_archive_reconciliation_keeps_old_and_does_not_block[rate] ________
+test/crypto/test_recent.py:140: in test_archive_reconciliation_keeps_old_and_does_not_block
+    old = inferred(tmp_path)
+          ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+______ test_archive_reconciliation_keeps_old_and_does_not_block[interval] ______
+test/crypto/test_recent.py:140: in test_archive_reconciliation_keeps_old_and_does_not_block
+    old = inferred(tmp_path)
+          ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+_______ test_archive_reconciliation_keeps_old_and_does_not_block[price] ________
+test/crypto/test_recent.py:140: in test_archive_reconciliation_keeps_old_and_does_not_block
+    old = inferred(tmp_path)
+          ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+________ test_archive_reconciliation_keeps_old_and_does_not_block[time] ________
+test/crypto/test_recent.py:140: in test_archive_reconciliation_keeps_old_and_does_not_block
+    old = inferred(tmp_path)
+          ^^^^^^^^^^^^^^^^^^
+test/crypto/test_recent.py:42: in inferred
+    return crypto.build(tmp_path, allow_inferred_funding=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: build() got an unexpected keyword argument 'allow_inferred_funding'
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent.py::test_strict_unchanged_default_and_separate_latest
+FAILED test/crypto/test_recent.py::test_equal_intervals_and_quality - TypeErr...
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_middle-24]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[changed_4h-24]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[info_changed-23]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[info_missing_4h-19]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_last-40]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_mark-24]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[off_grid-24]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[jitter-24]
+FAILED test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_snapshot-23]
+FAILED test/crypto/test_recent.py::test_info_listed_same_and_daily_cap - Type...
+FAILED test/crypto/test_recent.py::test_verifier_independent_conditions_and_terminal
+FAILED test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[None]
+FAILED test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[rate]
+FAILED test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[interval]
+FAILED test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[price]
+FAILED test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[time]
+18 failed in 4.26s
+
+--- sync: regression before fix ---
+nice: setpriority: Operation not permitted
+F.F                                                                      [100%]
+=================================== FAILURES ===================================
+___________________ test_daily_only_missing_days_and_no_rest ___________________
+test/crypto/test_recent_sync.py:39: in test_daily_only_missing_days_and_no_rest
+    assert set(keys) == {month, daily}
+E   AssertionError: assert {'data/future...-2024-07.zip'} == {'data/future...-2024-07.zip'}
+E     
+E     Extra items in the right set:
+E     'data/futures/um/daily/klines/FAKEUSDT/1h/FAKEUSDT-1h-2024-07-02.zip'
+E     Use -v to get more diff
+______________ test_funding_snapshot_exact_bytes_and_incremental _______________
+test/crypto/test_recent_sync.py:67: in test_funding_snapshot_exact_bytes_and_incremental
+    from ashare.data.crypto.sync import sync_funding_info, sync_funding_prices
+E   ImportError: cannot import name 'sync_funding_info' from 'ashare.data.crypto.sync' (<worktree>/src/ashare/data/crypto/sync.py)
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent_sync.py::test_daily_only_missing_days_and_no_rest
+FAILED test/crypto/test_recent_sync.py::test_funding_snapshot_exact_bytes_and_incremental
+2 failed, 1 passed in 1.06s
+
+--- cap: regression before fix ---
+nice: setpriority: Operation not permitted
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_bad_rest_beyond_common_archive_cap_is_irrelevant _____________
+test/crypto/test_recent.py:246: in test_bad_rest_beyond_common_archive_cap_is_irrelevant
+    assert inferred(tmp_path).meta["end"] == START + 35 * HOUR
+E   assert 1719907200000 == (1719792000000 + (35 * 3600000))
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent.py::test_bad_rest_beyond_common_archive_cap_is_irrelevant
+1 failed, 1 passed, 18 deselected in 0.92s
+
+--- rate: regression before fix ---
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_archive_rate_revision_overrides_cached_rest_rate _____________
+test/crypto/test_recent.py:282: in test_archive_rate_revision_overrides_cached_rest_rate
+    new = crypto.build(tmp_path)
+          ^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/build.py:21: in build
+    frame, notes = build_frame(
+src/ashare/data/crypto/panel.py:377: in build_frame
+    values, note = build_instrument(
+src/ashare/data/crypto/panel.py:351: in build_instrument
+    row.update(funding_value(schedule[t + HOUR], prices, marks, unit))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/data/crypto/funding.py:75: in funding_value
+    raise ValueError("归档与 REST 资金费率不一致")
+E   ValueError: 归档与 REST 资金费率不一致
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent.py::test_archive_rate_revision_overrides_cached_rest_rate
+1 failed, 20 deselected in 0.97s
+
+--- snapshot: regression before fix ---
+nice: setpriority: Operation not permitted
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_snapshot_provenance_independent_raw_verification _____________
+test/crypto/test_recent.py:329: in test_snapshot_provenance_independent_raw_verification
+    assert "inferred_snapshot_provenance" in {e["check"] for e in errors}
+E   AssertionError: assert 'inferred_snapshot_provenance' in set()
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent.py::test_snapshot_provenance_independent_raw_verification
+1 failed, 1 passed, 21 deselected in 0.99s
+
+--- exact-rate: regression before fix ---
+nice: setpriority: Operation not permitted
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_archive_rate_revision_overrides_cached_rest_rate[0.000100000000001] ___
+test/crypto/test_recent.py:291: in test_archive_rate_revision_overrides_cached_rest_rate
+    assert report["verdict"] == "pass"
+E   AssertionError: assert 'fail' == 'pass'
+E     
+E     - pass
+E     + fail
+=========================== short test summary info ============================
+FAILED test/crypto/test_recent.py::test_archive_rate_revision_overrides_cached_rest_rate[0.000100000000001]
+1 failed, 1 passed, 22 deselected in 1.16s

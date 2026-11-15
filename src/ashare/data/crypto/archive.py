@@ -1,8 +1,7 @@
-"""归档路径与月度→日度→最近 REST 的分区计划。"""
+"""归档路径与月度优先、仅用日度补缺 的分区计划。"""
 
 from .formats import parse_funding, parse_klines, rest_klines
-from .storage import encoded
-from .timeutil import DAY, HOUR, iso, millis, month_end, months
+from .timeutil import DAY, iso, millis, month_end, months
 
 
 def archive_prefix(market, dataset, symbol=None, *, frequency="monthly"):
@@ -23,44 +22,42 @@ def archive_key(market, dataset, symbol, label, *, frequency="monthly"):
     )
 
 
+def funding_coverage(key):
+    """月归档声明的完整区间，不因 CSV 尾部缺笔缩小。"""
+    if "/monthly/fundingRate/" not in key or not key.endswith(".zip"):
+        raise ValueError("资金费覆盖必须来自月归档")
+    label = key.removesuffix(".zip")[-7:]
+    return dict(key=key, start=millis(label + "-01"), end=month_end(label))
+
+
 def download_series(
     client, store, market, dataset, symbol, start, end, *, now, refresh=False
 ):
-    """返回所用的原始对象键。月文件存在则不混入日文件或 REST。"""
+    """月文件已有任何行的日子不混入日文件；只补完整缺失日，不补 REST 尾部。"""
     keys = []
     for label in months(start, end):
         key = archive_key(market, dataset, symbol, label)
-        if client.archive(store, key, refresh=refresh) is not None:
+        payload = client.archive(store, key, refresh=refresh)
+        present_days = set()
+        if payload is not None:
             keys.append(key)
-            continue
+            if dataset != "fundingRate":
+                monthly = parse_klines(
+                    payload, market, start=millis(label + "-01"), end=month_end(label)
+                )
+                present_days = {r["time"] // DAY for r in monthly}
         if dataset == "fundingRate":
-            continue  # 没有 daily；不能根据 REST 相邻间距猜 interval。
-        lo, hi = max(start, millis(label + "-01")), min(end, month_end(label))
+            continue
+        lo = max(start, millis(label + "-01"))
+        hi = min(end, month_end(label), now // DAY * DAY)
         for day in range(lo // DAY * DAY, hi, DAY):
+            if day // DAY in present_days:
+                continue
             daily = archive_key(
                 market, dataset, symbol, iso(day)[:10], frequency="daily"
             )
             if client.archive(store, daily, refresh=refresh) is not None:
                 keys.append(daily)
-            elif day >= now - 7 * DAY:
-                rkey = f"rest/{market}/{dataset}/{symbol}/{day}"
-                if refresh or not store.complete(rkey):
-                    rows = client.klines(
-                        market,
-                        dataset,
-                        symbol,
-                        max(lo, day),
-                        min(hi, day + DAY, now // HOUR * HOUR),
-                    )
-                    store.put(
-                        rkey,
-                        encoded(rows),
-                        source="rest",
-                        market=market,
-                        dataset=dataset,
-                        symbol=symbol,
-                    )
-                keys.append(rkey)
     return keys
 
 

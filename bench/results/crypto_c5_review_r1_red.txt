@@ -1,0 +1,29 @@
+修复前：11 个审查回归全部失败；HTTP/ZIP 均合成。
+E   assert 1719874800000 == (1719792000000 + (48 * 3600000))
+E   assert 1719874800000 == (1719792000000 + (48 * 3600000))
+E   assert 1719864000000 == (1719792000000 + (48 * 3600000))
+E   assert 1719864000000 == (1719792000000 + (48 * 3600000))
+E   assert False
+E   assert False
+E   assert False
+E   assert 0 == 1
+E   assert False
+E   assert False
+E   assert False
+FAILED test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[False-settlement]
+FAILED test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[False-delist]
+FAILED test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[True-settlement]
+FAILED test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[True-delist]
+FAILED test/crypto/test_c5_review_r1.py::test_verifier_rejects_ended_column_truncation[False]
+FAILED test/crypto/test_c5_review_r1.py::test_verifier_rejects_ended_column_truncation[True]
+FAILED test/crypto/test_c5_review_r1.py::test_sync_refetches_prices_when_archive_published
+FAILED test/crypto/test_c5_review_r1.py::test_reconciliation_audits_declared_month_tail
+FAILED test/crypto/test_c5_review_r1.py::test_verify_rest_input_against_frozen_response[markPrice-200]
+FAILED test/crypto/test_c5_review_r1.py::test_verify_rest_input_against_frozen_response[fundingRate-0.0002]
+FAILED test/crypto/test_c5_review_r1.py::test_verify_rest_input_against_frozen_response[fundingTime-1]
+11 failed in 6.78s
+
+返工自检：请求起点后移时遗漏整月早期价格，修复前失败。
+E   assert False
+FAILED test/crypto/test_c5_review_r1.py::test_sync_archive_refetch_uses_full_declared_month
+1 failed in 1.08s

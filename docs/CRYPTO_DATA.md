@@ -1,4 +1,4 @@
-# 币安数据层（C2）
+# 币安数据层（C2 / C5）
 
 入口为 `ashare.data.crypto`，实现 DESIGN 4.17 的数据合同和 6.10。它提供数据和数组，不导入 `panelbt`，不构造市场、不生成交易。USDT 现货与 U 本位 COIN 永续、季度合约是不同列，例如 `spot:BTCUSDT`、`usdm:BTCUSDT`、`usdm:BTCUSDT_240628`。不进入 A 股的 `DATASETS`。
 
@@ -14,12 +14,13 @@
 | `indexPriceKlines` 1h | vision monthly/daily；同名 fapi 接口 | 按 pair 保存；季度默认使用同基础 pair，可在档案指定 `index_symbol` | 必需输入；与交割价的差异只作诊断 |
 | `fundingRate` | vision **只有 monthly** | `calc_time, funding_interval_hours, last_funding_rate`；BTC/ETH 已知 2020-01 起 | 漏结算报错；不以相邻距离猜间隔 |
 | 资金费关联标记价 | `/fapi/v1/fundingRate`，分页 | 从 2023-10-31 08:00 UTC 起优先用非空 `markPrice`；之前可为空 | 早期取结算整点标记 K 线 open 并标近似；后期缺官方价报错；最后一行缺价则整幅面板截一行 |
+| 资金费当前间隔 | `/fapi/v1/fundingInfo` 公开 GET | 每次同步保存原始响应字节、抓取时间、内容 SHA-256 | 只辅助显式推断；updateTime 不证明历史 |
 | 季度交割价 | `/futures/data/delivery-price?pair=…` | 本次 BTC 返回 18 条，2022-03 至 2026-06；接口实际范围可能变化 | 只用官方值；缺值报错，不能承诺全季度历史都可运行 |
 | 交易对、过滤器 | spot/usdm `exchangeInfo` 每次完整快照 | 只代表采集时刻；历史全集另取 S3 目录；不以当前交易状态排除历史下架品种 | 历史无快照时需要逐项有来源的显式档案和规则假设 |
 | 公告、事件 | 公开 CMS 列表及详情；人工补录 | 下架、币种动态、合约动态目录按页抓取；保存原文和待审队列 | 明确单句自动结算、明确交易对与唯一时刻的现货下架可提取；复杂迁移、延期、撤销等需核对后补录 |
 | 币单位、转换表 | `mappings.json`、交易对档案、迁移事件 | 内置 1000PEPE 的逐条出处，以及 MATIC→POL 的比例和各市场时间 | 不对任意数字前缀猜倍率；钱包实际转换时刻未知时注明模型生效时刻 |
 
-月归档优先；不存在时尝试日归档，最近七天再用 REST 补已完成小时。资金费 REST 同时采集费率和关联价格，但没有历史间隔字段：未出月归档的区间不能仅凭 REST 费率自动通过严格构建。原始采集覆盖与可运行模型覆盖因此不同。
+月归档优先；仅对月文件完全没有记录的日子尝试日归档（含月文件内部遗漏的整日），逐份核对 CHECKSUM。月内已有部分小时的日子不混入重叠日文件；原有缺小时继续显式处理。K 线、标记价、指数价不再用 REST 补最新几小时。资金费 REST 同时采集费率和关联价格，但没有历史间隔字段：默认严格构建仍等待月归档，显式推断版本见下节。原始采集覆盖与可运行模型覆盖因此不同。
 
 事实依据：[BINANCE.md](markets/BINANCE.md)、[官方归档说明](https://github.com/binance/binance-public-data)、[官方市场数据接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)。
 
@@ -60,7 +61,9 @@
   events/<version_id>.json     只追加的事件版本
   sync_plan.json              本次构建使用的冻结输入
   panels/<version>/           inputs.json、meta.json、YYYY-MM.parquet
-  latest.json                 当前完整面板版本
+  latest.json                 当前严格面板版本
+  latest_inferred.json        当前显式推断面板版本
+  funding_reconciliations/    推断与新归档的经济差异报告（只追加）
   verification/<version>.json 校验报告
 ```
 
@@ -84,6 +87,54 @@ daily = ds.daily(trade_hour=1)
 
 `daily(trade_hour=h)` 输出完整的 `[d日 h, 次日 h)` 24 小时区间。`day` 为左端，`available_at` 为右端，只供信号与报表，不供交易引擎推进，也不在这里移位。日线 `funding_report_only` 仅是汇总，不能替代逐小时资金费。默认 `invalid_prices="raise"` 拒绝含倒置时间戳的日线；显式 `invalid_prices="carry"` 将生命周期内缺失/异常价格逐小时按之前有效收盘持平、成交量置零，再聚合，与小时回测一致。原始异常值仍由 `read()` 提供质检。`rank_coins` 是供 C3/测试核对的辅助函数，按真实时间窗口汇总已完成小时的永续 USDT 成交额、按币合并，按挂牌年龄过滤，绝不读取未来行；它不生成回测目标。
 
+## C5：显式资金费推断延伸
+
+```python
+strict = crypto.build("tmp/crypto")
+inferred = crypto.build("tmp/crypto", allow_inferred_funding=True)
+ds = crypto.open("tmp/crypto", allow_inferred_funding=True)
+report = crypto.verify("tmp/crypto", allow_inferred_funding=True)
+# crypto.open("tmp/crypto") 仍读取严格版；固定 version= 可复现任一旧版。
+```
+
+```bash
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto build --allow-inferred-funding
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto verify --allow-inferred-funding
+.venv/bin/python bench/crypto_prepare.py --data tmp/crypto --accept-spot-gaps --allow-inferred-funding --output bench/results/crypto_inferred_validation.json
+.venv/bin/python bench/crypto_examples.py --data tmp/crypto --allow-inferred-funding --output bench/results/crypto_inferred_examples.json
+```
+
+`build` 的选项默认 False。低层 `build_frame` 继续检查调用方提供的完整区间，保留 `funding_schedule` 的首笔、中间、末笔覆盖检查；它不自动开启推断。正式构建入口把严格终点控制收回数据层，准备脚本不再缩短并覆盖同步计划的请求终点，因此可以先后构建两种版本。
+
+设最后归档结算为 `a`、间隔为 `h` 小时，所有终点均指 `[start,end)` 的右端：
+
+- 严格终点仍按 `a + h×1h − 1h` 约束，再与 requested_end 取小；仅纳入覆盖尚不足以支撑该列生命周期的永续。最后一行左端还要再减 1h。末行结算缺价格继续由原构建器截行。
+- 推断先求 `D = min(requested_end, 各仍需覆盖的数据集归档中最后完整小时的右端)`；已经覆盖到已知退出边界的列不参与截短。从 `a` 起检查 REST：时间取整距离不超过 1 秒，逐笔间距等于 h、在 h 小时网格上，费率有限且结算标记价正且有限。第一笔异常之后的记录不再采用；只检查到 D 与该列退出边界的较小值，其后记录不影响窗口。
+- fundingInfo 必须已经冻结：交易对在列表中时 `fundingIntervalHours == h`；不在列表中仅当 h=8 才可推断。缺快照或不匹配时该列保持严格上限。`updateTime` 原样存档而不作证据。
+- 无异常且 D 之前应有的结算全部存在时取 D；若异常或末笔缺失，退到前一笔合格结算的右边界（可为 a）。各列取最小值。缺标记价不能以小时开盘近似延伸，即使时间早于官方价格历史起点也一样。
+
+这只是历史间隔的**延续假设**。当前快照不能排除“临时改频又恢复、REST 恰好漏掉额外结算”，因此不会把推断版升级为严格证据。[官方 fundingInfo 文档](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data#get-funding-rate-info) 描述当前调整信息，没有提供历史间隔证明。
+
+`meta.json.allow_inferred_funding` 与冻结输入的 `recent.allow_inferred_funding` 标版本类别；`recent.requested_end` 保留请求终点，`recent.funding_info` 包括 `key/fetched_at/sha256/records`，`recent.instruments` 记录归档锚点、间隔、接受条数、上限和截断原因。原始规范化资金费中新增 `source=inferred_continuation`；面板沿用字段，仅在相应结算行加质量位 4096。`crypto_market` 的 `inferred_funding_intervals` 按实际读取窗口列交易对与受影响小时 `[start,end)`；结算发生在这些小时的右边界。
+
+覆盖上限仅约束生命周期内需要数据的时段。已知结算退出或下架后，旧列按原规则持平，不因停止发布行情/资金费而截短仍活跃的列。退出边界使用前一小时已经可知的事件版本（请求开始前已退出的列使用起点可知版本）；事前取消或延期不能提前免除覆盖要求。`funding_schedule` 的末笔覆盖检查仍保留。
+
+推断模式中，覆盖豁免不等于已经证明归档之后没有结算：即使请求终点或退出边界早于下一个预期结算，也逐条检查归档末笔到有效终点内的 REST。例：最后归档 16h、间隔 8h、请求或退出在 21h，但 REST 有 20h 结算，必须退到 16h，不能让该笔资金费成为零。fundingInfo 缺失或不匹配时仍不允许延伸到严格上限之外，但上限以内已观测到的异常结算同样会缩短推断版；有效终点之后的记录不影响该列。默认严格构建保持原行为。
+
+同步通常从旧资金费末记录之后增量请求；当新的月度资金费归档发布（或归档内容哈希改变）时，即使不加 `--refresh`，也会重新请求对应声明月份（最晚到抓取时刻），用新响应替换这段缓存并冻结新快照。新响应缺笔时不会用旧缓存补回。原始内容寻址对象、原始清单版本和旧面板保留；无新归档时不重复重取历史月份。日归档尚未发布的尾部不补。
+
+新版本的 `recent.source_contract=1` 启用来源核对：`recent.funding_price_refs` 按交易对记录 REST 快照的 `key/sha256`，`recent.funding_archive_coverage` 记录月归档的 `key/sha256/start/end`。覆盖区间是文件声明的完整 `[月初,下月初)`，即使 CSV 缺末笔也不缩短。这些字段同时冻结在输入和元数据中，不新增面板列。旧版本缺少这些来源字段时仍可复现；它们不具备新增的 REST 输入独立对账保证，需要重建才能获得。
+
+### 归档发布后的纠正与核对
+
+再次 sync、build 后，严格版自然使用新归档和重新取得的对应区间 REST 结算价。构建会逐一对比旧推断版本与归档声明月份的交集，比较结算集合（能发现新增/消失的结算）、时刻、间隔、费率和关联结算标记价；来源标签变化不算差异，相同经济记录不写报告。月尾缺笔以 `archive: null` 记录，即使新严格版因该缺笔已经提前结束；下月零点不计入本月审计范围。没有原始对象引用的合成/旧输入只能按已观测记录范围核对。
+
+差异写入 `<root>/funding_reconciliations/<hash>.json`，含旧推断版、新归档版以及差异值。`verify` 的 `funding_reconciliations` 同时列出涉及所查新版本或旧版本的报告；差异不改变通过/失败判定，避免已经纠正的数据永久无法构建。旧面板与旧原始对象不改写，旧研究固定其 SHA；需要使用纠正结果时明确选择新版本并重跑研究。完整差异只存数据目录，不进入公开汇总。
+
+若新归档费率与缓存 REST 费率仍不一致，原始 REST 不改写：规范化归档记录标 `archive_rate_override=true`，资金费按归档费率乘 REST 关联标记价，verify 输出 `funding_rate_archive_override` 诊断。这不豁免归档连续性或关联价缺失；缺价仍不能造价。结算标记价并不存在于资金费 ZIP，实际是比较两个冻结版本的官方关联价，若交易所尚未修订 REST，就无法独立得知新结算价。
+
+verify 从冻结 REST、原始快照和归档独立重算推断条件、生命周期覆盖需求与终点，不导入构建的 recent 判据。它核对 fundingInfo 内容/时间/哈希、REST 引用与原始清单，并逐条比较 REST 原时刻（毫秒）、费率、结算标记价及记录集合。仅验证原始对象哈希不足以证明构建输入正确；新核对也会拦截“输入和面板一起改错但原文未改”的情况。
+
 ## 每个面板字段
 
 一行是 `[time, time + 1h)`，时间均为 UTC 毫秒。期货价格和 `volume` 以**交易所报价单位**表示：1000PEPE 的价格是每 1000 PEPE 的 USDT，数量单位也是 1000 PEPE，不先乘或除 1000 再传内核。
@@ -104,7 +155,7 @@ daily = ds.daily(trade_hour=1)
 | `funding_rate` | 右端结算费率，非结算行 NaN；这不是左端已知信号 |
 | `last_funding_rate` | 左端之前或恰在左端已结算的最近费率，首次结算前 NaN；供信号使用 |
 | `funding_price` | 这一笔资金费对应的官方标记价或注明的早期近似价 |
-| `funding_interval_hours` | 该笔归档字段的实际结算间隔，非结算行 NaN |
+| `funding_interval_hours` | 归档的结算间隔，或显式推断沿用的间隔（quality 位 4096）；非结算行 NaN |
 | `funding` | 每张 USDT = rate × funding_price × multiplier；正数为多头支付；无事件 0 |
 | `funding_price_source` | none / rest / mark_open_approximation |
 | `settlement` | 活跃期货为 mark_close；终止行直接使用交割/下架价，不再重复结转 mark_close |
@@ -136,6 +187,7 @@ daily = ds.daily(trade_hour=1)
 | 512 | 原始 K 线早于正常右边界超过 1 秒结束，保留 OHLC，标 `partial_halt` |
 | 1024 | 紧随成交 K 线半截线的连续缺口，且缺口内无正常成交/标记线反证；半截线同小时的标记线不算反证，恢复成交或缺口内出现反证即结束推断 |
 | 2048 | 原始收盘时刻早于开盘，保留异常行并禁止交易，校验诊断 `invalid_close_time` |
+| 4096 | 本行右边界资金费的间隔由延续推断，`funding_interval_inferred`；与关联价格近似位 16 分开 |
 
 生命周期外约定：
 
@@ -201,7 +253,7 @@ daily = ds.daily(trade_hour=1)
 - 实测交割价接口 deliveryTime 是 UTC 00:00 日期标签。只有显式交割事件为同日 08:00 时才作日期匹配，保留 delivery_record_time；不以 00:00 生成交割事件。交割价与同小时指数收盘比较，只提示，不复算 30 分钟均价。
 - 零成交/冻结可能是暂停或归档问题，只标质量，不生成历史下架；追加未来零成交不会回改前三天的退出。公布时间和生效时间分开。归档被交易所修补是新的内容版本，不承诺不同数据修订计算结果相同。
 - 当前 CMS 不保证覆盖全部历史版本，通用自动解析不可能可靠还原所有自然语言；本次不声称已完成全部下架币历史事件库。
-- 缺早期标记价的区间不能回测；没有季度历史官方交割价的区间不能通过。新发布 REST 资金费只有费率、没有可信历史 interval 时仍等待归档/补充证据。
+- 缺早期标记价的区间不能回测；没有季度历史官方交割价的区间不能通过。新发布 REST 资金费没有可信历史 interval 时，默认严格版仍等待归档；显式推断版接受下述可追溯假设。
 - 现货手续费扣币、最小名义执行、完整维持保证金档位和两钱包调度不属于 C2。非整点终止默认拒绝，不能假装小时 OHLC 能重放分钟内退出。
 
 ## 验证与真实端到端

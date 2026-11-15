@@ -273,6 +273,7 @@ def crypto_market(
         else [],
         missing_intervals=missing_notes,
         halt_intervals=intervals(times, explained, names),
+        inferred_funding_intervals=intervals(times, (quality & 4096) != 0, names),
         partial_halt_cells=int(np.count_nonzero(quality & 512)),
         funding_price_approximation_cells=int(np.count_nonzero(quality & 16)),
         settlement_price_approximation_cells=int(np.count_nonzero(quality & 32)),

@@ -451,10 +451,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", default=os.environ.get("CRYPTO_DATA_ROOT", "data/crypto"))
     p.add_argument("--quant-account", default=os.environ.get("QUANT_ACCOUNT_PATH"))
+    p.add_argument("--version")
+    p.add_argument("--allow-inferred-funding", action="store_true")
     p.add_argument("--output", default="bench/results/crypto_examples.json")
     p.add_argument("--synthetic-dir", default="tmp/crypto-quarter-handcheck")
     args = p.parse_args()
-    ds = crypto.open(args.data)
+    ds = crypto.open(
+        args.data, args.version, allow_inferred_funding=args.allow_inferred_funding
+    )
     results = dict(
         data_version=ds.version,
         start=str(np.datetime64(ds.meta["start"], "ms")),

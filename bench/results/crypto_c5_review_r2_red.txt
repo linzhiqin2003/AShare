@@ -1,0 +1,26 @@
+修复前：第二轮 P1 的构建/独立校验反例，12 failed；窗口外对照 6 passed。
+E   assert 1719867600000 == (1719792000000 + (16 * 3600000))
+E   assert 1719964800000 == (1719792000000 + (16 * 3600000))
+E   assert 1719867600000 == (1719792000000 + (16 * 3600000))
+E   assert 1719964800000 == (1719792000000 + (16 * 3600000))
+E   assert 1719867600000 == (1719792000000 + (16 * 3600000))
+E   assert 1719964800000 == (1719792000000 + (16 * 3600000))
+E   assert False
+E   assert False
+E   assert False
+E   assert False
+E   assert False
+E   assert False
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[confirmed-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[confirmed-known_exit]
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[missing-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[missing-known_exit]
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[changed-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[changed-known_exit]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[confirmed-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[confirmed-known_exit]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[missing-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[missing-known_exit]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[changed-request_end]
+FAILED test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[changed-known_exit]
+12 failed, 6 passed in 1.53s

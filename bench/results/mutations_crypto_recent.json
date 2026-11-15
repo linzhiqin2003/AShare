@@ -1,0 +1,303 @@
+{
+  "imports": [
+    "src/ashare/data/crypto/build.py",
+    "src/ashare/data/crypto/recent.py",
+    "src/ashare/data/crypto/verify_recent.py",
+    "src/ashare/data/crypto/reconcile.py",
+    "src/ashare/data/crypto/sync.py",
+    "packages/panelbt/python/panelbt/__init__.py",
+    "packages/panelbt/python/panelbt/_core.abi3.so"
+  ],
+  "baseline_passed": true,
+  "mutations": [
+    {
+      "name": "spacing",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_middle-24]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "8ec12fb1058d45afae7d889c469b1c8d98368babd19a2506fe69f34e595060b5",
+      "seconds": 1.634
+    },
+    {
+      "name": "default_only_8h",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[info_missing_4h-19]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "f37658e3631c608f9eeaa43df03061d03ba1e492b928aecdc48f641c739f77b4",
+      "seconds": 1.534
+    },
+    {
+      "name": "missing_mark",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_mark-24]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "9001fb3038fe5701d27591479e1ee35ae40ce056f73e878e610a841928c2783e",
+      "seconds": 1.571
+    },
+    {
+      "name": "tail_shrink",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_stop_at_first_untrusted_settlement[missing_last-40]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "0faacf0ab1298815a1025eb1fbdf16d3adb99fceffb82e989563a7c947aa12b9",
+      "seconds": 1.603
+    },
+    {
+      "name": "schedule_tail_guard",
+      "file": "src/ashare/data/crypto/funding.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_panel.py::test_funding_missing_first_middle_last_is_error[2]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "4afe7950f370f5a755e321861f2e2a435379702bac4805fca5654494dc3bf460",
+      "mutant_sha256": "a9630c316d0207322ce0429fe8b9ef2583e18d0f63f58f0e429bb0e68845a88b",
+      "seconds": 1.601
+    },
+    {
+      "name": "economic_difference",
+      "file": "src/ashare/data/crypto/reconcile.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_archive_reconciliation_keeps_old_and_does_not_block[rate]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "f23bd5e97dac6102cd1ec20dbcf39921b9594df88d0f85566f3110f842afd538",
+      "mutant_sha256": "87cb7ccc214aa609b1ac94a2f3247b5b520c1156ed87eba2a72e1945870da2c0",
+      "seconds": 1.597
+    },
+    {
+      "name": "default_closed",
+      "file": "src/ashare/data/crypto/build.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_strict_unchanged_default_and_separate_latest"
+      ],
+      "exit_code": 1,
+      "before_sha256": "40cc8a712b052e0154a4432aec87666151185f543f2e90a54c1af3a12754dc8e",
+      "mutant_sha256": "1d85477f7ad0df8fc7ddac8a2b2ebf000e6e6daa82bfedb7d008fc820804c2f4",
+      "seconds": 1.549
+    },
+    {
+      "name": "reader_default_closed",
+      "file": "src/ashare/data/crypto/dataset.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_strict_unchanged_default_and_separate_latest"
+      ],
+      "exit_code": 1,
+      "before_sha256": "bfab915f3ba90d1ceed17c7d84aa2e4580d0f6aa1e00a4d478ed502652335d01",
+      "mutant_sha256": "70c283edec2fda60b2eed27e106f08eb116200bc793c383bf6b6f8f77de83cbe",
+      "seconds": 1.594
+    },
+    {
+      "name": "independent_terminal",
+      "file": "src/ashare/data/crypto/verify_recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_verify_terminal_formula_even_without_new_settlement"
+      ],
+      "exit_code": 1,
+      "before_sha256": "9b91b0c4b669844a6eaa51bfea19f154b85e06772db9b881b70ca7603e515013",
+      "mutant_sha256": "62d24ea59b7f9d9839fa9c6bbd59d2cd2b2cba6630b1e07c132a19869d519d66",
+      "seconds": 1.574
+    },
+    {
+      "name": "archive_replaces_cached_rate",
+      "file": "src/ashare/data/crypto/funding.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent.py::test_archive_rate_revision_overrides_cached_rest_rate[0.0002]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "4afe7950f370f5a755e321861f2e2a435379702bac4805fca5654494dc3bf460",
+      "mutant_sha256": "8edd60e409abaed82e2723e9f5815ce9e328e507e62b78c627367169514a25ca",
+      "seconds": 1.578
+    },
+    {
+      "name": "daily_non_overlap",
+      "file": "src/ashare/data/crypto/archive.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent_sync.py::test_daily_only_missing_days_and_no_rest"
+      ],
+      "exit_code": 1,
+      "before_sha256": "b5ccbac3022c7501443ac13875fcf569070896d28751492036d72d05d6a15475",
+      "mutant_sha256": "e34b8cb2a76fee94fa353b20002be94a8914d15451a8b179d8c825cad8655bc1",
+      "seconds": 1.61
+    },
+    {
+      "name": "daily_checksum",
+      "file": "src/ashare/data/crypto/sources.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_recent_sync.py::test_daily_bad_checksum_raises"
+      ],
+      "exit_code": 1,
+      "before_sha256": "410f83d337cd08db30510d069e1f4b88e536ef5742a7c2766bb3e45c15792bbc",
+      "mutant_sha256": "a8a7bb7cebd8811d575388fdbf1e0dde17e3504f24295772615d927723aaee31",
+      "seconds": 1.545
+    },
+    {
+      "name": "ended_funding_caps_panel",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[False-settlement]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "76e2a958331c90fa8670ea7bc4f7e7ca2cca4a3e56d730ad6ce962a8d4c06e9c",
+      "seconds": 1.599
+    },
+    {
+      "name": "ended_prices_cap_panel",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_ended_column_does_not_cap_panel[True-delist]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "54d89c230879b25bbbb32be7bd9b7551b08fae5f47be31aad3c767cf98cc2bed",
+      "seconds": 1.547
+    },
+    {
+      "name": "archive_publication_uses_stale_rest",
+      "file": "src/ashare/data/crypto/sync.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_sync_refetches_prices_when_archive_published"
+      ],
+      "exit_code": 1,
+      "before_sha256": "6f9e2fd93d23616f6e3b8e5e7b42d0366fe394b87a15687295abfa7bf9b80751",
+      "mutant_sha256": "0311ff94b449c43b3999c5f9c57a5b5d10ca4a2e308d0fc5e71ee23057f06c88",
+      "seconds": 1.759
+    },
+    {
+      "name": "archive_tail_shrinks_audit",
+      "file": "src/ashare/data/crypto/reconcile.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_reconciliation_audits_declared_month_tail"
+      ],
+      "exit_code": 1,
+      "before_sha256": "f23bd5e97dac6102cd1ec20dbcf39921b9594df88d0f85566f3110f842afd538",
+      "mutant_sha256": "7d384adc7717d031349625a5f23aab370f1e444f71902d666360af23396b0fdd",
+      "seconds": 1.805
+    },
+    {
+      "name": "archive_refetch_clipped_to_new_start",
+      "file": "src/ashare/data/crypto/sync.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_sync_archive_refetch_uses_full_declared_month"
+      ],
+      "exit_code": 1,
+      "before_sha256": "6f9e2fd93d23616f6e3b8e5e7b42d0366fe394b87a15687295abfa7bf9b80751",
+      "mutant_sha256": "7bdd8f115503931bf41a19dca58ba9e8930bdedd46493ffaf2fc1ef9d72d700b",
+      "seconds": 1.718
+    },
+    {
+      "name": "rest_source_not_checked",
+      "file": "src/ashare/data/crypto/verify_raw.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_verify_rest_input_against_frozen_response[markPrice-200]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "6c0610a20a171fc25d48fe16143deddafb22315419563bb36aa387b4550f89a3",
+      "mutant_sha256": "9dc847ee21fcfcef4c3abf462f805993e9c20f41e99e7b61663ea42028df49c1",
+      "seconds": 1.694
+    },
+    {
+      "name": "verifier_accepts_shortened_strict",
+      "file": "src/ashare/data/crypto/verify_recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r1.py::test_verifier_rejects_ended_column_truncation[False]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "9b91b0c4b669844a6eaa51bfea19f154b85e06772db9b881b70ca7603e515013",
+      "mutant_sha256": "51ad87382c2c835ff527b63588b3fb1fa371d09642b8358f596ef3a248cf306b",
+      "seconds": 1.522
+    },
+    {
+      "name": "short_horizon_skips_rest",
+      "file": "src/ashare/data/crypto/recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r2.py::test_rest_inside_short_horizon_stops_extension[confirmed-request_end]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5c279f5fde97b1c012b99d706698a58ec35e01a9b3c71827c5b1d9a644b8f99a",
+      "mutant_sha256": "98b009c1a6c08a71b9a35ba4ff2c33bf8a65b2e48c00ba006d25f357d94f0c4c",
+      "seconds": 1.519
+    },
+    {
+      "name": "verifier_short_horizon_skips_rest",
+      "file": "src/ashare/data/crypto/verify_recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[confirmed-known_exit]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "9b91b0c4b669844a6eaa51bfea19f154b85e06772db9b881b70ca7603e515013",
+      "mutant_sha256": "0691917820d979fe2e8d3ad7650941b6b0ffa38bffb53c5ba9c9bd3593020b5c",
+      "seconds": 1.525
+    },
+    {
+      "name": "verifier_unconfirmed_info_skips_rest",
+      "file": "src/ashare/data/crypto/verify_recent.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c5_review_r2.py::test_verifier_rejects_unchecked_rest_inside_short_horizon[missing-request_end]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "9b91b0c4b669844a6eaa51bfea19f154b85e06772db9b881b70ca7603e515013",
+      "mutant_sha256": "18300ff6e64c76fd9fabdd888b794c22ede4f0d9207a784ad719ade89d25d0d0",
+      "seconds": 1.522
+    }
+  ],
+  "killed": 22,
+  "total": 22,
+  "restored_tests_passed": true
+}

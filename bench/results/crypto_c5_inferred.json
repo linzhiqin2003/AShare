@@ -1,0 +1,380 @@
+{
+  "archives_checked": 963,
+  "diagnostic_count": 6726,
+  "end": "2026-11-15T00:00:00+00:00",
+  "error_count": 0,
+  "explicit_gap_intervals": [
+    {
+      "end": 1581217200000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1581213600000
+    },
+    {
+      "end": 1587787200000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1587780000000
+    },
+    {
+      "end": 1593320400000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1593309600000
+    },
+    {
+      "end": 1606719600000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1606716000000
+    },
+    {
+      "end": 1608573600000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1608562800000
+    },
+    {
+      "end": 1608865200000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1608861600000
+    },
+    {
+      "end": 1614999600000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1614996000000
+    },
+    {
+      "end": 1618891200000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1618884000000
+    },
+    {
+      "end": 1628834400000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1628820000000
+    },
+    {
+      "end": 1632906000000,
+      "instrument": "spot:BTCUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/",
+      "start": 1632898800000
+    },
+    {
+      "end": 1581217200000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1581213600000
+    },
+    {
+      "end": 1587787200000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1587780000000
+    },
+    {
+      "end": 1593320400000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1593309600000
+    },
+    {
+      "end": 1606719600000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1606716000000
+    },
+    {
+      "end": 1608573600000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1608562800000
+    },
+    {
+      "end": 1608865200000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1608861600000
+    },
+    {
+      "end": 1614999600000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1614996000000
+    },
+    {
+      "end": 1618891200000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1618884000000
+    },
+    {
+      "end": 1628834400000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1628820000000
+    },
+    {
+      "end": 1632906000000,
+      "instrument": "spot:ETHUSDT",
+      "reason": "Observed archive gap; explicit flat/untradable research assumption, not confirmed exchange halt",
+      "source_url": "https://data.binance.vision/?prefix=data/spot/monthly/klines/ETHUSDT/1h/",
+      "start": 1632898800000
+    }
+  ],
+  "observations": [
+    {
+      "dataset": "klines",
+      "gaps": [
+        {
+          "end": 1581217200000,
+          "previous_quality": "normal",
+          "start": 1581213600000
+        },
+        {
+          "end": 1582131600000,
+          "previous_quality": "partial_halt",
+          "start": 1582113600000
+        },
+        {
+          "end": 1583319600000,
+          "previous_quality": "partial_halt",
+          "start": 1583316000000
+        },
+        {
+          "end": 1587787200000,
+          "previous_quality": "normal",
+          "start": 1587780000000
+        },
+        {
+          "end": 1593320400000,
+          "previous_quality": "normal",
+          "start": 1593309600000
+        },
+        {
+          "end": 1606719600000,
+          "previous_quality": "normal",
+          "start": 1606716000000
+        },
+        {
+          "end": 1608573600000,
+          "previous_quality": "invalid_close_time",
+          "start": 1608562800000
+        },
+        {
+          "end": 1608865200000,
+          "previous_quality": "normal",
+          "start": 1608861600000
+        },
+        {
+          "end": 1613019600000,
+          "previous_quality": "partial_halt",
+          "start": 1613016000000
+        },
+        {
+          "end": 1614999600000,
+          "previous_quality": "normal",
+          "start": 1614996000000
+        },
+        {
+          "end": 1618891200000,
+          "previous_quality": "normal",
+          "start": 1618884000000
+        },
+        {
+          "end": 1619337600000,
+          "previous_quality": "partial_halt",
+          "start": 1619326800000
+        },
+        {
+          "end": 1628834400000,
+          "previous_quality": "normal",
+          "start": 1628820000000
+        },
+        {
+          "end": 1632906000000,
+          "previous_quality": "normal",
+          "start": 1632898800000
+        },
+        {
+          "end": 1679666400000,
+          "previous_quality": "partial_halt",
+          "start": 1679662800000
+        }
+      ],
+      "instrument": "spot:BTCUSDT",
+      "invalid_close_time": 1,
+      "partial_halt": 6,
+      "rows": 60209,
+      "subsecond_end_offset": 1
+    },
+    {
+      "dataset": "klines",
+      "gaps": [
+        {
+          "end": 1581217200000,
+          "previous_quality": "normal",
+          "start": 1581213600000
+        },
+        {
+          "end": 1582131600000,
+          "previous_quality": "partial_halt",
+          "start": 1582113600000
+        },
+        {
+          "end": 1583319600000,
+          "previous_quality": "partial_halt",
+          "start": 1583316000000
+        },
+        {
+          "end": 1587787200000,
+          "previous_quality": "normal",
+          "start": 1587780000000
+        },
+        {
+          "end": 1593320400000,
+          "previous_quality": "normal",
+          "start": 1593309600000
+        },
+        {
+          "end": 1606719600000,
+          "previous_quality": "normal",
+          "start": 1606716000000
+        },
+        {
+          "end": 1608573600000,
+          "previous_quality": "invalid_close_time",
+          "start": 1608562800000
+        },
+        {
+          "end": 1608865200000,
+          "previous_quality": "normal",
+          "start": 1608861600000
+        },
+        {
+          "end": 1613019600000,
+          "previous_quality": "partial_halt",
+          "start": 1613016000000
+        },
+        {
+          "end": 1614999600000,
+          "previous_quality": "normal",
+          "start": 1614996000000
+        },
+        {
+          "end": 1618891200000,
+          "previous_quality": "normal",
+          "start": 1618884000000
+        },
+        {
+          "end": 1619337600000,
+          "previous_quality": "partial_halt",
+          "start": 1619326800000
+        },
+        {
+          "end": 1628834400000,
+          "previous_quality": "normal",
+          "start": 1628820000000
+        },
+        {
+          "end": 1632906000000,
+          "previous_quality": "normal",
+          "start": 1632898800000
+        },
+        {
+          "end": 1679666400000,
+          "previous_quality": "partial_halt",
+          "start": 1679662800000
+        }
+      ],
+      "instrument": "spot:ETHUSDT",
+      "invalid_close_time": 1,
+      "partial_halt": 6,
+      "rows": 60209,
+      "subsecond_end_offset": 1
+    },
+    {
+      "dataset": "klines",
+      "gaps": [],
+      "instrument": "usdm:BTCUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    },
+    {
+      "dataset": "markPriceKlines",
+      "gaps": [],
+      "instrument": "usdm:BTCUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    },
+    {
+      "dataset": "indexPriceKlines",
+      "gaps": [],
+      "instrument": "usdm:BTCUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    },
+    {
+      "dataset": "klines",
+      "gaps": [],
+      "instrument": "usdm:ETHUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    },
+    {
+      "dataset": "markPriceKlines",
+      "gaps": [],
+      "instrument": "usdm:ETHUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    },
+    {
+      "dataset": "indexPriceKlines",
+      "gaps": [],
+      "instrument": "usdm:ETHUSDT",
+      "invalid_close_time": 0,
+      "partial_halt": 0,
+      "rows": 60240,
+      "subsecond_end_offset": 0
+    }
+  ],
+  "repairs": [],
+  "rows": 240960,
+  "start": "2020-01-01T00:00:00+00:00",
+  "terminal_policy": "explicit inferred continuation; min archived complete hour and last accepted settlement on first failure/missing tail",
+  "verdict": "pass",
+  "version": "bf894f27e18302dafc4cc054999fcd2b915b0fbc9364e08588315f99577633da"
+}
