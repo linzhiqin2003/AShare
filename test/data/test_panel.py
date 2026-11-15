@@ -17,7 +17,7 @@ assert (
 def test_cells_roundtrip_and_metadata(tables, make_store):
     store = make_store(tables)
     build(store)
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     p = data.panel(data.fields())
     assert p.shape == (4, 3)
     assert p["volume"][0, 0] == 200
@@ -60,7 +60,7 @@ def test_cells_roundtrip_and_metadata(tables, make_store):
     with pytest.raises(ValueError, match="超出"):
         data.panel(["close"], start="19900101")
     with pytest.raises(ValueError):
-        ad.open(store.root.parent, market="jp")
+        ad.open(store.data_root, market="jp")
 
 
 def test_incremental_bitwise(tables, make_store):
@@ -94,7 +94,7 @@ def test_incremental_bitwise(tables, make_store):
     assert meta["reused_rows"] == 3
     full = make_store(tables, "full")
     build(full)
-    a, b = ad.open(store.root.parent), ad.open(full.root.parent)
+    a, b = ad.open(store.data_root), ad.open(full.data_root)
     pa, pb = a.panel(a.fields()), b.panel(b.fields())
     for name in a.fields():
         assert pa[name].tobytes() == pb[name].tobytes(), name
@@ -106,7 +106,7 @@ def test_incremental_bitwise(tables, make_store):
     )
     store.write("daily", "20260105", {}, FetchResult(changed, "later", 1))
     assert build(store, incremental=True)["reused_rows"] == 1
-    assert ad.open(store.root.parent).panel(["close"])["close"][1, 0] == 20
+    assert ad.open(store.data_root).panel(["close"])["close"][1, 0] == 20
 
 
 def test_new_column_incremental(tables, make_store):
@@ -153,7 +153,7 @@ def test_new_column_incremental(tables, make_store):
     assert meta["reused_rows"] == 3
     full = make_store(tables, "full")
     build(full)
-    a, b = ad.open(store.root.parent), ad.open(full.root.parent)
+    a, b = ad.open(store.data_root), ad.open(full.data_root)
     for field in a.fields():
         assert a.panel([field])[field].tobytes() == b.panel([field])[field].tobytes(), (
             field
@@ -166,9 +166,7 @@ def test_missing_partition_and_late_dividend(tables, make_store):
     )
     store = make_store(tables)
     build(store)
-    assert (
-        ad.open(store.root.parent).panel(["cash_dividend"])["cash_dividend"][3, 2] == 0
-    )
+    assert ad.open(store.data_root).panel(["cash_dividend"])["cash_dividend"][3, 2] == 0
     store.mark("stock_st/20260106", dict(status="failed"))
     with pytest.raises(FileNotFoundError, match="stock_st"):
         build(store)
@@ -192,7 +190,7 @@ def test_handwritten_industry_boundary_and_projected_mmap(tables, make_store):
     np.testing.assert_array_equal(array[:, 0], [801150, 801750])
     store = make_store(tables)
     build(store)
-    p = ad.open(store.root.parent).panel(["close"], symbols=["000003.SZ", "000001.SZ"])
+    p = ad.open(store.data_root).panel(["close"], symbols=["000003.SZ", "000001.SZ"])
     assert isinstance(p["close"], np.memmap)
     assert p["close"].flags.c_contiguous
     assert not p["close"].flags.writeable

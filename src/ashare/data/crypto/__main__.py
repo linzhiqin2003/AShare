@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from ashare.paths import dataset_dir
+
 from ..store import atomic_json
 from .build import build
 from .sync import sync
@@ -12,7 +14,7 @@ from .verify import verify
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--root", type=Path, default=None)
     sub = parser.add_subparsers(dest="command", required=True)
     download = sub.add_parser("sync")
     download.add_argument("--refresh", action="store_true")
@@ -28,6 +30,7 @@ def main(argv=None):
     make.add_argument("--allow-inferred-funding", action="store_true")
     check.add_argument("--allow-inferred-funding", action="store_true")
     args = parser.parse_args(argv)
+    args.root = dataset_dir("crypto", args.root)
     if args.command == "sync":
         result = sync(
             args.root, refresh=args.refresh, announcements=not args.skip_announcements

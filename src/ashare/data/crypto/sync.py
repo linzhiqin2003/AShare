@@ -2,7 +2,8 @@
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
+
+from ashare.paths import dataset_dir
 
 from ..store import atomic_json, lock
 from .announcements import crawl_announcements
@@ -161,7 +162,7 @@ def sync_funding_prices(
 def sync(
     root, *, config=None, client=None, refresh=False, announcements=True, now=None
 ):
-    root = Path(root)
+    root = dataset_dir("crypto", root)
     config = config or json.loads((root / "config.json").read_text())
     now = millis(now or datetime.now(UTC))
     start, end = millis(config["start"]), millis(config["end"])
@@ -347,9 +348,12 @@ def sync(
 
 def load_plan(root):
     """从冻结清单加载，后续 refresh 不改变这次同步计划所指的数据。"""
-    plan = json.loads((Path(root) / "sync_plan.json").read_text())
+    root = dataset_dir("crypto", root)
+    plan = json.loads((root / "sync_plan.json").read_text())
     frozen = json.loads(
-        (Path(root) / "raw_versions" / f"{plan['raw_version']}.json").read_text()
+        (
+            dataset_dir("crypto", root) / "raw_versions" / f"{plan['raw_version']}.json"
+        ).read_text()
     )
     store = RawStore(root)
 

@@ -20,7 +20,6 @@ import argparse
 import json
 import os
 import statistics
-import subprocess
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -36,18 +35,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def default_data():
-    """data/ of this checkout, or of the main checkout for a git worktree."""
-    if (ROOT / "data/cn/panel/current.json").exists():
-        return ROOT / "data"
-    common = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-    ).stdout.strip()
-    return Path(common).parent / "data"
+    """统一入口；没有配置和本地面板时保留主检出回退。"""
+    from ashare.paths import bench_data_root
+
+    return bench_data_root(checkout=ROOT)
 
 
 REPEAT = 5

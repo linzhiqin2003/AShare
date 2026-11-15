@@ -11,13 +11,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "bench" / "e2e"))
-from common import default_data, task_info  # noqa: E402
+from common import task_info  # noqa: E402
 
 sys.path.pop(0)
 
-DATA = Path(os.environ.get("ASHARE_BENCH_DATA", default_data()))
-# 缓存和账本：主目录 data/dev/ml（不入库）
-ML_ROOT = Path(os.environ.get("ASHARE_ML_DIR", DATA / "dev" / "ml"))
+from ashare.paths import bench_data_root, bench_ml_dir  # noqa: E402
+
+DATA = bench_data_root(checkout=ROOT)
+ML_ROOT = bench_ml_dir(root=DATA)
 RESULTS = Path(__file__).with_name("results")
 
 try:

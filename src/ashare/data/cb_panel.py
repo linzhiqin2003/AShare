@@ -301,7 +301,7 @@ def build_cb_arrays(store, dates, *, stock_root=None):
     stocks = [info[s]["stock_symbol"] if s in info else None for s in symbols]
     unique_stocks = sorted({s for s in stocks if s})
     closes, stock_info = stock_closes(
-        stock_root or store.root.parent, dates, unique_stocks
+        stock_root if stock_root is not None else store.data_root, dates, unique_stocks
     )
     diagnostics.update(stock_info)
     diagnostics["stock_panel_version"] = stock_info.get("stock_panel")

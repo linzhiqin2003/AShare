@@ -144,7 +144,7 @@ def reference_fund(source):
 
 def test_fund_panel_matches_reference(built):
     store, source, meta = built
-    f = ad.open(store.root.parent).funds()
+    f = ad.open(store.data_root).funds()
     names = [
         "open",
         "high",
@@ -191,7 +191,7 @@ def test_fund_panel_matches_reference(built):
 
 def test_fund_listing_and_delist(built):
     store, _, _ = built
-    f = ad.open(store.root.parent).funds()
+    f = ad.open(store.data_root).funds()
     p = f.panel("fund", ["is_listed", "delist", "has_quote"], symbols=["159001.SZ"])
     listed = np.asarray(p["is_listed"])[:, 0]
     # 基金表上市日（第 2 天）晚于第一笔行情（第 0 天）：上市日取较早的那个，并记进诊断。
@@ -270,7 +270,7 @@ def test_classify_and_limits():
 
 def test_fund_market_runs(built):
     store, _, _ = built
-    f = ad.open(store.root.parent).funds()
+    f = ad.open(store.data_root).funds()
     fm = fund_market(f, ["510001.SH", "511001.SH"])
     can_buy = np.asarray(fm.market.can_buy)
     assert not can_buy[LIMIT_DAY, 0] and can_buy[LIMIT_DAY - 1, 0]  # 一字涨停买不进
@@ -344,11 +344,7 @@ def test_verify_catches_broken_adj(tmp_path, monkeypatch):
     ]
     # 面板以复权因子为准：因子没变，这一天不当拆分（与因子一致，所以只有前收盘那条路径报错）。
     assert report["checks"]["fund_factor"]["verdict"] == "pass"
-    p = (
-        ad.open(store.root.parent)
-        .funds()
-        .panel("fund", ["split"], symbols=["510001.SH"])
-    )
+    p = ad.open(store.data_root).funds().panel("fund", ["split"], symbols=["510001.SH"])
     assert (np.asarray(p["split"]) == 1).all()
 
 
@@ -370,7 +366,7 @@ def build_from(tmp_path, monkeypatch, source):
     store = Store(tmp_path / "root")
     asyncio.run(sync_funds(source, store, DAYS[0], DAYS[-1]))
     build_funds(store)
-    return store, ad.open(store.root.parent).funds()
+    return store, ad.open(store.data_root).funds()
 
 
 def panel_path(store):

@@ -54,12 +54,9 @@ def data_root(value=None) -> Path:
 
 
 def paper_root(value=None, data=None) -> Path:
-    if value:
-        return Path(value)
-    configured = os.environ.get("ASHARE_PAPER_DIR")
-    if configured:
-        return Path(configured)
-    return data_root(data) / "paper"
+    from ashare.paths import dataset_dir
+
+    return dataset_dir("paper", value, root=data)
 
 
 @dataclass
@@ -71,7 +68,7 @@ class Context:
     @classmethod
     def create(cls, data=None, paper=None, clock=None) -> Context:
         resolved = data_root(data)
-        return cls(resolved, paper_root(paper, resolved), clock or SystemClock())
+        return cls(resolved, paper_root(paper, data), clock or SystemClock())
 
     @property
     def ops(self) -> Path:

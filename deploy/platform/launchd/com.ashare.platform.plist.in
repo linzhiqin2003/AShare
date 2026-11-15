@@ -10,20 +10,20 @@
   <array>
     <string>/bin/zsh</string>
     <string>-c</string>
-    <string>exec {{PYTHON}} -m ashare.platform --port {{PORT}} --host-subnet {{SUBNET}}</string>
+    <string>exec {{PYTHON}} -m ashare.platform --service-results --port {{PORT}} --host-subnet {{SUBNET}}</string>
   </array>
   <key>WorkingDirectory</key><string>{{REPO}}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ASHARE_DATA_DIR</key><string>{{REPO}}/data</string>
-    <key>ASHARE_PLATFORM_DIR</key><string>{{REPO}}/data/platform/results</string>
+    <key>ASHARE_DATA_DIR</key><string>{{DATA_DIR}}</string>
+    {{PLATFORM_ENV}}
     <key>PYTHONUNBUFFERED</key><string>1</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardOutPath</key><string>{{REPO}}/data/platform/logs/platform.out.log</string>
-  <key>StandardErrorPath</key><string>{{REPO}}/data/platform/logs/platform.err.log</string>
+  <key>StandardOutPath</key><string>{{LOG_DIR}}/platform.out.log</string>
+  <key>StandardErrorPath</key><string>{{LOG_DIR}}/platform.err.log</string>
 </dict>
 </plist>

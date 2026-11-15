@@ -25,7 +25,7 @@ def main():
     source = Store(args.root)
     current = json.loads((source.root / "panel/current.json").read_text())["version"]
     expected = source.root / "panel" / current
-    base = Path(tempfile.mkdtemp(prefix=".round3-full-check-", dir=source.root.parent))
+    base = Path(tempfile.mkdtemp(prefix=".round3-full-check-", dir=source.data_root))
     try:
         root = base / "cn"
         root.mkdir()

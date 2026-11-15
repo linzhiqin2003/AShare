@@ -63,16 +63,23 @@ def render(text: str, mapping: dict[str, str], *, kind: str) -> str:
     return text
 
 
-def plan(kind: str, mapping: dict[str, str], target: Path) -> list[tuple[Path, str]]:
+def plan(
+    kind: str, mapping: dict[str, str], target: Path, *, paper_override=True
+) -> list[tuple[Path, str]]:
     names = LAUNCHD if kind == "launchd" else SYSTEMD
     folder = TEMPLATES / kind
-    return [
-        (
-            target / name,
-            render((folder / f"{name}.in").read_text(), mapping, kind=kind),
-        )
-        for name in names
-    ]
+    files = []
+    for name in names:
+        text = (folder / f"{name}.in").read_text()
+        if not paper_override:
+            # 默认账户位置每次启动重新查指针；只保留用户明确提供的专用覆盖。
+            text = "".join(
+                line
+                for line in text.splitlines(keepends=True)
+                if "ASHARE_PAPER_DIR" not in line
+            )
+        files.append((target / name, render(text, mapping, kind=kind)))
+    return files
 
 
 def launch_agents() -> Path:
@@ -141,6 +148,7 @@ def install(
     repo: Path | None = None,
     data_dir: Path,
     paper_dir: Path,
+    paper_override: bool = True,
     env_file: Path | None = None,
     out=None,
 ) -> list[tuple[Path, str]]:
@@ -155,7 +163,7 @@ def install(
         paper_dir=paper_dir,
         env_file=env_file or Path.home() / ".config" / "ashare" / "paper.env",
     )
-    files = plan(kind, mapping, target)
+    files = plan(kind, mapping, target, paper_override=paper_override)
     warning = timezone_warning(kind)
     if warning:
         print(f"# 注意：{warning}", file=out)

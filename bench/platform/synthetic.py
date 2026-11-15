@@ -1,7 +1,6 @@
 """平台测试和测量共用的合成面板，绝不读取真实行情。"""
 
 import json
-from pathlib import Path
 
 import numpy as np
 
@@ -68,7 +67,9 @@ def panel(n=60, full=False):
 
 def write_panel(root, source=None):
     source = panel() if source is None else source
-    folder = Path(root) / "cn/panel/synthetic-v1"
+    from ashare.paths import dataset_dir
+
+    folder = dataset_dir("cn", root=root) / "panel/synthetic-v1"
     folder.mkdir(parents=True)
     (folder.parent / "current.json").write_text(json.dumps({"version": "synthetic-v1"}))
     (folder / "metadata.json").write_text(

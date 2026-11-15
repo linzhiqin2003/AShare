@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from .access import MIN_TOKEN, Access, is_loopback
+from .config import platform_dir
 
 TOKEN_ENV = "ASHARE_PLATFORM_TOKEN"
 RESTART_CODE = 75  # EX_TEMPFAIL：网卡地址变了，交给服务管理器重启
@@ -92,6 +93,11 @@ def main():
     parser = argparse.ArgumentParser(description="AShare 本地研究平台")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument(
+        "--service-results",
+        action="store_true",
+        help="常驻服务用：默认将结果放到平台数据集的 results 子目录",
+    )
+    parser.add_argument(
         "--host", help="除本机外再监听的网卡地址（如 VPN 地址），需设访问口令"
     )
     parser.add_argument(
@@ -146,7 +152,10 @@ def main():
     if args.host_subnet:
         threading.Thread(target=watch_subnet, args=(args.host_subnet, host),
                          name="subnet-watch", daemon=True).start()  # fmt: skip
-    config = uvicorn.Config(create_app(access=access), access_log=False)
+    config = uvicorn.Config(
+        create_app(platform_dir(service=args.service_results), access=access),
+        access_log=False,
+    )
     uvicorn.Server(config).run(sockets=sockets)
 
 

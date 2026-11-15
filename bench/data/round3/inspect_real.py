@@ -3,7 +3,6 @@
 import argparse
 import json
 import sqlite3
-from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -14,7 +13,9 @@ def main():
     parser.add_argument("--root", required=True)
     parser.add_argument("--label", required=True, choices=["before", "after"])
     args = parser.parse_args()
-    root = Path(args.root).resolve() / "cn"
+    from ashare.paths import dataset_dir
+
+    root = dataset_dir("cn", root=args.root)
     output = root / "reports/round3"
     base = (
         root

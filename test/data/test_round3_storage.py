@@ -29,7 +29,7 @@ def test_read_only_and_expired_reader(tables, make_store, monkeypatch, tmp_path)
     store = make_store(tables)
     build(store)
     names = {str(p.relative_to(store.root)) for p in store.root.rglob("*")}
-    reader = ad.open(store.root.parent)
+    reader = ad.open(store.data_root)
     with pytest.raises(sqlite3.OperationalError, match="readonly"):
         reader._store._manifest.db.execute("CREATE TABLE forbidden_write (x)")
     old = reader.panel(["close"])
@@ -50,7 +50,7 @@ def test_read_only_and_expired_reader(tables, make_store, monkeypatch, tmp_path)
     for path in protected:
         path.chmod(0o555 if path.is_dir() else 0o444)
     try:
-        readonly = ad.open(store.root.parent)
+        readonly = ad.open(store.data_root)
         assert readonly.calendar().collect().height == 4
         assert readonly.table("dividend").collect().height == 1
         # 即使运行者有提权或 ACL 绕过 chmod，连接本身也必须拒绝写事务。

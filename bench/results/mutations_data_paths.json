@@ -1,0 +1,163 @@
+{
+  "baseline_passed": true,
+  "baseline_summary": "97 passed, 1 warning in 52.13s",
+  "worktree_import_verified": true,
+  "killed": 10,
+  "total": 10,
+  "results": [
+    {
+      "mutation": "missing_target_guard",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_paths.py",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_paths.py::test_missing_target[False]",
+        "test/paths/test_paths.py::test_missing_target[True]",
+        "test/paths/test_paths.py::test_target_file_is_not_directory"
+      ],
+      "seconds": 3.03,
+      "import_verified": true
+    },
+    {
+      "mutation": "legacy_over_explicit",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_paths.py",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_paths.py::test_priority",
+        "test/paths/test_paths.py::test_each_legacy_override[ml]",
+        "test/paths/test_paths.py::test_each_legacy_override[mining]",
+        "test/paths/test_paths.py::test_each_legacy_override[platform]",
+        "test/paths/test_paths.py::test_each_legacy_override[paper]",
+        "test/paths/test_paths.py::test_each_legacy_override[crypto]"
+      ],
+      "seconds": 2.345,
+      "import_verified": true
+    },
+    {
+      "mutation": "skip_sha256",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_paths.py",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_paths.py::test_move_failure_is_atomic[content]",
+        "test/paths/test_paths.py::test_move_failure_is_atomic[source_change]"
+      ],
+      "seconds": 5.31,
+      "import_verified": true
+    },
+    {
+      "mutation": "publish_before_verify",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_paths.py",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_paths.py::test_move_success[False-False]",
+        "test/paths/test_paths.py::test_move_success[False-True]",
+        "test/paths/test_paths.py::test_move_success[True-False]",
+        "test/paths/test_paths.py::test_move_success[True-True]",
+        "test/paths/test_paths.py::test_move_failure_is_atomic[content]",
+        "test/paths/test_paths.py::test_move_failure_is_atomic[size]",
+        "test/paths/test_paths.py::test_move_failure_is_atomic[source_change]",
+        "test/paths/test_paths.py::test_pointer_only_after_verification",
+        "test/paths/test_paths.py::test_force_hot",
+        "test/paths/test_paths.py::test_move_overlap_symlinks_and_second_move",
+        "test/paths/test_paths.py::test_cli_move"
+      ],
+      "seconds": 13.169,
+      "import_verified": true
+    },
+    {
+      "mutation": "allow_hot",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_paths.py",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_paths.py::test_hot_datasets_refused[cn]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[live]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[paper]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[platform]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[mining]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[research]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[ml]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[hk]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[us]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[foreign]",
+        "test/paths/test_paths.py::test_hot_datasets_refused[fixtures]"
+      ],
+      "seconds": 9.631,
+      "import_verified": true
+    },
+    {
+      "mutation": "publication_memory_flag",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_review.py::test_move_interrupt_publication",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_review.py::test_move_interrupt_publication[False-renamed]",
+        "test/paths/test_review.py::test_move_interrupt_publication[False-returned]",
+        "test/paths/test_review.py::test_move_interrupt_publication[True-renamed]",
+        "test/paths/test_review.py::test_move_interrupt_publication[True-returned]"
+      ],
+      "seconds": 10.893,
+      "import_verified": true
+    },
+    {
+      "mutation": "datastatus_reconstruct_root",
+      "file": "src/ashare/platform/datastatus.py",
+      "tests": "test/paths/test_review.py::test_datastatus_renamed_dataset",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_review.py::test_datastatus_renamed_dataset"
+      ],
+      "seconds": 17.81,
+      "import_verified": true
+    },
+    {
+      "mutation": "cb_reconstruct_root",
+      "file": "src/ashare/data/cb_panel.py",
+      "tests": "test/paths/test_review.py::test_cb_panel_renamed_dataset",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_review.py::test_cb_panel_renamed_dataset[False]",
+        "test/paths/test_review.py::test_cb_panel_renamed_dataset[True]"
+      ],
+      "seconds": 13.227,
+      "import_verified": true
+    },
+    {
+      "mutation": "cwd_uses_checkout_root",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_review.py::test_cwd_defaults_outside_checkout",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_review.py::test_cwd_defaults_outside_checkout[platform]",
+        "test/paths/test_review.py::test_cwd_defaults_outside_checkout[paper]"
+      ],
+      "seconds": 2.97,
+      "import_verified": true
+    },
+    {
+      "mutation": "bench_loses_main_checkout",
+      "file": "src/ashare/paths.py",
+      "tests": "test/paths/test_review.py::test_bench_main_checkout_fallback",
+      "killed": true,
+      "returncode": 1,
+      "failed_tests": [
+        "test/paths/test_review.py::test_bench_main_checkout_fallback[e2e]",
+        "test/paths/test_review.py::test_bench_main_checkout_fallback[rules]"
+      ],
+      "seconds": 7.134,
+      "import_verified": true
+    }
+  ]
+}

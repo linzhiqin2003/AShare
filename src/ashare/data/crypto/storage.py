@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from pathlib import Path
+
+from ashare.paths import dataset_dir
 
 from ..manifest import Manifest
 from ..store import atomic_json
@@ -23,8 +24,8 @@ def digest(payload):
 
 
 class RawStore:
-    def __init__(self, root):
-        self.root = Path(root)
+    def __init__(self, root=None):
+        self.root = dataset_dir("crypto", root)
         self.manifest = Manifest(self.root)
 
     def close(self):

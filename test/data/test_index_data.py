@@ -127,7 +127,7 @@ def test_sync_downloads_every_benchmark(tmp_path):
     assert sorted({p["ts_code"] for p in index_calls(source)}) == sorted(
         INDEX_DAILY_CODES
     )
-    table = ad.open(store.root.parent).table("index_daily").collect()
+    table = ad.open(store.data_root).table("index_daily").collect()
     assert set(table["symbol"]) == set(INDEX_DAILY_CODES)
     assert table.select("symbol", "date").is_duplicated().sum() == 0
 
@@ -146,7 +146,7 @@ def test_pool_rows_identical_to_pool_only_download(tmp_path, monkeypatch):
 
     def pool(store, **kwargs):
         return (
-            ad.open(store.root.parent)
+            ad.open(store.data_root)
             .table("index_daily", **kwargs)
             .filter(pl.col("symbol").is_in(POOL))
             .collect()
@@ -179,16 +179,14 @@ def test_symbols_open_only_their_partitions(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pl, "scan_parquet", spy)
     one = (
-        ad.open(store.root.parent)
+        ad.open(store.data_root)
         .table("index_daily", symbols=["399006.SZ"], start="20260201")
         .collect()
     )
     assert one["date"].to_list() == FEBRUARY
     assert len(opened) == 1 and "399006.SZ_202602" in opened[0]
     opened.clear()
-    missing = (
-        ad.open(store.root.parent).table("index_daily", symbols=["X.SH"]).collect()
-    )
+    missing = ad.open(store.data_root).table("index_daily", symbols=["X.SH"]).collect()
     assert missing.height == 0 and "close" in missing.columns
 
 
@@ -235,7 +233,7 @@ def test_indexes_lists_only_benchmarks_and_searches(tmp_path):
             1,
         ),
     )
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     listing = data.indexes()
     assert listing.columns == ["symbol", "name", "first_date", "last_date"]
     assert listing["symbol"].to_list() == sorted(BENCHMARKS)
@@ -262,8 +260,8 @@ def test_indexes_skips_benchmarks_without_local_data(tmp_path, monkeypatch):
         ctx.setattr(sync_module, "INDEX_DAILY_CODES", tuple(POOL))
         store = Store(tmp_path)
         run(store, FakeSource())
-    assert sorted(ad.open(store.root.parent).indexes()["symbol"]) == sorted(POOL)
-    empty = ad.open(Store(tmp_path / "none").root.parent).indexes()
+    assert sorted(ad.open(store.data_root).indexes()["symbol"]) == sorted(POOL)
+    empty = ad.open(Store(tmp_path / "none").data_root).indexes()
     assert empty.height == 0 and empty.columns == [
         "symbol",
         "name",
@@ -282,7 +280,7 @@ def test_window_end_month_is_read(tmp_path):
     store = Store(tmp_path)
     run(store, FakeSource())
     rows = (
-        ad.open(store.root.parent)
+        ad.open(store.data_root)
         .table("index_daily", symbols=["399006.SZ"], start="20260106", end="20260202")
         .sort("date")
         .collect()
@@ -315,7 +313,7 @@ def test_empty_window_has_normal_types(tmp_path):
     run(store, TushareEmpty(code))
     entry = store.manifest()[f"index_daily/{code}_202601"]
     assert entry["rows"] == 0
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     empty = data.table(
         "index_daily", symbols=[code], start="20260105", end="20260109"
     ).collect()

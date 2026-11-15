@@ -102,15 +102,10 @@ def feature_digest(value):
 
 
 def default_root():
-    """缓存与账本的默认目录：ASHARE_ML_DIR；否则数据根目录（ASHARE_DATA_DIR，默认仓库下的
-    data/，与 `ashare.data.open()` 相同）下的 ml/（不入库）。"""
-    if os.environ.get("ASHARE_ML_DIR"):
-        return Path(os.environ["ASHARE_ML_DIR"])
-    data = (
-        os.environ.get("ASHARE_DATA_DIR")
-        or Path(__file__).resolve().parents[3] / "data"
-    )
-    return Path(data) / "ml"
+    """通过统一入口解析默认数据集，包含兼容变量与 LOCATION 指针。"""
+    from ashare.paths import dataset_dir
+
+    return dataset_dir("ml")
 
 
 class _Rows:

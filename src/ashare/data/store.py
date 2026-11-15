@@ -5,12 +5,13 @@ import hashlib
 import io
 import json
 import os
-import sys
 import uuid
 from contextlib import contextmanager
-from pathlib import Path
 
 import polars as pl
+
+from ashare.paths import data_root as resolve_data_root
+from ashare.paths import dataset_dir
 
 from .catalog import ALL_DATASETS, FUND_DATASETS, FUTURES_DATASETS
 from .manifest import Manifest
@@ -20,19 +21,7 @@ MARKETS = ("cn", "hk", "us")
 
 
 def data_root(root=None):
-    resolved = Path(
-        root
-        or os.environ.get("ASHARE_DATA_DIR")
-        or Path(__file__).resolve().parents[3] / "data"
-    ).resolve()
-    if "pytest" in sys.modules:
-        repository = Path(__file__).resolve().parents[3]
-        forbidden = {p / "data" for p in (repository, *repository.parents)}
-        if any(resolved == p or resolved.is_relative_to(p) for p in forbidden):
-            raise RuntimeError(
-                "测试禁止访问真实数据根目录；请传 tmp_path 或设置临时 ASHARE_DATA_DIR"
-            )
-    return resolved
+    return resolve_data_root(root)
 
 
 def assert_no_secret(value):
@@ -77,7 +66,9 @@ class Store:
         if market not in MARKETS:
             raise ValueError(f"尚不支持市场 {market!r}，可用市场：{', '.join(MARKETS)}")
         self.market = market
-        self.root = data_root(root) / market
+        # 保留整根参数，不能从已重定向的数据集目录反推它。
+        self.data_root = data_root(root)
+        self.root = dataset_dir(market, root=root)
         self._manifest = Manifest(self.root, readonly=readonly)
         self.manifest_path = self._manifest.path
         self._snapshot = None

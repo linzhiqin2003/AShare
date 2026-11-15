@@ -52,7 +52,7 @@ def test_stock_outputs_identical_with_overseas_markets(tables, make_store, tmp_p
     for key in before:
         assert before[key] == after[key], key
     # 港美股确实写进了同一个数据根的兄弟目录，A 股清单里没有它们的条目。
-    assert hk.root.parent == us.root.parent == store.root.parent
+    assert hk.data_root == us.data_root == store.data_root
     assert not [
         v for v in store.manifest().values() if v["dataset"] in OVERSEAS_DATASETS
     ]

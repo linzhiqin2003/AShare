@@ -3,7 +3,6 @@
 import itertools
 import os
 import re
-from pathlib import Path
 
 DEFAULTS = dict(
     universe="TOP1800",
@@ -83,12 +82,15 @@ def expand_settings(settings, expression_count=1):
     ]
 
 
-def platform_dir():
-    return Path(
-        os.environ.get(
-            "ASHARE_PLATFORM_DIR",
-            str(Path(os.environ.get("ASHARE_DATA_DIR", "data")) / "platform"),
-        )
+def platform_dir(*, service=False):
+    """通过统一入口解析默认数据集，包含兼容变量与 LOCATION 指针。"""
+    from ashare.paths import dataset_dir
+
+    folder = dataset_dir("platform", cwd_default=True)
+    return (
+        folder / "results"
+        if service and not os.environ.get("ASHARE_PLATFORM_DIR")
+        else folder
     )
 
 
