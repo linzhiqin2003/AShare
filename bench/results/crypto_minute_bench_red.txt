@@ -1,0 +1,17 @@
+nice: setpriority: Operation not permitted
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_cached_sync_cannot_extrapolate_network_throughput[0] ___________
+test/crypto/test_minute_bench.py:11: in test_cached_sync_cannot_extrapolate_network_throughput
+    assert estimate_download_seconds(report, 100, 1000) is None
+E   AssertionError: assert 10.0 is None
+E    +  where 10.0 = estimate_download_seconds({'seconds': 1.0, 'downloaded_bytes': 0}, 100, 1000)
+__________ test_cached_sync_cannot_extrapolate_network_throughput[50] __________
+test/crypto/test_minute_bench.py:11: in test_cached_sync_cannot_extrapolate_network_throughput
+    assert estimate_download_seconds(report, 100, 1000) is None
+E   AssertionError: assert 10.0 is None
+E    +  where 10.0 = estimate_download_seconds({'seconds': 1.0, 'downloaded_bytes': 50}, 100, 1000)
+=========================== short test summary info ============================
+FAILED test/crypto/test_minute_bench.py::test_cached_sync_cannot_extrapolate_network_throughput[0]
+FAILED test/crypto/test_minute_bench.py::test_cached_sync_cannot_extrapolate_network_throughput[50]
+2 failed, 1 passed in 5.55s

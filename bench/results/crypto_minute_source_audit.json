@@ -1,0 +1,31 @@
+{
+  "hourly_version": "525fcae799e5a7012fa038f2bc0c5bc5e004f53c88f721eeca26486736c33567",
+  "checksums_verified": true,
+  "summary": [
+    {
+      "partition": "usdm/BTCUSDT/klines/2021-05",
+      "hours": 1,
+      "differing_fields": 3,
+      "decimal_source_differences": 3,
+      "hourly_panel_matches_archive": 3,
+      "max_decimal_absolute": {
+        "volume": "317.982",
+        "quote_volume": "15748016.85846",
+        "taker_buy_quote_volume": "2448062.03699"
+      }
+    },
+    {
+      "partition": "usdm/ETHUSDT/klines/2021-05",
+      "hours": 2,
+      "differing_fields": 6,
+      "decimal_source_differences": 6,
+      "hourly_panel_matches_archive": 6,
+      "max_decimal_absolute": {
+        "volume": "2156.282",
+        "quote_volume": "8762980.53111",
+        "taker_buy_quote_volume": "2250792.28900"
+      }
+    }
+  ],
+  "conclusion": "差异已存在于官方 1m/1h 原始 CSV；小时面板等于其归档，分钟求和用 Decimal 仍不同；交易所内部原因未知"
+}

@@ -1,0 +1,17 @@
+{
+  "failures": [],
+  "missing": [
+    "data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/markPriceKlines/BTCUSDT/1m/BTCUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/indexPriceKlines/BTCUSDT/1m/BTCUSDT-1m-2026-11.zip",
+    "data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/markPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2026-11.zip",
+    "data/futures/um/monthly/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2026-11.zip"
+  ],
+  "downloaded": 0,
+  "downloaded_bytes": 0,
+  "partitions": 24,
+  "seconds": 8.541634875000454
+}

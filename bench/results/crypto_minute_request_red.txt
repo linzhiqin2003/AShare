@@ -1,0 +1,13 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_failed_month_preserves_original_requested_days ______________
+test/crypto/test_minute.py:463: in test_failed_month_preserves_original_requested_days
+    assert m.bars("BTCUSDT", "spot", "klines", T, T+2*DAY, root=tmp_path).height == 2
+E   AssertionError: assert 1 == 2
+E    +  where 1 = shape: (1, 10)\n┌───────────────┬───────┬───────┬──────┬───┬──────────────┬───────┬────────────────┬───────────────┐\n│ ... ┆ 100.0         │\n└───────────────┴───────┴───────┴──────┴───┴──────────────┴───────┴────────────────┴───────────────┘.height
+E    +    where shape: (1, 10)\n┌───────────────┬───────┬───────┬──────┬───┬──────────────┬───────┬────────────────┬───────────────┐\n│ ... ┆ 100.0         │\n└───────────────┴───────┴───────┴──────┴───┴──────────────┴───────┴────────────────┴───────────────┘ = <function bars at <address>>('BTCUSDT', 'spot', 'klines', 1740787200000, (1740787200000 + (2 * 86400000)), root=PosixPath('<temporary-directory>'))
+E    +      where <function bars at <address>> = m.bars
+=========================== short test summary info ============================
+FAILED test/crypto/test_minute.py::test_failed_month_preserves_original_requested_days
+1 failed in 2.16s

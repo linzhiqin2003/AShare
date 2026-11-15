@@ -265,3 +265,11 @@ verify 从冻结 REST、原始快照和归档独立重算推断条件、生命�
 此端到端通过表示数据与所声明模型一致，不表示历史规则全部已考据：五个当前快照品种的早期规则向前沿用、已消失季度的规则显式借用 BTC 过滤器，均标 assumption；WAVES 下架价使用边界 mark open 并标近似。490 条资金费价格诊断的最大绝对相对偏离为 0.04535%，没有超过 1% 提示阈值；没有交割/指数或现货/永续的超阈值差异。真实数据截到 6 月 1 日后，历史面板（含类型）及前 N 排名与完整数据逐项一致。初次交付面板版本为 `c9e3f5e59b07341fffd430f8333f1dd170354496253abff5592885c53496ca4c`。完整摘要放在本 worktree `tmp/e2e/summary.json`，不提交真实面板或原始响应。含单独格式、接口探针，开发阶段公开数据下载合计约 42 MB。
 
 R1 使用相同原始数据在 `tmp/e2e-review-r1/` 离线重提取、重建，移除原样本中人工补录的 WAVES 事件。自动结算及现货下架事件的 `known_at` 均为 **2024-06-04 00:00 UTC**，依据为 `latest_update_evidence`；结算生效 6-11 09:00、现货下架生效 6-17 03:00 UTC。新面板版本 `792d023e55b5a59b99e787948b94db12727586f767f7ac9b8eb17b713de1a933`，8,784 格、54 个归档、verify 0 错误。未重新下载，旧目录的事件、计划及面板保持不变；现货 WAVES 事件已验证可知时间，但本次六列行情样本不含 WAVES 现货。
+
+## 分钟线（C7）
+
+BTCUSDT、ETHUSDT 的现货成交线与 U 本位永续成交线、标记价、指数价，通过独立模块 `ashare.data.crypto.minute` 同步、整理、校验和读取；不改变小时面板与回测引擎。归档原样核对 CHECKSUM，整理为每市场/交易对/种类/月一个 Parquet，记录逐段缺口，不补值；原档、整理结果、质量记录和定义共同进入内容版本。
+
+入口为 `python -m ashare.data.crypto.minute sync|build|verify|status`；读取用 `bars(symbol, market, kind, start, end, *, root=None)`，返回按需读取的 Polars 表。现阶段默认 `data/crypto_minute`，D1 合并后统一路径；所有入口均可显式指定 `root`。
+
+完整字段、续传与版本语义、独立校验及 1m→1h 对账用法见 [CRYPTO_MINUTE.md](CRYPTO_MINUTE.md)，样本验收与已确认的官方归档差异见 [C7_NOTES.md](C7_NOTES.md)。

@@ -1,0 +1,132 @@
+{
+  "imports": [
+    "src/ashare/data/crypto/minute.py",
+    "src/ashare/data/crypto/verify_minute.py",
+    "src/ashare/data/crypto/sources.py",
+    "src/ashare/data/crypto/storage.py"
+  ],
+  "baseline_passed": true,
+  "mutations": [
+    {
+      "name": "timestamp_scale",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_units_and_headers[False-True]",
+        "test/crypto/test_minute.py::test_units_and_headers[True-True]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "1d05f33851e17cef1ed111a900c96ae051e241cd3bc18b1102585c3543537e97",
+      "seconds": 1.5976387080154382
+    },
+    {
+      "name": "unrecorded_gaps",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_gaps_are_full_month_segments"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "d9775558dbc176ee4565ad8a6ea27cc44070a56ee9f24f6de863863c3e746a7c",
+      "seconds": 1.951214540982619
+    },
+    {
+      "name": "duplicate_accepted",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_duplicates_and_unsorted_raise"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "4064d3e64111c7d3a80142403a9aeaff5b24e2ad7da43d59edca3b2b8f2cdd11",
+      "seconds": 1.8187610410386696
+    },
+    {
+      "name": "daily_overwrites_monthly",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_daily_only_missing_days_and_resume"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "26ed3b79693c2cc5e5a8fce5fabc2c8f01bf29d1ed07c93ff252f03d02d6e899",
+      "seconds": 2.0432575829909183
+    },
+    {
+      "name": "hour_open_last",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_aggregate_ohlcv_and_incomplete"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "4b1a4fef3e3b211d84568d514bf7706fd05594d305f530bb938882c7ddd5abe5",
+      "seconds": 2.0620185420266353
+    },
+    {
+      "name": "hour_close_first",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_aggregate_ohlcv_and_incomplete"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "5ecf11c69e560261f67caef143e634411ef7b77a3bacdce2d08a84638f469f75",
+      "seconds": 2.0454713749932125
+    },
+    {
+      "name": "hour_volume_mean",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_aggregate_ohlcv_and_incomplete"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "154b03dedaa70d816c6f633f9260279eb85d8e249201a9e5ba745953f61bed1d",
+      "seconds": 2.386382541968487
+    },
+    {
+      "name": "verifier_ignores_gaps",
+      "file": "src/ashare/data/crypto/verify_minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_independent_verifier_rejects_resigned_damage[gap]"
+      ],
+      "exit_code": 1,
+      "before_sha256": "5ac053ae55dcd7dae527f6a29b11ddc93583b8a0158f6fcebdb44667e1f372e6",
+      "mutant_sha256": "08364a9bfa2741f17812d3d15a4df22228eabd586f2212d417d66ee0861e9ab7",
+      "seconds": 3.999117417028174
+    },
+    {
+      "name": "forget_old_failure",
+      "file": "src/ashare/data/crypto/minute.py",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_minute.py::test_failure_is_not_cleared_by_unrelated_sync"
+      ],
+      "exit_code": 1,
+      "before_sha256": "7f12bf908000e42c626910a55c6c8b6fe381a727c24764ff7635936c8e8fb97b",
+      "mutant_sha256": "47fb73a5858b3b997b128d169b0e8b75633d8c5fb2d1b093aac1decd0ccc7f1b",
+      "seconds": 2.3841468329774216
+    }
+  ],
+  "killed": 9,
+  "total": 9,
+  "restored_tests_passed": true
+}

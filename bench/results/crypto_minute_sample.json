@@ -1,0 +1,621 @@
+{
+  "version": "04b338c6fdc93ad5c826f4a692144564aaed82bc3f13b5be8fba4a582d86f52b",
+  "hourly_version": "525fcae799e5a7012fa038f2bc0c5bc5e004f53c88f721eeca26486736c33567",
+  "local_validation": {
+    "ok": true,
+    "errors": [],
+    "version": "04b338c6fdc93ad5c826f4a692144564aaed82bc3f13b5be8fba4a582d86f52b",
+    "checked_archives": 40,
+    "partitions": 24,
+    "rows": 748800,
+    "gap_segments": 8
+  },
+  "timings": {
+    "sync_seconds": 51.06503449997399,
+    "build_seconds": 0.45451920898631215,
+    "verify_seconds": 2.3896233330015093,
+    "verify_and_reconcile_seconds": 2.996101707976777
+  },
+  "raw_bytes": 27524683,
+  "parquet_bytes": 24938252,
+  "archive_count": 40,
+  "downloaded_bytes": 27528305,
+  "missing_archives": 8,
+  "reconciliation": [
+    {
+      "partition": "spot/BTCUSDT/klines/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 1.8189894035458565e-12,
+        "quote_volume": 5.960464477539063e-08,
+        "taker_buy_quote_volume": 5.960464477539063e-08
+      },
+      "material_differences": 0,
+      "roundoff_differences": 77,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 77
+      }
+    },
+    {
+      "partition": "spot/BTCUSDT/klines/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 9.094947017729282e-13,
+        "quote_volume": 5.960464477539063e-08,
+        "taker_buy_quote_volume": 2.9802322387695312e-08
+      },
+      "material_differences": 0,
+      "roundoff_differences": 108,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 108
+      }
+    },
+    {
+      "partition": "spot/BTCUSDT/klines/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 0.0,
+        "quote_volume": 0.0,
+        "taker_buy_quote_volume": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "spot/ETHUSDT/klines/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 2.9103830456733704e-11,
+        "quote_volume": 5.960464477539063e-08,
+        "taker_buy_quote_volume": 2.9802322387695312e-08
+      },
+      "material_differences": 0,
+      "roundoff_differences": 87,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 87
+      }
+    },
+    {
+      "partition": "spot/ETHUSDT/klines/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 7.275957614183426e-12,
+        "quote_volume": 1.1920928955078125e-07,
+        "taker_buy_quote_volume": 2.9802322387695312e-08
+      },
+      "material_differences": 0,
+      "roundoff_differences": 86,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 86
+      }
+    },
+    {
+      "partition": "spot/ETHUSDT/klines/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 0.0,
+        "quote_volume": 0.0,
+        "taker_buy_quote_volume": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/index/2021-05",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/index/2025-03",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/index/2026-11",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/klines/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 317.98199999999997,
+        "quote_volume": 15748016.858460069,
+        "taker_buy_quote_volume": 2448062.036989987
+      },
+      "material_differences": 3,
+      "roundoff_differences": 89,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 89,
+        "source_difference": 3
+      }
+    },
+    {
+      "partition": "usdm/BTCUSDT/klines/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 3.637978807091713e-12,
+        "quote_volume": 4.76837158203125e-07,
+        "taker_buy_quote_volume": 4.76837158203125e-07
+      },
+      "material_differences": 0,
+      "roundoff_differences": 95,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 95
+      }
+    },
+    {
+      "partition": "usdm/BTCUSDT/klines/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 0.0,
+        "quote_volume": 0.0,
+        "taker_buy_quote_volume": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/mark/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/mark/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/BTCUSDT/mark/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/index/2021-05",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/index/2025-03",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/index/2026-11",
+      "fields": [
+        "close"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/klines/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 2156.2820000000065,
+        "quote_volume": 8762980.53110993,
+        "taker_buy_quote_volume": 2250792.2889999747
+      },
+      "material_differences": 6,
+      "roundoff_differences": 73,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 73,
+        "source_difference": 6
+      }
+    },
+    {
+      "partition": "usdm/ETHUSDT/klines/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 1.1641532182693481e-10,
+        "quote_volume": 2.384185791015625e-07,
+        "taker_buy_quote_volume": 1.1920928955078125e-07
+      },
+      "material_differences": 0,
+      "roundoff_differences": 83,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {
+        "roundoff": 83
+      }
+    },
+    {
+      "partition": "usdm/ETHUSDT/klines/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_quote_volume"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "volume": 0.0,
+        "quote_volume": 0.0,
+        "taker_buy_quote_volume": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/mark/2021-05",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/mark/2025-03",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 744,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": true,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 0,
+      "reasons": {}
+    },
+    {
+      "partition": "usdm/ETHUSDT/mark/2026-11",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "compared_hours": 0,
+      "max_absolute": {
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0
+      },
+      "material_differences": 0,
+      "roundoff_differences": 0,
+      "matches": false,
+      "incomplete_hours": 0,
+      "hourly_unavailable": 72,
+      "reasons": {}
+    }
+  ],
+  "extrapolation": {
+    "start": "2020-01-01",
+    "end": "2026-11-15",
+    "series": 8,
+    "calendar_minutes": 28915200,
+    "raw_bytes": 1067894155,
+    "parquet_bytes": 964464788,
+    "disk_bytes": 2032358943,
+    "sync_seconds": 1981.2054463041616,
+    "build_seconds": 17.551434070086824,
+    "verify_seconds": 92.27622408975058,
+    "model": "串行同带宽；整月样本压缩率；CPU 按行数线性外推；不含重试和上游修订"
+  }
+}

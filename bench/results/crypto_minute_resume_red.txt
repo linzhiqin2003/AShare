@@ -1,0 +1,11 @@
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_failure_is_not_cleared_by_unrelated_sync _________________
+test/crypto/test_minute.py:287: in test_failure_is_not_cleared_by_unrelated_sync
+    with pytest.raises(m.SyncError) as exc:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE SyncError
+=========================== short test summary info ============================
+FAILED test/crypto/test_minute.py::test_failure_is_not_cleared_by_unrelated_sync
+1 failed in 6.54s
