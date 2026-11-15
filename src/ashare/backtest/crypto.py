@@ -139,7 +139,8 @@ def crypto_market(
 ):
     """[start,end) 小时面板 → 市场与信号视图，缺数据与规则缺口默认报错。
 
-    ``assume='previous'`` 显式沿用风险档案观测；未知交易对需有来源的规则映射。
+    ``assume='conservative'`` 在风险规则缺口取前后观测中更不利的一个，``assume='previous'``
+    沿用前一个观测；未知交易对需有来源的规则映射。
     已证实的停机可以持平；其他缺口须 allow_missing=True，资金费缺值不能放行。
     信号视图第 t 行只含第 t-1 小时已完成的成交收盘；不会使用上市前 settlement 占位。
     """

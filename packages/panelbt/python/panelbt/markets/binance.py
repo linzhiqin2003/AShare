@@ -132,88 +132,368 @@ class BinanceFees:
         )
 
 
-# Field-specific evidence intervals. Point observations cover that UTC hour;
-# the last exchangeInfo observation covers its stated observation day only.
-# MMR continuity is explicitly supported by BINANCE.md 5.2. Tier-cap change
-# dates between the 2023 and 2025 observations are NOT invented.
-def _observations(symbol):
-    result = {f: [] for f in FIELDS}
+# Field-specific evidence intervals (BINANCE.md 5.2, 5.3, researched 2026-11-15).
+# Each record is (field, start, end, value, source, confidence) with UTC times;
+# a non-hourly effective time applies from the next whole hour. Intervals only
+# cover what the evidence shows: an announcement covers its effective hour and,
+# when the next announcement states the same "before" value, the time up to it;
+# a dated snapshot covers its hour; "observed_continuity" means the same value
+# was observed at both ends and at points between (not proof of no change).
+# Everything else is a gap: rules() rejects it unless an assumption is passed.
+WB = "https://web.archive.org/web/"
+FAQ_LEVERAGE_2019 = (
+    WB
+    + "20191114222312/https://binance.zendesk.com/hc/en-us/articles/360033162192-Leverage-Overview"
+)
+FAQ_LEVERAGE_2021 = (
+    WB + "20210124091911/https://www.binance.com/en/support/faq/360033162192"
+)
+FAQ_TIERS_2020 = (
+    WB
+    + "20200927195452im_/https://public.bnbstatic.com/image/cms/content/body/202009/a480eab7aa90d625b1dbd94a7301b789.png"
+)
+FAQ_LIQ_2019 = (
+    WB
+    + "20190918185837/https://binance.zendesk.com/hc/en-us/articles/360033525271-Liquidation"
+)
+FAQ_LIQ_2020 = (
+    WB
+    + "20200520125129/https://binance.zendesk.com/hc/en-us/articles/360033525271-Liquidation"
+)
+ANN = "https://www.binance.com/en/support/announcement/detail/"
+A_125X = (
+    WB
+    + "20200513174225/https://binance.zendesk.com/hc/en-us/articles/360035327011-Binance-Futures-Increases-Maximum-Leverage-to-125x-and-Launches-Leverage-Adjustment-Function"
+)
+A_ETH75 = (
+    WB
+    + "20200513174416/https://binance.zendesk.com/hc/en-us/articles/360037729012-Binance-Futures-Increases-the-Maximum-Leverage-of-the-ETH-USDT-Perpetual-Contract-to-75x"
+)
+A2020_11 = ANN + "41d8a353103c4fe18bf25c403bf7af3b"
+A2021_02 = ANN + "aeeccb6d332a4e74a51c2ac05f9078e5"
+A2021_05 = ANN + "839a865d251f435f95fba499d2ad95c9"
+A2021_0608 = ANN + "03cac798a8454f42848f4467a434ba5d"
+A2021_0610 = ANN + "6bd7a166980648469ab771b5835847c3"
+R2025_06 = ANN + "e778988edec446038ad536bcb0c8d460"
+BRACKETS = (
+    WB + "{}id_/https://www.binance.com/bapi/futures/v1/friendly/future/common/brackets"
+)
+LIVE_BRACKETS = (
+    "https://www.binance.com/bapi/futures/v1/friendly/future/common/brackets"
+)
+EXCHANGE_INFO = WB + "{}id_/https://fapi.binance.com/fapi/v1/exchangeInfo"
+EXCHANGE_INFO_WWW = (
+    WB + "{}id_/https://www.binance.com/fapi/v1/exchangeInfo?showall=true"
+)
+LIVE_END = "2026-11-16T00"  # live snapshots taken on 2026-11-15 cover that UTC day
 
-    def add(field, start, end, value, source, confidence="official"):
-        original = {
-            R2021: "2021-06-22T03:30",
-            R2023: "2023-12-24T09:35",
-            R2025: "2025-08-19T06:30",
-        }.get(source, start)
-        effective = np.datetime64(original, "ms")
-        floor = effective.astype("datetime64[h]").astype("datetime64[ms]")
-        applied = floor + HOUR if effective != floor else floor
+# exchangeInfo liquidationFee snapshots (Wayback timestamp, BTCUSDT, ETHUSDT).
+CLEARANCE_SNAPSHOTS = (
+    ("20210716214352", 0.012, 0.005),
+    ("20210815214444", 0.012, 0.005),
+    ("20210914214535", 0.006, 0.010),
+    ("20211014214606", 0.020, 0.020),
+    ("20211113214732", 0.030, 0.030),
+    ("20211213214732", 0.012, 0.012),
+    ("20220102134838", 0.015, 0.015),
+    ("20220318130953", 0.005, 0.005),
+    ("20220908123350", 0.015, 0.015),
+    ("20220916203339", 0.0175, 0.015),
+    ("20221116205542", 0.0175, 0.015),
+    ("20221127174756", 0.0175, 0.015),
+    ("20231102093209", 0.0125, 0.0125),
+    ("w20231206233545", 0.0125, 0.0125),
+    ("w20240408103545", 0.0125, 0.0125),
+    ("w20250414160908", 0.0125, 0.0125),
+)
+
+_RISK = {
+    "BTCUSDT": (
+        (
+            "maint_rate",
+            "2019-11-14T22:23",
+            LIVE_END,
+            0.004,
+            FAQ_LEVERAGE_2019,
+            "observed_continuity",
+        ),
+        (
+            "tier_cap",
+            "2019-11-14T22:23",
+            "2025-06-17T06:30",
+            50000,
+            FAQ_LEVERAGE_2019,
+            "observed_continuity",
+        ),
+        ("tier_cap", "2025-06-17T06:30", LIVE_END, 300000, R2025_06, "official"),
+        (
+            "max_leverage",
+            "2019-10-18T09:12",
+            "2025-08-19T06:30",
+            125,
+            A_125X,
+            "observed_continuity",
+        ),
+        ("max_leverage", "2025-08-19T06:30", LIVE_END, 150, R2025, "official"),
+        (
+            "clearance_fee_rate",
+            "2019-09-18T18:58",
+            "2019-09-18T19",
+            0.005,
+            FAQ_LIQ_2019,
+            "upper_bound",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-05-20T12:51",
+            "2020-11-23T07",
+            0.003,
+            FAQ_LIQ_2020,
+            "observed_continuity",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-11-23T07",
+            "2020-11-23T08",
+            0.005,
+            A2020_11,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-02-07T03",
+            "2021-02-07T04",
+            0.010,
+            A2021_02,
+            "official_prior_value",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-02-07T04",
+            "2021-05-20T09",
+            0.020,
+            A2021_02,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-05-20T09",
+            "2021-06-08T07",
+            0.003,
+            A2021_05,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-06-08T07",
+            "2021-06-10T04",
+            0.006,
+            A2021_0608,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-06-10T04",
+            "2021-06-10T05",
+            0.012,
+            A2021_0610,
+            "official",
+        ),
+    ),
+    "ETHUSDT": (
+        (
+            "maint_rate",
+            "2020-05-20T00",
+            "2020-09-27T19:54",
+            0.0065,
+            FAQ_TIERS_2020,
+            "observed_continuity",
+        ),
+        (
+            "maint_rate",
+            "2021-01-24T09:19",
+            "2023-12-24T09:35",
+            0.005,
+            FAQ_LEVERAGE_2021,
+            "observed_continuity",
+        ),
+        (
+            "maint_rate",
+            "2023-12-24T09:35",
+            LIVE_END,
+            0.004,
+            R2023,
+            "observed_continuity",
+        ),
+        (
+            "tier_cap",
+            "2020-05-20T00",
+            "2020-09-27T19:54",
+            10000,
+            FAQ_TIERS_2020,
+            "observed_continuity",
+        ),
+        (
+            "tier_cap",
+            "2021-01-24T09:19",
+            "2021-01-24T11",
+            10000,
+            FAQ_LEVERAGE_2021,
+            "dated_snapshot",
+        ),
+        (
+            "tier_cap",
+            "2022-11-17T06:31",
+            "2023-12-12T04:43",
+            100000,
+            BRACKETS.format("20230109204158"),
+            "bracket_update_time",
+        ),
+        (
+            "tier_cap",
+            "2023-12-12T04:43",
+            "2023-12-24T09:35",
+            200000,
+            BRACKETS.format("20231212142739"),
+            "bracket_update_time",
+        ),
+        ("tier_cap", "2023-12-24T09:35", "2023-12-24T11", 50000, R2023, "official"),
+        ("tier_cap", "2025-08-19T06", LIVE_END, 300000, R2025, "official"),
+        (
+            "max_leverage",
+            "2019-12-20T00",
+            "2020-09-27T19:54",
+            75,
+            A_ETH75,
+            "observed_continuity",
+        ),
+        (
+            "max_leverage",
+            "2021-01-24T09:19",
+            "2023-12-24T09:35",
+            100,
+            FAQ_LEVERAGE_2021,
+            "observed_continuity",
+        ),
+        (
+            "max_leverage",
+            "2023-12-24T09:35",
+            "2025-08-19T06:30",
+            125,
+            R2023,
+            "official",
+        ),
+        ("max_leverage", "2025-08-19T06:30", LIVE_END, 150, R2025, "official"),
+        (
+            "clearance_fee_rate",
+            "2019-09-18T18:58",
+            "2019-09-18T19",
+            0.005,
+            FAQ_LIQ_2019,
+            "upper_bound",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-05-20T12:51",
+            "2020-11-23T07",
+            0.005,
+            FAQ_LIQ_2020,
+            "observed_continuity",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-11-23T07",
+            "2020-11-23T08",
+            0.0075,
+            A2020_11,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-02-07T03",
+            "2021-02-07T04",
+            0.015,
+            A2021_02,
+            "official_prior_value",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-02-07T04",
+            "2021-05-20T09",
+            0.030,
+            A2021_02,
+            "official",
+        ),
+        (
+            "clearance_fee_rate",
+            "2021-05-20T09",
+            "2021-05-20T10",
+            0.005,
+            A2021_05,
+            "official",
+        ),
+    ),
+}
+# Adverse direction for the "conservative" gap policy.
+ADVERSE = dict(maint_rate=max, clearance_fee_rate=max, tier_cap=min, max_leverage=min)
+
+
+def _hour_ceil(value):
+    t = np.datetime64(value, "ms")
+    floor = t.astype("datetime64[h]").astype("datetime64[ms]")
+    return t, (floor + HOUR if t != floor else floor)
+
+
+def _observations(symbol):
+    rows = list(_RISK.get(symbol, ()))
+    if symbol in _RISK:
+        column = 1 if symbol == "BTCUSDT" else 2
+        for stamp, *values in CLEARANCE_SNAPSHOTS:
+            ts = stamp.lstrip("w")
+            hour = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}"
+            url = (
+                EXCHANGE_INFO_WWW if stamp.startswith("w") else EXCHANGE_INFO
+            ).format(ts)
+            start = np.datetime64(hour, "h") + np.timedelta64(1, "h")
+            rows.append(
+                (
+                    "clearance_fee_rate",
+                    f"{hour}:{ts[10:12]}",
+                    str(start),
+                    values[column - 1],
+                    url,
+                    "dated_snapshot",
+                )
+            )
+    if symbol in ("BTCUSDT", "ETHUSDT", "BTCUSDT_261225"):
+        rows.append(
+            (
+                "clearance_fee_rate",
+                "2026-11-15",
+                LIVE_END,
+                0.0125,
+                SNAPSHOT,
+                "dated_snapshot",
+            )
+        )
+    result = {f: [] for f in FIELDS}
+    for field, start, end, value, source, confidence in rows:
+        effective, lo = _hour_ceil(start)
+        _, hi = _hour_ceil(end)
+        if hi <= lo:
+            hi = lo + HOUR
         timing = dict(
             effective_at=str(effective),
-            applied_at=str(applied),
-            approximation=bool(effective != applied),
-            rounding="ceil_to_hour" if effective != applied else "none",
+            applied_at=str(lo),
+            approximation=bool(effective != lo),
+            rounding="ceil_to_hour" if effective != lo else "none",
         )
-        result[field].append(
-            (
-                np.datetime64(start, "ms"),
-                np.datetime64(end, "ms"),
-                value,
-                source,
-                confidence,
-                timing,
-            )
-        )
-
-    if symbol in ("BTCUSDT", "ETHUSDT"):
-        btc = symbol == "BTCUSDT"
-        if btc:
-            add(
-                "maint_rate",
-                "2021-06-22T04",
-                "2025-08-19T08",
-                0.004,
-                R2021,
-                "documented_continuity",
-            )
-        else:
-            add("maint_rate", "2023-12-24T09", "2023-12-24T10", 0.005, R2023)
-            add(
-                "maint_rate",
-                "2023-12-24T10",
-                "2025-08-19T08",
-                0.004,
-                R2023,
-                "documented_continuity",
-            )
-        observations = [
-            (
-                "2023-12-24T09",
-                "2023-12-24T10",
-                50000 if btc else 200000,
-                125 if btc else 100,
-                R2023,
-            ),
-            ("2023-12-24T10", "2023-12-24T11", 50000, 125, R2023),
-            ("2025-08-19T06", "2025-08-19T07", 300000, 125, R2025),
-            ("2025-08-19T07", "2025-08-19T08", 300000, 150, R2025),
-        ]
-        if btc:
-            observations.insert(
-                0, ("2021-06-22T04", "2021-06-22T05", 50000, 125, R2021)
-            )
-        for start, end, cap, leverage, source in observations:
-            add("tier_cap", start, end, cap, source)
-            add("max_leverage", start, end, leverage, source)
-    if symbol in ("BTCUSDT", "ETHUSDT", "BTCUSDT_261225"):
-        add(
-            "clearance_fee_rate",
-            "2026-11-15",
-            "2026-11-16",
-            0.0125,
-            SNAPSHOT,
-            "dated_snapshot",
-        )
+        result[field].append((lo, hi, value, source, confidence, timing))
+    for field in result:
+        result[field].sort(key=lambda r: r[0])
+        for a, b in zip(result[field], result[field][1:], strict=False):
+            if b[0] < a[1]:
+                raise AssertionError(f"overlapping {symbol} {field} records")
     return result
 
 
@@ -242,7 +522,9 @@ class BinanceProfile(MarketProfile):
         """Return risk arrays and provenance, rejecting gaps unless assumed.
 
         ``assume='previous'`` extends the previous observation (the earliest one
-        before coverage). A mapping may specify ``policy='previous'`` and
+        before coverage). ``assume='conservative'`` fills each gap hour with the
+        most adverse of the two neighbouring observations (higher maintenance
+        and clearance rates, lower tier cap and leverage). A mapping may specify ``policy='previous'`` and
         ``rules={symbol: {field: value, reason: ..., source_url: ...}}`` for gaps.
         Unknown contracts never borrow the underlying perpetual's rules silently.
         """
@@ -263,9 +545,11 @@ class BinanceProfile(MarketProfile):
         elif isinstance(assume, dict):
             policy, custom = assume.get("policy"), assume.get("rules", {})
         else:
-            raise ValueError("assume: expected 'previous' or explicit rule mapping")
-        if policy not in (None, "previous"):
-            raise ValueError("assume policy: expected 'previous'")
+            raise ValueError(
+                "assume: expected 'previous', 'conservative' or explicit rule mapping"
+            )
+        if policy not in (None, "previous", "conservative"):
+            raise ValueError("assume policy: expected 'previous' or 'conservative'")
         output = {
             f: np.full(shape, 1.0 if f in ("tier_cap", "max_leverage") else 0.0)
             for f in FIELDS
@@ -331,6 +615,25 @@ class BinanceProfile(MarketProfile):
                             confidence="assumption",
                             reason="previous observation, or earliest before coverage",
                             **record[5],
+                        )
+                elif missing.any() and policy == "conservative" and records:
+                    starts = np.array([r[0] for r in records])
+                    after = np.searchsorted(starts, dates, side="right")
+                    pick = ADVERSE[field]
+                    for k in np.unique(after[missing]):
+                        near = [records[i] for i in (k - 1, k) if 0 <= i < len(records)]
+                        value = pick(r[2] for r in near)
+                        mask = missing & (after == k)
+                        output[field][mask, j] = value
+                        notes += _segments(
+                            dates,
+                            mask,
+                            symbol=symbol,
+                            parameter=field,
+                            value=value,
+                            source_url=" | ".join(r[3] for r in near),
+                            confidence="assumption",
+                            reason="conservative: most adverse neighbouring observation",
                         )
                 elif missing.any():
                     errors.extend(

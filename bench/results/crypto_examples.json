@@ -1,5 +1,5 @@
 {
-  "data_version": "592e490b1d0b50ca14c51035be2d373370bc53a3df8a3f77ce83dd1a6735c194",
+  "data_version": "255bd79371cf3907ca33a11056e2dbafdf09f46883fab0a7d82584bc1108f1b6",
   "start": "2020-01-01T00:00:00.000",
   "end": "2026-10-31T23:00:00.000",
   "rows": 239612,
@@ -16,7 +16,7 @@
     "spot_target_gross_cap": 1.0,
     "trade_hour": 0,
     "fee_switch": "2023-06-01",
-    "risk_assume": "previous",
+    "risk_assume": "conservative",
     "missing_policy": "explicit flat/untradable on diagnosed spot archive gaps"
   },
   "strategies": {
@@ -39,7 +39,7 @@
       "tier_cap_exceeded": 0,
       "valid": true,
       "funding_price_approximation_cells": 8394,
-      "rule_assumption_intervals": 22,
+      "rule_assumption_intervals": 47,
       "missing_intervals": 0,
       "halt_intervals": 0
     },
@@ -70,7 +70,7 @@
   "hand_checks": {
     "liquidation": {
       "source": "real mark and trade hours",
-      "assumptions": "MMR 0.4%, clearance 1.25% carried from dated evidence; first-tier uncertainty explicitly allowed",
+      "assumptions": "MMR 0.4% (observed continuity), clearance 2.00% (announcement 2021-02-07); first-tier uncertainty explicitly allowed",
       "initial_cash": 4323.461016000002,
       "units": 1.0,
       "expected": {

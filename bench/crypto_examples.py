@@ -103,7 +103,7 @@ def trend(ds, kind):
         kind=kind,
         initial_cash=capital,
         leverage=2.0,
-        assume="previous" if kind == "usdm" else None,
+        assume="conservative" if kind == "usdm" else None,
         allow_missing=True,
     )
     days, w = signals(ds, kind)
@@ -129,7 +129,9 @@ def liquidation_check(ds):
     entry = float(data["open"][0, 0])
     fee = 0.0004
     mmr = 0.004
-    clearance_rate = 0.0125
+    clearance_rate = (
+        0.02  # BTCUSDT 2021-02-07 04:00 – 2021-05-20 09:00 UTC (announcement aeeccb6d…)
+    )
     units = 1.0
     capital = initial_margin_cash(entry, float(data["mark_open"][0, 0]), units, 10, fee)
     m = crypto_market(
@@ -140,7 +142,7 @@ def liquidation_check(ds):
         kind="usdm",
         leverage=10.0,
         initial_cash=capital,
-        assume="previous",
+        assume="conservative",
     )
     contracts = units / m.market.futures.multiplier[0]
     targets = np.full((24, 1), np.nan)
@@ -195,7 +197,7 @@ def liquidation_check(ds):
         )
     return dict(
         source="real mark and trade hours",
-        assumptions="MMR 0.4%, clearance 1.25% carried from dated evidence; first-tier uncertainty explicitly allowed",
+        assumptions="MMR 0.4% (observed continuity), clearance 2.00% (announcement 2021-02-07); first-tier uncertainty explicitly allowed",
         initial_cash=capital,
         units=units,
         expected=expected,
@@ -213,7 +215,7 @@ def funding_check(ds):
         "2024-06-01",
         "2024-06-02",
         kind="usdm",
-        assume="previous",
+        assume="conservative",
         initial_cash=1000,
         leverage=2.0,
     )
@@ -382,7 +384,7 @@ def quant_compare(ds, account_path):
         int(times[0]),
         int(times[-1] + HOUR),
         kind="usdm",
-        assume="previous",
+        assume="conservative",
         initial_cash=capital,
         leverage=1.0,
     )
@@ -467,7 +469,7 @@ def main():
             spot_target_gross_cap=1.0,
             trade_hour=0,
             fee_switch="2023-06-01",
-            risk_assume="previous",
+            risk_assume="conservative",
             missing_policy="explicit flat/untradable on diagnosed spot archive gaps",
         ),
         strategies={},

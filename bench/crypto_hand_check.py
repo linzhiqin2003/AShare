@@ -1,7 +1,7 @@
 """C1 algebra checks: 2021-05-19 BTC marks, an hourly funding day, delivery.
 
 BTC source is the official Binance archive, downloaded into memory only.
-Execution at mark open, MM=.004, clearance=.0125 and fee=.0004 are explicit
+Execution at mark open, MM=.004, clearance=.02 (announced for 2021-02-07..05-20) and fee=.0004 are explicit
 model assumptions, not claims about that historical user's account terms.
 """
 
@@ -51,7 +51,7 @@ def main():
         settlement=prices[:, 4:5],
         initial=0.1,
         maint=0.004,
-        clearance=0.0125,
+        clearance=0.02,
         fee_rate=0.0004,
     )
     result = bt.run(*args)
@@ -59,7 +59,7 @@ def main():
     first = next(i for i in range(24) if prices[i, 3] <= trigger)
     assert prices[first, 1] > trigger  # intraday crossing, not an opening gap
     expected_remainder = trigger * (0.004 - 0.0004)
-    expected_clearance = min(0.0125 * trigger, expected_remainder)
+    expected_clearance = min(0.02 * trigger, expected_remainder)
     assert result.liquidation_events[0].day == first
     np.testing.assert_allclose(result.trades[-1].price, trigger, rtol=1e-12)
     np.testing.assert_allclose(
@@ -97,7 +97,7 @@ def main():
                 initial_rate=0.1,
                 maintenance=0.004,
                 fee_rate=0.0004,
-                clearance_rate=0.0125,
+                clearance_rate=0.02,
                 funding="disabled",
             ),
             calculated_trigger=float(trigger),
