@@ -45,4 +45,7 @@ A 股量化研究框架。方案见 `docs/DESIGN.md`，改设计先改它，再�
 - 开发中出现的每个错误、审查发现的问题和排查中找到的可测试点，都写成回归测试（注明来源，先在旧代码上失败再修）
 - 2026-11-14 GitHub Actions CI 上线（`.github/workflows/ci.yml`：检查、Rust 测试、Python 测试、前端四个 job，推送 `main` 和 PR 都跑），修完 Linux 上的跨平台差异后全绿；Rust 版本钉在 `rust-toolchain.toml`。2026-11-15 四个 job 已设为 `main` 规则集的必需检查（按 job 名匹配，改 job 名要同时改规则集，否则 PR 永远等不到检查）。推送前照常跑 `ci-local`（本机跑时设 `UV_PROJECT_ENVIRONMENT` 指向临时 venv，免得卸掉主 venv 的 mlx）
 - 2026-11-15 加密货币回测（用户定：扩展 panelbt；日频和小时级；币安现货、U 本位永续、季度交割、前 N 横截面）第一批完成并合入本地主干：设计 DESIGN 4.17 / 6.10、规则 `docs/markets/BINANCE.md`、用法 `docs/CRYPTO_BACKTEST.md`、数据 `docs/CRYPTO_DATA.md`。引擎逐小时推进，现货账户与合约账户各自独立；两钱包（现货腿 + 合约腿）是第二批 C4，未开始。真实数据在 `data/crypto/`（BTC、ETH 现货与永续 2020-01 至 2026-10-31；建库用 `bench/crypto_prepare.py --data data/crypto --repair-daily --accept-spot-gaps`；全量公告抓取会被 CMS 限流，已加退避和断点续抓）
+- 2026-11-15 第二批加密货币合入主干：C4 两钱包、C5 推断延伸、C6 资金费与基差因子（样本外不显著）、C7 分钟线；D1 数据存放位置：冷数据 `dev`、`crypto`、`crypto_minute` 在外置盘 `/Volumes/MacData/AShareData/`，原位置只留 `LOCATION.json`，一律经 `ashare.paths.dataset_dir` 读取；热数据（`cn`、`live`、`paper` 等，后台定时任务会写）留内置盘。外置盘没挂时读冷数据会报 `DataLocationError`
+- 2026-11-15 用户定：BTC 因子只做 BTC 择时、不扩币池；研究计划草案在 `data/mining/btc-timing/PLAN.md`（私有），待用户确认开工
+- 机器资源：派 Codex 一律 `nice -n 15 taskpolicy -b`，重任务最多同时 2 个，全量测试同一时间只跑一组；卡顿时跑 `~/.local/bin/calm-agents`
 - 下一步：P3 模拟盘接入 `tradecore`、公开因子库（Alpha158 / Alpha101 / 国泰君安 191）批量复现、步骤 4 rqalpha 对账

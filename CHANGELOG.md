@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-15（加密货币第二批、分钟线、数据存放位置）
+- C4 两钱包（`ashare.backtest.crypto_wallets`）：现货腿 + U 本位腿动态划转，币安式 W/U 账本、可划转额规则、`MarginBand` 加预补资、按币数对冲、下架退出意图保留到两腿都处理完。内核导出与成交共用的开仓保证金判定，预补资用它回验（浮点舍入少开一张的问题追了三轮，最后从这里根治）。四轮独立审查；变异 28/28；旧接口 1,600 项输出逐位一致、400 份旧快照可恢复。
+- C5 / 历史规则：最近一个月资金费的推断延伸（显式开启、单独版本）；BTC/ETH 第一档、清算费按公告补齐历史，证据与推断分级。
+- C6 资金费率与基差因子（`ashare.factor.crypto`、`crypto_eval`，`docs/CRYPTO_FACTORS.md`）：季度合约仅信号数据集（交割后归档填充行登记为质量例外）；12 个按 `available_at` 标时间的时序因子；推断用可加对数收益、正向 Hodrick 1B、模拟的 Berger–Boos 保守 p 值、固定 8 名额 Holm。BTC/ETH 样本外 8 项确认检验全部不显著（报告 `docs/crypto_factors_report.md`）。设计经四轮对抗审查后重写推断方案。
+- C7 分钟线（`ashare.data.crypto.minute`，`docs/CRYPTO_MINUTE.md`）：BTC/ETH 现货、永续、标记价、指数价 1 分钟线，2020-01 起 2,891 万行、1.8 GB；1m 聚合 1h 与小时面板逐小时对账，约 0.015% 的差异来自官方两份归档本身。
+- D1 数据存放位置（`ashare.paths`，`docs/DATA_LOCATIONS.md`）：统一入口 `dataset_dir`，冷数据用 `LOCATION.json` 指针放外置盘、外置盘没挂或位置变量为空时报错而不是退回别处；`python -m ashare.paths status | move`（逐文件 SHA-256 核对后才删源）。本机已把 `dev`、`crypto`、`crypto_minute` 搬到外置盘。
+
 ## 2026-11-15（加密货币回测：币安现货、U 本位永续与季度）
 - 设计 `docs/DESIGN.md` 4.17、6.10（经三轮对抗审查定稿），规则事实与出处 `docs/markets/BINANCE.md`。引擎一律逐小时推进，日频策略只在 `trade_hour` 那一行下单；现货账户和合约账户第一批各自独立（两钱包放第二批 C4）。
 - `panelbt` 内核（`Futures(funding=, maint_rate=, liquidation=Liquidation(...), qty_step=, min_qty=, min_notional=)`，SPEC 新增一节）：资金费按收盘持有的张数在行右边界收付；维持保证金与初始保证金分开；按标记价格强平（开盘、成交后、盘中联合压力 λ、收盘四处检查），清算费按剩余权益封顶、穿仓缺口单列；随时间变化的下单规则与只减仓豁免。不开启时旧输出、快照逐位不变（1,200 份 + 300 份快照）。独立参考实现 `reference_crypto.py`、对拍 2,220 组、变异 27/27。
