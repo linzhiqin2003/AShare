@@ -215,6 +215,10 @@ FAQ_TIERS_2020_05 = (
     WB
     + "20200519164655im_/https://binance.zendesk.com/hc/article_attachments/360054347892/mceclip2.png"
 )
+A_ETH_LAUNCH = (
+    WB
+    + "20191209215534/https://binance.zendesk.com/hc/en-us/articles/360036964392-Binance-Futures-Launches-ETH-USDT-Perpetual-Contract-Up-to-50x-Leverage"
+)
 NOW = "2026-11-15T00"  # live snapshots were taken on this UTC day
 
 # Evidence classes. EVIDENCE records are used by default; INFERRED spans (the
@@ -405,6 +409,22 @@ _RISK = {
         ("max_leverage", "2021-06-22T03", None, 125, R2021, "official_prior_value"),
         ("max_leverage", "2023-12-24T09", None, 125, R2023, "official_prior_value"),
         ("max_leverage", "2025-06-17T06", None, 125, R2025_06, "official_prior_value"),
+        (
+            "clearance_fee_rate",
+            "2020-11-23T06",
+            None,
+            0.003,
+            A2020_11,
+            "official_prior_value",
+        ),
+        (
+            "max_leverage",
+            "2019-11-14T22:23:12",
+            None,
+            125,
+            FAQ_LEVERAGE_2019,
+            "dated_snapshot",
+        ),
     ),
     "ETHUSDT": (
         (
@@ -609,6 +629,17 @@ _RISK = {
         ("tier_cap", "2023-12-24T09", None, 200000, R2023, "official_prior_value"),
         ("max_leverage", "2023-12-24T09", None, 100, R2023, "official_prior_value"),
         ("maint_rate", "2025-08-19T06", None, 0.004, R2025, "official_prior_value"),
+        (
+            "clearance_fee_rate",
+            "2020-11-23T06",
+            None,
+            0.005,
+            A2020_11,
+            "official_prior_value",
+        ),
+        # launch announcement; the archived page says 2019-11-29T12:29:52Z while the
+        # current page shows 00:29, so the later time is used (a one-hour point).
+        ("max_leverage", "2019-11-29T12:29:52", None, 50, A_ETH_LAUNCH, "official"),
     ),
 }
 

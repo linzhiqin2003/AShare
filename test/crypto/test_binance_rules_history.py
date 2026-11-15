@@ -267,6 +267,11 @@ def test_every_researched_observation_is_evidence_review_r3_p1():
         ("ETHUSDT", "2026-08-26T19", "maint_rate", 0.004),
         ("BTCUSDT", "2020-09-27T22", "clearance_fee_rate", 0.003),
         ("ETHUSDT", "2020-05-19T17", "max_leverage", 75),
+        # 第四轮复核：2020-11-23 公告的调整前值、2019 年两处杠杆观测。
+        ("BTCUSDT", "2020-11-23T06", "clearance_fee_rate", 0.003),
+        ("ETHUSDT", "2020-11-23T06", "clearance_fee_rate", 0.005),
+        ("BTCUSDT", "2019-11-14T23", "max_leverage", 125),
+        ("ETHUSDT", "2019-11-29T13", "max_leverage", 50),
     ]
     for symbol, at, field, value in points:
         r, notes = rules([symbol], [at], assume=mapped)
