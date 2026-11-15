@@ -273,3 +273,26 @@ BTCUSDT、ETHUSDT 的现货成交线与 U 本位永续成交线、标记价、�
 入口为 `python -m ashare.data.crypto.minute sync|build|verify|status`；读取用 `bars(symbol, market, kind, start, end, *, root=None)`，返回按需读取的 Polars 表。现阶段默认 `data/crypto_minute`，D1 合并后统一路径；所有入口均可显式指定 `root`。
 
 完整字段、续传与版本语义、独立校验及 1m→1h 对账用法见 [CRYPTO_MINUTE.md](CRYPTO_MINUTE.md)，样本验收与已确认的官方归档差异见 [C7_NOTES.md](C7_NOTES.md)。
+
+## C6：季度合约仅信号数据集
+
+`ashare.data.crypto.signals.SignalDataset` 与可交易面板独立，只提供季度收盘与质量位，不要求官方交割价格，也不能直接构造可交易市场。它不修改 `latest.json` / `latest_inferred.json`。
+
+```sh
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-sync \
+  --start 2020-01-01 --end 2026-11-01
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-verify
+```
+
+每期列举全部月归档并核对 CHECKSUM，已核对对象按内容摘要复用。上市优先有来源的 onboardDate/公告，否则以全部归档最早一条作保守代理，不能使用查询起点。交割从代码日期加08:00 UTC，与 deliveryDate 核对；已到期合约最后一根成交量大于0的K线，开盘必须位于[交割−24小时，交割]，否则报错。未到期合约登记 pending_not_expired，仍拒绝交割之后的成交；到期后必须补做下界核验。无上市来源的合约不进候选，构建报告保留排除清单。
+
+目录为 `signals/raw/`（独立清单和原始对象）、`signals/versions/<sha>/`（冻结输入、规范化元数据、小时表）、`signals/latest.json` 与 `signals/verification/`。内容版本覆盖原始引用、完整解析结果、上市/交割时刻和来源、质量例外、小时表摘要及定义版本；读时同时校验原始对象、元数据和小时表，修改元数据须生成新版本。`signals-verify` 自行解压解析 CSV，独立核对连续性、质量、上市和交割，不调用生产构建器，也不调用交割价格接口。
+
+零成交与连续冻结小时保留质量位，信号层屏蔽；缺小时只能通过带原因的 `--exceptions` 文件登记，仍为缺值。质量位与现有面板保持对应关系。定义、时点和因子使用详见 [CRYPTO_FACTORS.md](CRYPTO_FACTORS.md)。
+
+同步在构建前保存 `signals/sync_plan.json`，构建失败也保留冻结引用；`signals-build [--exceptions <json>]` 可离线重建，完全不访问网络。按 DESIGN 4.18 v5.1，收盘晚于交割的行自动登记为 `post_delivery` 并从信号表剔除，原始字节和完整解析行保留。逐期排除计数、范围和原因随元数据进入内容版本，独立校验重新计数；调用方不能手工覆盖此例外。交割整点开盘的有成交K线可以用于交割核对，但其收盘在交割之后，仍不能进入信号表。上市与 deliveryDate 冲突照常报错。
+
+```sh
+nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-build
+nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-verify
+```

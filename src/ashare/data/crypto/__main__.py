@@ -27,8 +27,47 @@ def main(argv=None):
     check.add_argument("--version")
     make.add_argument("--allow-inferred-funding", action="store_true")
     check.add_argument("--allow-inferred-funding", action="store_true")
+    signal_sync = sub.add_parser("signals-sync")
+    signal_sync.add_argument("--start", required=True)
+    signal_sync.add_argument("--end", required=True)
+    signal_sync.add_argument("--refresh", action="store_true")
+    signal_sync.add_argument("--exceptions", type=Path)
+    signal_build = sub.add_parser("signals-build")
+    signal_build.add_argument("--exceptions", type=Path)
+    signal_check = sub.add_parser("signals-verify")
+    signal_check.add_argument("--version")
     args = parser.parse_args(argv)
-    if args.command == "sync":
+    if args.command == "signals-sync":
+        from .signals import sync_signals
+
+        ds = sync_signals(
+            args.root,
+            start=args.start,
+            end=args.end,
+            refresh=args.refresh,
+            exceptions=json.loads(args.exceptions.read_text())
+            if args.exceptions
+            else (),
+        )
+        result = {k: ds.meta[k] for k in ("version", "rows", "excluded")}
+    elif args.command == "signals-build":
+        from .signals import build_signals
+
+        ds = build_signals(
+            args.root,
+            exceptions=json.loads(args.exceptions.read_text())
+            if args.exceptions
+            else None,
+        )
+        result = {k: ds.meta[k] for k in ("version", "rows", "excluded")}
+    elif args.command == "signals-verify":
+        from .verify_signals import verify_signals
+
+        result = verify_signals(args.root, args.version)
+        atomic_json(
+            args.root / "signals/verification" / f"{result['version']}.json", result
+        )
+    elif args.command == "sync":
         result = sync(
             args.root, refresh=args.refresh, announcements=not args.skip_announcements
         )

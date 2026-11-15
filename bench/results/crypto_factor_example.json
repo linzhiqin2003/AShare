@@ -1,0 +1,115 @@
+{
+  "classification": "回溯探索；确认需要 2026-11-15 之后新数据",
+  "data_version": "525fcae799e5a7012fa038f2bc0c5bc5e004f53c88f721eeca26486736c33567",
+  "start": 1577836800000,
+  "end": 1793487600000,
+  "thresholds": [
+    -2,
+    2
+  ],
+  "multiplier": 0.5,
+  "strategies": {
+    "usdm": {
+      "base": {
+        "final_nav": 2.251744618123367,
+        "annualized": 0.1260330418974409,
+        "max_drawdown": 0.1865971210621722,
+        "funding_paid": 229.41495192123983,
+        "funding_pct_initial": 0.22941495192123984,
+        "fees": 97.068293651,
+        "fees_pct_initial": 0.097068293651,
+        "clearance_fee": 0.0,
+        "liquidation_count": 0,
+        "liquidation_by_stage": {
+          "open": 0,
+          "post_trade": 0,
+          "intraday": 0,
+          "close": 0
+        },
+        "tier_cap_exceeded": 0,
+        "valid": true,
+        "funding_price_approximation_cells": 8394,
+        "rule_assumption_intervals": 332,
+        "missing_intervals": 0,
+        "halt_intervals": 0
+      },
+      "overlay": {
+        "final_nav": 2.2059472944989102,
+        "annualized": 0.12265449734846245,
+        "max_drawdown": 0.17230535735943364,
+        "funding_paid": 185.86692619276494,
+        "funding_pct_initial": 0.18586692619276493,
+        "fees": 98.73456300400001,
+        "fees_pct_initial": 0.098734563004,
+        "clearance_fee": 0.0,
+        "liquidation_count": 0,
+        "liquidation_by_stage": {
+          "open": 0,
+          "post_trade": 0,
+          "intraday": 0,
+          "close": 0
+        },
+        "tier_cap_exceeded": 0,
+        "valid": true,
+        "funding_price_approximation_cells": 8394,
+        "rule_assumption_intervals": 332,
+        "missing_intervals": 0,
+        "halt_intervals": 0
+      },
+      "changed_targets": 406,
+      "days": 2495,
+      "warmup_days": 120
+    },
+    "spot": {
+      "base": {
+        "final_nav": 2.633912380760807,
+        "annualized": 0.15214524008945896,
+        "max_drawdown": 0.13510447253757008,
+        "funding_paid": 0.0,
+        "funding_pct_initial": 0.0,
+        "fees": 137.74194243920002,
+        "fees_pct_initial": 0.13774194243920002,
+        "clearance_fee": 0.0,
+        "liquidation_count": 0,
+        "liquidation_by_stage": {
+          "open": 0,
+          "post_trade": 0,
+          "intraday": 0,
+          "close": 0
+        },
+        "tier_cap_exceeded": 0,
+        "valid": true,
+        "funding_price_approximation_cells": 0,
+        "rule_assumption_intervals": 4,
+        "missing_intervals": 20,
+        "halt_intervals": 10
+      },
+      "overlay": {
+        "final_nav": 2.4354164426001024,
+        "annualized": 0.13901930277211139,
+        "max_drawdown": 0.13108185979751896,
+        "funding_paid": 0.0,
+        "funding_pct_initial": 0.0,
+        "fees": 136.55049229990001,
+        "fees_pct_initial": 0.13655049229990002,
+        "clearance_fee": 0.0,
+        "liquidation_count": 0,
+        "liquidation_by_stage": {
+          "open": 0,
+          "post_trade": 0,
+          "intraday": 0,
+          "close": 0
+        },
+        "tier_cap_exceeded": 0,
+        "valid": true,
+        "funding_price_approximation_cells": 0,
+        "rule_assumption_intervals": 4,
+        "missing_intervals": 20,
+        "halt_intervals": 10
+      },
+      "changed_targets": 278,
+      "days": 2495,
+      "warmup_days": 120
+    }
+  }
+}

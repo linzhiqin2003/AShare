@@ -1,0 +1,27 @@
+{
+  "data_version": "525fcae799e5a7012fa038f2bc0c5bc5e004f53c88f721eeca26486736c33567",
+  "signal_version": "778dc18a2c5e0ab740ee1cba71de68b1ae3d5d5b35bb3fbc89795527f46d2a77",
+  "window": [
+    "2024-06-01",
+    "2024-06-08"
+  ],
+  "source": "independent raw ZIP/CSV decode",
+  "results": [
+    {
+      "symbol": "BTCUSDT",
+      "hours": 168,
+      "premium_max_error": 0.0,
+      "funding_mean_max_error": 4.163336342344337e-17,
+      "basis_max_error": 0.0,
+      "basis_hours": 167
+    },
+    {
+      "symbol": "ETHUSDT",
+      "hours": 168,
+      "premium_max_error": 7.405100838075995e-17,
+      "funding_mean_max_error": 5.551115123125783e-17,
+      "basis_max_error": 0.0,
+      "basis_hours": 168
+    }
+  ]
+}
