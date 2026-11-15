@@ -118,3 +118,70 @@ def test_conservative_fill_is_linear_in_rows():
     )
     _, notes = P.rules(["BTCUSDT", "ETHUSDT"], times, assume="conservative")
     assert len(notes) < 400
+
+
+# 以下来自 2026-11-15 Codex 对规则分支的独立审查（.review/review_rules.out）。
+
+
+def test_inferred_spans_are_not_used_by_default_review_p1():
+    # P1：未定义的 updateTime 回填区间、两端观测一致的区间，都不能默认当证据。
+    with pytest.raises(ValueError, match="ETHUSDT tier_cap"):
+        rules(["ETHUSDT"], ["2022-11-17T07"])
+    with pytest.raises(ValueError, match="BTCUSDT maint_rate"):
+        rules(["BTCUSDT"], ["2020-06-01T00"])
+    r, notes = rules(["ETHUSDT"], ["2022-11-17T07"], assume="conservative")
+    assert r["tier_cap"][0, 0] == 100000
+    cap = [n for n in notes if n["parameter"] == "tier_cap"]
+    assert cap[0]["confidence"] == "assumption"
+    assert "bracket_update_time" in cap[0]["reason"]
+    # 显式映射优先于推断区间。
+    mapped = dict(
+        rules={
+            "ETHUSDT": dict(
+                tier_cap=10000, reason="test", source_url="https://example.test"
+            )
+        },
+        policy="conservative",
+    )
+    r, _ = rules(["ETHUSDT"], ["2022-11-17T07"], assume=mapped)
+    assert r["tier_cap"][0, 0] == 10000
+
+
+def test_btc_launch_tier_is_recorded_review_p2():
+    # P2：2019-09-18 FAQ 存档：最高 20x，第一档 0–500,000、维持 2.5%（18:42:07 观测，19 点起）。
+    r, notes = rules(["BTCUSDT"], ["2019-09-18T19"], assume="conservative")
+    assert r["maint_rate"][0, 0] == 0.025
+    assert r["tier_cap"][0, 0] == 500000
+    assert r["max_leverage"][0, 0] == 20
+    assert all(
+        n["confidence"] == "dated_snapshot"
+        for n in notes
+        if n["parameter"] != "clearance_fee_rate"
+    )
+
+
+def test_observation_timestamps_keep_seconds_review_p2():
+    # P2：ETH 75x 公告页时间 2019-12-19 10:45:42 → 11 点起；2020-09-27 19:54:52 的观测覆盖 20 点。
+    r, notes = rules(
+        ["ETHUSDT"], ["2019-12-19T11", "2020-09-27T20"], assume="conservative"
+    )
+    np.testing.assert_array_equal(r["max_leverage"][:, 0], [75, 75])
+    lev = [n for n in notes if n["parameter"] == "max_leverage"]
+    assert lev[0]["confidence"] == "official"
+    assert lev[0]["effective_at"].startswith("2019-12-19T10:45:42")
+    _, notes = rules(["BTCUSDT"], ["2021-07-16T22"], assume="conservative")
+    snap = [n for n in notes if n["parameter"] == "clearance_fee_rate"][0]
+    assert snap["confidence"] == "dated_snapshot"
+    assert snap["effective_at"].startswith("2021-07-16T21:43:52")
+
+
+def test_conservative_notes_list_candidates_review_p2():
+    # P2：说明要写出两个候选、选中哪个、在哪一侧。
+    _, notes = rules(["BTCUSDT"], ["2021-10-01T00"], assume="conservative")
+    gap = [n for n in notes if n["parameter"] == "clearance_fee_rate"][0]
+    assert gap["side"] == "between"
+    assert sorted(c["value"] for c in gap["candidates"]) == [0.006, 0.02]
+    assert gap["chosen"]["value"] == 0.02
+    _, notes = rules(["BTCUSDT"], ["2027-01-01T00"], assume="conservative")
+    late = [n for n in notes if n["parameter"] == "clearance_fee_rate"][0]
+    assert late["side"] == "after_last" and len(late["candidates"]) == 1

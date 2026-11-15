@@ -207,62 +207,149 @@ CLEARANCE_SNAPSHOTS = (
     ("w20250414160908", 0.0125, 0.0125),
 )
 
+FAQ_LEVERAGE_2019_09 = (
+    WB
+    + "20190918184207/https://binance.zendesk.com/hc/en-us/articles/360033162192-Leverage-Overview"
+)
+NOW = "2026-11-15T00"  # live snapshots were taken on this UTC day
+
+# Evidence classes. EVIDENCE records are used by default; INFERRED spans (the
+# same value seen at both ends, or a backfill from the undocumented brackets
+# ``updateTime``) are only used when the caller passes an assumption policy,
+# and are then reported as assumptions.
+EVIDENCE = {"official", "official_prior_value", "dated_snapshot", "upper_bound"}
+INFERRED = {"observed_continuity", "bracket_update_time"}
+
+# (field, start, end or None for a one-hour point, value, source, confidence)
 _RISK = {
     "BTCUSDT": (
+        # maintenance rate of the first tier
         (
             "maint_rate",
-            "2019-11-14T22:23",
-            LIVE_END,
+            "2019-09-18T18:42:07",
+            None,
+            0.025,
+            FAQ_LEVERAGE_2019_09,
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2019-11-14T22:23:12",
+            None,
+            0.004,
+            FAQ_LEVERAGE_2019,
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2019-11-15T00",
+            NOW,
             0.004,
             FAQ_LEVERAGE_2019,
             "observed_continuity",
         ),
+        ("maint_rate", NOW, LIVE_END, 0.004, LIVE_BRACKETS, "dated_snapshot"),
+        # first-tier notional cap
         (
             "tier_cap",
-            "2019-11-14T22:23",
+            "2019-09-18T18:42:07",
+            None,
+            500000,
+            FAQ_LEVERAGE_2019_09,
+            "dated_snapshot",
+        ),
+        (
+            "tier_cap",
+            "2019-11-14T22:23:12",
+            None,
+            50000,
+            FAQ_LEVERAGE_2019,
+            "dated_snapshot",
+        ),
+        (
+            "tier_cap",
+            "2019-11-15T00",
             "2025-06-17T06:30",
             50000,
             FAQ_LEVERAGE_2019,
             "observed_continuity",
         ),
-        ("tier_cap", "2025-06-17T06:30", LIVE_END, 300000, R2025_06, "official"),
+        (
+            "tier_cap",
+            "2025-06-17T06:30",
+            "2025-08-19T06:30",
+            300000,
+            R2025_06,
+            "official",
+        ),
+        ("tier_cap", "2025-08-19T06:30", None, 300000, R2025, "official"),
+        (
+            "tier_cap",
+            "2025-08-19T08",
+            NOW,
+            300000,
+            LIVE_BRACKETS,
+            "bracket_update_time",
+        ),
+        ("tier_cap", NOW, LIVE_END, 300000, LIVE_BRACKETS, "dated_snapshot"),
+        # maximum leverage
         (
             "max_leverage",
-            "2019-10-18T09:12",
+            "2019-09-18T18:42:07",
+            None,
+            20,
+            FAQ_LEVERAGE_2019_09,
+            "dated_snapshot",
+        ),
+        ("max_leverage", "2019-10-18T09:12:09", None, 125, A_125X, "official"),
+        (
+            "max_leverage",
+            "2019-10-18T11",
             "2025-08-19T06:30",
             125,
             A_125X,
             "observed_continuity",
         ),
-        ("max_leverage", "2025-08-19T06:30", LIVE_END, 150, R2025, "official"),
+        ("max_leverage", "2025-08-19T06:30", None, 150, R2025, "official"),
+        (
+            "max_leverage",
+            "2025-08-19T08",
+            NOW,
+            150,
+            LIVE_BRACKETS,
+            "bracket_update_time",
+        ),
+        ("max_leverage", NOW, LIVE_END, 150, LIVE_BRACKETS, "dated_snapshot"),
+        # liquidation (insurance) clearance fee
         (
             "clearance_fee_rate",
-            "2019-09-18T18:58",
-            "2019-09-18T19",
+            "2019-09-18T18:58:37",
+            None,
             0.005,
             FAQ_LIQ_2019,
             "upper_bound",
         ),
         (
             "clearance_fee_rate",
-            "2020-05-20T12:51",
+            "2020-05-20T12:51:29",
+            None,
+            0.003,
+            FAQ_LIQ_2020,
+            "dated_snapshot",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-05-20T14",
             "2020-11-23T07",
             0.003,
             FAQ_LIQ_2020,
             "observed_continuity",
         ),
-        (
-            "clearance_fee_rate",
-            "2020-11-23T07",
-            "2020-11-23T08",
-            0.005,
-            A2020_11,
-            "official",
-        ),
+        ("clearance_fee_rate", "2020-11-23T07", None, 0.005, A2020_11, "official"),
         (
             "clearance_fee_rate",
             "2021-02-07T03",
-            "2021-02-07T04",
+            None,
             0.010,
             A2021_02,
             "official_prior_value",
@@ -291,85 +378,140 @@ _RISK = {
             A2021_0608,
             "official",
         ),
-        (
-            "clearance_fee_rate",
-            "2021-06-10T04",
-            "2021-06-10T05",
-            0.012,
-            A2021_0610,
-            "official",
-        ),
+        ("clearance_fee_rate", "2021-06-10T04", None, 0.012, A2021_0610, "official"),
     ),
     "ETHUSDT": (
         (
             "maint_rate",
-            "2020-05-20T00",
-            "2020-09-27T19:54",
+            "2020-05-19T16:46:55",
+            None,
+            0.0065,
+            FAQ_TIERS_2020,
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2020-05-19T18",
+            "2020-09-27T19:54:52",
             0.0065,
             FAQ_TIERS_2020,
             "observed_continuity",
         ),
         (
             "maint_rate",
-            "2021-01-24T09:19",
+            "2020-09-27T19:54:52",
+            None,
+            0.0065,
+            FAQ_TIERS_2020,
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2021-01-24T09:19:11",
+            None,
+            0.005,
+            FAQ_LEVERAGE_2021,
+            "dated_snapshot",
+        ),
+        (
+            "maint_rate",
+            "2021-01-24T11",
             "2023-12-24T09:35",
             0.005,
             FAQ_LEVERAGE_2021,
             "observed_continuity",
         ),
+        ("maint_rate", "2023-12-24T09:35", None, 0.004, R2023, "official"),
+        ("maint_rate", "2023-12-24T11", NOW, 0.004, R2023, "observed_continuity"),
+        ("maint_rate", NOW, LIVE_END, 0.004, LIVE_BRACKETS, "dated_snapshot"),
         (
-            "maint_rate",
-            "2023-12-24T09:35",
-            LIVE_END,
-            0.004,
-            R2023,
-            "observed_continuity",
+            "tier_cap",
+            "2020-05-19T16:46:55",
+            None,
+            10000,
+            FAQ_TIERS_2020,
+            "dated_snapshot",
         ),
         (
             "tier_cap",
-            "2020-05-20T00",
-            "2020-09-27T19:54",
+            "2020-05-19T18",
+            "2020-09-27T19:54:52",
             10000,
             FAQ_TIERS_2020,
             "observed_continuity",
         ),
         (
             "tier_cap",
-            "2021-01-24T09:19",
-            "2021-01-24T11",
+            "2020-09-27T19:54:52",
+            None,
+            10000,
+            FAQ_TIERS_2020,
+            "dated_snapshot",
+        ),
+        (
+            "tier_cap",
+            "2021-01-24T09:19:11",
+            None,
             10000,
             FAQ_LEVERAGE_2021,
             "dated_snapshot",
         ),
         (
             "tier_cap",
-            "2022-11-17T06:31",
-            "2023-12-12T04:43",
+            "2022-11-17T06:31:03",
+            "2023-12-12T04:43:26",
             100000,
             BRACKETS.format("20230109204158"),
             "bracket_update_time",
         ),
         (
             "tier_cap",
-            "2023-12-12T04:43",
+            "2023-12-12T04:43:26",
             "2023-12-24T09:35",
             200000,
             BRACKETS.format("20231212142739"),
             "bracket_update_time",
         ),
-        ("tier_cap", "2023-12-24T09:35", "2023-12-24T11", 50000, R2023, "official"),
-        ("tier_cap", "2025-08-19T06", LIVE_END, 300000, R2025, "official"),
+        ("tier_cap", "2023-12-24T09:35", None, 50000, R2023, "official"),
+        ("tier_cap", "2025-08-19T06", None, 300000, R2025, "official_prior_value"),
+        ("tier_cap", "2025-08-19T07", None, 300000, R2025, "official"),
+        (
+            "tier_cap",
+            "2025-08-19T08",
+            NOW,
+            300000,
+            LIVE_BRACKETS,
+            "bracket_update_time",
+        ),
+        ("tier_cap", NOW, LIVE_END, 300000, LIVE_BRACKETS, "dated_snapshot"),
+        ("max_leverage", "2019-12-19T10:45:42", None, 75, A_ETH75, "official"),
         (
             "max_leverage",
-            "2019-12-20T00",
-            "2020-09-27T19:54",
+            "2019-12-19T12",
+            "2020-09-27T19:54:52",
             75,
             A_ETH75,
             "observed_continuity",
         ),
         (
             "max_leverage",
-            "2021-01-24T09:19",
+            "2020-09-27T19:54:52",
+            None,
+            75,
+            FAQ_TIERS_2020,
+            "dated_snapshot",
+        ),
+        (
+            "max_leverage",
+            "2021-01-24T09:19:11",
+            None,
+            100,
+            FAQ_LEVERAGE_2021,
+            "dated_snapshot",
+        ),
+        (
+            "max_leverage",
+            "2021-01-24T11",
             "2023-12-24T09:35",
             100,
             FAQ_LEVERAGE_2021,
@@ -383,35 +525,45 @@ _RISK = {
             R2023,
             "official",
         ),
-        ("max_leverage", "2025-08-19T06:30", LIVE_END, 150, R2025, "official"),
+        ("max_leverage", "2025-08-19T06:30", None, 150, R2025, "official"),
+        (
+            "max_leverage",
+            "2025-08-19T08",
+            NOW,
+            150,
+            LIVE_BRACKETS,
+            "bracket_update_time",
+        ),
+        ("max_leverage", NOW, LIVE_END, 150, LIVE_BRACKETS, "dated_snapshot"),
         (
             "clearance_fee_rate",
-            "2019-09-18T18:58",
-            "2019-09-18T19",
+            "2019-09-18T18:58:37",
+            None,
             0.005,
             FAQ_LIQ_2019,
             "upper_bound",
         ),
         (
             "clearance_fee_rate",
-            "2020-05-20T12:51",
+            "2020-05-20T12:51:29",
+            None,
+            0.005,
+            FAQ_LIQ_2020,
+            "dated_snapshot",
+        ),
+        (
+            "clearance_fee_rate",
+            "2020-05-20T14",
             "2020-11-23T07",
             0.005,
             FAQ_LIQ_2020,
             "observed_continuity",
         ),
-        (
-            "clearance_fee_rate",
-            "2020-11-23T07",
-            "2020-11-23T08",
-            0.0075,
-            A2020_11,
-            "official",
-        ),
+        ("clearance_fee_rate", "2020-11-23T07", None, 0.0075, A2020_11, "official"),
         (
             "clearance_fee_rate",
             "2021-02-07T03",
-            "2021-02-07T04",
+            None,
             0.015,
             A2021_02,
             "official_prior_value",
@@ -424,14 +576,7 @@ _RISK = {
             A2021_02,
             "official",
         ),
-        (
-            "clearance_fee_rate",
-            "2021-05-20T09",
-            "2021-05-20T10",
-            0.005,
-            A2021_05,
-            "official",
-        ),
+        ("clearance_fee_rate", "2021-05-20T09", None, 0.005, A2021_05, "official"),
     ),
 }
 # Adverse direction for the "conservative" gap policy.
@@ -450,16 +595,15 @@ def _observations(symbol):
         column = 1 if symbol == "BTCUSDT" else 2
         for stamp, *values in CLEARANCE_SNAPSHOTS:
             ts = stamp.lstrip("w")
-            hour = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}"
             url = (
                 EXCHANGE_INFO_WWW if stamp.startswith("w") else EXCHANGE_INFO
             ).format(ts)
-            start = np.datetime64(hour, "h") + np.timedelta64(1, "h")
+            at = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
             rows.append(
                 (
                     "clearance_fee_rate",
-                    f"{hour}:{ts[10:12]}",
-                    str(start),
+                    at,
+                    None,
                     values[column - 1],
                     url,
                     "dated_snapshot",
@@ -467,21 +611,16 @@ def _observations(symbol):
             )
     if symbol in ("BTCUSDT", "ETHUSDT", "BTCUSDT_261225"):
         rows.append(
-            (
-                "clearance_fee_rate",
-                "2026-11-15",
-                LIVE_END,
-                0.0125,
-                SNAPSHOT,
-                "dated_snapshot",
-            )
+            ("clearance_fee_rate", NOW, LIVE_END, 0.0125, SNAPSHOT, "dated_snapshot")
         )
     result = {f: [] for f in FIELDS}
     for field, start, end, value, source, confidence in rows:
+        if confidence not in EVIDENCE | INFERRED:
+            raise AssertionError(f"unknown confidence {confidence}")
         effective, lo = _hour_ceil(start)
-        _, hi = _hour_ceil(end)
+        hi = lo + HOUR if end is None else _hour_ceil(end)[1]
         if hi <= lo:
-            hi = lo + HOUR
+            raise AssertionError(f"empty {symbol} {field} record at {start}")
         timing = dict(
             effective_at=str(effective),
             applied_at=str(lo),
@@ -495,6 +634,63 @@ def _observations(symbol):
             if b[0] < a[1]:
                 raise AssertionError(f"overlapping {symbol} {field} records")
     return result
+
+
+def _describe(record):
+    lo, hi, value, source, confidence, timing = record
+    return dict(
+        value=value,
+        source_url=source,
+        confidence=confidence,
+        start=str(lo),
+        end=str(hi),
+        effective_at=timing["effective_at"],
+    )
+
+
+def _fill_gaps(column, j, dates, missing, records, policy, symbol, field):
+    """Fill hours no record covers. Neighbours include inferred records."""
+    notes = []
+    if not missing.any():
+        return notes
+    starts = np.array([r[0] for r in records])
+    after = np.searchsorted(starts, dates, side="right")
+    for k in np.unique(after[missing]):
+        mask = missing & (after == k)
+        before = records[k - 1] if k > 0 else None
+        later = records[k] if k < len(records) else None
+        side = (
+            "between"
+            if before and later
+            else "after_last"
+            if before
+            else "before_first"
+        )
+        if policy == "previous":
+            chosen = before or later
+            near = [chosen]
+            reason = "previous observation, or earliest before coverage"
+        else:
+            near = [r for r in (before, later) if r is not None]
+            value = ADVERSE[field](r[2] for r in near)
+            chosen = next(r for r in near if r[2] == value)
+            reason = "conservative: most adverse neighbouring observation"
+        column[mask, j] = chosen[2]
+        notes += _segments(
+            dates,
+            mask,
+            symbol=symbol,
+            parameter=field,
+            value=chosen[2],
+            source_url=chosen[3],
+            confidence="assumption",
+            reason=reason,
+            policy=policy,
+            side=side,
+            chosen=_describe(chosen),
+            candidates=[_describe(r) for r in near],
+        )
+    return notes
 
 
 @dataclass(frozen=True)
@@ -521,10 +717,12 @@ class BinanceProfile(MarketProfile):
     def rules(self, symbols, dates, *, assume=None, leverage=1.0, active=None):
         """Return risk arrays and provenance, rejecting gaps unless assumed.
 
-        ``assume='previous'`` extends the previous observation (the earliest one
-        before coverage). ``assume='conservative'`` fills each gap hour with the
-        most adverse of the two neighbouring observations (higher maintenance
-        and clearance rates, lower tier cap and leverage). A mapping may specify ``policy='previous'`` and
+        By default only EVIDENCE records are used. With a policy, INFERRED spans
+        are used and reported as assumptions, then remaining gaps are filled:
+        ``assume='previous'`` extends the previous record (the earliest one
+        before coverage); ``assume='conservative'`` takes the most adverse of
+        the two neighbouring records (higher maintenance and clearance rates,
+        lower tier cap and leverage). A mapping may specify ``policy=...`` and
         ``rules={symbol: {field: value, reason: ..., source_url: ...}}`` for gaps.
         Unknown contracts never borrow the underlying perpetual's rules silently.
         """
@@ -558,8 +756,13 @@ class BinanceProfile(MarketProfile):
         for j, symbol in enumerate(names):
             for field, records in _observations(symbol).items():
                 known = np.zeros(len(dates), bool)
-                for lo, hi, value, source, confidence, timing in records:
+                inferred = []
+                for record in records:
+                    lo, hi, value, source, confidence, timing = record
                     mask = active[:, j] & (dates >= lo) & (dates < hi)
+                    if confidence in INFERRED:
+                        inferred.append((mask, record))
+                        continue
                     output[field][mask, j] = value
                     known |= mask
                     notes += _segments(
@@ -575,6 +778,7 @@ class BinanceProfile(MarketProfile):
                 missing = active[:, j] & ~known
                 override = custom.get(symbol, custom.get("usdm:" + symbol, {}))
                 if missing.any() and field in override:
+                    # An explicit mapping beats inferred spans and policies.
                     if not override.get("reason") or not override.get("source_url"):
                         raise ValueError(
                             "explicit assumptions require reason and source_url"
@@ -597,44 +801,25 @@ class BinanceProfile(MarketProfile):
                         confidence="assumption",
                         reason=override["reason"],
                     )
-                elif missing.any() and policy == "previous" and records:
-                    starts = np.array([r[0] for r in records])
-                    pick = np.maximum(
-                        0, np.searchsorted(starts, dates, side="right") - 1
-                    )
-                    for k, record in enumerate(records):
-                        mask = missing & (pick == k)
-                        output[field][mask, j] = record[2]
-                        notes += _segments(
-                            dates,
-                            mask,
-                            symbol=symbol,
-                            parameter=field,
-                            value=record[2],
-                            source_url=record[3],
-                            confidence="assumption",
-                            reason="previous observation, or earliest before coverage",
-                            **record[5],
-                        )
-                elif missing.any() and policy == "conservative" and records:
-                    starts = np.array([r[0] for r in records])
-                    after = np.searchsorted(starts, dates, side="right")
-                    pick = ADVERSE[field]
-                    for k in np.unique(after[missing]):
-                        near = [records[i] for i in (k - 1, k) if 0 <= i < len(records)]
-                        value = pick(r[2] for r in near)
-                        mask = missing & (after == k)
+                elif missing.any() and policy is not None and records:
+                    for mask, (_lo, _hi, value, source, confidence, timing) in inferred:
+                        mask = mask & missing
                         output[field][mask, j] = value
+                        missing &= ~mask
                         notes += _segments(
                             dates,
                             mask,
                             symbol=symbol,
                             parameter=field,
                             value=value,
-                            source_url=" | ".join(r[3] for r in near),
+                            source_url=source,
                             confidence="assumption",
-                            reason="conservative: most adverse neighbouring observation",
+                            reason=f"inferred span ({confidence}), not proof of no change",
+                            **timing,
                         )
+                    notes += _fill_gaps(
+                        output[field], j, dates, missing, records, policy, symbol, field
+                    )
                 elif missing.any():
                     errors.extend(
                         _segments(dates, missing, symbol=symbol, parameter=field)
