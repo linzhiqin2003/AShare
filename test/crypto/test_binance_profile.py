@@ -37,7 +37,8 @@ def test_rule_gaps_require_explicit_assumption():
     rules, notes = p.rules(["BTCUSDT"], times, assume="previous")
     assert rules["maint_rate"][0, 0] == 0.004
     assert rules["tier_cap"][0, 0] == 50000
-    assert rules["clearance_fee_rate"][0, 0] == 0.0125
+    # 2026-11-15 调研补齐历史后：2021-05-19 由公告直接给出 2.00%（此前外推 1.25%）。
+    assert rules["clearance_fee_rate"][0, 0] == 0.02
     assert any(
         n["symbol"] == "BTCUSDT" and n["start"] == times[0] + ":00:00.000"
         for n in notes

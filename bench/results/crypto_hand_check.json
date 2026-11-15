@@ -1,5 +1,5 @@
 {
-  "kernel_source": "bc8077be5be22410a3d6d576ec433eb19196a664cd0742c271da61b3649788bc",
+  "kernel_source": "de14cb0960e7c37219625222c9b0dc82258fb99077d7a6ccb550c4753333a723",
   "btc_2021_05_19": {
     "source": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/BTCUSDT/1h/BTCUSDT-1h-2021-05-19.zip",
     "source_sha256": "ec099ab517eba63f7bfb3b0fa4215ef2e0a494750597914d9897e7cfe88569d6",
@@ -11,7 +11,7 @@
       "initial_rate": 0.1,
       "maintenance": 0.004,
       "fee_rate": 0.0004,
-      "clearance_rate": 0.0125,
+      "clearance_rate": 0.02,
       "funding": "disabled"
     },
     "calculated_trigger": 38731.156626506025,

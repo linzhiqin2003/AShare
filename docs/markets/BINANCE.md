@@ -9,14 +9,14 @@
 | 项目 | 取值 | 状态 |
 |---|---|---|
 | 现货 VIP0 | maker 0.1% / taker 0.1%，2017 至今未变；BTCUSDT 在 2022-07-08 14:00 ~ 2023-03-22 00:00 UTC 为 0/0 | 已核实（中间年份为推断） |
-| U 本位 VIP0 | maker 0.02%；taker 0.04%（官方公告 2019-12-20 08:00 UTC 起，至少到 2023-05 收费页仍是）→ 0.05%（现行） | 两端已核实，切换日未核实（FAQ 示例是假设费率，不能当切换证据） |
+| U 本位 VIP0 | maker 0.02%；taker 0.04%（官方公告 2019-12-20 08:00 UTC 起，至少到 2023-05 收费页仍是）→ 0.05%（现行） | 两端已核实；切换在 2023-05-31 与 2024-02-20 之间，确切日未核实，也没有公告（见第 2 节） |
 | 交割费 | = taker 费率 | 已核实（FAQ 2021-02-03） |
 | 交割价 | 交割前 30 分钟（07:30:00–07:59:59 UTC）每秒价格指数算术平均 | 已核实（FAQ 2026-09 更新版） |
 | 资金费 | 持仓数量 × 结算时标记价 × 费率；00/08/16 UTC；BTCUSDT/ETHUSDT 一直 8h；其他品种看 CSV 的 funding_interval_hours | 已核实 |
 | 结算时刻开仓 | 官方只说以结算时刻是否持仓为准、有约 15 秒偏差，无确定规则 | 部分核实 |
 | 强平触发 | 标记价 | 已核实 |
-| BTC/ETH 第一档 MMR | 0.40%（BTC 至少 2021-06 起；ETH 2023-12-24 起，之前 0.50%） | 已核实 |
-| 强平清算费 | 当前 BTCUSDT/ETHUSDT 1.25%（exchangeInfo 实测）；历史值未核实 | 部分核实 |
+| BTC/ETH 第一档 MMR | BTC 0.40%（2019-11-14 起一直如此）；ETH 2020-05~09 0.65%、2021-01-24 起 0.50%、2023-12-24 09:35 起 0.40% | 已核实（ETH 2020-09-27~2021-01-24 之间的切换日未核实） |
+| 强平清算费 | 2021-06 以前按公告逐段（例：2021-02-07 至 2021-05-20 BTC 2.00%、ETH 3.00%）；2021-07 起只有月度存档点，2021–2022 变动频繁；2023-11 起 1.25% | 公告段已核实；存档点之间未核实 |
 | 最小名义 | 2021-01-25 起有门槛；2023-11-02 起 BTC 100 / ETH 20；现在 BTC 50、ETH 20、多数 5 | 部分核实 |
 | 时间戳 | 现货 2025-01-01 起微秒；U 本位至 2026-10 仍毫秒 | 已核实（实测） |
 
@@ -46,6 +46,7 @@
 | 2020-10 ~ 2023-06 | 0.02% | 0.04% | 合约收费页内嵌 JSON，level 0：`"makerCommission":0.0002,"takerCommission":0.0004`，Wayback 存档 2020-10-03、2021-04-16、2022-04-23、2023-05-31 均一致：https://web.archive.org/web/20201003083922/https://www.binance.com/en/fee/futureFee ；https://web.archive.org/web/20230531224744/https://www.binance.com/en/fee/futureFee 。官方 FAQ《Binance Futures Fee Structure & Fee Calculations》存档 2021-12-29 ~ 2023-06-21 的示例均写「regular maker commission: 0.02%; taker commission: 0.040%」（https://web.archive.org/web/20230621192025/https://www.binance.com/en/support/faq/binance-futures-fee-structure-fee-calculations-360033544231 ） |
 | 现行（切换日未核实） | 0.02% | 0.05% | 同一 FAQ 存档 2024-02-20 示例改为「maker commission: 0.02%; taker commission: 0.05%」（https://web.archive.org/web/20240220064115/https://www.binance.com/en/support/faq/binance-futures-fee-structure-fee-calculations-360033544231 ）；当前官方 FAQ https://www.binance.com/en/support/faq/360033544231 （更新 2026-05-01）原文 "a Regular User's maker fee is 0.02% and a Regular User's taker fee is 0.05%" |
 
+- **2026-11-15 再查**：Wayback 上 2023-05-31 之后到 2024-03 没有收费页存档（2024 年以后的存档是前端渲染、HTML 里没有费率）；繁中 FAQ 存档 2023-09-29（https://web.archive.org/web/20230929144654/https://www.binance.com/zh-CN/support/faq/%E5%B9%A3%E5%AE%89%E5%90%88%E7%B4%84%E6%89%8B%E7%BA%8C%E8%B2%BB%E7%B5%90%E6%A7%8B%E5%92%8C%E6%89%8B%E7%BA%8C%E8%B2%BB%E8%A8%88%E7%AE%97-360033544231 ）里币本位示例已按 2023-09-26 调费改过、U 本位示例仍是 0.040%，暗示 2023-09 底仍是 0.04%（示例，弱证据）；「Latest Binance News」等 4 个公告栏目 2023-06~2024-03 没有 U 本位标准费率调整的标题。回测口径不变（假设 2023-06-01，偏悲观），可用 `fee_switch` 在 2023-06-01~2024-02-20 之间做敏感性。
 - **taker 0.04% → 0.05% 的确切生效日：未核实**。硬证据只有两端：2023-05-31 收费页存档仍是 0.04%，现行收费页 / FAQ 是 0.05%。FAQ 示例写明是假设费率，它在 2023-06-21 与 2024-02-20 存档之间从 0.04% 变成 0.05% 不能当作切换区间的证据。没有找到官方公告；若需精确日期，可再查 Wayback 2023-06~2024-01 期间 `binance.com/en/fee/futureFee` 的存档。
 - 注：FAQ 里币本位例子 2022–2023 年写「regular user's maker 0.015%; taker 0.040%」，那是**币本位**示例，不是 U 本位，别混用。
 - 注意：FAQ《Binance Futures Fee Structure & Fee Calculations》现行版写明示例采用假设费率，所以示例从 0.04% 变成 0.05% 不能证明真实费率在两个存档日期之间切换；收费页内嵌 JSON（2023-05-31 存档）仍是 0.04% 是硬证据，现行收费页 0.05% 是硬证据，切换日仍未核实。
@@ -114,7 +115,9 @@
 | 2025-08-19 06:30 UTC 起 | 0–300,000，101–150x，0.40% | 0–300,000，101–150x，0.40% | 同上 |
 
 - 结论：**BTCUSDT 第一档 MMR 至少自 2021-06 到 2025-08 一直是 0.40%**，变化的只是第一档名义上限（50,000 → 某时改为 300,000，具体日期**未核实**）和最高杠杆（125x → 150x）。ETHUSDT 第一档 2023-12-24 前为 0.50%，之后 0.40%。
-- 2019-09 上线到 2021-06 之间的 BTCUSDT 档位：**未核实**（没找到官方原文）。
+- **2026-11-15 补齐（BTCUSDT）**：2019-09 上线时最高 20x，第一档 0–500,000、维持 2.5%（FAQ 存档 https://web.archive.org/web/20190918184207/https://binance.zendesk.com/hc/en-us/articles/360033162192-Leverage-Overview ）；2019-10-18 升到 125x（公告存档 https://web.archive.org/web/20200513174225/https://binance.zendesk.com/hc/en-us/articles/360035327011-Binance-Futures-Increases-Maximum-Leverage-to-125x-and-Launches-Leverage-Adjustment-Function ）；最早见到 0–50,000、0.4% 的是 2019-11-14 FAQ 存档（https://web.archive.org/web/20191114222312/https://binance.zendesk.com/hc/en-us/articles/360033162192-Leverage-Overview ，原文 "0-50,000, 0.4% Maintenance Margin"），之后 2020-05、2020-09、2021-01、2021-03 FAQ、2021-06-22 与 2023-12-24 公告、2023 年档位接口存档都一致。**第一档上限 50,000 → 300,000 在 2025-06-17 06:30 UTC**（公告 https://www.binance.com/en/support/announcement/detail/e778988edec446038ad536bcb0c8d460 ，2025-06-14 发布，原文 "update the leverage and margin tiers of USDⓈ-M BTCUSDT Perpetual Contract at 2025-06-17 06:30 (UTC)"，并写明已有仓位也受影响）。2026-11-15 实测档位接口 `https://www.binance.com/bapi/futures/v1/friendly/future/common/brackets`：BTC、ETH 第一档都是 0–300,000、0.40%、101–150x，`updateTime` 都是 2025-08-19。
+- **ETHUSDT**：2019-11-29 上线 50x；2019-12-19 升 75x；2020-05-19 与 2020-09-27 FAQ 表（图片存档 https://web.archive.org/web/20200927195452im_/https://public.bnbstatic.com/image/cms/content/body/202009/a480eab7aa90d625b1dbd94a7301b789.png ）首 10,000、MMR 0.65%；2021-01-24 FAQ（https://web.archive.org/web/20210124091911/https://www.binance.com/en/support/faq/360033162192 ）100x、首 10,000、0.5%（切换日在两次存档之间，未核实）；档位接口存档显示 2022-11-17 起上限 100,000、2023-12-12 起 200,000（按接口的 `updateTime`，官方没有定义这个字段，作为存档证据）；2023-12-24 09:35 改为 0–50,000、0.40%、125x；2025-08-19 公告时已是 0–300,000（50,000 → 300,000 的日期未核实）。
+- 档案（`panelbt.markets.get("binance_usdm").rules`）的证据分两级：**证据**（公告生效的那一小时、下一份公告的调整前值能接上的公告区间、存档或接口快照所在的那一小时、FAQ 写明的上限）默认直接用；**推断区间**（两端和中间几次观测都是同一个值的「观测连续」，以及按档位接口 `updateTime` 回填的区间——官方没有定义这个字段）默认不用，给了 `assume` 才用，并在诊断里记为假设。剩下没有任何记录的时段是缺口：`assume="conservative"` 取前后两个记录中更不利的一个（维持保证金率、清算费取高，上限、杠杆取低），`assume="previous"` 沿用前一个记录；诊断写明候选值、选中的值和在缺口的哪一侧。显式规则映射优先于推断区间和这两种策略。
 - 2025-08 那次的完整 BTCUSDT 档位（第二档起）：0.3–0.8M 0.50%；0.8–3M 0.65%；3–12M 1.00%；12–70M 2.00%；70–100M 2.50%；100–230M 5%；230–480M 10%；480–600M 12.5%；600–800M 15%；800M–1.2B 25%；1.2–1.8B 50%（同上公告）。
 - 当前档位查询接口 `GET /fapi/v1/leverageBracket` 需要签名（未调用）。exchangeInfo 里的 `maintMarginPercent: 2.5` / `requiredMarginPercent: 5.0` 是旧字段，不代表档位 MMR，别用。
 - 维持保证金计算：币安档位制下 维持保证金 = 名义 × 本档 MMR − 速算扣除数（maintenance amount）；第一档速算扣除数为 0（第一档以外的扣除数本次未取得原文，**未核实**）。
@@ -122,7 +125,20 @@
 ### 5.3 强平清算费（Liquidation Clearance Fee / Insurance Clearance Fee）
 - 公式（FAQ 原文）：按「适用的 Liquidation Clearance Fee 费率 × 仓位名义价值」计算，费率见交易规则页（https://www.binance.com/en/support/faq/360033525271 ）。搜索摘要中另一官方页写作 "Insurance Clearance Fee = Notional Value * Fee Rate"，从为仓位保留的资产中扣除，强平后已穿仓的仓位不收，费用可能划入保险基金（https://www.binance.com/en/support/faq/detail/98488a516eb84e3eb34605683dffd554 ，搜索摘要，未打开原文）。
 - **当前费率（实测 2026-11-15 exchangeInfo 的 `liquidationFee` 字段）**：BTCUSDT 0.0125（1.25%），ETHUSDT 0.0125（1.25%）；全部在交易合约中 1.5% 617 个、2.0% 154 个、1.25% 28 个、2.5% 7 个。交割合约 BTCUSDT_261225 也是 1.25%。
-- 历史费率：第三方页面列出 BTCUSDT 2%、ETHUSDT 及 75x 合约 3%、50x 合约 4%（**未核实**，二手来源 tradersunion.com https://tradersunion.com/brokers/crypto/view/binance/liquidation/ ，无日期）。何时从 2%/3% 降为 1.25%：**未核实**。
+- **历史费率（2026-11-15 补齐）**。公告（链接 `https://www.binance.com/en/support/announcement/detail/<编号>`，均用币安公告原文接口核对）：
+
+| 生效（UTC） | BTCUSDT | ETHUSDT | 证据 |
+|---|---|---|---|
+| 2019-09 | 至多 0.5%（"A fee of up to 0.5% of the NOMINAL position value"） | 同 | FAQ 存档 https://web.archive.org/web/20190918185837/https://binance.zendesk.com/hc/en-us/articles/360033525271-Liquidation |
+| 2020-05-20 ~ 2020-11-23 07:00 | 0.3% | 0.5% | FAQ 存档 https://web.archive.org/web/20200520125129/https://binance.zendesk.com/hc/en-us/articles/360033525271-Liquidation 、2020-09-27 存档，2020-11-23 公告的调整前值 |
+| 2020-11-23 07:00 | 0.50% | 0.75% | 41d8a353103c4fe18bf25c403bf7af3b |
+| （2021-02-07 之前某时） | 1.00% | 1.50% | 2021-02-07 公告的调整前值；与上一行接不上，中间的调整没找到公告 |
+| 2021-02-07 04:00 ~ 2021-05-20 09:00 | 2.00% | 3.00% | aeeccb6d332a4e74a51c2ac05f9078e5（下一份公告的调整前值一致） |
+| 2021-05-20 09:00 | 0.30% | 0.50% | 839a865d251f435f95fba499d2ad95c9 |
+| 2021-06-08 07:00 | 0.60% | 未列 | 03cac798a8454f42848f4467a434ba5d |
+| 2021-06-10 04:00 | 1.20% | 未列 | 6bd7a166980648469ab771b5835847c3 |
+
+  2021-07 起只有 `exchangeInfo` 的 `liquidationFee` 存档点（`https://web.archive.org/web/<时间戳>id_/https://fapi.binance.com/fapi/v1/exchangeInfo`）：2021-07-16、08-15 BTC 1.2% / ETH 0.5%；09-14 0.6% / 1.0%；10-14 2.0% / 2.0%；11-13 3.0% / 3.0%；12-13 1.2% / 1.2%；2022-01-02 1.5% / 1.5%；03-18 0.5% / 0.5%；09-08 1.5% / 1.5%；09-16、11-16、11-27 1.75% / 1.5%；2023-11-02、2023-12-06、2024-04-08、2025-04-14 1.25% / 1.25%（后三份是 `www.binance.com/fapi/v1/exchangeInfo?showall=…`）。这段时间没有公告，存档点之间的变化日未核实；2021–2022 年变动频繁，存档点之间按缺口处理（默认报错，`assume="conservative"` 取较高者）。
 
 ## 6. data.binance.vision 数据集与路径（本节大部分为 2026-11-15 实测）
 
