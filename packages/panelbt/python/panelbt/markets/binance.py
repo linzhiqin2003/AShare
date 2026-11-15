@@ -395,6 +395,16 @@ _RISK = {
         ("max_leverage", "2023-12-24T09:35", None, 125, R2023, "official"),
         ("max_leverage", "2025-06-17T06:30", None, 125, R2025_06, "official"),
         ("max_leverage", "2025-08-19T06", None, 125, R2025, "official_prior_value"),
+        # prior values stated by the same announcements (the hour before each change)
+        ("maint_rate", "2021-06-22T03", None, 0.004, R2021, "official_prior_value"),
+        ("maint_rate", "2023-12-24T09", None, 0.004, R2023, "official_prior_value"),
+        ("maint_rate", "2025-06-17T06", None, 0.004, R2025_06, "official_prior_value"),
+        ("maint_rate", "2025-08-19T06", None, 0.004, R2025, "official_prior_value"),
+        ("tier_cap", "2021-06-22T03", None, 50000, R2021, "official_prior_value"),
+        ("tier_cap", "2023-12-24T09", None, 50000, R2023, "official_prior_value"),
+        ("max_leverage", "2021-06-22T03", None, 125, R2021, "official_prior_value"),
+        ("max_leverage", "2023-12-24T09", None, 125, R2023, "official_prior_value"),
+        ("max_leverage", "2025-06-17T06", None, 125, R2025_06, "official_prior_value"),
     ),
     "ETHUSDT": (
         (
@@ -594,60 +604,72 @@ _RISK = {
         ),
         ("clearance_fee_rate", "2021-05-20T09", None, 0.005, A2021_05, "official"),
         # announcement / snapshot points inside the inferred spans above
-        (
-            "maint_rate",
-            "2023-01-09T20:41:58",
-            None,
-            0.005,
-            BRACKETS.format("20230109204158"),
-            "dated_snapshot",
-        ),
-        (
-            "maint_rate",
-            "2023-12-12T14:27:39",
-            None,
-            0.005,
-            BRACKETS.format("20231212142739"),
-            "dated_snapshot",
-        ),
         ("maint_rate", "2023-12-24T09", None, 0.005, R2023, "official_prior_value"),
         ("maint_rate", "2025-08-19T06:30", None, 0.004, R2025, "official"),
-        (
-            "tier_cap",
-            "2023-01-09T20:41:58",
-            None,
-            100000,
-            BRACKETS.format("20230109204158"),
-            "dated_snapshot",
-        ),
-        (
-            "tier_cap",
-            "2023-12-12T14:27:39",
-            None,
-            200000,
-            BRACKETS.format("20231212142739"),
-            "dated_snapshot",
-        ),
         ("tier_cap", "2023-12-24T09", None, 200000, R2023, "official_prior_value"),
-        (
-            "max_leverage",
-            "2023-01-09T20:41:58",
-            None,
-            100,
-            BRACKETS.format("20230109204158"),
-            "dated_snapshot",
-        ),
-        (
-            "max_leverage",
-            "2023-12-12T14:27:39",
-            None,
-            100,
-            BRACKETS.format("20231212142739"),
-            "dated_snapshot",
-        ),
         ("max_leverage", "2023-12-24T09", None, 100, R2023, "official_prior_value"),
+        ("maint_rate", "2025-08-19T06", None, 0.004, R2025, "official_prior_value"),
     ),
 }
+
+# Brackets endpoint snapshots (Wayback timestamp; BTCUSDT and ETHUSDT first tier
+# as (maintenance rate, notional cap, max leverage)), read from the archived JSON.
+BRACKET_SNAPSHOTS = (
+    ("20230109204158", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230112100642", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230117130848", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230123011658", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230123173245", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230125172711", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230126122316", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230130111032", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230201104251", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230202105414", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230202121809", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230203115212", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230206134006", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230208171928", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230209224855", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230214095447", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230217132942", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230220164732", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230221192504", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230222115333", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230223133306", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230301055208", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230301173353", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230307161316", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230309152624", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230310132447", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230312221217", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230313100500", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230313162159", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230314151252", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230316101735", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230317100433", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230320122408", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230322121208", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230323161729", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230324125455", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230327075932", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20230328074159", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20231002133915", (0.004, 50000, 125), (0.005, 100000, 100)),
+    ("20231212142739", (0.004, 50000, 125), (0.005, 200000, 100)),
+    ("20260826180437", (0.004, 300000, 150), (0.004, 300000, 150)),
+)
+
+# Leverage FAQ observations (Wayback timestamp, symbol, maintenance, cap, leverage, source).
+FAQ_TIER_POINTS = (
+    ("20200519164655", "BTCUSDT", 0.004, 50000, 125, FAQ_TIERS_2020_05),
+    ("20200927195452", "BTCUSDT", 0.004, 50000, 125, FAQ_TIERS_2020),
+    ("20210124091911", "BTCUSDT", 0.004, 50000, 125, FAQ_LEVERAGE_2021),
+    ("20200519164655", "ETHUSDT", None, None, 75, FAQ_TIERS_2020_05),
+)
+FAQ_LIQ_2020_09 = (
+    WB + "20200927210138/https://www.binance.com/en/support/faq/360033525271"
+)
+FAQ_CLEARANCE_POINTS = (("20200927210138", 0.003, 0.005, FAQ_LIQ_2020_09),)
+
 # Adverse direction for the "conservative" gap policy.
 ADVERSE = dict(maint_rate=max, clearance_fee_rate=max, tier_cap=min, max_leverage=min)
 
@@ -674,6 +696,45 @@ def _observations(symbol):
                     at,
                     None,
                     values[column - 1],
+                    url,
+                    "dated_snapshot",
+                )
+            )
+
+    def stamp_time(ts):
+        return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
+
+    if symbol in _RISK:
+        fields = ("maint_rate", "tier_cap", "max_leverage")
+        for ts, btc, eth in BRACKET_SNAPSHOTS:
+            values = btc if symbol == "BTCUSDT" else eth
+            for field, value in zip(fields, values, strict=True):
+                rows.append(
+                    (
+                        field,
+                        stamp_time(ts),
+                        None,
+                        value,
+                        BRACKETS.format(ts),
+                        "dated_snapshot",
+                    )
+                )
+        for ts, name, *values, url in FAQ_TIER_POINTS:
+            if name != symbol:
+                continue
+            for field, value in zip(fields, values, strict=True):
+                if value is not None:
+                    rows.append(
+                        (field, stamp_time(ts), None, value, url, "dated_snapshot")
+                    )
+        for ts, btc, eth, url in FAQ_CLEARANCE_POINTS:
+            value = btc if symbol == "BTCUSDT" else eth
+            rows.append(
+                (
+                    "clearance_fee_rate",
+                    stamp_time(ts),
+                    None,
+                    value,
                     url,
                     "dated_snapshot",
                 )

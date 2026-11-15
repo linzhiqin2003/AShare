@@ -39,7 +39,7 @@
       "tier_cap_exceeded": 0,
       "valid": true,
       "funding_price_approximation_cells": 8394,
-      "rule_assumption_intervals": 80,
+      "rule_assumption_intervals": 332,
       "missing_intervals": 0,
       "halt_intervals": 0
     },

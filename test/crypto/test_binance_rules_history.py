@@ -120,7 +120,13 @@ def test_conservative_fill_is_linear_in_rows():
         np.timedelta64(1, "h"),
     )
     _, notes = P.rules(["BTCUSDT", "ETHUSDT"], times, assume="conservative")
-    assert len(notes) < 400
+    # 说明条数只随记录数增长（每条记录及其前后缺口各至多一段），与行数无关。
+    records = sum(
+        len(r)
+        for symbol in ("BTCUSDT", "ETHUSDT")
+        for r in binance._observations(symbol).values()
+    )
+    assert len(notes) <= 3 * records
 
 
 # 以下来自 2026-11-15 Codex 对规则分支的独立审查（.review/review_rules.out）。
@@ -234,3 +240,36 @@ def test_sources_and_effective_times_review_r2_p2():
     cap = [n for n in notes if n["parameter"] == "tier_cap"][0]
     assert cap["effective_at"].startswith("2025-08-19T06:30")
     assert cap["approximation"] is True
+
+
+def test_every_researched_observation_is_evidence_review_r3_p1():
+    # 第三轮复核 P1：笔记里每个观测点都是证据，缺口映射不能改掉。
+    mapped = dict(
+        policy="conservative",
+        rules={
+            name: dict(
+                maint_rate=0.001,
+                tier_cap=1.0,
+                max_leverage=1.0,
+                clearance_fee_rate=0.0,
+                reason="fill gaps only",
+                source_url="https://example.test",
+            )
+            for name in ("BTCUSDT", "ETHUSDT")
+        },
+    )
+    points = [
+        ("BTCUSDT", "2020-05-19T17", "maint_rate", 0.004),
+        ("BTCUSDT", "2025-08-19T06", "maint_rate", 0.004),
+        ("BTCUSDT", "2023-01-09T21", "tier_cap", 50000),
+        ("ETHUSDT", "2023-10-02T14", "tier_cap", 100000),
+        ("BTCUSDT", "2026-08-26T19", "max_leverage", 150),
+        ("ETHUSDT", "2026-08-26T19", "maint_rate", 0.004),
+        ("BTCUSDT", "2020-09-27T22", "clearance_fee_rate", 0.003),
+        ("ETHUSDT", "2020-05-19T17", "max_leverage", 75),
+    ]
+    for symbol, at, field, value in points:
+        r, notes = rules([symbol], [at], assume=mapped)
+        assert r[field][0, 0] == value, (symbol, at, field)
+        note = [n for n in notes if n["parameter"] == field][0]
+        assert note["confidence"] != "assumption", (symbol, at, field)
