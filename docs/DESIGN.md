@@ -1066,6 +1066,42 @@ REFERENCES = {"my_range": my_range}
 - **接入**：直接写文件后 `seal` + `check`，或实现三方法的 `Adapter` 协议交给 `build()`（临时目录写好、校验通过才发布）。包放 `data/ext/<名字>/`，经 `dataset_dir("ext")` 解析；`open()` 给出 `read()` 长表和与数据层 `Panel` 同接口的 `panel()`，可直接交给因子引擎。
 - **数字枚举不进标准层**：各族 `action_source` 枚举互不兼容，标准层用 `corporate_actions.kind` 加自由文本 `source`。
 
+### 6.13 统一命令行 `ashare`（CL1，2026-11-15 用户定）
+
+用户要求：把 CLI 做好，让 agent 能非常方便地辅助研究员完成任务，功能做全；做好后装成本机全局命令。
+
+**原则（面向 agent，也照顾人）**
+
+- 一个入口 `ashare`，按任务分组的子命令，参数写法统一（`--universe`、`--neutralize`、`--start/--end`、`--json`）。现有的 `python -m ashare.data / report / paths / paper / platform / data.crypto / factor.mining.llm` 继续可用；`ashare` 调它们的函数，不复制逻辑。
+- **每条命令都支持 `--json`**：输出带 `"schema": "ashare.cli/1"` 的稳定结构，只含基本类型；默认输出给人看的简短文本。错误也结构化（`--json` 时写到 stderr：`{"error": 类别, "message": 人能读的说明, "hint": 下一步}`），不吐 Python 堆栈（`--debug` 才给）。
+- **退出码固定**：0 成功；1 用法或表达式错误；2 数据不可用（外置盘没挂、面板没建）；3 被规则拒绝（例如测试期已看过）；4 计算失败。
+- **可发现**：`ashare help --json` 列出全部命令、参数、默认值和一个例子；`ashare guide <主题>` 给 agent 的速查（字段、算子、时间窗口与只看一次的规矩、股票池、中性化、费用口径、常见坑），内容从代码里的登记表生成，不手写第二份。
+- **长任务可续可查**：耗时超过几秒的命令打印任务 id，`ashare jobs list/show/cancel`；结果落在平台结果库，和网页看到的是同一份。
+- 默认低优先级运行（`nice` + 后台 QoS），`--foreground` 才不降；同一时间只跑一个重任务，第二个排队。
+
+**命令（第一版要齐）**
+
+| 组 | 命令 | 说明 |
+|---|---|---|
+| 总览 | `status` | 数据版本与最新日期、冷热数据位置是否可读、外置盘、在跑的任务、因子库条数 |
+| 因子 | `alpha check <表达式>` | 解析、用到的字段、回看长度、等价改写提示（如 `ts_ir` → `ts_mean/ts_std`，未登记的写法给出可用算子） |
+| | `alpha run <表达式> [--universe] [--neutralize] [--rebalance] [--decay] [--name]` | 平台同一套回测（样本内 + 验证期），参数可写成列表一次跑多组；默认入库（`--no-save` 不入），`--chart` 出图（多空累计、上证指数基准、十分组） |
+| | `alpha test <条目>` | 测试期（2026 起）回测；**每个表达式只许一次**，必须加 `--once` 确认，查看记录写进结果库，第二次退出码 3 |
+| | `alpha corr <条目或表达式>` | 与因子库已有条目的相关 |
+| 因子库 | `library list/show/series/compare/rename/tag/export` | 筛选、排序、分组同网页；`series` 导出日序列（多空、分组、IC） |
+| 回测 | `backtest entry <条目>`、`backtest weights <文件>` | 策略回测（网页「送去回测」那一套），`weights` 接外部目标权重 |
+| 挖掘 | `mine run/status/ledger/unlock` | 包装 `ashare.factor.mining`（枚举、随机、进化、LLM），台账与留出段规矩不变 |
+| 评估 | `eval factor <表达式或文件>` | 单因子完整评估（IC、分组、多头端、分年度、市值段），对应 `ashare.factor.evaluate` |
+| 报告 | `report show/html` | 现有 `ashare.report` |
+| 数据 | `data status/fields/field <名>/search <关键词>/quote <代码>/sync/verify/locations` | `fields` 带单位与可知时点；`quote` 打印一只证券最近 N 天；`sync` 等转调现有命令 |
+| 其他市场 | `crypto …`、`futures …`、`funds …`、`spec …`、`timing …` | 转调对应模块的命令行 |
+| 模拟盘 | `paper status/run/report` | 现有 `ashare.paper` |
+| 平台 | `platform serve/service` | 起网页服务 |
+
+**全局安装**：`make install-cli` 在 `~/.local/bin/ashare` 写一个小脚本，用仓库 venv 的 Python 执行 `ashare.cli`，数据根固定到仓库的 `data/`（不随当前目录变），任何目录都能用；脚本里不写密钥。`make uninstall-cli` 删除。
+
+**验证**：每条命令在合成数据目录上的契约测试（`--json` 结构快照、退出码、错误不含堆栈和本机路径）；`help --json` 覆盖全部命令（测试守住新增命令必须登记）；真实数据上跑一遍 `alpha run` 与网页结果逐项一致；变异检查。
+
 ## 7. 实施步骤
 
 回测引擎、模拟盘、数据层、因子算子库、风险与组合都由 Codex 实现，每条线一个独立的工作区（`.worktrees/`）和分支，可以并行。每条线交付后由 Claude 做独立审查（读改动、跑测试、在副本里做试验和变异检查、复测基准），问题退回原会话返工，通过后由 Claude 提交并合入主干。
@@ -1090,6 +1126,7 @@ REFERENCES = {"my_range": my_range}
 | C7 | BTC、ETH 分钟线（6.10.1） | 合成夹具测试（时间戳单位、缺口、日度补齐、断点续传）、独立校验、1m 聚合 1h 与小时面板逐小时对账、变异检查 |
 | D2 | 数据源规范（6.12、`docs/DATA_SPEC.md`）：`ashare.data.spec` 的清单模型、`seal`/`check`/`build`/`open`、A 股日线与加密货币小时线、分钟线三个导出器 | 规范每条「必须」都有正反例测试；校验器与写入方不共用检查代码；导出 → 读回的面板与原面板逐位一致；合成例子包能通过校验并跑通一次因子求值；变异检查 |
 | C8 | 合约指标 metrics 数据集（6.10.2）+ 单标的择时评估入口（4.19） | 对齐判定的正反例（只切换一次、段内矛盾、判不出的段）、重复和空串的测试；独立校验与 1m 对账；数据防火墙和前视自检能抓到人为制造的前视；验证、确认只能跑一次；C6 结果逐位不变；变异检查 |
+| CL1 | 统一命令行 `ashare`（6.13）+ 全局安装 | 每条命令的契约测试（JSON 结构、退出码、错误无堆栈）；`help --json` 覆盖全部命令；`alpha run` 与网页结果逐项一致；测试期只许一次有测试；装到 `~/.local/bin` 后在任意目录可用 |
 
 模拟盘引擎与上面并行，分四步：
 
