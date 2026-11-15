@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..store import atomic_json, lock
 from .announcements import crawl_announcements
-from .archive import archive_prefix, download_series, read_series
+from .archive import archive_prefix, download_series, funding_coverage, read_series
 from .events import EventLedger
 from .instruments import (
     eligible,
@@ -96,6 +96,68 @@ def prepare_profiles(client, store, config, now, snapshots):
     return out
 
 
+def sync_funding_info(client, store, now):
+    """按响应字节冻结公开快照；updateTime 原样保存，绝不当历史证明。"""
+    url = FAPI + "/fapi/v1/fundingInfo"
+    payload = client.get(url)
+    records = json.loads(payload)
+    if not isinstance(records, list) or any(
+        not isinstance(r, dict) or "symbol" not in r for r in records
+    ):
+        raise ValueError("fundingInfo 必须是交易对列表")
+    if len({r["symbol"] for r in records}) != len(records):
+        raise ValueError("fundingInfo 交易对重复")
+    key = f"fundingInfo/{now}"
+    entry = store.put(key, payload, source="rest", url=url, known_at=now)
+    return dict(key=key, fetched_at=now, sha256=entry["sha256"])
+
+
+def sync_funding_prices(
+    client,
+    store,
+    symbol,
+    start,
+    end,
+    *,
+    previous=None,
+    previous_sha=None,
+    refresh=False,
+    refetch=(),
+    fetched_at=None,
+):
+    """增量尾部及新发布的归档区间分别取新快照，旧内容寻址对象保留。"""
+    records = (
+        json.loads(store.get(previous, sha=previous_sha))
+        if previous and store.complete(previous) and not refresh
+        else []
+    )
+    cursor = max((int(r["fundingTime"]) + 1 for r in records), default=start)
+    for window in refetch:
+        # 对账声明覆盖整月，即使调用方缩小了面板窗口，也要刷新该月旧推断价。
+        lo = window["start"]
+        hi = min(fetched_at if fetched_at is not None else end, window["end"] - 1)
+        if lo <= hi:
+            fresh = client.funding(symbol, lo, hi)
+            # 替换整个已请求区间；新响应缺笔时不能用旧值填回去。
+            records = [r for r in records if not lo <= int(r["fundingTime"]) <= hi]
+            records += fresh
+    if cursor <= end:
+        extra = client.funding(symbol, cursor, end)
+        present = {int(r["fundingTime"]) for r in records}
+        records += [r for r in extra if int(r["fundingTime"]) not in present]
+    records.sort(key=lambda r: int(r["fundingTime"]))
+    key = f"funding_prices/{symbol}/{start}-{end}"
+    store.put(
+        key,
+        encoded(records),
+        source="rest",
+        url=FAPI + "/fapi/v1/fundingRate",
+        known_at=fetched_at,
+        refreshed_archive_ranges=list(refetch),
+    )
+    return key
+
+
 def sync(
     root, *, config=None, client=None, refresh=False, announcements=True, now=None
 ):
@@ -117,6 +179,19 @@ def sync(
     store = RawStore(root)
     try:
         with lock(root / ".sync.lock"):
+            previous_path = root / "sync_plan.json"
+            previous_plan = (
+                json.loads(previous_path.read_text()) if previous_path.exists() else {}
+            )
+            previous_manifest = (
+                json.loads(
+                    (
+                        root / "raw_versions" / f"{previous_plan['raw_version']}.json"
+                    ).read_text()
+                )
+                if previous_plan.get("raw_version")
+                else {}
+            )
             snapshots, universe = {}, {}
             for market in sorted({n.split(":")[0] for n in config["instruments"]}):
                 if market not in ("spot", "usdm"):
@@ -145,6 +220,9 @@ def sync(
                     source="s3",
                     known_at=now,
                 )
+            funding_info = (
+                sync_funding_info(client, store, now) if "usdm" in snapshots else None
+            )
             profiles = prepare_profiles(client, store, config, now, snapshots)
             ledger = EventLedger(root)
             for event in config.get("events", []):
@@ -167,6 +245,7 @@ def sync(
                 exceptions=config.get("exceptions", []),
                 series={},
                 announcement_result=announcement_result,
+                funding_info=funding_info,
             )
             for p in profiles:
                 name, market, symbol = p["instrument"], p["market"], p["symbol"]
@@ -207,16 +286,36 @@ def sync(
                         now=now,
                         refresh=refresh,
                     )
-                    key = f"funding_prices/{symbol}/{start}-{end}"
-                    if refresh or not store.complete(key):
-                        records = client.funding(symbol, start - DAY, end + DAY)
-                        store.put(
-                            key,
-                            encoded(records),
-                            source="rest",
-                            url=FAPI + "/fapi/v1/fundingRate",
-                        )
-                    series["funding_prices"] = key
+                    previous = (
+                        previous_plan.get("series", {})
+                        .get(name, {})
+                        .get("funding_prices")
+                    )
+                    old_keys = (
+                        previous_plan.get("series", {})
+                        .get(name, {})
+                        .get("fundingRate", [])
+                    )
+                    current_manifest = store.manifest.read()
+                    new_archives = [
+                        funding_coverage(key)
+                        for key in series["fundingRate"]
+                        if key not in old_keys
+                        or previous_manifest.get(key, {}).get("sha256")
+                        != current_manifest[key]["sha256"]
+                    ]
+                    series["funding_prices"] = sync_funding_prices(
+                        client,
+                        store,
+                        symbol,
+                        start - DAY,
+                        min(end + DAY, now),
+                        previous=previous,
+                        previous_sha=previous_manifest.get(previous, {}).get("sha256"),
+                        refresh=refresh,
+                        refetch=new_archives if previous and not refresh else (),
+                        fetched_at=now,
+                    )
                 elif market == "usdm":
                     pair = p.get("index_symbol", symbol.split("_")[0])
                     key = f"deliveries/{pair}/{now}"
@@ -260,6 +359,8 @@ def load_plan(root):
 
     try:
         data = {}
+        plan["funding_price_refs"] = {}
+        plan["funding_archive_coverage"] = {}
         for p in plan["profiles"]:
             series = plan["series"][p["instrument"]]
             data[p["instrument"]] = {
@@ -268,6 +369,20 @@ def load_plan(root):
                 else read_series(FrozenStore(), value, p["market"], key)
                 for key, value in series.items()
             }
+            if p["contract_type"] == "PERPETUAL":
+                key = series["funding_prices"]
+                plan["funding_price_refs"][p["instrument"]] = dict(
+                    key=key, sha256=frozen[key]["sha256"]
+                )
+                plan["funding_archive_coverage"][p["instrument"]] = [
+                    dict(funding_coverage(key), sha256=frozen[key]["sha256"])
+                    for key in series["fundingRate"]
+                ]
+        if plan.get("funding_info"):
+            snapshot = plan["funding_info"]
+            plan["funding_info"] = dict(
+                snapshot, records=json.loads(FrozenStore().get(snapshot["key"]))
+            )
         return plan, data
     finally:
         store.close()

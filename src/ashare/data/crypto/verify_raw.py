@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -17,6 +18,76 @@ def verify_raw(root, inputs):
     )
     errors, checked = [], 0
     decoded = {}
+    context = inputs.get("recent", {})
+    snapshot = context.get("funding_info")
+    if snapshot is not None:
+        entry = manifest.get(snapshot.get("key"), {})
+        payload = (root / "objects" / entry["sha256"]).read_bytes() if entry else None
+        if (
+            not entry
+            or entry["sha256"] != snapshot.get("sha256")
+            or entry.get("known_at") != snapshot.get("fetched_at")
+            or json.loads(payload) != snapshot.get("records")
+        ):
+            errors.append(dict(check="inferred_snapshot_provenance"))
+    if context.get("source_contract"):
+        for p in inputs["profiles"]:
+            if p["contract_type"] != "PERPETUAL":
+                continue
+            name = p["instrument"]
+            ref = context.get("funding_price_refs", {}).get(name, {})
+            entry = manifest.get(ref.get("key"), {})
+            if (
+                not entry
+                or entry["sha256"] != ref.get("sha256")
+                or not ref.get("key", "").startswith(f"funding_prices/{p['symbol']}/")
+            ):
+                errors.append(dict(check="funding_rest_reference", instrument=name))
+                continue
+            try:
+                original = json.loads((root / "objects" / entry["sha256"]).read_bytes())
+
+                def economic(rows):
+                    # 保留毫秒原时刻，不共享 funding_hour、price_map 或构建判据。
+                    return sorted(
+                        (
+                            int(r["fundingTime"]),
+                            float(r["fundingRate"]),
+                            float(r["markPrice"]) if r.get("markPrice") else None,
+                        )
+                        for r in rows
+                    )
+
+                if economic(original) != economic(
+                    inputs["data"][name].get("funding_prices", [])
+                ):
+                    errors.append(dict(check="funding_rest_decode", instrument=name))
+            except (ValueError, TypeError, KeyError):
+                errors.append(dict(check="funding_rest_decode", instrument=name))
+            for window in context.get("funding_archive_coverage", {}).get(name, []):
+                key = window["key"]
+                raw = manifest.get(key, {})
+                try:
+                    label = key.removesuffix(".zip")[-7:]
+                    first = datetime.fromisoformat(label + "-01").replace(tzinfo=UTC)
+                    following = first.replace(
+                        year=first.year + (first.month == 12),
+                        month=first.month % 12 + 1,
+                    )
+                    valid = (
+                        f"/monthly/fundingRate/{p['symbol']}/" in key
+                        and raw.get("sha256") == window.get("sha256")
+                        and window["start"] == int(first.timestamp() * 1000)
+                        and window["end"] == int(following.timestamp() * 1000)
+                    )
+                except (ValueError, KeyError):
+                    valid = False
+                if not valid:
+                    errors.append(
+                        dict(
+                            check="funding_archive_reference", instrument=name, key=key
+                        )
+                    )
     for key, e in manifest.items():
         payload = (root / "objects" / e["sha256"]).read_bytes()
         sha = hashlib.sha256(payload).hexdigest()

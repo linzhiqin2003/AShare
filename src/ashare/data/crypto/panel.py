@@ -52,6 +52,7 @@ QUALITY = {
     "partial_halt": 512,
     "inferred_halt": 1024,
     "invalid_close_time": 2048,
+    "funding_interval_inferred": 4096,
 }
 
 
@@ -70,7 +71,13 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
     bars = indexed(data.get("klines", []))
     marks = indexed(data.get("markPriceKlines", []))
     indices = indexed(data.get("indexPriceKlines", []))
-    prices = price_map(data.get("funding_prices", []))
+    prices = price_map(
+        [
+            r
+            for r in data.get("funding_prices", [])
+            if int(r["fundingTime"]) <= end + 1000
+        ]
+    )
     deliveries = {
         int(r["deliveryTime"]): float(r["deliveryPrice"])
         for r in data.get("deliveries", [])
@@ -338,6 +345,8 @@ def build_instrument(profile, data, events, start, end, *, allow_missing=False):
                 end_price = row["close"]
             ended = True
         if t + HOUR in schedule:
+            if schedule[t + HOUR].get("source") == "inferred_continuation":
+                row["quality"] |= QUALITY["funding_interval_inferred"]
             try:
                 row.update(funding_value(schedule[t + HOUR], prices, marks, unit))
             except LookupError:

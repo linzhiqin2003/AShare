@@ -9,8 +9,10 @@ from bisect import bisect_right
 from collections import defaultdict
 
 from .dataset import CryptoDataset
+from .reconcile import reports
 from .verify_contract import verify_contract
 from .verify_raw import verify_raw
+from .verify_recent import verify_recent
 
 HOUR = 3_600_000
 
@@ -315,7 +317,21 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                     recorded.get("fundingRate") is not None
                     and float(recorded["fundingRate"]) != rate["rate"]
                 ):
-                    fail("funding_rate_sources", name, t)
+                    if (
+                        rate.get("archive_rate_override")
+                        and rate.get("source") != "inferred_continuation"
+                    ):
+                        diagnostics.append(
+                            dict(
+                                check="funding_rate_archive_override",
+                                instrument=name,
+                                time=t,
+                                archive_rate=rate["rate"],
+                                rest_rate=float(recorded["fundingRate"]),
+                            )
+                        )
+                    else:
+                        fail("funding_rate_sources", name, t)
                 if recorded.get("markPrice") and boundary in marks:
                     deviation = (
                         float(recorded["markPrice"]) / marks[boundary]["open"] - 1
@@ -354,6 +370,7 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
                     )
                 )
     errors.extend(verify_contract(frame, inputs))
+    errors.extend(verify_recent(frame, inputs))
     return dict(
         verdict="fail" if errors else "pass",
         rows=len(rows),
@@ -362,8 +379,8 @@ def verify_frame(frame, inputs, *, price_threshold=0.01):
     )
 
 
-def verify(root, version=None, *, price_threshold=0.01):
-    ds = CryptoDataset(root, version)
+def verify(root, version=None, *, price_threshold=0.01, allow_inferred_funding=False):
+    ds = CryptoDataset(root, version, allow_inferred_funding=allow_inferred_funding)
     inputs = ds.inputs()
     report = verify_frame(ds.read(), inputs, price_threshold=price_threshold)
     raw_errors, checked = verify_raw(root, inputs)
@@ -371,6 +388,7 @@ def verify(root, version=None, *, price_threshold=0.01):
     report.update(
         version=ds.version,
         archives_checked=checked,
+        funding_reconciliations=reports(ds.root, ds.version),
         verdict="fail" if report["errors"] else "pass",
     )
     return report

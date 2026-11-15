@@ -69,8 +69,10 @@ def price_map(records):
 def funding_value(record, prices, marks, multiplier):
     t = record["time"]
     official = prices.get(t)
-    if official and not math.isclose(
-        official["rate"], record["rate"], rel_tol=0, abs_tol=1e-12
+    if (
+        official
+        and not math.isclose(official["rate"], record["rate"], rel_tol=0, abs_tol=1e-12)
+        and not record.get("archive_rate_override")
     ):
         raise ValueError("归档与 REST 资金费率不一致")
     if official and official["price"] is not None:

@@ -32,6 +32,7 @@ def prepare(
     root,
     *,
     repair_daily=False,
+    allow_inferred_funding=False,
     accept_spot_gaps=False,
     output="bench/results/crypto_data_validation.json",
 ):
@@ -43,7 +44,6 @@ def prepare(
     observations = []
     repairs = []
     exceptions = list(plan.get("exceptions", []))
-    end = plan["end"]
     for p in plan["profiles"]:
         name = p["instrument"]
         datasets = data[name]
@@ -128,16 +128,13 @@ def prepare(
                         plan["raw_version"] = store.freeze()
                     finally:
                         store.close()
-        if p["contract_type"] == "PERPETUAL":
-            rates = datasets.get("fundingRate", [])
-            if not rates:
-                raise ValueError(name + " 没有历史资金费间隔")
-            last = max(rates, key=lambda r: r["time"])
-            end = min(end, last["time"] + last["interval"] * HOUR - HOUR)
-    plan["end"] = end
     plan["exceptions"] = exceptions
     atomic_json(root / "sync_plan.json", plan)
-    ds = build(root, allow_missing=accept_spot_gaps)
+    ds = build(
+        root,
+        allow_missing=accept_spot_gaps,
+        allow_inferred_funding=allow_inferred_funding,
+    )
     report = verify(root, ds.version)
     result = dict(
         version=ds.version,
@@ -151,7 +148,11 @@ def prepare(
         observations=observations,
         repairs=repairs,
         explicit_gap_intervals=exceptions,
-        terminal_policy="stop before first funding settlement without historical interval evidence; no REST gap inference",
+        terminal_policy=(
+            "explicit inferred continuation; min archived complete hour and last accepted settlement on first failure/missing tail"
+            if allow_inferred_funding
+            else "stop before first funding settlement without historical interval evidence; no REST gap inference"
+        ),
     )
     atomic_json(Path(output), result)
     if report["errors"]:
@@ -176,11 +177,13 @@ def main():
         action="store_true",
         help="显式允许非停机自证的现货归档缺口，逐段记录为假设",
     )
+    parser.add_argument("--allow-inferred-funding", action="store_true")
     parser.add_argument("--output", default="bench/results/crypto_data_validation.json")
     args = parser.parse_args()
     report = prepare(
         args.data,
         repair_daily=args.repair_daily,
+        allow_inferred_funding=args.allow_inferred_funding,
         accept_spot_gaps=args.accept_spot_gaps,
         output=args.output,
     )

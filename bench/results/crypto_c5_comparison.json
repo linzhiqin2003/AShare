@@ -1,0 +1,105 @@
+{
+  "versions": {
+    "strict": {
+      "version": "5ae4f191bcedc22e7755eb85c0096351e02853c6740a1e17bf4801aeef3e4b20",
+      "start": "2020-01-01T00:00:00+00:00",
+      "end": "2026-10-31T23:00:00+00:00",
+      "rows": 239612,
+      "verdict": "pass",
+      "error_count": 0,
+      "archives_checked": 963
+    },
+    "inferred": {
+      "version": "bf894f27e18302dafc4cc054999fcd2b915b0fbc9364e08588315f99577633da",
+      "start": "2020-01-01T00:00:00+00:00",
+      "end": "2026-11-15T00:00:00+00:00",
+      "rows": 240960,
+      "verdict": "pass",
+      "error_count": 0,
+      "archives_checked": 963
+    }
+  },
+  "extended_hours": 337,
+  "historical_prefix_bitwise_equal": true,
+  "inferred_settlements": [
+    {
+      "instrument": "usdm:BTCUSDT",
+      "settlements": 43,
+      "first_settlement": "2026-11-01T00:00:00+00:00",
+      "last_settlement": "2026-11-15T00:00:00+00:00"
+    },
+    {
+      "instrument": "usdm:ETHUSDT",
+      "settlements": 43,
+      "first_settlement": "2026-11-01T00:00:00+00:00",
+      "last_settlement": "2026-11-15T00:00:00+00:00"
+    }
+  ],
+  "strategies": {
+    "spot": {
+      "final_nav": {
+        "strict": 2.633912380760807,
+        "inferred": 2.6145322027303073,
+        "difference": -0.01938017803049963
+      },
+      "annualized": {
+        "strict": 0.15214524008945896,
+        "inferred": 0.14999707669099305,
+        "difference": -0.0021481633984659076
+      },
+      "max_drawdown": {
+        "strict": 0.13510447253757008,
+        "inferred": 0.13510447253757008,
+        "difference": 0.0
+      },
+      "funding_paid": {
+        "strict": 0.0,
+        "inferred": 0.0,
+        "difference": 0.0
+      },
+      "fees": {
+        "strict": 137.74194243920002,
+        "inferred": 138.90761996970002,
+        "difference": 1.1656775305000053
+      },
+      "liquidation_count": {
+        "strict": 0,
+        "inferred": 0,
+        "difference": 0
+      }
+    },
+    "usdm": {
+      "final_nav": {
+        "strict": 2.251744618123367,
+        "inferred": 2.283899853755265,
+        "difference": 0.03215523563189793
+      },
+      "annualized": {
+        "strict": 0.1260330418974409,
+        "inferred": 0.12760817921785828,
+        "difference": 0.0015751373204173635
+      },
+      "max_drawdown": {
+        "strict": 0.1865971210621722,
+        "inferred": 0.1865971210621722,
+        "difference": 0.0
+      },
+      "funding_paid": {
+        "strict": 229.41495192123983,
+        "inferred": 228.92069388136807,
+        "difference": -0.49425803987176664
+      },
+      "fees": {
+        "strict": 97.068293651,
+        "inferred": 97.927781976,
+        "difference": 0.8594883250000009
+      },
+      "liquidation_count": {
+        "strict": 0,
+        "inferred": 0,
+        "difference": 0
+      }
+    }
+  },
+  "explanation": "Same historical input and strategy parameters; differences arise only from the additional hours, new daily signals/trades, mark-to-market prices and inferred-interval REST funding settlements. Annualization also uses the longer duration."
+}

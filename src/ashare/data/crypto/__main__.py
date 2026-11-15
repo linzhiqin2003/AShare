@@ -25,16 +25,24 @@ def main(argv=None):
     make.add_argument("--allow-missing", action="store_true")
     check = sub.add_parser("verify")
     check.add_argument("--version")
+    make.add_argument("--allow-inferred-funding", action="store_true")
+    check.add_argument("--allow-inferred-funding", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "sync":
         result = sync(
             args.root, refresh=args.refresh, announcements=not args.skip_announcements
         )
     elif args.command == "build":
-        ds = build(args.root, allow_missing=args.allow_missing)
+        ds = build(
+            args.root,
+            allow_missing=args.allow_missing,
+            allow_inferred_funding=args.allow_inferred_funding,
+        )
         result = ds.meta
     else:
-        result = verify(args.root, args.version)
+        result = verify(
+            args.root, args.version, allow_inferred_funding=args.allow_inferred_funding
+        )
         atomic_json(args.root / "verification" / f"{result['version']}.json", result)
         # 完整逐格诊断落文件，命令行只显示摘要，避免海量输出。
         result = {**result, "diagnostics": len(result["diagnostics"])}
