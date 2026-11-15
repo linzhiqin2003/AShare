@@ -1,0 +1,153 @@
+C6 independent review — red evidence (synthetic fixtures only)
+
+P1-1/2/3 and P2-4: unmodified reviewed implementation; expected failures.
+
+nice: setpriority: Operation not permitted
+FFFFFFFFFF...                                                            [100%]
+=================================== FAILURES ===================================
+_____________________ test_review_p1_labels_crop_commutes ______________________
+test/crypto/test_review_c6.py:42: in test_review_p1_labels_crop_commutes
+    assert cropped[family][h][kind][0, 0] == pytest.approx(expected, abs=1e-13)
+E   assert np.float64(nan) == 0.01627312159884235 ± 1.0e-13
+E     
+E     comparison failed
+E     Obtained: nan
+E     Expected: 0.01627312159884235 ± 1.0e-13
+___________ test_review_p1_missing_signal_day_keeps_calendar_return ____________
+test/crypto/test_review_c6.py:52: in test_review_p1_missing_signal_day_keeps_calendar_return
+    assert sparse["inference"][h][kind][9, 0] == pytest.approx(
+E   assert np.float64(0....6287431312508) == 0.01627312159884235 ± 1.0e-13
+E     
+E     comparison failed
+E     Obtained: 0.016246287431312508
+E     Expected: 0.01627312159884235 ± 1.0e-13
+_______________ test_review_p1_uncovered_entry_and_exit_are_nan ________________
+test/crypto/test_review_c6.py:62: in test_review_p1_uncovered_entry_and_exit_are_nan
+    r = crypto_labels(ds, ["BTCUSDT"], signal_dates([-1, 0, 10, 49, 51]))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ashare/factor/crypto_eval.py:80: in crypto_labels
+    raise ValueError("标签需要矩形完整小时轴")
+E   ValueError: 标签需要矩形完整小时轴
+______ test_review_p1_irregular_panel_is_distinct_from_uncovered_request _______
+test/crypto/test_review_c6.py:78: in test_review_p1_irregular_panel_is_distinct_from_uncovered_request
+    with pytest.raises(ValueError, match="小时轴"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+________________ test_review_p1_near_constant_1b[10-0.01-1e-12] ________________
+test/crypto/test_review_c6.py:91: in test_review_p1_near_constant_1b
+    observed = hodrick_1b(x, g, 1)
+               ^^^^^^^^^^^^^^^^^^^
+src/ashare/factor/crypto_eval.py:123: in hodrick_1b
+    inv = np.linalg.inv(z[use].T @ z[use])
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/linalg/_linalg.py:659: in inv
+    ainv = _umath_linalg.inv(a, signature=signature)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/linalg/_linalg.py:144: in _raise_linalgerror_singular
+    raise LinAlgError("Singular matrix")
+E   numpy.linalg.LinAlgError: Singular matrix
+________________ test_review_p1_near_constant_1b[100-0.1-1e-10] ________________
+test/crypto/test_review_c6.py:93: in test_review_p1_near_constant_1b
+    assert observed["beta"] > 0
+E   assert -24458539.162606705 > 0
+_________ test_review_p1_1b_affine_invariance_with_missing_samples[1] __________
+test/crypto/test_review_c6.py:109: in test_review_p1_1b_affine_invariance_with_missing_samples
+    np.testing.assert_allclose([r["beta"] * multiplier, r["se"] * multiplier, r["t"]],
+E   AssertionError: 
+E   Not equal to tolerance rtol=1e-10, atol=0
+E   
+E   Mismatched elements: 3 / 3 (100%)
+E   Mismatch at indices:
+E    [0]: 0.14733203717588406 (ACTUAL), 0.14726944916472534 (DESIRED)
+E    [1]: 0.04539559680364193 (ACTUAL), 0.04537471061022748 (DESIRED)
+E    [2]: 3.2455138284262874 (ACTUAL), 3.245628394851531 (DESIRED)
+E   Max absolute difference among violations: 0.00011457
+E   Max relative difference among violations: 0.0004603
+E    ACTUAL: array([0.147332, 0.045396, 3.245514])
+E    DESIRED: array([0.147269, 0.045375, 3.245628])
+_________ test_review_p1_1b_affine_invariance_with_missing_samples[7] __________
+test/crypto/test_review_c6.py:109: in test_review_p1_1b_affine_invariance_with_missing_samples
+    np.testing.assert_allclose([r["beta"] * multiplier, r["se"] * multiplier, r["t"]],
+E   AssertionError: 
+E   Not equal to tolerance rtol=1e-10, atol=0
+E   
+E   Mismatched elements: 3 / 3 (100%)
+E   Mismatch at indices:
+E    [0]: 1.1094498567886113 (ACTUAL), 1.1090413114866322 (DESIRED)
+E    [1]: 0.29423360120320907 (ACTUAL), 0.2941372306861906 (DESIRED)
+E    [2]: 3.77064295937561 (ACTUAL), 3.770489403532351 (DESIRED)
+E   Max absolute difference among violations: 0.00040855
+E   Max relative difference among violations: 0.00036838
+E    ACTUAL: array([1.10945 , 0.294234, 3.770643])
+E    DESIRED: array([1.109041, 0.294137, 3.770489])
+_____________ test_review_p2_mde_bracket_is_part_of_json_contract ______________
+test/crypto/test_review_c6.py:118: in test_review_p2_mde_bracket_is_part_of_json_contract
+    assert r["effect_unit_label"] == "持续七日增加 1 sd 的等价效应（对数收益）"
+           ^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'effect_unit_label'
+______ test_review_p2_mde_table_names_sustained_effect_and_adjacent_power ______
+test/crypto/test_review_c6.py:142: in test_review_p2_mde_table_names_sustained_effect_and_adjacent_power
+    assert "持续七日增加 1 sd 的等价效应（对数收益）" in text
+E   AssertionError: assert '持续七日增加 1 sd 的等价效应（对数收益）' in '# 资金费率与基差时序因子报告\n\n设计口径：DESIGN 4.18 v5.1。描述收益和可加推断收益分开；只有固定八项样本外确认族使用 Holm。其余均为探索，不作推断。\n\n严格面板 `synthetic`；季度信号 `syn...|\n\nMDE 主值为持续7日增加一个样本内标准差的 h·b·sd 等价效应；单次初始冲击的效应依赖 φ，JSON 同时给出 b·sd·Σφ^j 的范围。确认项采用所有可能的一次内点加密格的并集，观察和功效共用同一更保守固定规则。\n'
+=========================== short test summary info ============================
+FAILED test/crypto/test_review_c6.py::test_review_p1_labels_crop_commutes - a...
+FAILED test/crypto/test_review_c6.py::test_review_p1_missing_signal_day_keeps_calendar_return
+FAILED test/crypto/test_review_c6.py::test_review_p1_uncovered_entry_and_exit_are_nan
+FAILED test/crypto/test_review_c6.py::test_review_p1_irregular_panel_is_distinct_from_uncovered_request
+FAILED test/crypto/test_review_c6.py::test_review_p1_near_constant_1b[10-0.01-1e-12]
+FAILED test/crypto/test_review_c6.py::test_review_p1_near_constant_1b[100-0.1-1e-10]
+FAILED test/crypto/test_review_c6.py::test_review_p1_1b_affine_invariance_with_missing_samples[1]
+FAILED test/crypto/test_review_c6.py::test_review_p1_1b_affine_invariance_with_missing_samples[7]
+FAILED test/crypto/test_review_c6.py::test_review_p2_mde_bracket_is_part_of_json_contract
+FAILED test/crypto/test_review_c6.py::test_review_p2_mde_table_names_sustained_effect_and_adjacent_power
+10 failed, 3 passed in 8.07s
+
+
+P2-5: production rules are already correct. The following isolated mutants prove the new coverage fails when the rules regress; these are not claims of existing production failures.
+
+Isolated mutant: z_59_instead_of_60; pytest exit=1
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________________ test_review_p2_z_requires_60_prior_days[0] __________________
+test/crypto/test_review_c6.py:160: in test_review_p2_z_requires_60_prior_days
+    assert np.isnan(z[i, 0])
+E   AssertionError: assert np.False_
+E    +  where np.False_ = <ufunc 'isnan'>(np.float64(-0.1437334483527499))
+E    +    where <ufunc 'isnan'> = np.isnan
+__________________ test_review_p2_z_requires_60_prior_days[8] __________________
+test/crypto/test_review_c6.py:160: in test_review_p2_z_requires_60_prior_days
+    assert np.isnan(z[i, 0])
+E   AssertionError: assert np.False_
+E    +  where np.False_ = <ufunc 'isnan'>(np.float64(-0.1300436360995896))
+E    +    where <ufunc 'isnan'> = np.isnan
+=========================== short test summary info ============================
+FAILED test/crypto/test_review_c6.py::test_review_p2_z_requires_60_prior_days[0]
+FAILED test/crypto/test_review_c6.py::test_review_p2_z_requires_60_prior_days[8]
+2 failed, 11 deselected in 6.96s
+
+
+
+
+Isolated mutant: quarter_quality_uses_future; pytest exit=1
+
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_review_p2_quarter_archive_truncation_rebuilds_production_quality _____
+test/crypto/test_review_c6.py:201: in test_review_p2_quarter_archive_truncation_rebuilds_production_quality
+    full = rebuild(tmp_path / "full", end)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/crypto/test_review_c6.py:197: in rebuild
+    assert verify_signals(folder)["verdict"] == "pass"
+E   AssertionError: assert 'fail' == 'pass'
+E     
+E     - pass
+E     + fail
+----------------------------- Captured stdout call -----------------------------
+signals: BTCUSDT_240329, 1 months, 240 hours
+=========================== short test summary info ============================
+FAILED test/crypto/test_review_c6.py::test_review_p2_quarter_archive_truncation_rebuilds_production_quality
+1 failed, 12 deselected in 7.62s
+
+
+

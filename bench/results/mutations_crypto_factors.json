@@ -1,0 +1,153 @@
+{
+  "worktree_import_verified": true,
+  "baseline": "pass",
+  "mutations": [
+    {
+      "name": "annual_interval",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 8.72s"
+    },
+    {
+      "name": "unsettled_event",
+      "killed": true,
+      "returncode": 1,
+      "summary": "3 failed, 74 passed in 7.55s"
+    },
+    {
+      "name": "daily_no_shift",
+      "killed": true,
+      "returncode": 1,
+      "summary": "6 failed, 71 passed in 7.09s"
+    },
+    {
+      "name": "daily_double_shift",
+      "killed": true,
+      "returncode": 1,
+      "summary": "6 failed, 71 passed in 8.49s"
+    },
+    {
+      "name": "z_today",
+      "killed": true,
+      "returncode": 1,
+      "summary": "3 failed, 74 passed in 8.58s"
+    },
+    {
+      "name": "z_future",
+      "killed": true,
+      "returncode": 1,
+      "summary": "7 failed, 70 passed in 6.60s"
+    },
+    {
+      "name": "roll_early",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 6.66s"
+    },
+    {
+      "name": "roll_late",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 7.51s"
+    },
+    {
+      "name": "remaining_left_edge",
+      "killed": true,
+      "returncode": 1,
+      "summary": "2 failed, 75 passed in 8.85s"
+    },
+    {
+      "name": "cross_split",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 8.88s"
+    },
+    {
+      "name": "gap_mask",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 9.13s"
+    },
+    {
+      "name": "1b_missing_past",
+      "killed": true,
+      "returncode": 1,
+      "summary": "6 failed, 71 passed in 8.03s"
+    },
+    {
+      "name": "1b_regression_residual",
+      "killed": true,
+      "returncode": 1,
+      "summary": "10 failed, 67 passed in 7.86s"
+    },
+    {
+      "name": "1b_divide_T",
+      "killed": true,
+      "returncode": 1,
+      "summary": "10 failed, 67 passed in 7.06s"
+    },
+    {
+      "name": "calibrate_oos",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 7.08s"
+    },
+    {
+      "name": "holm_smaller_family",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 7.57s"
+    },
+    {
+      "name": "near_gap_fallback",
+      "killed": true,
+      "returncode": 1,
+      "summary": "6 failed, 71 passed in 10.37s"
+    },
+    {
+      "name": "listing_query_start",
+      "killed": true,
+      "returncode": 1,
+      "summary": "2 failed, 75 passed in 18.95s"
+    },
+    {
+      "name": "accept_post_delivery_trade",
+      "killed": true,
+      "returncode": 1,
+      "summary": "2 failed, 75 passed in 7.29s"
+    },
+    {
+      "name": "labels_use_signal_rows_instead_of_calendar",
+      "killed": true,
+      "returncode": 1,
+      "summary": "3 failed, 74 passed in 6.63s"
+    },
+    {
+      "name": "labels_accept_uncovered_entry",
+      "killed": true,
+      "returncode": 1,
+      "summary": "1 failed, 76 passed in 6.73s"
+    },
+    {
+      "name": "1b_uncentered_normal_equation",
+      "killed": true,
+      "returncode": 1,
+      "summary": "4 failed, 73 passed in 6.38s"
+    },
+    {
+      "name": "z_59_instead_of_60",
+      "killed": true,
+      "returncode": 1,
+      "summary": "2 failed, 75 passed in 6.27s"
+    },
+    {
+      "name": "quarter_quality_uses_future",
+      "killed": true,
+      "returncode": 1,
+      "summary": "2 failed, 75 passed in 6.19s"
+    }
+  ],
+  "killed": 24,
+  "total": 24,
+  "seconds": 244.59172787499847
+}

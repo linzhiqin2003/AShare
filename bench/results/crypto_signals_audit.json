@@ -1,0 +1,418 @@
+{
+  "contracts": 50,
+  "archives": 274,
+  "contracts_with_post_delivery_rows": 46,
+  "post_delivery_rows": 5084,
+  "contracts_with_nonzero_post_delivery_volume": 7,
+  "interior_gaps": 0,
+  "metadata_conflicts": [],
+  "delivery_window_failures": [],
+  "delivery_checks": {
+    "pass": 46,
+    "pending_not_expired": 4
+  },
+  "contracts_detail": [
+    {
+      "symbol": "BTCUSDT_210326",
+      "archive_months": 2,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_210625",
+      "archive_months": 4,
+      "post_delivery_rows": 3,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_210924",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_211231",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_220325",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_220624",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_220930",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_221230",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_230331",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_230630",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_230929",
+      "archive_months": 6,
+      "post_delivery_rows": 1106,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_231229",
+      "archive_months": 6,
+      "post_delivery_rows": 263,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_240329",
+      "archive_months": 7,
+      "post_delivery_rows": 2,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_240628",
+      "archive_months": 8,
+      "post_delivery_rows": 71,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_240927",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_241227",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_250328",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_250627",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_250926",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_251226",
+      "archive_months": 8,
+      "post_delivery_rows": 599,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_260327",
+      "archive_months": 8,
+      "post_delivery_rows": 482,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_260626",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_260925",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "BTCUSDT_261225",
+      "archive_months": 5,
+      "post_delivery_rows": 0,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pending_not_expired"
+    },
+    {
+      "symbol": "BTCUSDT_270326",
+      "archive_months": 2,
+      "post_delivery_rows": 0,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pending_not_expired"
+    },
+    {
+      "symbol": "ETHUSDT_210326",
+      "archive_months": 2,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_210625",
+      "archive_months": 4,
+      "post_delivery_rows": 3,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_210924",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_211231",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_220325",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_220624",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_220930",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_221230",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_230331",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_230630",
+      "archive_months": 4,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_230929",
+      "archive_months": 6,
+      "post_delivery_rows": 1106,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_231229",
+      "archive_months": 6,
+      "post_delivery_rows": 263,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_240329",
+      "archive_months": 7,
+      "post_delivery_rows": 2,
+      "post_delivery_rows_with_nonzero_volume": 1,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_240628",
+      "archive_months": 8,
+      "post_delivery_rows": 71,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_240927",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_241227",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_250328",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_250627",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_250926",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_251226",
+      "archive_months": 8,
+      "post_delivery_rows": 599,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_260327",
+      "archive_months": 8,
+      "post_delivery_rows": 482,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_260626",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_260925",
+      "archive_months": 7,
+      "post_delivery_rows": 1,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pass"
+    },
+    {
+      "symbol": "ETHUSDT_261225",
+      "archive_months": 5,
+      "post_delivery_rows": 0,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pending_not_expired"
+    },
+    {
+      "symbol": "ETHUSDT_270326",
+      "archive_months": 2,
+      "post_delivery_rows": 0,
+      "post_delivery_rows_with_nonzero_volume": 0,
+      "interior_gaps": 0,
+      "delivery_check": "pending_not_expired"
+    }
+  ],
+  "strict_build": "metadata_checks_passed",
+  "definition": "DESIGN 4.18 v5.1: last traded bar opens in [delivery-24h,delivery]; post_delivery excluded"
+}

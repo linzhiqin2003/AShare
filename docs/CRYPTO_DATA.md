@@ -265,3 +265,26 @@ verify 从冻结 REST、原始快照和归档独立重算推断条件、生命�
 此端到端通过表示数据与所声明模型一致，不表示历史规则全部已考据：五个当前快照品种的早期规则向前沿用、已消失季度的规则显式借用 BTC 过滤器，均标 assumption；WAVES 下架价使用边界 mark open 并标近似。490 条资金费价格诊断的最大绝对相对偏离为 0.04535%，没有超过 1% 提示阈值；没有交割/指数或现货/永续的超阈值差异。真实数据截到 6 月 1 日后，历史面板（含类型）及前 N 排名与完整数据逐项一致。初次交付面板版本为 `c9e3f5e59b07341fffd430f8333f1dd170354496253abff5592885c53496ca4c`。完整摘要放在本 worktree `tmp/e2e/summary.json`，不提交真实面板或原始响应。含单独格式、接口探针，开发阶段公开数据下载合计约 42 MB。
 
 R1 使用相同原始数据在 `tmp/e2e-review-r1/` 离线重提取、重建，移除原样本中人工补录的 WAVES 事件。自动结算及现货下架事件的 `known_at` 均为 **2024-06-04 00:00 UTC**，依据为 `latest_update_evidence`；结算生效 6-11 09:00、现货下架生效 6-17 03:00 UTC。新面板版本 `792d023e55b5a59b99e787948b94db12727586f767f7ac9b8eb17b713de1a933`，8,784 格、54 个归档、verify 0 错误。未重新下载，旧目录的事件、计划及面板保持不变；现货 WAVES 事件已验证可知时间，但本次六列行情样本不含 WAVES 现货。
+
+## C6：季度合约仅信号数据集
+
+`ashare.data.crypto.signals.SignalDataset` 与可交易面板独立，只提供季度收盘与质量位，不要求官方交割价格，也不能直接构造可交易市场。它不修改 `latest.json` / `latest_inferred.json`。
+
+```sh
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-sync \
+  --start 2020-01-01 --end 2026-11-01
+.venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-verify
+```
+
+每期列举全部月归档并核对 CHECKSUM，已核对对象按内容摘要复用。上市优先有来源的 onboardDate/公告，否则以全部归档最早一条作保守代理，不能使用查询起点。交割从代码日期加08:00 UTC，与 deliveryDate 核对；已到期合约最后一根成交量大于0的K线，开盘必须位于[交割−24小时，交割]，否则报错。未到期合约登记 pending_not_expired，仍拒绝交割之后的成交；到期后必须补做下界核验。无上市来源的合约不进候选，构建报告保留排除清单。
+
+目录为 `signals/raw/`（独立清单和原始对象）、`signals/versions/<sha>/`（冻结输入、规范化元数据、小时表）、`signals/latest.json` 与 `signals/verification/`。内容版本覆盖原始引用、完整解析结果、上市/交割时刻和来源、质量例外、小时表摘要及定义版本；读时同时校验原始对象、元数据和小时表，修改元数据须生成新版本。`signals-verify` 自行解压解析 CSV，独立核对连续性、质量、上市和交割，不调用生产构建器，也不调用交割价格接口。
+
+零成交与连续冻结小时保留质量位，信号层屏蔽；缺小时只能通过带原因的 `--exceptions` 文件登记，仍为缺值。质量位与现有面板保持对应关系。定义、时点和因子使用详见 [CRYPTO_FACTORS.md](CRYPTO_FACTORS.md)。
+
+同步在构建前保存 `signals/sync_plan.json`，构建失败也保留冻结引用；`signals-build [--exceptions <json>]` 可离线重建，完全不访问网络。按 DESIGN 4.18 v5.1，收盘晚于交割的行自动登记为 `post_delivery` 并从信号表剔除，原始字节和完整解析行保留。逐期排除计数、范围和原因随元数据进入内容版本，独立校验重新计数；调用方不能手工覆盖此例外。交割整点开盘的有成交K线可以用于交割核对，但其收盘在交割之后，仍不能进入信号表。上市与 deliveryDate 冲突照常报错。
+
+```sh
+nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-build
+nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-verify
+```

@@ -127,7 +127,11 @@ class PublicClient:
                             )
                         chunks.append(chunk)
                     return b"".join(chunks)
-            except (httpx.TimeoutException, httpx.NetworkError):
+            except (
+                httpx.TimeoutException,
+                httpx.NetworkError,
+                httpx.RemoteProtocolError,
+            ):
                 if attempt == attempts - 1:
                     raise
                 self._wait(backoff)
