@@ -1106,7 +1106,9 @@ REFERENCES = {"my_range": my_range}
 | 回测 | `backtest entry <条目>`、`backtest weights <文件>` | 策略回测（网页「送去回测」那一套），`weights` 接外部目标权重 |
 | 挖掘 | `mine run/status/ledger/unlock` | 包装 `ashare.factor.mining`（枚举、随机、进化、LLM），台账与留出段规矩不变 |
 | 评估 | `eval factor <表达式或文件>` | 单因子完整评估（IC、分组、多头端、分年度、市值段），对应 `ashare.factor.evaluate` |
-| 报告 | `report show/html` | 现有 `ashare.report` |
+| 报告 | `report show/html` | 现有 `ashare.report`（策略回测报告） |
+| | `report factor <条目或表达式> [--html 路径] [--png 路径]` | **因子可视化报告**（2026-11-16 用户要求）：多空累计收益与上证指数基准（样本内 / 验证期分段着色、线尾标夏普）、十分组年化收益、IC 日序列与滚动均值、IC 随持有期衰减、分年度收益与夏普、回撤、换手、风格暴露（市值、反转、动量）、子股票池对比；不中性与行业中性并排。自包含 HTML（离线可开），也可只出 PNG；数字概览按全局前端规则，不用一排等宽数字格 |
+| | `report compare <条目…>` | 多个因子的累计收益叠图、相关矩阵热图、指标并排 |
 | 数据 | `data status/fields/field <名>/search <关键词>/quote <代码>/sync/verify/locations` | `fields` 带单位与可知时点；`quote` 打印一只证券最近 N 天；`sync` 等转调现有命令 |
 | 其他市场 | `crypto …`、`futures …`、`funds …`、`spec …`、`timing …` | 转调对应模块的命令行 |
 | 模拟盘 | `paper status/run/report` | 现有 `ashare.paper` |
