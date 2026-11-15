@@ -1,5 +1,7 @@
 """研究、回测和模拟盘的数据读取入口。价格量额均为统一单位。"""
 
+from ashare.paths import dataset_dir
+
 from .reader import Data, Panel
 
 
@@ -20,22 +22,19 @@ def open(root=None, market="cn", **options) -> Data:
 
 def market_root(root=None, market="cn"):
     """数据目录下某个市场的目录（只解析路径，不读文件）。给数据状态页这类要看文件签名的只读用途。"""
-    from .store import data_root
-
-    return data_root(root) / market
+    return dataset_dir(market, root=root)
 
 
 def read_manifest(root=None, market="cn"):
     """原始库清单（只读，不加写锁）；还没有清单时返回空字典。"""
-    from .store import Store, data_root
+    from .store import Store
 
-    base = data_root(root)
-    folder = base / market
+    folder = dataset_dir(market, root=root)
     if not (
         (folder / "manifest.sqlite3").exists() or (folder / "manifest.json").exists()
     ):
         return {}
-    return Store(base, market, readonly=True).manifest()
+    return Store(root, market, readonly=True).manifest()
 
 
 def index_names():

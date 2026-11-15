@@ -99,7 +99,7 @@ def load_panel(args):
 
 
 def add_data_args(ap):
-    ap.add_argument("--root", default=os.environ.get("ASHARE_DATA_DIR"))
+    ap.add_argument("--root", default=None)
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--t", type=int, default=2430)
     ap.add_argument("--n", type=int, default=5923)

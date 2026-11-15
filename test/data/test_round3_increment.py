@@ -23,7 +23,7 @@ def put(store, name, table, partition="all"):
 def equal_to_full(store, expected_reuse):
     incremental = build(store, incremental=True)
     assert incremental["reused_rows"] == expected_reuse
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     old = data.panel(data.fields())
     # 保持 mmap 引用；只移开 current 代目录，独立重建会重新从原始表读取。
     import shutil
@@ -33,7 +33,7 @@ def equal_to_full(store, expected_reuse):
     version.rename(backup)
     try:
         full = build(store)
-        fresh = ad.open(store.root.parent).panel(data.fields())
+        fresh = ad.open(store.data_root).panel(data.fields())
         for field in data.fields():
             assert old[field].tobytes() == fresh[field].tobytes(), field
         assert incremental["diagnostics"]["actions"] == full["diagnostics"]["actions"]
@@ -115,8 +115,7 @@ def test_cross_month_missing_weight_then_increment(tables, make_store):
     assert meta["diagnostics"]["index_snapshots"]["csi300"]["snapshot"] == "20251128"
     assert meta["diagnostics"]["index_snapshots"]["csi300"]["age_days"] == 40
     assert (
-        ad.open(store.root.parent).panel(["weight_csi300"])["weight_csi300"][0, 0]
-        == 0.6
+        ad.open(store.data_root).panel(["weight_csi300"])["weight_csi300"][0, 0] == 0.6
     )
     with pytest.raises(ValueError, match="快照"):
         build(store, strict=True)
@@ -126,8 +125,7 @@ def test_cross_month_missing_weight_then_increment(tables, make_store):
     put(store, "index_weight", replacement, "000300.SH_202512")
     equal_to_full(store, 0)
     assert (
-        ad.open(store.root.parent).panel(["weight_csi300"])["weight_csi300"][0, 0]
-        == 0.4
+        ad.open(store.data_root).panel(["weight_csi300"])["weight_csi300"][0, 0] == 0.4
     )
     assert len(INDEXES) == 5
 
@@ -143,7 +141,7 @@ def test_quote_tradable_and_integer_storage(tables, make_store):
     )
     store = make_store(tables)
     build(store)
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     assert "st_known" not in data.fields()
     p = data.panel(data.fields())
     assert p["has_quote"][:, 0].tolist() == [True, True, False, True]
@@ -176,7 +174,7 @@ def test_event_cache_hash_invalidation(tables, make_store, dataset):
         put(store, dataset, changed, "20260107")
         equal_to_full(store, 3)
         assert (
-            ad.open(store.root.parent).panel(["cash_dividend"])["cash_dividend"][3, 2]
+            ad.open(store.data_root).panel(["cash_dividend"])["cash_dividend"][3, 2]
             == 1.0
         )
     else:
@@ -188,6 +186,6 @@ def test_event_cache_hash_invalidation(tables, make_store, dataset):
         )
         equal_to_full(store, 0)
         assert (
-            ad.open(store.root.parent).panel(["weight_csi300"])["weight_csi300"][3, 2]
+            ad.open(store.data_root).panel(["weight_csi300"])["weight_csi300"][3, 2]
             == 0.25
         )

@@ -1,10 +1,11 @@
 """按月不可变面板、读取、数组、日线与截断安全的成交额排名。"""
 
 import json
-from pathlib import Path
 
 import numpy as np
 import polars as pl
+
+from ashare.paths import dataset_dir
 
 from ..store import atomic_json, lock
 from .coverage import coverage
@@ -24,7 +25,7 @@ def write_panel(
     exceptions=(),
     recent=None,
 ):
-    root = Path(root)
+    root = dataset_dir("crypto", root)
     inputs = dict(
         profiles=profiles,
         events=events,
@@ -83,8 +84,8 @@ def write_panel(
 
 
 class CryptoDataset:
-    def __init__(self, root, version=None, *, allow_inferred_funding=False):
-        self.root = Path(root)
+    def __init__(self, root=None, version=None, *, allow_inferred_funding=False):
+        self.root = dataset_dir("crypto", root)
         self.version = (
             version
             or json.loads(
@@ -266,5 +267,5 @@ def rank_coins(frame, profiles, at, *, n, lookback="30D", min_age="30D"):
     )
 
 
-def open(root, version=None, *, allow_inferred_funding=False):
+def open(root=None, version=None, *, allow_inferred_funding=False):
     return CryptoDataset(root, version, allow_inferred_funding=allow_inferred_funding)

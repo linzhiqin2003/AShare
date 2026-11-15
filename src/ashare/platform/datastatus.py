@@ -368,7 +368,7 @@ class DataStatus:
     def _manifest(self):
         import ashare.data
 
-        return ashare.data.read_manifest(self.root.parent)
+        return ashare.data.read_manifest(self._root_option)
 
     def _build_overview(self):
         manifest = self._manifest()

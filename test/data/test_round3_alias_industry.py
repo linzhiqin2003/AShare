@@ -43,9 +43,7 @@ def test_alias_prices_factors_all_datasets(tables, make_store, monkeypatch):
     context = alias_context(store)
     assert context[0]["factor_scale"] == 10
     meta = build(store)
-    p = ad.open(store.root.parent).panel(
-        ["close", "adj_factor", "upper_limit", "is_st"]
-    )
+    p = ad.open(store.data_root).panel(["close", "adj_factor", "upper_limit", "is_st"])
     assert p["close"][:, 2].tolist() == [10, 10, 10, 9]
     np.testing.assert_allclose(
         p["adj_factor"][:, 2], [10, 10, 10, 100 / 9], rtol=0, atol=1e-14

@@ -56,7 +56,7 @@ def cb(tmp_path, monkeypatch):
     source = FakeFundTushare()
     asyncio.run(sync_funds(source, store, DAYS[0], DAYS[-1]))
     build_funds(store)
-    funds = ad.open(store.root.parent).funds()
+    funds = ad.open(store.data_root).funds()
     return funds, funds.panel("cb", FIELDS), source
 
 
@@ -184,7 +184,7 @@ def test_call_flag_uses_first_implementation_notice(tmp_path, monkeypatch):
     store = Store(tmp_path / "root")
     asyncio.run(sync_funds(source, store, D[0], D[-1]))
     build_funds(store)
-    p = ad.open(store.root.parent).funds().panel("cb", ["call_announced"])
+    p = ad.open(store.data_root).funds().panel("cb", ["call_announced"])
     flags = np.asarray(p["call_announced"])[:, list(p.symbols).index("113001.SH")]
     assert np.flatnonzero(flags).tolist() == list(range(CALL_ANN + 1, 18))
 

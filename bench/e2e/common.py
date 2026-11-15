@@ -17,17 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def default_data():
-    """工作区没有 data/ 时取主检出的 data/（git 公共目录的上一级）。"""
-    if (ROOT / "data/cn/panel/current.json").exists():
-        return ROOT / "data"
-    common = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    return Path(common).parent / "data"
+    """统一入口；没有配置和本地面板时保留主检出回退。"""
+    from ashare.paths import bench_data_root
+
+    return bench_data_root(checkout=ROOT)
 
 
 class _TaskInfo(ctypes.Structure):

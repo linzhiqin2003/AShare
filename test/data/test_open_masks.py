@@ -154,7 +154,7 @@ def limit_tables(tables):
 def test_built_fields_match_panelbt_and_metadata(tables, make_store):
     store = make_store(limit_tables(tables))
     build(store)
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     names = [
         "open",
         "high",
@@ -213,7 +213,7 @@ def test_incremental_masks_bitwise(tables, make_store):
     assert build(store, incremental=True)["reused_rows"] == 3
     full = make_store(tables, "full")
     build(full)
-    a, b = ad.open(store.root.parent), ad.open(full.root.parent)
+    a, b = ad.open(store.data_root), ad.open(full.data_root)
     for name in ("can_buy_open", "can_sell_open"):
         assert a.panel([name])[name].tobytes() == b.panel([name])[name].tobytes()
     assert not b.panel(["can_sell_open"])["can_sell_open"][3, 2]
@@ -222,11 +222,11 @@ def test_incremental_masks_bitwise(tables, make_store):
 def test_verify_detects_flipped_cell(tables, make_store):
     store = make_store(limit_tables(tables))
     build(store)
-    dates = ad.open(store.root.parent).panel(["close"]).dates.tolist()
+    dates = ad.open(store.data_root).panel(["close"]).dates.tolist()
     result = audit_open_masks(store, dates)
     assert result["status"] == "complete" and result["failed"] == 0
     assert result["checked"] == 12
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     path = data._path / "can_sell_open.npy"
     array = np.load(path, mmap_mode="r+")
     array[1, 1] = ~array[1, 1]

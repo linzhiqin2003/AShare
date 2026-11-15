@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -33,11 +32,11 @@ RUNNING_WITHIN = 120
 BENCHMARK = "000300.SH"
 
 
-def paper_root() -> Path:
-    value = os.environ.get("ASHARE_PAPER_DIR")
-    if value:
-        return Path(value)
-    return Path(os.environ.get("ASHARE_DATA_DIR", "data")) / "paper"
+def paper_root():
+    """通过统一入口解析默认数据集，包含兼容变量与 LOCATION 指针。"""
+    from ashare.paths import dataset_dir
+
+    return dataset_dir("paper", cwd_default=True)
 
 
 def _yuan(value, digits=2):
@@ -233,7 +232,7 @@ class Account:
 
 
 class Reference:
-    """证券名称、申万一级行业与基准指数；数据目录不可用时降级为空。"""
+    """证券名称、申万一级行业与基准指数；位置错误必须向上传播。"""
 
     def __init__(self, data_root=None):
         self.data_root = data_root
@@ -247,7 +246,8 @@ class Reference:
         with self.lock:
             if time.monotonic() - self.loaded_at < 3600:
                 return
-            self.loaded_at = time.monotonic()
+            from ashare.paths import DataLocationError
+
             try:
                 import polars as pl
 
@@ -264,15 +264,24 @@ class Reference:
                     .collect()
                 )
                 self.industries = dict(members.rows())
+            except DataLocationError:
+                self.loaded_at = float("-inf")
+                self.data, self.names, self.industries = None, {}, {}
+                raise
             except Exception:  # 数据目录缺失或损坏：页面只少名称与行业，不失败。
                 LOG.warning("paper_reference_unavailable", exc_info=True)
+                self.loaded_at = float("-inf")
                 self.data, self.names, self.industries = None, {}, {}
+            else:
+                self.loaded_at = time.monotonic()
 
     def lookup(self, symbol):
         self._load()
         return self.names.get(symbol, ""), self.industries.get(symbol)
 
     def benchmark(self, start, end):
+        from ashare.paths import DataLocationError
+
         self._load()
         if self.data is None:
             return None
@@ -284,6 +293,11 @@ class Reference:
                 .select("date", "close")
                 .collect()
             )
+        except DataLocationError:
+            with self.lock:
+                self.loaded_at = float("-inf")
+                self.data, self.names, self.industries = None, {}, {}
+            raise
         except Exception:
             LOG.warning("paper_benchmark_unavailable", exc_info=True)
             return None
@@ -535,10 +549,16 @@ def router(
     """
     api = APIRouter(prefix="/api/paper")
     reference = reference or Reference(data_root)
-    if backtests is None:
-        from ashare.paper.ops.accounts import BacktestRecords
 
-        backtests = BacktestRecords()
+    def records():
+        # 只读账户页不依赖平台结果库；真正查询回测时才解析其位置。
+        nonlocal backtests
+        if backtests is None:
+            from ashare.paper.ops.accounts import BacktestRecords
+
+            backtests = BacktestRecords()
+        return backtests
+
     accounts: dict[str, Account] = {}
     guard = threading.Lock()
 
@@ -603,7 +623,7 @@ def router(
             if body.backtest is not None:
                 if body.settings is not None:
                     raise ops.AccountError("从回测建账户时设置沿用回测")
-                record = backtests.get(body.backtest)
+                record = records().get(body.backtest)
                 if record is None:
                     raise ops.AccountError("没有找到这个回测", 404)
                 ops.from_backtest(
@@ -634,7 +654,7 @@ def router(
     def completed_backtests():
         """可以用来建账户的已完成回测（新的在前）。"""
         items = []
-        for record in backtests.completed():
+        for record in records().completed():
             settings = record.get("settings") or {}
             items.append(
                 dict(

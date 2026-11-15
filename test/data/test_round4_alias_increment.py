@@ -30,14 +30,14 @@ def put(store, name, table, partition="all"):
 def equal_to_full(store, expected_reuse):
     incremental = build(store, incremental=True)
     assert incremental["reused_rows"] == expected_reuse
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     old = data.panel(data.fields())
     version = store.root / "panel" / incremental["version"]
     backup = store.root / "comparison"
     version.rename(backup)
     try:
         full = build(store)
-        fresh = ad.open(store.root.parent).panel(data.fields())
+        fresh = ad.open(store.data_root).panel(data.fields())
         for field in data.fields():
             assert old[field].tobytes() == fresh[field].tobytes(), field
         assert incremental["diagnostics"]["actions"] == full["diagnostics"]["actions"]
@@ -145,7 +145,7 @@ def test_alias_context_change_forces_full_rebuild(tables, make_store, monkeypatc
     for day in ("20260106", "20260107"):
         put(store, "adj_factor", revised.filter(pl.col("trade_date") == day), day)
     equal_to_full(store, 0)
-    factor = ad.open(store.root.parent).panel(["adj_factor"])["adj_factor"][:, 2]
+    factor = ad.open(store.data_root).panel(["adj_factor"])["adj_factor"][:, 2]
     np.testing.assert_allclose(factor, [20, 20, 20, 200 / 9], rtol=1e-14)
 
 
@@ -197,7 +197,7 @@ def test_weight_revision_in_generic_partition(tables, make_store):
         tables["index_weight"].with_columns(pl.lit(30.0).alias("weight")),
     )
     equal_to_full(store, 0)
-    weight = ad.open(store.root.parent).panel(["weight_csi300"])["weight_csi300"]
+    weight = ad.open(store.data_root).panel(["weight_csi300"])["weight_csi300"]
     assert weight[3, 2] == pytest.approx(0.3)
 
 

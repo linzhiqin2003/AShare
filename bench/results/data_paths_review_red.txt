@@ -1,0 +1,251 @@
+D1 独立审查修复前：新增 test/paths/test_review.py，产品代码尚未修改。
+命令：timeout 240 nice -n 15 env OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 POLARS_MAX_THREADS=2 RAYON_NUM_THREADS=2 .venv/bin/python -m pytest test/paths/test_review.py -q -n 2 --tb=short
+本机与临时绝对路径已替换为占位符；失败断言保留。
+
+nice: setpriority: Operation not permitted
+bringing up nodes...
+bringing up nodes...
+
+....FFFFFFFFFFFFFFFFFFF                                                  [100%]
+=================================== FAILURES ===================================
+________________ test_move_interrupt_publication[False-renamed] ________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:47: in test_move_interrupt_publication
+    assert not published or target.is_dir(), "已发布指针不能指向被清掉的目标"
+E   AssertionError: 已发布指针不能指向被清掉的目标
+E   assert (not True or False)
+E    +  where False = is_dir()
+E    +    where is_dir = PosixPath('<pytest-tmp>/popen-gw1/test_move_interrupt_publicatio0/disk/renamed-dev').is_dir
+_______________ test_move_interrupt_publication[False-returned] ________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:47: in test_move_interrupt_publication
+    assert not published or target.is_dir(), "已发布指针不能指向被清掉的目标"
+E   AssertionError: 已发布指针不能指向被清掉的目标
+E   assert (not True or False)
+E    +  where False = is_dir()
+E    +    where is_dir = PosixPath('<pytest-tmp>/popen-gw1/test_move_interrupt_publicatio1/disk/renamed-dev').is_dir
+________________ test_move_interrupt_publication[True-renamed] _________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:47: in test_move_interrupt_publication
+    assert not published or target.is_dir(), "已发布指针不能指向被清掉的目标"
+E   AssertionError: 已发布指针不能指向被清掉的目标
+E   assert (not True or False)
+E    +  where False = is_dir()
+E    +    where is_dir = PosixPath('<pytest-tmp>/popen-gw0/test_move_interrupt_publicatio4/disk/renamed-dev').is_dir
+________________ test_move_interrupt_publication[True-returned] ________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:47: in test_move_interrupt_publication
+    assert not published or target.is_dir(), "已发布指针不能指向被清掉的目标"
+E   AssertionError: 已发布指针不能指向被清掉的目标
+E   assert (not True or False)
+E    +  where False = is_dir()
+E    +    where is_dir = PosixPath('<pytest-tmp>/popen-gw0/test_move_interrupt_publicatio5/disk/renamed-dev').is_dir
+_______________________ test_datastatus_renamed_dataset ________________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:72: in test_datastatus_renamed_dataset
+    assert status._manifest() == expected
+E   AssertionError: assert {} == {'index_class...ows': 3, ...}}
+E     
+E     Right contains 1 more item:
+E     {'index_classify/SW2021': {'content_hash': 'synthetic',
+E                                'dataset': 'index_classify',
+E                                'file': 'raw/synthetic-industries.parquet',
+E                                'file_hash': 'synthetic',
+E                                'partition': 'SW2021',...
+E     
+E     ...Full output truncated, use '-vv' to show
+_____________________ test_cb_panel_renamed_dataset[True] ______________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:100: in test_cb_panel_renamed_dataset
+    assert diagnostics["stock_panel_version"] == "synthetic-v1"
+E   AssertionError: assert None == 'synthetic-v1'
+_________________ test_cwd_defaults_outside_checkout[platform] _________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+<worktree>/test/paths/test_review.py:115: in test_cwd_defaults_outside_checkout
+    assert result == Path("data") / name
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw1/test_cwd_defaults_outside_chec0/root/checkout-data/platform') == (PosixPath('data') / 'platform')
+E    +  where PosixPath('data') = Path('data')
+___________________ test_cwd_pointer_and_overrides[platform] ___________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+<worktree>/test/paths/test_review.py:132: in test_cwd_pointer_and_overrides
+    assert resolve() == target
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides0/root/checkout-data/platform') == PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides0/disk/renamed-platform')
+E    +  where PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides0/root/checkout-data/platform') = <function platform_dir at 0x11524c5e0>()
+____________________ test_cwd_pointer_and_overrides[paper] _____________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+<worktree>/test/paths/test_review.py:132: in test_cwd_pointer_and_overrides
+    assert resolve() == target
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides1/root/checkout-data/paper') == PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides1/disk/renamed-paper')
+E    +  where PosixPath('<pytest-tmp>/popen-gw1/test_cwd_pointer_and_overrides1/root/checkout-data/paper') = <function paper_root at 0x11524c4a0>()
+____________________ test_bench_main_checkout_fallback[e2e] ____________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:160: in test_bench_main_checkout_fallback
+    assert benchmark.default_data() == external / "data"
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb0/root/data') == (PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb0/disk') / 'data')
+E    +  where PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb0/root/data') = <function default_data at 0x11cef5da0>()
+E    +    where <function default_data at 0x11cef5da0> = <module 'bench.e2e.common' from '<worktree>/bench/e2e/common.py'>.default_data
+___________________ test_bench_main_checkout_fallback[rules] ___________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:160: in test_bench_main_checkout_fallback
+    assert benchmark.default_data() == external / "data"
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb1/root/data') == (PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb1/disk') / 'data')
+E    +  where PosixPath('<pytest-tmp>/popen-gw1/test_bench_main_checkout_fallb1/root/data') = <function default_data at 0x11ceb77e0>()
+E    +    where <function default_data at 0x11ceb77e0> = <module 'bench.rules_examples' from '<worktree>/bench/rules_examples.py'>.default_data
+___________________ test_reference_location_error_not_cached ___________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:191: in test_reference_location_error_not_cached
+    with pytest.raises(paths.DataLocationError, match="cn"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE DataLocationError
+------------------------------ Captured log call -------------------------------
+WARNING  ashare.platform.paper:paper_api.py:267 paper_reference_unavailable
+Traceback (most recent call last):
+  File "<worktree>/src/ashare/platform/paper_api.py", line 255, in _load
+    self.data = ashare.data.open(self.data_root)
+                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "<worktree>/src/ashare/data/__init__.py", line 20, in open
+    return Data(root, market)
+  File "<worktree>/src/ashare/data/reader.py", line 46, in __init__
+    self._store = Store(root, market, readonly=True).snapshot()
+                  ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<worktree>/src/ashare/data/store.py", line 69, in __init__
+    self.root = dataset_dir(market, root=root)
+                ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "<worktree>/src/ashare/paths.py", line 128, in dataset_dir
+    raise DataLocationError(
+        f"数据集 {name} 的目标目录不可用，期望路径：{folder}；请挂载外置盘，禁止回退或自动创建"
+    )
+ashare.paths.DataLocationError: 数据集 cn 的目标目录不可用，期望路径：<pytest-tmp>/popen-gw1/test_reference_location_error_0/disk/renamed-cn；请挂载外置盘，禁止回退或自动创建
+_____________________ test_cb_panel_renamed_dataset[False] _____________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:100: in test_cb_panel_renamed_dataset
+    assert diagnostics["stock_panel_version"] == "synthetic-v1"
+E   AssertionError: assert None == 'synthetic-v1'
+__________________ test_cwd_defaults_outside_checkout[paper] ___________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+<worktree>/test/paths/test_review.py:115: in test_cwd_defaults_outside_checkout
+    assert result == Path("data") / name
+E   AssertionError: assert PosixPath('<pytest-tmp>/popen-gw0/test_cwd_defaults_outside_chec0/root/checkout-data/paper') == (PosixPath('data') / 'paper')
+E    +  where PosixPath('data') = Path('data')
+_ test_static_environment_and_join_defaults[x = os.environ.get("ASHARE_DATA_DIR", default="data")] _
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:237: in test_static_environment_and_join_defaults
+    assert violations(source) == [1]
+E   assert [] == [1]
+E     
+E     Right contains one more item: 1
+E     Use -v to get more diff
+_ test_static_environment_and_join_defaults[x = os.path.join("data", "crypto")] _
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:237: in test_static_environment_and_join_defaults
+    assert violations(source) == [1]
+E   assert [] == [1]
+E     
+E     Right contains one more item: 1
+E     Use -v to get more diff
+______________________ test_crypto_minute_registered_cold ______________________
+[gw0] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:242: in test_crypto_minute_registered_cold
+    assert "crypto_minute" in paths.DATASETS
+E   AssertionError: assert 'crypto_minute' in mappingproxy({'cn': Dataset(hot=True, env=None), 'live': Dataset(hot=True, env=None), 'paper': Dataset(hot=True, env='...), 'us': Dataset(hot=True, env=None), 'foreign': Dataset(hot=True, env=None), 'fixtures': Dataset(hot=True, env=None)})
+E    +  where mappingproxy({'cn': Dataset(hot=True, env=None), 'live': Dataset(hot=True, env=None), 'paper': Dataset(hot=True, env='...), 'us': Dataset(hot=True, env=None), 'foreign': Dataset(hot=True, env=None), 'fixtures': Dataset(hot=True, env=None)}) = paths.DATASETS
+_____________________ test_meta_location_error_not_cached ______________________
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:221: in test_meta_location_error_not_cached
+    assert response.status_code == 503
+E   assert 200 == 503
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_static_environment_and_join_defaults[x = Path(os.environ.get("ASHARE_DATA_DIR", "data")) / "platform"] _
+[gw1] darwin -- Python 3.13.13 <worktree>/.venv/bin/python
+test/paths/test_review.py:237: in test_static_environment_and_join_defaults
+    assert violations(source) == [1]
+E   assert [] == [1]
+E     
+E     Right contains one more item: 1
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+test/paths/test_review.py::test_meta_location_error_not_cached
+  <worktree>/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/paths/test_review.py::test_move_interrupt_publication[False-renamed]
+FAILED test/paths/test_review.py::test_move_interrupt_publication[False-returned]
+FAILED test/paths/test_review.py::test_move_interrupt_publication[True-renamed]
+FAILED test/paths/test_review.py::test_move_interrupt_publication[True-returned]
+FAILED test/paths/test_review.py::test_datastatus_renamed_dataset - Assertion...
+FAILED test/paths/test_review.py::test_cb_panel_renamed_dataset[True] - Asser...
+FAILED test/paths/test_review.py::test_cwd_defaults_outside_checkout[platform]
+FAILED test/paths/test_review.py::test_cwd_pointer_and_overrides[platform] - ...
+FAILED test/paths/test_review.py::test_cwd_pointer_and_overrides[paper] - Ass...
+FAILED test/paths/test_review.py::test_bench_main_checkout_fallback[e2e] - As...
+FAILED test/paths/test_review.py::test_bench_main_checkout_fallback[rules] - ...
+FAILED test/paths/test_review.py::test_reference_location_error_not_cached - ...
+FAILED test/paths/test_review.py::test_cb_panel_renamed_dataset[False] - Asse...
+FAILED test/paths/test_review.py::test_cwd_defaults_outside_checkout[paper]
+FAILED test/paths/test_review.py::test_static_environment_and_join_defaults[x = os.environ.get("ASHARE_DATA_DIR", default="data")]
+FAILED test/paths/test_review.py::test_static_environment_and_join_defaults[x = os.path.join("data", "crypto")]
+FAILED test/paths/test_review.py::test_crypto_minute_registered_cold - Assert...
+FAILED test/paths/test_review.py::test_meta_location_error_not_cached - asser...
+FAILED test/paths/test_review.py::test_static_environment_and_join_defaults[x = Path(os.environ.get("ASHARE_DATA_DIR", "data")) / "platform"]
+19 failed, 4 passed, 1 warning in 10.77s
+
+追加自查：Reference.benchmark 在缓存成功后仍吞掉基准读取的位置错误；修复前。
+命令：timeout 120 nice -n 15 .venv/bin/python -m pytest test/paths/test_review.py::test_reference_benchmark_location_error_not_cached -q --tb=short
+
+nice: setpriority: Operation not permitted
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_reference_benchmark_location_error_not_cached ______________
+test/paths/test_review.py:244: in test_reference_benchmark_location_error_not_cached
+    with pytest.raises(paths.DataLocationError, match="cn"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE DataLocationError
+------------------------------ Captured log call -------------------------------
+WARNING  ashare.platform.paper:paper_api.py:295 paper_benchmark_unavailable
+Traceback (most recent call last):
+  File "<worktree>/src/ashare/platform/paper_api.py", line 288, in benchmark
+    self.data.table(
+    ~~~~~~~~~~~~~~~^
+        "index_daily", start=start, end=end, symbols=[BENCHMARK]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "<worktree>/test/paths/test_review.py", line 235, in unavailable
+    raise paths.DataLocationError("数据集 cn 的目标目录不可用")
+ashare.paths.DataLocationError: 数据集 cn 的目标目录不可用
+=========================== short test summary info ============================
+FAILED test/paths/test_review.py::test_reference_benchmark_location_error_not_cached
+1 failed in 1.83s
+
+追加 P1-3 自查：crypto 示例 cwd 默认和 ML 基准主检出传递；修复前。
+命令：timeout 120 nice -n 15 .venv/bin/python -m pytest test/paths/test_review.py::test_crypto_bench_cwd_default test/paths/test_review.py::test_ml_bench_preserves_fallback_root -q --tb=short
+
+nice: setpriority: Operation not permitted
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________________________ test_crypto_bench_cwd_default _________________________
+<worktree>/test/paths/test_review.py:275: in test_crypto_bench_cwd_default
+    assert seen == [Path("data") / "crypto"]
+E   AssertionError: assert [None] == [PosixPath('data/crypto')]
+E     
+E     At index 0 diff: None != PosixPath('data/crypto')
+E     Use -v to get more diff
+____________________ test_ml_bench_preserves_fallback_root _____________________
+test/paths/test_review.py:295: in test_ml_bench_preserves_fallback_root
+    spec.loader.exec_module(module)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap>:488: in _call_with_frames_removed
+    ???
+bench/ml/mlbench.py:20: in <module>
+    DATA = bench_data_root()
+           ^^^^^^^^^^^^^^^^^
+test/paths/test_review.py:289: in selected
+    assert checkout == file.parents[2]
+E   AssertionError: assert None == PosixPath('<worktree>')
+=========================== short test summary info ============================
+FAILED test/paths/test_review.py::test_crypto_bench_cwd_default - AssertionEr...
+FAILED test/paths/test_review.py::test_ml_bench_preserves_fallback_root - Ass...
+2 failed in 75.58s (0:01:15)

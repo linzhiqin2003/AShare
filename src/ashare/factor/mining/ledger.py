@@ -20,7 +20,6 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
-import os
 from pathlib import Path
 
 from ...ledger import Ledger
@@ -43,15 +42,10 @@ def code_version():
 
 
 def default_root():
-    """台账与指纹的默认目录：``ASHARE_MINING_DIR``；否则数据根目录（``ASHARE_DATA_DIR``，
-    默认仓库下的 ``data/``）下的 ``mining/``。"""
-    if os.environ.get("ASHARE_MINING_DIR"):
-        return Path(os.environ["ASHARE_MINING_DIR"])
-    data = (
-        os.environ.get("ASHARE_DATA_DIR")
-        or Path(__file__).resolve().parents[4] / "data"
-    )
-    return Path(data) / "mining"
+    """通过统一入口解析默认数据集，包含兼容变量与 LOCATION 指针。"""
+    from ashare.paths import dataset_dir
+
+    return dataset_dir("mining")
 
 
 def open_ledger(ledger=None, root=None):

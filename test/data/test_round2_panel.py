@@ -71,7 +71,7 @@ def test_non_listed_mask_even_when_raw_contains_values(tables, make_store):
     )
     store = make_store(tables)
     build(store)
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     panel = data.panel(data.fields())
     for field in data.fields():
         if field in ("delist", "is_listed"):
@@ -130,7 +130,7 @@ def test_zero_weight_membership_and_join_diagnostics(tables, make_store):
     )
     store = make_store(tables)
     meta = build(store)
-    panel = ad.open(store.root.parent).panel(["weight_csi300", "member_csi300"])
+    panel = ad.open(store.data_root).panel(["weight_csi300", "member_csi300"])
     assert panel["weight_csi300"][0, 0] == 0 and panel["member_csi300"][0, 0]
     diag = {}
     list(
@@ -154,7 +154,7 @@ def test_rename_preserves_incremental_and_gc(tables, make_store):
     meta = build(store, incremental=True)
     assert meta["reused_rows"] == 3 and meta["version"] != old["version"]
     assert len([p for p in (store.root / "panel").iterdir() if p.is_dir()]) == 1
-    assert ad.open(store.root.parent).securities().collect()["name"][0] == "更名"
+    assert ad.open(store.data_root).securities().collect()["name"][0] == "更名"
     (store.root / "panel/.building-crashed").mkdir()
     (store.root / "projections/orphan").mkdir(parents=True)
     collect_garbage(store)
@@ -191,7 +191,7 @@ def test_security_determinism_calendar_and_long_tables(tables, make_store):
     store.write("stock_basic", "D", {}, FetchResult(other, "2026-01-09T00:00:00Z", 1))
     assert securities_table(store)["name"][0] == "后来"
     build(store)
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     assert data.calendar().collect()["date"].to_list() == [
         "20260102",
         "20260105",
@@ -199,7 +199,7 @@ def test_security_determinism_calendar_and_long_tables(tables, make_store):
         "20260107",
     ]
     store.write("index_daily", "sample", {}, FetchResult(tables["daily"], "now", 1))
-    data = ad.open(store.root.parent)
+    data = ad.open(store.data_root)
     assert data.table("index_daily").collect()["volume"][0] == 200
     assert "ts_code" not in data.table("index_daily").collect_schema()
 

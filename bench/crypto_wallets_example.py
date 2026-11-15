@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import os
 import pstats
 import sys
 import time
@@ -341,12 +340,12 @@ def performance(ds):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data", default=os.environ.get("CRYPTO_DATA_ROOT", "data/crypto")
-    )
+    parser.add_argument("--data", default=None)
     parser.add_argument("--performance-only", action="store_true")
     args = parser.parse_args()
-    ds = crypto.open(args.data)
+    from ashare.paths import dataset_dir
+
+    ds = crypto.open(dataset_dir("crypto", args.data, cwd_default=True))
     perf = performance(ds)
     (ROOT / "bench/results/crypto_wallets_performance.json").write_text(
         json.dumps(perf, indent=2) + "\n"

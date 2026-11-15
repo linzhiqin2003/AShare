@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -126,6 +127,8 @@ def main(argv: list[str]) -> int:
         python=args.python,
         data_dir=ctx.data,
         paper_dir=ctx.paper,
+        paper_override=args.paper_dir is not None
+        or bool(os.environ.get("ASHARE_PAPER_DIR")),
         env_file=args.env_file,
     )
     return 0

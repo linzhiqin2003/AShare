@@ -29,6 +29,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ashare.paths import DEFAULT_DATA_ROOT
+
 from ..ledger import default_root
 from ..space import dedup_key
 from .client import LLMError
@@ -75,7 +77,7 @@ def _keep_last(items, n):
 def check_location(path):
     """转写记录的位置：不许在仓库里（仓库下的 data/ 不入库，可以）。"""
     path = Path(path).resolve()
-    if path.is_relative_to(_REPO) and not path.is_relative_to(_REPO / "data"):
+    if path.is_relative_to(_REPO) and not path.is_relative_to(DEFAULT_DATA_ROOT):
         raise ValueError(
             f"转写记录是私有研究输出，不能写进仓库目录：{path}（用数据根目录或仓库外的目录）"
         )

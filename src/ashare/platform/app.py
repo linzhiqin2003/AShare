@@ -182,6 +182,8 @@ class TabRequest(BaseModel):
 
 
 def create_app(root=None, *, data_root=None, manager_factory=Manager, access=None):
+    from ashare.paths import DataLocationError
+
     store = Store(root or platform_dir())
     configure_logging(store.root)
     manager = manager_factory(store, data_root=data_root)
@@ -223,6 +225,11 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    @app.exception_handler(DataLocationError)
+    async def data_location_error(request, error):
+        LOG.warning("data_location_unavailable: %s", error)
+        return JSONResponse({"message": "数据位置不可用"}, 503)
+
     @app.exception_handler(ExpressionError)
     async def expression_error(request, error):
         return JSONResponse(error.detail(), 422)
@@ -254,6 +261,8 @@ def create_app(root=None, *, data_root=None, manager_factory=Manager, access=Non
                 dates = ashare.data.open(data_root).panel([]).dates
                 day = str(dates[-1])
                 metadata["date"] = f"{day[:4]}-{day[4:6]}-{day[6:]}"
+            except DataLocationError:
+                raise
             except (FileNotFoundError, ValueError, RuntimeError):
                 metadata["date"] = None
             metadata["at"] = time.monotonic()

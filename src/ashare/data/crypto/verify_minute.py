@@ -210,7 +210,9 @@ def reconcile_hourly(frame, hourly, kind, *, partition=None):
 
 def verify(*, root=None, version=None, hourly_root=None, hourly_version=None):
     """只读，独立核对全部原始 ZIP、Parquet、缺口与版本；可选严格小时面板对账。"""
-    root = Path(root) if root is not None else Path("data/crypto_minute")
+    from ashare.paths import dataset_dir
+
+    root = dataset_dir("crypto_minute", root)
     errors, checked, total_rows, gap_segments = [], 0, 0, 0
     result = dict(ok=False, errors=errors)
     try:

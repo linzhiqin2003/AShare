@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import os
 import time
 
 import httpx
@@ -42,13 +41,14 @@ def main():
                 raise RuntimeError("HTTP 运行未完成")
         finally:
             client.delete(f"/api/tabs/{tab}").raise_for_status()
-    source = PanelCache(os.environ["ASHARE_DATA_DIR"])
+    source = PanelCache(None)
     variants = parse("vol = ts_std(returns, [20,60])\nalpha = -vol")
     source.ensure(set(groupbt.FIELDS).union(*(v.expression.fields for v in variants)))
     rows = []
+    from ashare.platform.config import platform_dir
     from ashare.platform.storage import Store
 
-    store = Store(os.environ["ASHARE_PLATFORM_DIR"])
+    store = Store(platform_dir())
     for run in result["runs"]:
         window = int(run["label"].split(" · ")[0])
         expression = variants[0 if window == 20 else 1].expression

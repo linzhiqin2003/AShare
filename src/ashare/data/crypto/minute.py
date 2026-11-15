@@ -44,8 +44,9 @@ SERIES = tuple(
 
 
 def data_root(root=None):
-    # D1 合并后改为 ashare.paths.dataset_dir("crypto_minute")。
-    return Path(root) if root is not None else Path("data/crypto_minute")
+    from ashare.paths import dataset_dir
+
+    return dataset_dir("crypto_minute", root)
 
 
 def _validate_series(symbol, market, kind):

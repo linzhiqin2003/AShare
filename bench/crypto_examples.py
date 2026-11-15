@@ -18,6 +18,7 @@ from ashare.data import crypto
 from ashare.data.crypto.dataset import write_panel
 from ashare.data.crypto.panel import build_frame
 from ashare.data.crypto.timeutil import DAY, HOUR, millis
+from ashare.paths import dataset_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 WINDOWS = (20, 60, 120)
@@ -449,7 +450,7 @@ def quant_compare(ds, account_path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data", default=os.environ.get("CRYPTO_DATA_ROOT", "data/crypto"))
+    p.add_argument("--data", default=None)
     p.add_argument("--quant-account", default=os.environ.get("QUANT_ACCOUNT_PATH"))
     p.add_argument("--version")
     p.add_argument("--allow-inferred-funding", action="store_true")
@@ -457,7 +458,9 @@ def main():
     p.add_argument("--synthetic-dir", default="tmp/crypto-quarter-handcheck")
     args = p.parse_args()
     ds = crypto.open(
-        args.data, args.version, allow_inferred_funding=args.allow_inferred_funding
+        dataset_dir("crypto", args.data, cwd_default=True),
+        args.version,
+        allow_inferred_funding=args.allow_inferred_funding,
     )
     results = dict(
         data_version=ds.version,

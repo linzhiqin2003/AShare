@@ -1,0 +1,119 @@
+{
+  "task": "D1",
+  "base_commit": "83b9b30",
+  "branch": "agent/codex/data-paths",
+  "environment": "worktree-local .venv from make dev",
+  "status": "review_fixes_verified_full_suite_deferred_to_reviewer",
+  "real_data_touched": false,
+  "committed_or_pushed": false,
+  "pre_review_checks": {
+    "make_dev": "passed",
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "cargo_fmt": "passed",
+    "cargo_clippy": "passed",
+    "cargo_test": {
+      "passed": 33,
+      "failed": 0
+    },
+    "targeted": {
+      "command": ".venv/bin/python -m pytest test/paths test/paper/ops/test_install.py test/platform/test_service.py test/platform/test_paper_api.py -q",
+      "passed": 95,
+      "failed": 0
+    },
+    "new_path_tests": 71,
+    "make_check": {
+      "command": "CARGO_BUILD_JOBS=2 PYTEST_ADDOPTS=\"-n 4\" make check",
+      "all_passed": false,
+      "pytest_summary": "4 failed, 5904 passed, 127 skipped, 1 xfailed, 25 warnings in 866.10s (0:14:26)",
+      "counts": {
+        "failed": 4,
+        "passed": 5904,
+        "skipped": 127,
+        "xfailed": 1
+      },
+      "failed_tests": [
+        "test/smoke/test_smoke.py::test_platform_starts_serves_and_stops",
+        "test/e2e/test_platform_api.py::test_full_research_over_http",
+        "test/e2e/test_platform_api.py::test_listens_on_loopback_only",
+        "test/e2e/test_platform_api.py::test_leftover_check_catches_orphaned_children"
+      ],
+      "failure_reason": "sandbox denies process inventory command ps: PermissionError [Errno 1]"
+    },
+    "mutation": {
+      "killed": 5,
+      "total": 5,
+      "import_verified": true,
+      "report": "bench/results/mutations_data_paths.json"
+    },
+    "cli_subprocess_smoke": "passed: move --delete-source and status on temporary data",
+    "diff_check": "passed",
+    "artifact_machine_path_scan": "passed"
+  },
+  "pre_review_constraints": {
+    "pytest_workers": 4,
+    "cargo_jobs": 2,
+    "heavy_command_timeout_seconds": 900,
+    "nice_requested": 15,
+    "nice_allowed_by_sandbox": false,
+    "existing_skip_and_xfail_rules_unchanged": true,
+    "test_process_cleanup_verified": false,
+    "test_process_cleanup_reason": "ps denied; temporary test logs were already removed, so no unverified PID was signaled"
+  },
+  "review": {
+    "red_log": "bench/results/data_paths_review_red.txt",
+    "red_runs": [
+      "19 failed, 4 passed",
+      "1 failed",
+      "2 failed"
+    ],
+    "data_and_paths": {
+      "summary": "200 passed, 2 warnings in 416.51s",
+      "workers": 2,
+      "timeout_seconds": 840,
+      "tests": [
+        "test/paths",
+        "test/data/test_cb_data.py",
+        "test/data/test_fund_data.py",
+        "test/data/test_hk_isolation.py",
+        "test/data/test_index_data.py",
+        "test/data/test_open_masks.py",
+        "test/data/test_panel.py",
+        "test/data/test_round2_panel.py",
+        "test/data/test_round3_alias_industry.py",
+        "test/data/test_round3_increment.py",
+        "test/data/test_round3_storage.py",
+        "test/data/test_round4_alias_increment.py"
+      ]
+    },
+    "broad_batch": {
+      "exit_code": 124,
+      "timeout_seconds": 900,
+      "passed": false,
+      "note": "Split into affected-file batches after timeout; no failure reported before timeout."
+    },
+    "ruff_check": "passed",
+    "ruff_format": "793 files already formatted",
+    "whole_repository_non_test_path_audit": "passed",
+    "full_suite": "deferred to reviewer outside sandbox, per user instruction",
+    "nice_requested": 15,
+    "nice_allowed_by_sandbox": false,
+    "platform_ml_paper": {
+      "command": ".venv/bin/python -m pytest test/platform test/ml/test_preprocess_store.py test/paper/ops -q -n 2 --tb=short",
+      "summary": "674 passed, 2 warnings in 193.09s",
+      "workers": 2,
+      "timeout_seconds": 840
+    },
+    "targeted_passed": 874,
+    "mutation": {
+      "killed": 10,
+      "total": 10,
+      "worktree_import_verified": true,
+      "all_variant_imports_verified": true,
+      "baseline_summary": "97 passed, 1 warning in 52.13s",
+      "report": "bench/results/mutations_data_paths.json"
+    },
+    "diff_check": "passed",
+    "artifact_machine_path_scan": "passed"
+  }
+}

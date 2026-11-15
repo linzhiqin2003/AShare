@@ -107,7 +107,7 @@ def main(argv=None):
     parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
     funds = ad.open(args.root).funds()
-    out = Path(args.out or Path(args.root) / "cn" / "reports" / "allocation")
+    out = Path(args.out or ad.market_root(args.root) / "reports" / "allocation")
     out.mkdir(parents=True, exist_ok=True)
     symbols = list(ASSETS)
     fm = fund_market(funds, symbols, args.start)
