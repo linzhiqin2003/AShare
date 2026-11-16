@@ -10,6 +10,7 @@ import numpy as np
 _GROUP_START = (0x08, 0x30, 0x6B)
 _GROUP_END = (0xC6, 0xDB, 0xEF)
 _LONG_SHORT = "#d94801"
+_LONG_ONLY = "#2a9d5c"
 _EXTRA = "#444"
 _FONT = "-apple-system, Helvetica, Arial, sans-serif"
 _MAX_POINTS = 2000
@@ -160,16 +161,42 @@ def _attr(value):
 
 
 def pnl_chart(
-    groups, long_short, dates, *, title="", extra=None, width=960, height=520
+    groups,
+    long_short,
+    dates,
+    *,
+    title="",
+    extra=None,
+    long_only=None,
+    long_only_label="Top 10%",
+    group_labels=None,
+    width=960,
+    height=520,
 ):
-    """画分组累计盈亏、多空与额外序列的 SVG。"""
+    """画分组累计盈亏、多空、纯多头（如 top 10%）与额外序列的 SVG。
+
+    `long_only` 给一条额外的纯多头累计盈亏线，用绿色实线画在分组线和多空线之间；
+    传 `None` 时图与以前完全一样。
+    """
     dates = list(dates)
     count = len(dates)
     group_arrays = [_fit(series, count) for series in groups]
+    if group_labels is not None:
+        group_labels = list(group_labels)
+        if len(group_labels) != len(group_arrays):
+            raise ValueError("group_labels 数量必须与 groups 相同")
+    group_names = (
+        group_labels
+        if group_labels is not None
+        else [f"G{i + 1}" for i in range(len(group_arrays))]
+    )
     long_short_array = _fit(long_short, count)
     extra_items = list((extra or {}).items())
     extra_arrays = [(name, _fit(series, count)) for name, series in extra_items]
+    long_only_array = None if long_only is None else _fit(long_only, count)
     all_arrays = group_arrays + [long_short_array] + [a for _, a in extra_arrays]
+    if long_only_array is not None:
+        all_arrays.append(long_only_array)
 
     left, right, top, bottom = _layout(width, height, title)
     parts = [
@@ -249,9 +276,13 @@ def pnl_chart(
 
     group_colors = _group_colors(len(group_arrays))
     for i, array in enumerate(group_arrays):
-        series_polylines(f"G{i + 1}", array, group_colors[i], 1.4, None, "group")
+        series_polylines(group_names[i], array, group_colors[i], 1.4, None, "group")
     for name, array in extra_arrays:
         series_polylines(name, array, _EXTRA, 1.6, "6,4", "extra")
+    if long_only_array is not None:
+        series_polylines(
+            long_only_label, long_only_array, _LONG_ONLY, 2.0, None, "long_only"
+        )
     series_polylines("L/S", long_short_array, _LONG_SHORT, 2.4, None, "long_short")
 
     parts.append(frame())
@@ -291,9 +322,166 @@ def pnl_chart(
             f'fill="#555555" text-anchor="middle">{_text(year)}</text>'
         )
 
-    legend_items = [(f"G{i + 1}", group_colors[i]) for i in range(len(group_arrays))]
+    legend_items = [(group_names[i], group_colors[i]) for i in range(len(group_arrays))]
+    if long_only_array is not None:
+        legend_items.append((long_only_label, _LONG_ONLY))
     legend_items.append(("L/S", _LONG_SHORT))
     legend_items.extend((name, _EXTRA) for name, _ in extra_arrays)
+    if legend_items:
+        legend_x = min(right + 16.0, max(0.0, float(width) - 40.0))
+        available = max(1.0, float(height) - 20.0)
+        row_height = min(18.0, available / len(legend_items))
+        for i, (name, color) in enumerate(legend_items):
+            center = 20.0 + row_height * (i + 0.5)
+            parts.append(
+                f'<rect x="{_coord(legend_x)}" y="{_coord(center - 2.0)}" '
+                f'width="16.0" height="4.0" fill="{color}"/>'
+            )
+            parts.append(
+                f'<text x="{_coord(min(float(width) - 1.0, legend_x + 22.0))}" '
+                f'y="{_coord(min(float(height) - 1.0, center + 4.0))}" '
+                f'font-size="11" fill="#333333">{_text(name)}</text>'
+            )
+
+    label = title_text()
+    if label is not None:
+        parts.insert(2, label)
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def _num_label(value):
+    """普通小数刻度文本（累计 RankIC 用，不带百分号）。"""
+    if abs(value) < 1e-9:
+        return "0"
+    if abs(value - round(value)) < 1e-6:
+        return f"{int(round(value))}"
+    text = f"{value:.2f}"
+    return text.rstrip("0").rstrip(".")
+
+
+_RANK_IC_COLORS = (_LONG_ONLY, _LONG_SHORT, "#6a51a3", _EXTRA, "#807dba")
+
+
+def rank_ic_chart(series, dates, *, title="", width=960, height=520):
+    """画累计 RankIC 的 SVG。`series` 是 名字 → 累计 RankIC 序列，共用同一条日期轴。
+
+    曲线是逐日 RankIC 的累计和（cumsum），与分组/多空/纯多头的累计盈亏图对照用；
+    y 轴是相关系数的累计值，不是百分比。
+    """
+    colors = _RANK_IC_COLORS
+    dates = list(dates)
+    count = len(dates)
+    items = [(name, _fit(values, count)) for name, values in series.items()]
+    arrays = [array for _, array in items]
+    left, right, top, bottom = _layout(width, height, title)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:g}" '
+        f'height="{height:g}" viewBox="0 0 {width:g} {height:g}" '
+        f'font-family="{_FONT}">',
+        f'<rect x="0.0" y="0.0" width="{width:g}" height="{height:g}" fill="#ffffff"/>',
+    ]
+
+    def frame():
+        return (
+            f'<rect x="{_coord(left)}" y="{_coord(top)}" '
+            f'width="{_coord(right - left)}" height="{_coord(bottom - top)}" '
+            'fill="none" stroke="#cccccc" stroke-width="1"/>'
+        )
+
+    def title_text():
+        if not title:
+            return None
+        return (
+            f'<text x="{_coord(left)}" y="{_coord(min(float(height) - 1.0, 30.0))}" '
+            'font-size="15" font-weight="bold" fill="#222222">'
+            f"{_text(title)}</text>"
+        )
+
+    has_data = count > 0 and any(bool(np.isfinite(array).any()) for array in arrays)
+    if not has_data:
+        label = title_text()
+        if label is not None:
+            parts.append(label)
+        parts.append(frame())
+        parts.append("</svg>")
+        return "\n".join(parts)
+
+    finite = np.concatenate(
+        [array[np.isfinite(array)] for array in arrays if np.isfinite(array).any()]
+    )
+    lo = min(0.0, float(finite.min()))
+    hi = max(0.0, float(finite.max()))
+    ticks = _nice_ticks(lo, hi)
+    axis_lo, axis_hi = ticks[0], ticks[-1]
+
+    for tick in ticks:
+        y = _map_y(tick, axis_lo, axis_hi, top, bottom)
+        color = "#aaaaaa" if abs(tick) < 1e-12 else "#e6e6e6"
+        parts.append(
+            f'<line x1="{_coord(left)}" y1="{_coord(y)}" '
+            f'x2="{_coord(right)}" y2="{_coord(y)}" '
+            f'stroke="{color}" stroke-width="1"/>'
+        )
+
+    indices = _sample_indices(count)
+    for i, (name, array) in enumerate(items):
+        color = colors[i % len(colors)]
+        for start, end in _plot_runs(array, indices):
+            points = []
+            for pos in range(start, end):
+                index = int(indices[pos])
+                x = _map_x(index, count, left, right)
+                y = _map_y(float(array[index]), axis_lo, axis_hi, top, bottom)
+                points.append(f"{_coord(x)},{_coord(y)}")
+            if not points:
+                continue
+            parts.append(
+                f'<polyline points="{" ".join(points)}" fill="none" '
+                f'stroke="{color}" stroke-width="1.8" stroke-linejoin="round" '
+                f'stroke-linecap="round" data-name="{_attr(name)}" data-kind="rank_ic"/>'
+            )
+
+    parts.append(frame())
+
+    for tick in ticks:
+        y = _map_y(tick, axis_lo, axis_hi, top, bottom)
+        parts.append(
+            f'<line x1="{_coord(max(0.0, left - 4.0))}" y1="{_coord(y)}" '
+            f'x2="{_coord(left)}" y2="{_coord(y)}" stroke="#999999" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{_coord(max(0.0, left - 8.0))}" '
+            f'y="{_coord(min(float(height) - 1.0, y + 4.0))}" '
+            'font-size="11" fill="#555555" text-anchor="end">'
+            f"{_num_label(tick)}</text>"
+        )
+
+    year_marks = []
+    previous_year = None
+    for i in range(count):
+        year = str(dates[i])[:4]
+        if i == 0 or year != previous_year:
+            year_marks.append((i, year))
+            previous_year = year
+    if len(year_marks) > 12:
+        year_marks = year_marks[::2]
+    for i, year in year_marks:
+        x = _map_x(i, count, left, right)
+        tick_y = min(float(height) - 1.0, bottom + 3.0)
+        text_y = min(float(height) - 1.0, bottom + 16.0)
+        parts.append(
+            f'<line x1="{_coord(x)}" y1="{_coord(bottom)}" '
+            f'x2="{_coord(x)}" y2="{_coord(tick_y)}" stroke="#999999" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{_coord(x)}" y="{_coord(text_y)}" font-size="11" '
+            f'fill="#555555" text-anchor="middle">{_text(year)}</text>'
+        )
+
+    legend_items = [
+        (name, colors[i % len(colors)]) for i, (name, _) in enumerate(items)
+    ]
     if legend_items:
         legend_x = min(right + 16.0, max(0.0, float(width) - 40.0))
         available = max(1.0, float(height) - 20.0)

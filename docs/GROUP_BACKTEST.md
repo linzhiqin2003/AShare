@@ -31,6 +31,7 @@ open("report.html", "w").write(res.html())   # 图和表，含嵌套的小池
 | `by` | `year` / `quarter` | `year` | 绩效表的分段 |
 | `weights_portfolio` | 布尔 | `False` | 另算按全池归一化权重持仓的多空组合 |
 | `sub_universes` | 布尔 | `True` | 用大池时把嵌套的小池各跑一遍 |
+| `rank_ic` | 布尔 | `False` | 额外算逐日 RankIC（全池与 top 1/10 组内），见「RankIC 诊断」 |
 | `window` | `(起, 止)` | `groupbt.IS` | 回测窗口，见下 |
 
 ## 回测窗口
@@ -122,7 +123,11 @@ IS、VALIDATION 和显式传入的其他窗口各自重新起算，不继承前�
 
 ## 输出
 
-- `res.chart()`：`n_groups` 条分组累计盈亏线加一条多空线的 SVG，逐日相加（cumsum）。`res.curves(name)` 同时给出 cumsum 和 cumprod。
+- `res.chart()`：`n_groups` 条分组累计盈亏线加多空线的 SVG，逐日相加（cumsum）。
+  `res.chart(long_only=True)` 额外把纯多头 top 10%（只支持 10 分组，第 1 组就是 top 10%）
+  从分组线里拿出来，用绿色实线画在多空线旁边（图例 `Top 10%`）；默认保持原来的画法，
+  公开输出逐位不变。`res.curves(name)` 同时给出 cumsum 和 cumprod。
+- `res.rank_ic_chart()`：累计 RankIC 的 SVG（`rank_ic=True` 才有），见「RankIC 诊断」。
 - `res.table("long_short")`、`res.table("top")`：行是年份或季度，最后一行 `ALL`；列如下。
 
 | 指标 | 定义 |
@@ -139,6 +144,21 @@ IS、VALIDATION 和显式传入的其他窗口各自重新起算，不继承前�
   - `reversal_60`：`1 − close / ts_delay(close, 60)`
   - `momentum`：`ts_delay(close, 20) / ts_delay(close, 240) − 1`
 - `res.group_pnl`、`res.pnl`、`res.turnover`：原始日序列。`res.text()`、`res.to_dict()`、`res.html()`。
+
+## RankIC 诊断
+
+`run(..., rank_ic=True)` 额外算两条逐日 RankIC 序列，存到 `res.rank_ic`；默认不算是为了
+不给平台的大批量回测增加开销。口径与盈亏一致：信号行（因子第 t-1 行）对成交行 t 到
+下一行的收益，价格用复权价并沿用停牌前值，和 `_adjusted` / `_forward_return` 同一套规则。
+
+- `long_short`：全池 RankIC，池内所有有因子值的股票与未来收益的 Spearman 相关；
+- `top`：池内按因子从高到低排序（并列按面板列顺序）取前 1/10，组内再做 Spearman 相关。
+  10 分组时这就是第 1 组内部，用来看因子在多头端的判别力。
+
+有效股票数不够（全池 20 只、top 组 10 只）或没有未来收益的日期是 NaN；窗口第一行之前没有
+因子行、最后一行没有未来收益，也是 NaN。`res.rank_ic_mean()` 给出两条序列的全历史均值，
+`res.rank_ic_chart()` 画累计 RankIC（绿色 `L/S 多空 RankIC`、橙色 `Top 10% 多头 RankIC`），
+`res.to_dict()` 多一个 `rank_ic_mean` 键，`res.text()` 多一段 `rank_ic (mean)`。
 
 ## 已知局限
 
