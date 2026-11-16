@@ -1,0 +1,26 @@
+{
+  "imported": [
+    "tmp/d3/baseline/src/ashare/__init__.py",
+    "src/ashare/__init__.py"
+  ],
+  "checks": {
+    "panel": {
+      "unchanged_fields": 48,
+      "new_fields": [],
+      "verdict": "bitwise_equal"
+    },
+    "fund_panel/fund": {
+      "unchanged_fields": 16,
+      "new_fields": [
+        "total_share",
+        "total_size"
+      ],
+      "verdict": "bitwise_equal"
+    },
+    "fund_panel/cb": {
+      "unchanged_fields": 22,
+      "new_fields": [],
+      "verdict": "bitwise_equal"
+    }
+  }
+}

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import io
 import json
+import logging
 import os
 import uuid
 from contextlib import contextmanager
@@ -14,10 +15,12 @@ from ashare.paths import data_root as resolve_data_root
 from ashare.paths import dataset_dir
 
 from .catalog import ALL_DATASETS, FUND_DATASETS, FUTURES_DATASETS
+from .etf_coverage import from_store as etf_coverage
 from .manifest import Manifest
 
 # cn 是 A 股（含境内期货）；hk、us 是港股、美股的独立数据根（第 2 批，见 overseas_sync）。
 MARKETS = ("cn", "hk", "us")
+LOG = logging.getLogger(__name__)
 
 
 def data_root(root=None):
@@ -94,6 +97,12 @@ class Store:
         entry = self.manifest().get(key)
         if not entry or entry["status"] != "complete":
             return False
+        if (
+            entry.get("dataset") == "etf_share_size"
+            and not entry.get("rows")
+            and etf_coverage(self).required(entry["partition"])
+        ):
+            return False
         path = self.root / entry["file"]
         return path.exists() and (
             not verify_hash
@@ -118,8 +127,8 @@ class Store:
         table = result.table
         key = f"{name}/{partition}"
         previous = self.manifest().get(key, {})
-        if spec.partition == "fut_day":
-            self._guard_futures_refresh(key, spec, previous, len(table))
+        if spec.partition == "fut_day" or name in ("etf_basic", "etf_share_size"):
+            self.guard_partition_refresh(key, spec, previous, len(table))
         suspicious = (
             spec.partition == "day"
             and not spec.empty_allowed
@@ -142,7 +151,16 @@ class Store:
             table
         ):
             suspicious = False
-        if suspicious and previous.get("status") == "complete":
+        etf_empty = name == "etf_share_size" and not len(table)
+        if etf_empty:
+            suspicious = etf_coverage(self).required(partition)
+            if suspicious:
+                LOG.warning("partition=%s 空响应待核实，保留补抓机会", key)
+        if (
+            suspicious
+            and previous.get("status") == "complete"
+            and (not etf_empty or previous.get("rows"))
+        ):
             raise ValueError(
                 f"{name}/{partition} 刷新返回可疑空表或行数骤降，保留旧修订"
             )
@@ -160,7 +178,11 @@ class Store:
         digest = hashlib.sha256(buffer.getvalue()).hexdigest()
         key = f"{name}/{partition}"
         previous = self.manifest().get(key, {})
-        if previous.get("content_hash") == digest and self.complete(key):
+        if (
+            previous.get("content_hash") == digest
+            and self.complete(key)
+            and not etf_empty
+        ):
             return self.mark(
                 key,
                 dict(
@@ -202,7 +224,9 @@ class Store:
             rows=len(table),
             fetched_at=result.fetched_at,
             status="suspect" if suspicious else "complete",
-            quality_state="row_collapse"
+            quality_state=("empty_unverified" if suspicious else "no_listed_etf")
+            if etf_empty
+            else "row_collapse"
             if collapsed
             else "empty"
             if suspicious
@@ -218,15 +242,15 @@ class Store:
         return entry
 
     @staticmethod
-    def _guard_futures_refresh(key, spec, previous, rows):
-        """期货日分区的刷新保护。
+    def guard_partition_refresh(key, spec, previous, rows):
+        """期货日分区及 ETF 专题表的同分区刷新保护。
 
         期货各交易日的行数随交易所休市差异、品种上市而大幅变化，与前一交易日比没有意义；
         危险的是「重抓同一天时源偶发空返回或截断，把已完成的好修订覆盖掉」。所以只和
         同一分区上一个完成修订比：变成空表、或行数降到 drop_check_ratio 以下（上一修订
         至少 drop_check_min_rows 行时）一律拒绝写入，旧修订保留，调用方记 refresh_error。
-        人工确认过的修订（confirm-partition）同样受保护。首次写入的空分区照常记完成，
-        由 verify-futures 按已知例外清单逐条判定。
+        人工确认过的修订（confirm-partition）同样受保护。ETF 首次空日另核上市区间，
+        不能证明合法时记待核实；ETF 主表合并前也用此判据逐状态核对。
         """
         if previous.get("status") != "complete" or not previous.get("rows"):
             return
@@ -234,6 +258,9 @@ class Store:
         if rows == 0 or (
             before >= spec.drop_check_min_rows and rows < before * spec.drop_check_ratio
         ):
+            LOG.warning(
+                "partition=%s rows=%s previous_rows=%s 保留旧修订", key, rows, before
+            )
             raise ValueError(
                 f"{key} 刷新返回 {rows} 行（上一修订 {before} 行），疑似空返回或截断，保留旧修订"
             )
@@ -259,6 +286,25 @@ class Store:
         """批次完成后按日期重核，消除并发完成顺序对质量状态的影响。"""
         for name in names:
             spec = ALL_DATASETS[name]
+            if name == "etf_share_size":
+                coverage = etf_coverage(self)
+                for key, entry in self.entries(name).items():
+                    if (
+                        entry.get("file")
+                        and entry.get("rows") == 0
+                        and entry.get("status") in ("complete", "suspect")
+                    ):
+                        required = coverage.required(entry["partition"])
+                        self.mark(
+                            key,
+                            dict(
+                                status="suspect" if required else "complete",
+                                quality_state="empty_unverified"
+                                if required
+                                else "no_listed_etf",
+                            ),
+                        )
+                continue  # 同日刷新保护已做；相邻日期的证券数量可以合法变化。
             if spec.partition != "day" or spec.empty_allowed:
                 continue
             previous = None

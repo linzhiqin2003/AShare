@@ -37,12 +37,13 @@ from datetime import date, timedelta
 import polars as pl
 
 from .catalog import FUND_DATASETS
+from .sources.base import FetchResult
 from .store import Store, lock
 from .sync import compact
 
 LOG = logging.getLogger(__name__)
 FIRST = ("fund_calendar",)
-SECOND = ("fund_basic", "cb_basic")  # 按代码分区的数据集依赖它们
+SECOND = ("fund_basic", "cb_basic", "etf_basic")  # 代码分区、ETF 空日判断依赖主表
 
 
 def fund_days(store, start, end):
@@ -182,9 +183,46 @@ async def sync_funds(
                 ),
             )
         try:
-            result = await source.fetch(
-                spec.api, params, fields=spec.columns, page_size=spec.limit
-            )
+            if name == "etf_basic":
+                # 源默认只返回上市 ETF；逐状态保护，防止 L 增长掩盖 D/P 的空返回。
+                previous_basic = (
+                    await asyncio.to_thread(store.read, name)
+                    if previous.get("status") == "complete" and previous.get("rows")
+                    else pl.DataFrame()
+                )
+                if len(previous_basic) and "list_status" not in previous_basic.columns:
+                    raise ValueError(
+                        "etf_basic/all 旧修订缺少状态，无法核对刷新，保留旧修订"
+                    )
+                snapshots = []
+                for status in ("L", "D", "P"):
+                    snapshot = await source.fetch(
+                        spec.api,
+                        {**params, "list_status": status},
+                        fields=spec.columns,
+                        page_size=spec.limit,
+                    )
+                    if len(previous_basic):
+                        before = previous_basic.filter(
+                            pl.col("list_status") == status
+                        ).height
+                        store.guard_partition_refresh(
+                            f"{key}/{status}",
+                            spec,
+                            dict(status="complete", rows=before),
+                            len(snapshot.table),
+                        )
+                    snapshots.append(snapshot)
+                result = FetchResult(
+                    pl.concat([s.table for s in snapshots], how="diagonal_relaxed"),
+                    max(s.fetched_at for s in snapshots),
+                    sum(s.calls for s in snapshots),
+                    sum(s.retries for s in snapshots),
+                )
+            else:
+                result = await source.fetch(
+                    spec.api, params, fields=spec.columns, page_size=spec.limit
+                )
             entry = await asyncio.to_thread(
                 store.write, name, partition, params, result
             )

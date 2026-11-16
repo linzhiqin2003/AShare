@@ -1,0 +1,267 @@
+{
+  "results": [
+    {
+      "mutation": "0",
+      "status": "passed",
+      "imported": "src/ashare/data/chip_verify.py",
+      "summary": "92 passed in 50.89s"
+    },
+    {
+      "mutation": "chip_basis_must_remain_unverified",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_boundaries_are_diagnostic_only[8.0]",
+        "test/data/test_chips.py::test_chip_boundaries_are_diagnostic_only[28.0]"
+      ]
+    },
+    {
+      "mutation": "chip_extrema_must_remain_diagnostic",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_boundaries_are_diagnostic_only[8.0]",
+        "test/data/test_chips.py::test_chip_boundaries_are_diagnostic_only[28.0]"
+      ]
+    },
+    {
+      "mutation": "chip_extrema_excluded_from_failure_count",
+      "file": "src/ashare/data/verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_verify_boundary_changes_do_not_change_failures"
+      ]
+    },
+    {
+      "mutation": "chip_diagnostic_nonfinite_json",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_diagnostic_nonfinite_boundaries_are_json_safe[inf]"
+      ]
+    },
+    {
+      "mutation": "basis_latest_ignores_fetched_at",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_basis_uses_partition_timestamp_and_only_past_extremes"
+      ]
+    },
+    {
+      "mutation": "basis_extrema_denominator",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_basis_uses_partition_timestamp_and_only_past_extremes"
+      ]
+    },
+    {
+      "mutation": "winner_percent",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_values_positive_and_null"
+      ]
+    },
+    {
+      "mutation": "coverage_start",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_values_negative[change5-chip_coverage_start]"
+      ]
+    },
+    {
+      "mutation": "quantile_order",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_chip_values_negative[change3-chip_quantile_order]"
+      ]
+    },
+    {
+      "mutation": "etf_share_units",
+      "file": "src/ashare/data/fund_panel.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_etf_fields_units_timing_and_index_lookup"
+      ]
+    },
+    {
+      "mutation": "etf_size_units",
+      "file": "src/ashare/data/fund_panel.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_etf_fields_units_timing_and_index_lookup"
+      ]
+    },
+    {
+      "mutation": "etf_known_at",
+      "file": "src/ashare/data/fund_schema.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_etf_fields_units_timing_and_index_lookup"
+      ]
+    },
+    {
+      "mutation": "etf_content_dependency",
+      "file": "src/ashare/data/fund_panel.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_etf_changes_version_but_not_old_fields"
+      ]
+    },
+    {
+      "mutation": "etf_empty_refresh_guard",
+      "file": "src/ashare/data/store.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_successful_empty_share_sync_warns_and_keeps_revision"
+      ]
+    },
+    {
+      "mutation": "etf_same_partition_guard",
+      "file": "src/ashare/data/store.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_successful_empty_or_collapsed_refresh_keeps_revision[0-etf_basic-all]",
+        "test/data/test_etf_data.py::test_successful_empty_or_collapsed_refresh_keeps_revision[50-etf_basic-all]",
+        "test/data/test_etf_data.py::test_successful_empty_or_collapsed_refresh_keeps_revision[50-etf_share_size-20260105]"
+      ]
+    },
+    {
+      "mutation": "etf_shrink_guard",
+      "file": "src/ashare/data/store.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_successful_empty_or_collapsed_refresh_keeps_revision[50-etf_basic-all]",
+        "test/data/test_etf_data.py::test_successful_empty_or_collapsed_refresh_keeps_revision[50-etf_share_size-20260105]"
+      ]
+    },
+    {
+      "mutation": "etf_status_shrink_guard",
+      "file": "src/ashare/data/fund_sync.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_successful_status_shrink_keeps_complete_table[0]",
+        "test/data/test_etf_data.py::test_successful_status_shrink_keeps_complete_table[5]"
+      ]
+    },
+    {
+      "mutation": "etf_empty_source_guard",
+      "file": "src/ashare/data/fund_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_verify_rejects_empty_source_and_empty_panel[etf_share_size]"
+      ]
+    },
+    {
+      "mutation": "etf_all_nan_panel_guard",
+      "file": "src/ashare/data/fund_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_data.py::test_verify_rejects_all_nan_fields"
+      ]
+    },
+    {
+      "mutation": "etf_first_empty_unverified",
+      "file": "src/ashare/data/store.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[None]",
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[unchecked]",
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[confirmed]"
+      ]
+    },
+    {
+      "mutation": "etf_legacy_zero_retry",
+      "file": "src/ashare/data/store.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_is_retried_without_refresh[True]"
+      ]
+    },
+    {
+      "mutation": "etf_small_snapshot_shrink",
+      "file": "src/ashare/data/catalog.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_small_etf_snapshot_shrink_is_rejected"
+      ]
+    },
+    {
+      "mutation": "etf_daily_partition_guard",
+      "file": "src/ashare/data/fund_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_empty_etf_day[partition-False-20261112]",
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_empty_etf_day[partition-False-20261113]",
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_empty_etf_day[partition-True-20261112]",
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_empty_etf_day[partition-True-20261113]"
+      ]
+    },
+    {
+      "mutation": "etf_daily_raw_finite_guard",
+      "file": "src/ashare/data/fund_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_nan_etf_day[partition-total_share]",
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_nan_etf_day[partition-total_size]"
+      ]
+    },
+    {
+      "mutation": "etf_daily_panel_finite_guard",
+      "file": "src/ashare/data/fund_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_nan_etf_day[panel-total_share]",
+        "test/data/test_etf_coverage.py::test_verify_rejects_each_nan_etf_day[panel-total_size]"
+      ]
+    },
+    {
+      "mutation": "etf_unknown_listing_is_not_absence",
+      "file": "src/ashare/data/etf_coverage.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[None]",
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[unchecked]",
+        "test/data/test_etf_coverage.py::test_empty_etf_partition_remains_unverified[confirmed]"
+      ]
+    },
+    {
+      "mutation": "history_missing_day_guard",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_basis_rejects_internal_gap_and_truncated_tail[False-20171229]",
+        "test/data/test_chips.py::test_basis_rejects_internal_gap_and_truncated_tail[False-20180102]",
+        "test/data/test_chips.py::test_basis_rejects_internal_gap_and_truncated_tail[True-20171229]",
+        "test/data/test_chips.py::test_basis_rejects_internal_gap_and_truncated_tail[True-20180102]"
+      ]
+    },
+    {
+      "mutation": "history_calendar_continuity",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_basis_requires_complete_calendar[None]",
+        "test/data/test_chips.py::test_basis_requires_complete_calendar[20170104]",
+        "test/data/test_chips.py::test_basis_requires_complete_calendar[20180102]"
+      ]
+    },
+    {
+      "mutation": "history_listing_interval",
+      "file": "src/ashare/data/chip_verify.py",
+      "status": "killed",
+      "failures": [
+        "test/data/test_chips.py::test_basis_excludes_prices_before_listing_interval"
+      ]
+    }
+  ],
+  "deferred": [
+    "筹码成本/前复权收盘比值的分母",
+    "两种抓取基准快照的筹码比值不变性"
+  ],
+  "reason": "his_low/high 历史极值判据已作废；仍缺分布、实际除权跨快照及异常尺度证据，不发布 chip_* 字段"
+}

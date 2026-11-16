@@ -522,6 +522,26 @@ class FakeFundTushare:
             cb_rate=cb_rate(),
             cb_issue=cb_issue(),
         )
+        # D3：专题表是独立源；保留原有基金/债券数值，增加全状态与每日份额样本。
+        self.tables["etf_basic"] = pl.DataFrame(
+            dict(
+                ts_code=["510001.SH", "159001.SZ", "519999.SH"],
+                csname=["测试ETF", "测试退市ETF", "测试待上市ETF"],
+                index_code=["000300.SH", "399006.SZ", "000300.SH"],
+                index_name=["测试指数", "测试指数二", "测试指数"],
+                list_status=["L", "D", "P"],
+                list_date=["20200101", DAYS[2], None],
+            )
+        )
+        self.tables["etf_share_size"] = share.join(
+            daily.select("ts_code", "trade_date", "close"),
+            on=["ts_code", "trade_date"],
+        ).select(
+            "ts_code",
+            "trade_date",
+            pl.col("fd_share").alias("total_share"),
+            (pl.col("fd_share") * pl.col("close")).alias("total_size"),
+        )
 
     async def fetch(self, api, params, *, fields="", page_size=None):
         self.calls.append((api, dict(params)))
@@ -533,6 +553,8 @@ class FakeFundTushare:
             self.fail.discard(key)
             raise RuntimeError("故意失败")
         table = self.tables[api]
+        if api == "etf_basic":
+            table = table.filter(pl.col("list_status") == params["list_status"])
         if "trade_date" in params:
             table = table.filter(pl.col("trade_date") == params["trade_date"])
         if "ex_date" in params:

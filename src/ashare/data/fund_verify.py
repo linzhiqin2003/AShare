@@ -28,11 +28,21 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from .etf_coverage import EtfCoverage
 from .store import atomic_json
 
 KNOWN_PATH = Path(__file__).with_name("fund_known_exceptions.json")
-DAY_SETS = ("fund_daily", "fund_adj", "fund_share", "fund_div", "cb_daily")
+DAY_SETS = (
+    "fund_daily",
+    "fund_adj",
+    "fund_share",
+    "fund_div",
+    "cb_daily",
+    "etf_share_size",
+)
 KEYS = {
+    "etf_basic": ("ts_code",),
+    "etf_share_size": ("ts_code", "trade_date"),
     "fund_basic": ("ts_code",),
     "fund_daily": ("ts_code", "trade_date"),
     "fund_adj": ("ts_code", "trade_date"),
@@ -149,7 +159,7 @@ def _read(store, name):
 def check_manifest(store):
     bad, checked = [], 0
     for key, entry in sorted(store.manifest().items()):
-        if not (entry.get("dataset", "").startswith(("fund_", "cb_"))):
+        if not (entry.get("dataset", "").startswith(("fund_", "cb_", "etf_"))):
             continue
         checked += 1
         path = store.root / entry.get("file", "missing")
@@ -179,6 +189,41 @@ def check_partitions(store, days, register):
     out = {}
     for name in DAY_SETS:
         entries = _entries(store, name)
+        if name == "etf_share_size":
+            # 日历常含未来整年；有效核验窗口取基金行情范围，不能取 ETF 自身范围掩盖首尾缺日。
+            daily = sorted(
+                e["partition"] for e in _entries(store, "fund_daily").values()
+            )
+            window = days[(days >= daily[0]) & (days <= daily[-1])] if daily else days
+            coverage = EtfCoverage(
+                _read(store, "etf_basic"), _read(store, "fund_basic")
+            )
+            finite = _etf_finite_dates(_read(store, name), coverage)
+            status = {e["partition"]: e for e in entries.values()}
+            problems = []
+            for day in window:
+                if not coverage.required(str(day)):
+                    continue
+                entry = status.get(str(day), {})
+                if (
+                    entry.get("status") != "complete"
+                    or not entry.get("rows")
+                    or str(day) not in finite
+                ):
+                    problems.append(
+                        dict(
+                            dataset=name,
+                            partition=str(day),
+                            status=entry.get("status", "missing"),
+                            problem="no_effective_coverage",
+                        )
+                    )
+            out[name] = _strict(
+                problems,
+                len(window),
+                "覆盖期内有应在市 ETF 的交易日，分区完成且两字段均有有效值；空日须有上市区间证据",
+            )
+            continue
         parts = sorted(e["partition"] for e in entries.values())
         if not parts:
             out[name] = _check("fail", 0, 1, {}, "没有任何分区")
@@ -820,6 +865,7 @@ def verify_funds(store, *, write=True, known=None):
     cb_daily = _read(store, "cb_daily")
     calls = _read(store, "cb_call")
     checks = {"manifest_files": check_manifest(store)}
+    checks.update(check_etf(store))
     for name, item in check_partitions(store, days, register).items():
         checks[f"partitions_{name}"] = item
     checks["unique_keys"] = check_unique(store)
@@ -847,6 +893,7 @@ def verify_funds(store, *, write=True, known=None):
         versions[kind] = meta["version"]
         checks[f"{kind}_panel_listing"] = check_panel_listing(path, meta, kind)
         if kind == "fund":
+            checks["etf_panel"] = check_etf_panel(store, path, meta)
             gap, fac, miss = check_fund_events(path, meta, register)
             checks["fund_gap"] = gap
             checks["fund_factor"] = fac
@@ -901,3 +948,179 @@ def verify_funds(store, *, write=True, known=None):
 
 
 __all__ = ["Register", "load_known", "verify_funds"]
+
+
+def check_etf(store):
+    """专题表覆盖与份额交叉核对；两源差异只报告，不覆盖已有 fund_share。"""
+    basic, size = _read(store, "etf_basic"), _read(store, "etf_share_size")
+    fund_basic, daily, share = (
+        _read(store, n) for n in ("fund_basic", "fund_daily", "fund_share")
+    )
+    expected = (
+        set(fund_basic.filter(pl.col("name").str.contains("ETF"))["ts_code"])
+        if len(fund_basic)
+        else set()
+    )
+    available = set(basic["ts_code"]) if len(basic) else set()
+    covered = len(expected & available)
+    out = {
+        "etf_basic_coverage": _check(
+            "info",
+            len(expected),
+            0,
+            dict(
+                covered=covered,
+                expected=len(expected),
+                ratio=covered / len(expected) if expected else None,
+                rows=len(basic),
+                statuses=dict(Counter(basic["list_status"])) if len(basic) else {},
+            ),
+            "当前 ETF 主表对基金表中 ETF 的覆盖；含 L/D/P，跟踪指数为现值",
+        )
+    }
+    expected_days = (
+        daily.filter(
+            pl.col("ts_code").is_in(sorted(expected | available))
+            & (pl.col("trade_date") >= "20090105")
+        )
+        .select("ts_code", "trade_date")
+        .unique()
+        if len(daily)
+        else pl.DataFrame()
+    )
+    present = (
+        size.select("ts_code", "trade_date").unique() if len(size) else pl.DataFrame()
+    )
+    covered = (
+        len(expected_days.join(present, on=["ts_code", "trade_date"], how="semi"))
+        if len(expected_days) and len(present)
+        else 0
+    )
+    out["etf_share_size_coverage"] = _check(
+        "info",
+        len(expected_days),
+        0,
+        dict(
+            covered=covered,
+            expected=len(expected_days),
+            ratio=covered / len(expected_days) if len(expected_days) else None,
+            rows=len(size),
+            start=size["trade_date"].min() if len(size) else None,
+            end=size["trade_date"].max() if len(size) else None,
+        ),
+        "2009-01-05 起有行情 ETF 的证券日覆盖；分区缺口另作硬检查",
+    )
+    if len(size) and len(share):
+        joined = size.join(
+            share.select("ts_code", "trade_date", "fd_share"),
+            on=["ts_code", "trade_date"],
+            how="inner",
+        ).filter(pl.col("total_share").is_finite() & pl.col("fd_share").is_finite())
+        bad = joined.filter(
+            (pl.col("total_share") - pl.col("fd_share")).abs()
+            > pl.max_horizontal(pl.lit(0.0001), pl.col("fd_share").abs() * 1e-6)
+        )
+    else:
+        joined = bad = pl.DataFrame()
+    out["etf_share_consistency"] = _check(
+        "info",
+        len(joined),
+        0,
+        dict(
+            matched=len(joined) - len(bad),
+            different=len(bad),
+            rate=(len(joined) - len(bad)) / len(joined) if len(joined) else None,
+            examples=bad.select("ts_code", "trade_date", "total_share", "fd_share")
+            .head(20)
+            .to_dicts()
+            if len(bad)
+            else [],
+        ),
+        "同股同日原值均为万份；容差 max(0.0001 万份, 1ppm)；差异只报告，不影响判定",
+    )
+    return out
+
+
+def _etf_finite_dates(raw, coverage):
+    """独立检查原表每天两字段都有在市证券的有限值，不用清单行数替代数据覆盖。"""
+    fields = ("total_share", "total_size")
+    if not {"trade_date", "ts_code", *fields} <= set(raw.columns):
+        return set()
+    grouped = raw.group_by("trade_date").agg(
+        pl.col("ts_code").filter(pl.col(n).cast(pl.Float64).is_finite()).alias(n)
+        for n in fields
+    )
+    valid = set()
+    for row in grouped.iter_rows(named=True):
+        eligible = coverage.eligible(row["trade_date"])
+        if all(
+            set(row[n]) if eligible is None else eligible.intersection(row[n])
+            for n in fields
+        ):
+            valid.add(row["trade_date"])
+    return valid
+
+
+def check_etf_panel(store, path, meta):
+    """独立从原始专题表逐格复算单位，并检查对外说明仍标为次日可知。"""
+    fields = ("total_share", "total_size")
+    if not set(fields) <= set(meta["fields"]):
+        return _check("info", 0, 0, {}, "旧面板没有 ETF 字段；需重建")
+    raw = _read(store, "etf_share_size")
+    basic = _read(store, "etf_basic")
+    coverage = EtfCoverage(basic, _read(store, "fund_basic"))
+    required = [d for d in meta["dates"] if coverage.required(d)]
+    finite = _etf_finite_dates(raw, coverage)
+    dates = {d: i for i, d in enumerate(meta["dates"])}
+    symbols = {s: j for j, s in enumerate(meta["symbols"])}
+    expected = {n: np.full((len(dates), len(symbols)), np.nan) for n in fields}
+    for row in raw.iter_rows(named=True):
+        i, j = dates.get(row["trade_date"]), symbols.get(row["ts_code"])
+        if i is None or j is None or row["trade_date"] < "20090105":
+            continue
+        for name in fields:
+            if row[name] is not None:
+                expected[name][i, j] = float(row[name]) * 10_000.0
+    bad, checked = [], 0
+    if required and not len(raw):
+        bad.append(dict(table="etf_share_size", problem="empty_source"))
+    daily_bad = []  # 汇总问题排在逐日明细前，避免报告截断后丢掉整列为空的原因。
+    for day in required:
+        if day not in finite:
+            daily_bad.append(
+                dict(table="etf_share_size", date=day, problem="no_effective_coverage")
+            )
+    for name in fields:
+        got = _load(path, name)
+        checked += got.size
+        if required and not np.isfinite(got).any():
+            bad.append(dict(field=name, problem="no_finite_values"))
+        for day in required:
+            eligible = coverage.eligible(day)
+            columns = [
+                j for s, j in symbols.items() if eligible is None or s in eligible
+            ]
+            if not np.isfinite(got[dates[day], columns]).any():
+                daily_bad.append(dict(field=name, date=day, problem="no_finite_day"))
+        same = (got == expected[name]) | (np.isnan(got) & np.isnan(expected[name]))
+        for i, j in np.argwhere(~same):
+            bad.append(
+                dict(field=name, date=meta["dates"][i], symbol=meta["symbols"][j])
+            )
+        if "次日可知" not in meta["fields"][name]["known_at"]:
+            bad.append(dict(field=name, problem="known_at"))
+    if not len(basic):
+        bad.append(dict(table="etf_basic", problem="empty_source"))
+    table_path = path / "table_etf_basic.parquet"
+    if not table_path.exists():
+        bad.append(dict(table="etf_basic", problem="missing"))
+    elif len(basic):
+        actual = pl.read_parquet(table_path)
+        renamed = basic.rename({"ts_code": "symbol", "_fetched_at": "fetched_at"})
+        if not actual.sort("symbol").equals(renamed.sort("symbol")):
+            bad.append(dict(table="etf_basic", problem="content"))
+    return _strict(
+        bad + daily_bad,
+        checked,
+        "ETF 专题原值 × 10000；不移位、不前填，元数据明确次日可知；主表内容一致",
+    )

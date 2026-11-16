@@ -1,0 +1,146 @@
+{
+  "baseline": "2a14e70",
+  "environment": "worktree .venv, make dev",
+  "test_data_and_platform": {
+    "command": "sequential pytest test/data and pytest test/platform; -q -n 2 --tb=short, worktree tmp basetemp; each subprocess timeout=870",
+    "passed": 1623,
+    "skipped": 7,
+    "warnings": 2,
+    "seconds": 602.61,
+    "groups": {
+      "data": {
+        "passed": 1036,
+        "skipped": 7,
+        "warnings": 0,
+        "seconds": 418.94,
+        "log": "tmp/d3/recheck2_data.log"
+      },
+      "platform": {
+        "passed": 587,
+        "skipped": 0,
+        "warnings": 2,
+        "seconds": 183.67,
+        "log": "tmp/d3/recheck2_platform.log"
+      }
+    },
+    "skip_reason": "7 existing optional databento dependency tests",
+    "warning_reason": "2 existing Starlette TestClient deprecation warnings"
+  },
+  "targeted_mutation_zero": {
+    "passed": 92,
+    "failed": 0,
+    "seconds": 50.89,
+    "imported": "src/ashare/data/chip_verify.py",
+    "log": "tmp/d3/mutations/0.log"
+  },
+  "static_checks": {
+    "ruff check .": "pass",
+    "ruff format --check .": "pass",
+    "cargo fmt --all --check": "pass",
+    "cargo clippy --workspace --all-targets -j 2 -- -D warnings": "pass"
+  },
+  "legacy_panels": {
+    "stocks": 48,
+    "funds": 16,
+    "convertible_bonds": 22,
+    "verdict": "bitwise_equal"
+  },
+  "mutations": {
+    "baseline": "pass",
+    "killed": 29,
+    "attempted": 29,
+    "deferred": [
+      "chip cost/close ratio denominator",
+      "chip cost ratios across snapshot bases"
+    ]
+  },
+  "chip_gate": "unpublished; his_low/high historical-extrema criterion invalid; close*adj_t/adj_F is best supported candidate, fixed scale and real cross-snapshot invariance unproven",
+  "raw_data": "current merge-review repair uses synthetic fixtures and readonly review only; no staging/cyq access, main raw writes, or network requests",
+  "final_targeted": {
+    "command": "pytest test/data/test_chips.py test/data/test_etf_data.py test/data/test_etf_coverage.py -q -n 0",
+    "passed": 92,
+    "failed": 0,
+    "seconds": 50.89
+  },
+  "review_repairs": {
+    "review": "review_d3.md",
+    "old_code_regressions": {
+      "failed": 10,
+      "deselected": 23,
+      "seconds": 15.63,
+      "log": "tmp/d3/review_red.log"
+    },
+    "additional_listing_regression": {
+      "failed": 1,
+      "log": "tmp/d3/listing_red.log"
+    },
+    "new_parametrized_cases": 32,
+    "p0": "same-partition and L/D/P refresh guards; reject empty sources and all-NaN ETF fields",
+    "p1": "calendar/listing/suspension evidence required for daily history completeness",
+    "staging_accessed": false,
+    "real_data_downloaded": false,
+    "full_history_audit": "completed by independent recheck_d3.md; summarized in D3_NOTES and DESIGN 6.1.5 this round"
+  },
+  "recheck_repairs": {
+    "review": ".review/recheck_d3.md",
+    "new_parametrized_cases": 28,
+    "old_code_regressions": {
+      "failed": 15,
+      "passed": 1,
+      "seconds": 4.27,
+      "log": "tmp/d3/recheck_red.log"
+    },
+    "independent_verify_regressions": {
+      "failed": 12,
+      "deselected": 10,
+      "seconds": 1.69,
+      "log": "tmp/d3/recheck_verify_red.log"
+    },
+    "diagnostic_fix": "daily examples no longer hide all-NaN field summaries; existing assertions retained",
+    "p1": "first/legacy zero ETF partitions unverified and retriable; listing-evidenced legal empties; daily raw and panel coverage; small snapshot shrink exemption removed",
+    "staging_accessed": false,
+    "network_used": false
+  },
+  "independent_full_history_audit": {
+    "source": ".review/recheck_d3.md",
+    "rows": 9786688,
+    "trading_days": 2150,
+    "comparable_rows": 9605105,
+    "proven_complete_history_rows": 7005201,
+    "winner_median_direction_conflicts": 19046,
+    "winner_over_100": 7286,
+    "nonpositive_cost_rows": 138,
+    "boundary_contraction_stocks_20260521": 1405,
+    "audit_rerun_this_round": false,
+    "publication": "none"
+  },
+  "recheck2_repairs": {
+    "review": ".review/recheck2_d3.md",
+    "new_parametrized_cases": 9,
+    "old_code_regressions": {
+      "failed": 9,
+      "deselected": 36,
+      "seconds": 10.45,
+      "log": "tmp/d3/recheck2_red.log"
+    },
+    "p1": "basis always unverified with missing evidence; extrema diagnostic cannot enter verification failure count",
+    "p2": "D3_NOTES uses repository-relative paths",
+    "additional_fix": "nonfinite diagnostic boundaries are JSON null",
+    "network_used": false,
+    "staging_accessed": false,
+    "complete": true,
+    "fixed_files": [
+      "src/ashare/data/chip_verify.py",
+      "src/ashare/data/verify.py",
+      "test/data/test_chips.py",
+      "bench/d3_real_check.py",
+      "bench/mutations_chips.py",
+      "bench/results/d3_real_check.json",
+      "bench/results/d3_validation.json",
+      "bench/results/mutations_chips.json",
+      "docs/DATA_NOTES.md",
+      "docs/D3_NOTES.md"
+    ]
+  },
+  "static_checks_log": "tmp/d3/recheck2_static.log"
+}
