@@ -38,6 +38,7 @@ DATASETS = MappingProxyType(
         "dev": Dataset(False),
         "crypto": Dataset(False, "CRYPTO_DATA_ROOT"),
         "crypto_minute": Dataset(False),
+        "crypto_metrics": Dataset(False),
         "ml": Dataset(True, "ASHARE_ML_DIR"),
         "hk": Dataset(True),
         "us": Dataset(True),

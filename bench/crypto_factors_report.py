@@ -65,7 +65,7 @@ def self_check():
     )
 
 
-def evaluate_group(task):
+def evaluate_group(task, *, horizons=(7, 1, 30), checkpoint=None):
     from threadpoolctl import threadpool_limits
 
     symbol, j, kind, split, gfull, daily, entries, desc, repetitions, power = task
@@ -92,7 +92,7 @@ def evaluate_group(task):
             if possible
             else None
         )
-        for h in (7, 1, 30):
+        for h in horizons:
             for name in FACTOR_NAMES:
                 x = daily[name]
                 xe = x[use]
@@ -150,6 +150,8 @@ def evaluate_group(task):
                 f"{symbol} {kind} {split} h={h}: {len(results)} tests, {time.monotonic() - started:.1f}s",
                 flush=True,
             )
+            if checkpoint is not None:
+                checkpoint(results)
     return results
 
 

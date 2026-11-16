@@ -296,3 +296,59 @@ BTCUSDT、ETHUSDT 的现货成交线与 U 本位永续成交线、标记价、�
 nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-build
 nice -n 15 timeout 180 .venv/bin/python -m ashare.data.crypto --root tmp/crypto signals-verify
 ```
+
+## 合约指标 metrics（C8）
+
+`ashare.data.crypto.metrics` 是独立冷数据集 `crypto_metrics`，读取位置通过 `ashare.paths` 解析。显式 `root` 表示完整数据集目录；它不和小时或分钟数据共用根。首批 BTCUSDT、ETHUSDT，来源为币安 U 本位 `daily/metrics` 公开归档，只有日档。`sync` 列举全部已发布文件，最多 4 个下载连接；每份归档核对 CHECKSUM 后内容寻址保存。中断后重跑会复用已核对对象，`--refresh` 才复查上游修订。
+
+```sh
+python -m ashare.data.crypto.metrics sync --root '<metrics 数据集>' --workers 4
+python -m ashare.data.crypto.metrics build --root '<metrics 数据集>' --minute-root '<分钟数据集>'
+python -m ashare.data.crypto.metrics verify --root '<metrics 数据集>' --minute-root '<分钟数据集>'
+python -m ashare.data.crypto.metrics status --root '<metrics 数据集>'
+```
+
+构建按月读取永续 1m K 线，分别按 `create_time` 为窗口结束和开始复算主动买卖比。对齐由代码中每个合约单独登记的切换常量决定：BTCUSDT、ETHUSDT 均为 **2024-03-04 00:00 UTC**，之前标窗口结束，之后标窗口开始。新合约缺少登记以 `UNREGISTERED_SWITCH` 拒绝；build 不从观测推断切换时刻。
+
+每个 UTC 日用双边均可比行计算误差中位数，至少 120 行，某侧严格 <0.01、另一侧严格 >0.1 才形成明确证据。日证据必须与登记一致，否则报 `REGISTERED_ALIGNMENT`；未知日直接采用登记值，并设置证据不足质量位。连续 K=2 行明确反向（登记侧 >0.1，另一侧 <0.01）报 `SUSTAINED_OPPOSITE`，跨午夜累计；灰区、空值和同向观测中断，缺口不清零。切换前后各 24 小时的闭区间内，单行明确反向也报 `SWITCH_WINDOW`。矛盾提示可能出现新切换，需要人工复核登记；质量位不能豁免。灰区不被强行当成反向，允许保留。
+
+按登记对齐复算，误差严格 >0.05 的行保留并标记 `TAKER_MISMATCH`，等于 0.05 不标记。两个中位数、双边可比数、当日证据不足状态、反向行数及连续长度，以及偏差比例均写入每日统计。整天缺行也在日历统计中保留，但不填充数据行。
+
+```python
+from ashare.data.crypto import metrics
+frame = metrics.read(
+    "BTCUSDT", "2024-03-01", "2024-04-01",
+    root="<metrics 数据集>", version="<冻结内容版本>",
+)
+```
+
+查询按归一化 `time` 的 `[start,end)` 返回 Polars。`time` 为五分钟窗口开始，`available_at = time + 5min`；**全部字段都在窗口结束才可知**，包括未平仓量快照。`create_time` 保留归档时刻，`alignment=0` 表示原始时刻标结束，`1` 表示标开始。质量位可按位组合：`NULL_VALUE=1` 表示至少一个空值，`INHERITED_ALIGNMENT=2` 表示所在日证据不足、采用登记对齐（保留旧位名兼容字段），`TAKER_MISMATCH=4` 表示所选对齐的逐行误差 >0.05。
+
+| 字段 | 单位 / 口径 |
+|---|---|
+| `open_interest` | 币 |
+| `open_interest_value` | USDT |
+| `top_account_ratio` | 大户账户多空比 |
+| `top_position_ratio` | 大户持仓多空比 |
+| `global_account_ratio` | 全市场账户多空比 |
+| `taker_buy_sell_ratio` | 主动买量 / 主动卖量（币本位量） |
+
+内容版本冻结原始对象及 CHECKSUM、分钟源版本、阈值和定义、月度 Parquet、重复/空值计数、原始时间缺口、归一化窗口缺口和切换证据。旧版本不覆盖；最新指针只在完整构建成功后发布。读取校验关联原始对象、版本和 Parquet 哈希。没有归档的月份返回空表，不填行情。
+
+独立 verify 重新解码原始 CSV，以另一份逐分钟累加代码对账，独立按登记常量赋值，重算日中位数、跨日反向段、切换窗口、空值、缺口及质量位，并核对每天和每年的汇总。通过表示归一化字段、判定和质量记录一致，不表示所有比值都无偏差。`verification/<版本>.json` 中 `details` 是验证错误，`taker_mismatches` 列出所有偏差行；这些明细仅存数据根，不应加入仓库。公开验收 JSON 只含统计量。`mismatch_ratio` 以全部行作分母，`comparable_mismatch_ratio` 以所选对齐可复算行作分母；每天和每年均按原始 `create_time` 的 UTC 日期归属。
+
+规则定义为 `crypto-metrics-v4-registered`。原始 CSV 格式未变，允许复用旧 v1/v2/v3 下载计划；旧版内容不会被重新解释。若尚无已发布版本，`verify` 仅做原档审计，返回 `built=false, ok=false`，不代替 build 发布，也不把下载完成称为版本验收。
+
+共享机器上可把验收验证拆成两条限时命令，复用同一已构建版本，再严格合并覆盖范围：
+
+```sh
+python -m bench.crypto_metrics_validation --root '<metrics 数据集>' --minute-root '<分钟数据集>' --version '<版本>' --verify-symbol BTCUSDT
+python -m bench.crypto_metrics_validation --root '<metrics 数据集>' --minute-root '<分钟数据集>' --version '<版本>' --verify-symbol ETHUSDT
+python -m bench.crypto_metrics_validation --root '<metrics 数据集>' --minute-root '<分钟数据集>' --version '<版本>' --collect
+```
+
+分币报告使用独立文件名，记录版本、分钟版本和 `complete=false`（仅覆盖部分币时）；不覆盖全库报告。合并要求内容版本、分钟版本、所有币种覆盖和差异计数相符。Python 校验入口也可传 `symbols=["BTCUSDT"]`，默认仍核对整个版本。
+
+### C8 独立审查后的对齐保护
+
+当前登记常量、规则版本、阈值 0.01/0.1/0.05、最少样本 120、K=2、窗口 24 小时均进入内容版本。独立 verify 不调用生产对齐函数或读取生产常量，另行固定登记表与规则。真实分布、版本逐行对照和验收数字见 `C8_NOTES.md`。
