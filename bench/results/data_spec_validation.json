@@ -1,0 +1,338 @@
+{
+  "cn": {
+    "status": "pass",
+    "source_year": "2024",
+    "adapter_seconds": 1.2931109999772161,
+    "export_seconds": 14.045283959014341,
+    "version": "941c3a2d611380265378de4458b34dec1e4ed7cca0b9241f9ddec6a706aa3845",
+    "package_bytes": 89592369,
+    "check_seconds": 11.272383500006981,
+    "check_exit_code": 0,
+    "check_failures": {},
+    "warnings": {
+      "actions_consistency": 12,
+      "price_jumps": 13
+    },
+    "panel_seconds": 0.8735233330517076,
+    "panel_cached_seconds": 0.5506738749681972,
+    "shape": [
+      242,
+      5923
+    ],
+    "quote_cells": 1293651,
+    "axes_equal": true,
+    "quote_mask_mismatches": 0,
+    "fields": {
+      "open": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "high": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "low": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "close": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "previous_close": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "volume": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "amount": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "vwap": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "adj_factor": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 3092,
+        "nan_positions_equal_on_quotes": true
+      },
+      "limit_up": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 3092,
+        "nan_positions_equal_on_quotes": true,
+        "raw_quote_bitwise_mismatches": 0,
+        "raw_no_quote_mismatches": 3092,
+        "source_zero_to_null": 0
+      },
+      "limit_down": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 3092,
+        "nan_positions_equal_on_quotes": true,
+        "raw_quote_bitwise_mismatches": 23,
+        "raw_no_quote_mismatches": 3092,
+        "source_zero_to_null": 23
+      },
+      "suspended": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 139715,
+        "nan_positions_equal_on_quotes": true
+      },
+      "total_market_cap": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "float_market_cap": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "total_shares": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "float_shares": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "free_shares": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "turnover": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "pe": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "pb": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "ps": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "pe_ttm": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "ps_ttm": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "dividend_yield": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "dividend_yield_ttm": {
+        "cells": 1433366,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      }
+    },
+    "quote_bitwise_mismatches": 0,
+    "no_quote_mismatches": 148991
+  },
+  "crypto": {
+    "status": "pass",
+    "source_year": "2025",
+    "adapter_seconds": 0.27897858299547806,
+    "export_seconds": 6.6825263340142556,
+    "version": "9083b8485b6f050e255dca396ec26d8b86e4dd31289cbe202ca2655627dec7bd",
+    "package_bytes": 10447627,
+    "check_seconds": 5.4660037500434555,
+    "check_exit_code": 0,
+    "check_failures": {},
+    "warnings": {},
+    "panel_seconds": 0.03350316599244252,
+    "panel_cached_seconds": 0.026835417025722563,
+    "shape": [
+      8760,
+      4
+    ],
+    "quote_cells": 35040,
+    "axes_equal": true,
+    "quote_mask_mismatches": 0,
+    "fields": {
+      "open": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "high": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "low": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "close": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "volume": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "amount": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "base_volume": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "taker_buy_amount": {
+        "cells": 35040,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      }
+    },
+    "quote_bitwise_mismatches": 0,
+    "no_quote_mismatches": 0
+  },
+  "crypto_minute": {
+    "status": "pass",
+    "source_year": "2025",
+    "adapter_seconds": 0.023558624961879104,
+    "export_seconds": 0.4746687500155531,
+    "version": "b5b99ecb4db227cdc56a55649f79f214ef040e20432256514d5f6b92a599b3f4",
+    "package_bytes": 22976058,
+    "check_seconds": 3.5357307090307586,
+    "check_exit_code": 0,
+    "check_failures": {},
+    "warnings": {},
+    "panel_seconds": 0.1597734170500189,
+    "panel_cached_seconds": 0.14611079200403765,
+    "shape": [
+      525600,
+      1
+    ],
+    "quote_cells": 525600,
+    "axes_equal": true,
+    "quote_mask_mismatches": 0,
+    "fields": {
+      "open": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "high": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "low": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "close": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "volume": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "taker_buy_volume": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "amount": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "trade_count": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      },
+      "taker_buy_amount": {
+        "cells": 525600,
+        "quote_bitwise_mismatches": 0,
+        "no_quote_mismatches": 0,
+        "nan_positions_equal_on_quotes": true
+      }
+    },
+    "quote_bitwise_mismatches": 0,
+    "no_quote_mismatches": 0
+  }
+}

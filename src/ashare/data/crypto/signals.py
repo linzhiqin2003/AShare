@@ -6,9 +6,10 @@ import io
 import json
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 
 import polars as pl
+
+from ashare.paths import dataset_dir
 
 from ..store import atomic_json, lock
 from .archive import archive_prefix, read_series
@@ -133,7 +134,7 @@ def write_signals(
     root, *, raw, metadata, references, start, end, exceptions=(), provenance=None
 ):
     """冻结原始引用、完整解析行、规范化元数据、例外与定义。仅供构建及合成夹具。"""
-    root = Path(root)
+    root = dataset_dir("crypto", root)
     start, end = millis(start), millis(end)
     if start >= end or start % HOUR or end % HOUR:
         raise ValueError("季度信号范围必须是递增整小时")
@@ -215,8 +216,8 @@ def write_signals(
 
 
 class SignalDataset:
-    def __init__(self, root, version=None):
-        self.root = Path(root)
+    def __init__(self, root=None, version=None):
+        self.root = dataset_dir("crypto", root)
         self.version = (
             version
             or json.loads((self.root / "signals/latest.json").read_text())["version"]
@@ -272,7 +273,7 @@ def sync_signals(
     evidence=None,
 ):
     """每期列举全部月归档并下载全生命周期；独立库不会改变严格面板指针。"""
-    root = Path(root)
+    root = dataset_dir("crypto", root)
     own = client is None
     client = client or PublicClient(max_bytes=300_000_000)
     store = RawStore(root / "signals/raw")
@@ -362,9 +363,9 @@ def sync_signals(
             client.client.close()
 
 
-def build_signals(root, *, exceptions=None):
+def build_signals(root=None, *, exceptions=None):
     """从冻结同步计划离线构建；重试质量处理不再联网或重取归档。"""
-    root = Path(root)
+    root = dataset_dir("crypto", root)
     plan = json.loads((root / "signals/sync_plan.json").read_text())
 
     class Frozen:

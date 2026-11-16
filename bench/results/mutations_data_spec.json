@@ -1,0 +1,328 @@
+{
+  "baseline": {
+    "id": 0,
+    "returncode": 0,
+    "seconds": 64.33126091602026,
+    "imported_worktree": true,
+    "summary": "292 passed in 59.12s"
+  },
+  "mutations": [
+    {
+      "name": "timezone",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 9.739037916006055,
+      "test": "test_s3_1_utc_timestamp_positive_and_timezone_negative"
+    },
+    {
+      "name": "epoch",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.2672590410220437,
+      "test": "test_s3_1_timestamp_integer_epoch_rejected"
+    },
+    {
+      "name": "nan",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 15.705370792013127,
+      "test": "test_s6_null_positive_nan_infinity_negative"
+    },
+    {
+      "name": "primary_key",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 32.723175666003954,
+      "test": "test_s6_pk_unique"
+    },
+    {
+      "name": "prices",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 18.190093750017695,
+      "test": "test_s6_price_and_quantity_constraints"
+    },
+    {
+      "name": "lifecycle",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.600385166995693,
+      "test": "test_s4_lifecycle_inclusive"
+    },
+    {
+      "name": "available_at",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.863018041010946,
+      "test": "test_s3_3_bars_available_at_lower_bound"
+    },
+    {
+      "name": "hash",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.181872042012401,
+      "test": "test_s7_file_integrity"
+    },
+    {
+      "name": "version",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.1547284580301493,
+      "test": "test_s7_version_metadata_change"
+    },
+    {
+      "name": "calendar",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.248886042041704,
+      "test": "test_s8_4_calendar_membership"
+    },
+    {
+      "name": "event_announcement_lower_bound",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 3.066029042005539,
+      "test": "test/spec/test_timing.py::test_s3_3_announcement_before_event_date"
+    },
+    {
+      "name": "unknown_grammar",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 1.9944854169734754,
+      "test": "test/spec/test_timing.py::test_s3_3_unknown_warning_and_typo_rejected"
+    },
+    {
+      "name": "unknown_warning_missing",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 15.662458083010279,
+      "test": "test/spec/test_timing.py::test_s3_3_unknown_warning_and_typo_rejected"
+    },
+    {
+      "name": "unknown_warning_fatal",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.3478865830111317,
+      "test": "test/spec/test_timing.py::test_s3_3_unknown_warning_and_typo_rejected"
+    },
+    {
+      "name": "unknown_panel_metadata",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 4.216152584005613,
+      "test": "test/spec/test_timing.py::test_s9_unknown_visible_in_info_and_panel"
+    },
+    {
+      "name": "delay_placement",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 1.7427174169570208,
+      "test": "test/spec/test_point_in_time.py::test_s9_delay_calendar_shift_and_left_boundary"
+    },
+    {
+      "name": "panel_available_at",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 1.9658912500017323,
+      "test": "test/spec/test_point_in_time.py::test_s9_review_future_announcement_is_masked"
+    },
+    {
+      "name": "read_available_at",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 1.9677546250168234,
+      "test": "test/spec/test_point_in_time.py::test_s9_review_future_announcement_is_masked"
+    },
+    {
+      "name": "read_known_at",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 7.171305791998748,
+      "test": "test/spec/test_point_in_time.py::test_s9_as_of_masks_fields_by_known_at"
+    },
+    {
+      "name": "unknown_panel_rejection",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 3.152144292020239,
+      "test": "test/spec/test_point_in_time.py::test_s9_unknown_rejected_unless_explicitly_allowed"
+    },
+    {
+      "name": "hash_cache_identity",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 7.455866208998486,
+      "test": "test/spec/test_integrity.py::test_s7_same_size_restored_mtime_cannot_bypass_hash"
+    },
+    {
+      "name": "verified_file_instance",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 18.92048562504351,
+      "test": "test/spec/test_integrity.py::test_s7_read_uses_verified_file_instance"
+    },
+    {
+      "name": "negative_price_mask",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 7.070822624955326,
+      "test": "test/spec/test_review_validation.py::test_s9_negative_price_trading_mask"
+    },
+    {
+      "name": "extension_unit_type",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 3.468170916021336,
+      "test": "test/spec/test_review_validation.py::test_s5_extension_unit_enforces_type"
+    },
+    {
+      "name": "extension_price_domain",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 10.48342516599223,
+      "test": "test/spec/test_review_validation.py::test_s6_extension_price_domain"
+    },
+    {
+      "name": "resource_symbol_units",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 1.8698415840044618,
+      "test": "test/spec/test_review_validation.py::test_s5_resource_units_ignore_unreferenced_instruments"
+    },
+    {
+      "name": "event_quality_bits",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.121421709016431,
+      "test": "test/spec/test_review_validation.py::test_s6_event_quality_flags"
+    },
+    {
+      "name": "quality_flag_declarations",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 4.737285624956712,
+      "test": "test/spec/test_review_validation.py::test_s6_invalid_quality_flag_key_reports_without_crashing"
+    },
+    {
+      "name": "panel_grid_rejection",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.06195458304137,
+      "test": "test/spec/test_r3_timing.py::test_s9_r3_off_grid_public_panel_rejected"
+    },
+    {
+      "name": "history_grid_rejection",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 13.622585207980592,
+      "test": "test/spec/test_r3_timing.py::test_s9_r3_off_grid_history_is_not_discardable"
+    },
+    {
+      "name": "reader_column_dependency",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 4.856264124973677,
+      "test": "test/spec/test_r4_dependencies.py::test_s3_3_s9_r4_review_variants_rejected[read-direct-end+1d]"
+    },
+    {
+      "name": "reader_global_dependency",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 2.3130914579960518,
+      "test": "test/spec/test_r4_dependencies.py::test_s3_3_s9_r4_review_variants_rejected[read-global-end+1d]"
+    },
+    {
+      "name": "reader_time_dependency_rule",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 14.459885417018086,
+      "test": "test/spec/test_r4_dependencies.py::test_s3_3_s9_r4_review_variants_rejected"
+    },
+    {
+      "name": "unknown_value_metadata",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 23.53722691599978,
+      "test": "test/spec/test_r3_timing.py::test_s9_r3_unknown_value_read_opt_in"
+    },
+    {
+      "name": "checker_time_dependency_rule",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 7.92507158301305,
+      "test": "test/spec/test_r4_dependencies.py::test_s3_3_s9_r4_review_variants_rejected"
+    },
+    {
+      "name": "row_known_nonbar_time",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 19.48344908299623,
+      "test": "test/spec/test_r4_dependencies.py::test_s3_3_s9_r4_static_available_at_is_row_known"
+    },
+    {
+      "name": "dependency_max_own_clock",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 43.33779012499144,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_review_dependency_effective_max"
+    },
+    {
+      "name": "dependency_max_time_value",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 21.253933208005037,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_review_dependency_effective_max"
+    },
+    {
+      "name": "column_effective_max",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 19.644272957986686,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_review_dependency_effective_max[end-column-read]"
+    },
+    {
+      "name": "global_effective_max",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 26.850747417018283,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_review_dependency_effective_max[end-global-read]"
+    },
+    {
+      "name": "static_time_reference",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 34.677024625008926,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_static_default_equals_projection"
+    },
+    {
+      "name": "null_dependency_max",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 9.111439624975901,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_s9_r5_null_time_not_replaced_by_interval_end"
+    },
+    {
+      "name": "static_dependency_required",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 26.65650237497175,
+      "test": "test/spec/test_r5_availability.py::test_s3_3_r5_static_dependency_null_rejected"
+    },
+    {
+      "name": "cold_snapshot_parse",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 3.138318542041816,
+      "test": "test/spec/test_r3_integrity.py::test_s7_r3_review_mutable_stream_race[False]"
+    },
+    {
+      "name": "cached_post_read_identity",
+      "killed": true,
+      "returncode": 1,
+      "seconds": 4.557910666975658,
+      "test": "test/spec/test_r3_integrity.py::test_s7_r3_cached_identity_checked_after_parquet_read"
+    }
+  ],
+  "killed": 45,
+  "total": 45
+}

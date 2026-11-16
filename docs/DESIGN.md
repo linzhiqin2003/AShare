@@ -1032,7 +1032,7 @@ REFERENCES = {"my_range": my_range}
 - **只规定标准层**：外部数据统一整理成「数据包」——按表、按时间分区的长表 parquet，加一份 `datapackage.json` 清单。来源层（各家原始下载）和面板层（内部 T×N 数组）不受约束。现有数据族的内部格式为性能保留不改，各配一个导出器产出标准层视图。
 - **清单用现成标准**：采用 Data Package v2（`resources`、Table Schema `fields`/`primaryKey`），本项目要求的东西用扩展属性加上（`unit`、`knownAt`、`symbology`、`calendar`、`gaps`、`frequency`、`kind`）。运行时不依赖 frictionless 库，严格检查由我们自己的校验器做。
 - **时间**：日频用 `date32` 交易日，日内和 24 小时市场用带 UTC 时区的 `timestamp`；拒收无时区时间戳、整数 epoch（毫秒/微秒歧义，币安归档 2025 年改过单位）和 `YYYYMMDD` 字符串。区间左闭右开、写左端。
-- **防前视放在字段级**：每个字段声明 `knownAt`（`start`、`end`、`end+<时长>`、`column:available_at`）；非行情时间序列必须有 `available_at`。
+- **防前视放在字段级**：每个字段声明 `knownAt`（`start`、`end`、`end+<时长>`、`column:available_at`、`unknown`）；unknown 表示来源不能保证时点，校验报警告。非行情时间序列必须有 `available_at`，允许公告早于事件日期；只有行情表要求可知时刻不早于区间开始。
 - **单位换成基本单位**：股、张、合约、币；金额用元不用千元万元；比例用小数。缺失写 null，不得用 NaN/0/-1；行情不补行、不前向填充；来源缺口写进清单 `gaps`。
 - **版本**：每个文件记字节数、SHA-256、行数，包版本 = 规范化清单的 SHA-256；`seal` 计算、`check` 校验、读取时核对被读到的文件。
 - **接入**：直接写文件后 `seal` + `check`，或实现三方法的 `Adapter` 协议交给 `build()`（临时目录写好、校验通过才发布）。包放 `data/ext/<名字>/`，经 `dataset_dir("ext")` 解析；`open()` 给出 `read()` 长表和与数据层 `Panel` 同接口的 `panel()`，可直接交给因子引擎。
