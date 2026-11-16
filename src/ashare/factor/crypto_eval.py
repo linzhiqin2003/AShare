@@ -128,12 +128,14 @@ def crypto_labels(ds, symbols, values, *, trade_hour=0, horizons=(1, 7, 30)):
     )
 
 
-def sample_mask(entries, horizon, split):
+def sample_mask(entries, horizon, split, *, boundary=BOUNDARY):
+    """C6 默认边界不变；其他研究可以显式传入自己的 UTC 边界。"""
     entries = np.asarray(entries)
+    boundary = millis(boundary)
     if split == "in":
-        return (entries < BOUNDARY) & (entries + horizon * DAY < BOUNDARY)
+        return (entries < boundary) & (entries + horizon * DAY < boundary)
     if split == "out":
-        return entries >= BOUNDARY
+        return entries >= boundary
     raise ValueError("split 只能为 in/out")
 
 
@@ -189,10 +191,10 @@ def hodrick_1b(x, g, horizon, *, sample=None):
     )
 
 
-def calibrate(x, g, entries):
+def calibrate(x, g, entries, *, boundary=BOUNDARY):
     """只用样本内单日标签；AR 创新 η_d 与同日 g_d（数组 g[d−1]）相关。"""
     x, g = np.asarray(x, float), np.asarray(g, float)
-    ins = sample_mask(entries, 1, "in")
+    ins = sample_mask(entries, 1, "in", boundary=boundary)
     good = (
         ins[1:]
         & ins[:-1]

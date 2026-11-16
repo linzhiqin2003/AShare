@@ -1,0 +1,427 @@
+{
+  "fingerprint": "1fcf338ffcb56e2b0cc1538217f5d5ed87203156c8b7846f4bd55f367c3113a2",
+  "imports": [
+    "src/ashare/data/crypto/metrics.py",
+    "src/ashare/data/crypto/verify_metrics.py",
+    "src/ashare/factor/timing/__init__.py",
+    "src/ashare/factor/crypto_eval.py"
+  ],
+  "mutation_0_passed": true,
+  "isolated_control_passed": true,
+  "mutations": [
+    {
+      "name": "daily_median",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_daily_median_uses_paired_rows_and_keeps_outliers"
+      ],
+      "seconds": 5.096129583020229
+    },
+    {
+      "name": "paired_rows",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_daily_median_uses_paired_rows_and_keeps_outliers"
+      ],
+      "seconds": 4.322429874970112
+    },
+    {
+      "name": "alignment_decision",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_alignment_registered_day_boundary"
+      ],
+      "seconds": 1.728798582975287
+    },
+    {
+      "name": "median_match_threshold",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_threshold_gray_zone_does_not_vote[error0]"
+      ],
+      "seconds": 9.482446749985684
+    },
+    {
+      "name": "median_reject_threshold",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_threshold_gray_zone_does_not_vote[error1]"
+      ],
+      "seconds": 1.372768333996646
+    },
+    {
+      "name": "quality_threshold",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_mismatch_threshold_and_correct_rows"
+      ],
+      "seconds": 1.4532632089685649
+    },
+    {
+      "name": "available_at_start",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_alignment_registered_day_boundary"
+      ],
+      "seconds": 1.5310981250368059
+    },
+    {
+      "name": "deduplicate_conflict",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_duplicate_exact_only"
+      ],
+      "seconds": 8.367008749977686
+    },
+    {
+      "name": "firewall_cutoff",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_firewall_all_readers_at_end_excluded"
+      ],
+      "seconds": 20.224128958012443
+    },
+    {
+      "name": "lookahead_disabled",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_firewall_and_lookahead_reject_next_day_and_sealed"
+      ],
+      "seconds": 15.796209583000746
+    },
+    {
+      "name": "cross_boundary_kept",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_cross_boundary_labels_hand_calculation"
+      ],
+      "seconds": 12.638563750020694
+    },
+    {
+      "name": "validation_twice",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_validation_once_list_hash_and_frozen_dates"
+      ],
+      "seconds": 20.814836749981623
+    },
+    {
+      "name": "confirmation_twice",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_confirmation_whole_list_once_and_hash"
+      ],
+      "seconds": 22.87213262496516
+    },
+    {
+      "name": "list_hash_ignored",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_validation_once_list_hash_and_frozen_dates"
+      ],
+      "seconds": 15.468542999995407
+    },
+    {
+      "name": "definition_cache_disabled",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_mining_repeat_definition_does_not_increment"
+      ],
+      "seconds": 17.80626508302521
+    },
+    {
+      "name": "definition_names_counted",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_definition_normalization_and_parameter_identity"
+      ],
+      "seconds": 29.553032791998703
+    },
+    {
+      "name": "replace_study_settings",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_timing_c8.py::test_study_settings_reference_cannot_change_after_validation"
+      ],
+      "seconds": 9.777632583049126
+    },
+    {
+      "name": "factor_exact_type",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_uncontrolled_callable_rejected_before_cache_and_lists[subclass-mining]",
+        "test/crypto/test_c8_review.py::test_uncontrolled_callable_rejected_before_cache_and_lists[subclass-validation]",
+        "test/crypto/test_c8_review.py::test_uncontrolled_callable_rejected_before_cache_and_lists[subclass-confirmation]"
+      ],
+      "seconds": 11.184355000033975
+    },
+    {
+      "name": "execution_immutable",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_execution_and_parameters_cannot_be_replaced[_code]",
+        "test/crypto/test_c8_review.py::test_execution_and_parameters_cannot_be_replaced[_params]"
+      ],
+      "seconds": 19.742251416959334
+    },
+    {
+      "name": "execution_hash_binding",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_hash_follows_actual_executable_even_after_private_replacement"
+      ],
+      "seconds": 15.397776458004955
+    },
+    {
+      "name": "sustained_opposite",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_real_longest_isolated_reverse_and_k_boundary[2]"
+      ],
+      "seconds": 26.319175333948806
+    },
+    {
+      "name": "opposite_k_too_high",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_real_longest_isolated_reverse_and_k_boundary[2]"
+      ],
+      "seconds": 3.046075167017989
+    },
+    {
+      "name": "opposite_k_too_low",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_real_longest_isolated_reverse_and_k_boundary[1]"
+      ],
+      "seconds": 2.856520499975886
+    },
+    {
+      "name": "minimum_paired",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_minimum_paired_daily_samples[119]"
+      ],
+      "seconds": 12.27143291698303
+    },
+    {
+      "name": "verify_opposite",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_real_longest_isolated_reverse_and_k_boundary[2]"
+      ],
+      "seconds": 8.61843716702424
+    },
+    {
+      "name": "verify_k",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_real_longest_isolated_reverse_and_k_boundary[2]"
+      ],
+      "seconds": 8.756452041969169
+    },
+    {
+      "name": "verify_minimum_paired",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_minimum_paired_daily_samples[119]"
+      ],
+      "seconds": 8.935502832988277
+    },
+    {
+      "name": "ledger_path_binding",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_ledger_path_cannot_reset_gates"
+      ],
+      "seconds": 10.067714624979999
+    },
+    {
+      "name": "test_identity_count",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_review.py::test_label_horizons_are_three_tests_and_bh"
+      ],
+      "seconds": 22.385708833986428
+    },
+    {
+      "name": "registered_assignment",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_metrics_c8.py::test_alignment_registered_day_boundary"
+      ],
+      "seconds": 5.044448165979702
+    },
+    {
+      "name": "registered_check",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_registered_constant_checked_by_daily_median"
+      ],
+      "seconds": 10.79616641701432
+    },
+    {
+      "name": "cross_midnight_run",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_reverse_run_crosses_midnight"
+      ],
+      "seconds": 13.2121254579979
+    },
+    {
+      "name": "switch_window",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[-86400000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[-3600000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[0]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[3600000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[86400000]"
+      ],
+      "seconds": 2.6945325420238078
+    },
+    {
+      "name": "switch_window_closed",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[-86400000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[86400000]"
+      ],
+      "seconds": 8.955146000022069
+    },
+    {
+      "name": "verify_registered_check",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_registered_constant_checked_by_daily_median"
+      ],
+      "seconds": 15.485047750000376
+    },
+    {
+      "name": "verify_cross_midnight",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_reverse_run_crosses_midnight"
+      ],
+      "seconds": 10.174204125010874
+    },
+    {
+      "name": "verify_switch_window",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[-86400000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[-3600000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[0]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[3600000]",
+        "test/crypto/test_c8_recheck.py::test_switch_window_rejects_single_reverse[86400000]"
+      ],
+      "seconds": 6.186992958013434
+    },
+    {
+      "name": "cache_consistency",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[definition_hash-outer]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[definition_hash-inner]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[test_hash-outer]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[test_hash-inner]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[data_version-outer]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[data_version-inner]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[settings_hash-outer]",
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[settings_hash-inner]"
+      ],
+      "seconds": 14.654835792025551
+    },
+    {
+      "name": "cache_complete_structure",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_incomplete_cache_is_miss_with_warning[missing_p]",
+        "test/crypto/test_c8_recheck.py::test_incomplete_cache_is_miss_with_warning[missing_normalization]",
+        "test/crypto/test_c8_recheck.py::test_incomplete_cache_is_miss_with_warning[wrong_versions]"
+      ],
+      "seconds": 3.7168587079504505
+    },
+    {
+      "name": "dates_test_identity",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_three_mining_starts_are_three_attempts_and_bh"
+      ],
+      "seconds": 5.5780730000115
+    },
+    {
+      "name": "recomputation_data_revision",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_same_test_and_data_with_changed_seed_is_not_revision"
+      ],
+      "seconds": 11.443414082983509
+    },
+    {
+      "name": "recomputation_requires_result",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_cache_identity_mismatch_recomputed_with_warning[data_version-outer]"
+      ],
+      "seconds": 15.465257874981035
+    },
+    {
+      "name": "recomputation_latest_version",
+      "killed": true,
+      "invalid": false,
+      "failed_tests": [
+        "test/crypto/test_c8_recheck.py::test_revision_compares_latest_attempt_not_any_old_version[cache]",
+        "test/crypto/test_c8_recheck.py::test_revision_compares_latest_attempt_not_any_old_version[failed_attempt]"
+      ],
+      "seconds": 10.048850457998924
+    }
+  ],
+  "seconds": 565.2839510830818,
+  "mutation_0_tests": 152,
+  "native_build_guard_preserved": true,
+  "total": 43,
+  "killed": 43
+}

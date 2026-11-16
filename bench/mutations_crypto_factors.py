@@ -49,7 +49,7 @@ MUTATIONS = [
         '(meta["delivery_at"] - at) / HOUR',
         '(meta["delivery_at"] - times) / HOUR',
     ),
-    ("cross_split", E, "entries + horizon * DAY < BOUNDARY", "entries < BOUNDARY"),
+    ("cross_split", E, "entries + horizon * DAY < boundary", "entries < boundary"),
     ("gap_mask", C, "& BAD_PRICE", "& (BAD_PRICE & ~1)"),
     ("1b_missing_past", E, "(count == horizon)", "(count >= horizon-1)"),
     (
@@ -67,7 +67,7 @@ MUTATIONS = [
     (
         "calibrate_oos",
         E,
-        'ins = sample_mask(entries, 1, "in")',
+        'ins = sample_mask(entries, 1, "in", boundary=boundary)',
         "ins = np.ones(len(entries), bool)",
     ),
     (

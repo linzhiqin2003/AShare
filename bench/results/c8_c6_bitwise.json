@@ -1,0 +1,15 @@
+{
+  "input_arrays": 27,
+  "input_arrays_bitwise_equal": true,
+  "holm_tests": 8,
+  "holm_bitwise_equal": true,
+  "groups": 8,
+  "equal_groups": 8,
+  "tests": 288,
+  "repetitions": 4000,
+  "before_seconds": 1401.5180162499892,
+  "after_resume_seconds": 252.8777316249907,
+  "timed_out_groups": 2,
+  "reused_completed_groups": 6,
+  "reused_partial_results": 48
+}

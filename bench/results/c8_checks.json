@@ -1,0 +1,284 @@
+{
+  "previous_review_revision": {
+    "previous_daily_revision": {
+      "previous_c8": {
+        "c6-compare": {
+          "exit_code": 0,
+          "seconds": 16.18765616696328
+        },
+        "metrics": {
+          "exit_code": 0,
+          "seconds": 222.49178929196205,
+          "ok": 0,
+          "built": 0
+        },
+        "timing-demo": {
+          "exit_code": 0,
+          "seconds": 108.37999245902756
+        },
+        "pytest": {
+          "exit_code": 0,
+          "reported_seconds": 210.09,
+          "passed": 526,
+          "skipped": 0,
+          "warnings": 1,
+          "c8_tests": 61
+        },
+        "mutations": {
+          "exit_code": 0,
+          "seconds": 317.24850145803066,
+          "total": 16,
+          "killed": 16,
+          "mutation_0_tests": 60
+        },
+        "mutations_initial": {
+          "exit_code": 1,
+          "seconds": 93.59867699997267
+        },
+        "pytest_first": {
+          "exit_code": 0,
+          "seconds": 83.77143633301603
+        },
+        "ruff": {
+          "exit_code": 0
+        },
+        "format": {
+          "exit_code": 0,
+          "files": 843
+        },
+        "mutations_intermediate": {
+          "exit_code": 0,
+          "seconds": 387.6841276669875,
+          "killed": 14,
+          "total": 14
+        },
+        "pytest_previous": {
+          "exit_code": 0,
+          "seconds": 75.58638362499187
+        },
+        "post_mutation_checksum_regressions": {
+          "passed": 1,
+          "mutation_target_files_changed": 0
+        }
+      },
+      "daily_revision": 1,
+      "pytest": {
+        "exit_code": 0,
+        "seconds": 103.65292399999453,
+        "passed": 542,
+        "skipped": 0,
+        "warnings": 1,
+        "reported_seconds": 100.02,
+        "c8_tests": 77,
+        "metrics_tests": 49,
+        "timing_tests": 28,
+        "c6_related_tests": 77,
+        "workers": 1
+      },
+      "metrics": {
+        "exit_code": 0,
+        "ok": 1,
+        "built": 1,
+        "differences": 0,
+        "build_seconds": 233.4466000419925,
+        "verify_seconds": 449.59886675101006,
+        "interrupted_combined_attempts": 1,
+        "interrupted_combined_limit_seconds": 840,
+        "scoped_verification_symbols": 2
+      },
+      "ruff": {
+        "exit_code": 0
+      },
+      "format": {
+        "exit_code": 0,
+        "files": 843
+      },
+      "c6": {
+        "input_arrays": 27,
+        "input_arrays_bitwise_equal": true,
+        "holm_tests": 8,
+        "holm_bitwise_equal": true,
+        "groups": 8,
+        "equal_groups": 8,
+        "tests": 288,
+        "repetitions": 4000,
+        "before_seconds": 1401.5180162499892,
+        "after_seconds": 3659.291111946106,
+        "after_timing_includes_interleaved_checks": true
+      },
+      "mutations": {
+        "exit_code": 0,
+        "seconds": 132.28311333298916,
+        "total": 23,
+        "killed": 23,
+        "mutation_0_tests": 77,
+        "isolated_control_tests": 77,
+        "invalid": 0,
+        "source_imports_checked": 1,
+        "native_build_guard_preserved": 1
+      },
+      "diff-check": {
+        "exit_code": 0
+      },
+      "c6-compare": {
+        "exit_code": 0,
+        "seconds": 15.709447083005216
+      },
+      "design_section_matches_d402835": 1,
+      "git_head_unchanged": 1
+    },
+    "independent_review_revision": 1,
+    "pytest": {
+      "exit_code": 0,
+      "seconds": 133.7357977500069,
+      "passed": 578,
+      "skipped": 0,
+      "warnings": 1,
+      "reported_seconds": 131.39,
+      "c8_tests": 113,
+      "metrics_tests": 49,
+      "timing_tests": 28,
+      "review_tests": 36,
+      "c6_related_tests": 77,
+      "workers": 1
+    },
+    "review_red": {
+      "failed": 20,
+      "passed": 2,
+      "development_regressions_failed_before_fix": 4
+    },
+    "negative_assertions": {
+      "negative_assertions_with_match": 62,
+      "wrong_reason_cases": 6,
+      "wrong_reason_accepted": 0
+    },
+    "metrics": {
+      "ok": 1,
+      "built": 1,
+      "differences": 0,
+      "build_seconds": 49.601829959021416,
+      "verify_seconds": 342.2852027499466,
+      "min_paired_rows": 120,
+      "opposite_run_limit": 2,
+      "exit_code": 0,
+      "scoped_verification_symbols": 2,
+      "raw_and_parquet_unchanged": 1
+    },
+    "c6": {
+      "input_arrays": 27,
+      "input_arrays_bitwise_equal": true,
+      "holm_tests": 8,
+      "holm_bitwise_equal": true,
+      "groups": 8,
+      "equal_groups": 8,
+      "tests": 288,
+      "repetitions": 4000,
+      "before_seconds": 1401.5180162499892,
+      "after_seconds": 1543.3583360839984,
+      "after_timing_includes_interleaved_checks": true
+    },
+    "mutations": {
+      "exit_code": 0,
+      "seconds": 773.8342721250374,
+      "total": 33,
+      "killed": 33,
+      "reported_seconds": 757.7003844169667,
+      "mutation_0_tests": 113,
+      "isolated_control_tests": 113,
+      "invalid": 0,
+      "source_imports_checked": 1,
+      "native_build_guard_preserved": 1
+    },
+    "timing_demo": {
+      "exit_code": 0,
+      "seconds": 107.77879083302105,
+      "attempts": 3,
+      "mining_records": 6,
+      "validation_calls": 0,
+      "confirmation_calls": 0,
+      "statistics_equal_to_previous": 1
+    },
+    "ruff": {
+      "exit_code": 0
+    },
+    "format": {
+      "exit_code": 0,
+      "files": 844
+    },
+    "design_only_authorized_wording_change": 1,
+    "git_head_unchanged": 1,
+    "diff-check": {
+      "exit_code": 0
+    }
+  },
+  "source_worktree": 1,
+  "initial_recheck_regressions_failed": 29,
+  "development_nan_regression_failed": 1,
+  "development_current_settings_regression_failed": 1,
+  "development_latest_version_failed": 2,
+  "development_numeric_cache_failed": 1,
+  "development_mutation_resume_failed": 1,
+  "development_mutation_anchor_failed": 1,
+  "pytest": {
+    "passed": 617,
+    "warnings": 1,
+    "seconds": 64.17,
+    "skipped": 0
+  },
+  "c8_tests": 152,
+  "mutations_total": 43,
+  "mutations_killed": 43,
+  "ruff_check": 1,
+  "ruff_format": 1,
+  "paths_static": 1,
+  "metrics_verify_differences": 0,
+  "metrics_fields_unchanged": 1,
+  "c6": {
+    "input_arrays": 27,
+    "input_arrays_bitwise_equal": true,
+    "holm_tests": 8,
+    "holm_bitwise_equal": true,
+    "groups": 8,
+    "equal_groups": 8,
+    "tests": 288,
+    "repetitions": 4000,
+    "before_seconds": 1401.5180162499892,
+    "after_resume_seconds": 252.8777316249907,
+    "timed_out_groups": 2,
+    "reused_completed_groups": 6,
+    "reused_partial_results": 48
+  },
+  "real_validation_calls": 0,
+  "real_confirmation_calls": 0,
+  "negative_assertions": {
+    "raises": 66,
+    "missing_specific_reason": 0
+  },
+  "mutation_batches": [
+    {
+      "batch": 1,
+      "exit_code": 75,
+      "seconds": 143.52924916701159
+    },
+    {
+      "batch": 2,
+      "exit_code": 75,
+      "seconds": 201.69809050002368
+    },
+    {
+      "batch": 3,
+      "exit_code": 75,
+      "seconds": 112.36282745801145
+    },
+    {
+      "batch": 4,
+      "exit_code": 75,
+      "seconds": 106.72220579098212
+    },
+    {
+      "batch": 5,
+      "exit_code": 0,
+      "seconds": 51.56848324998282
+    }
+  ]
+}
