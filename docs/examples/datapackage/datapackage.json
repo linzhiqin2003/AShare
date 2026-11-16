@@ -1,0 +1,143 @@
+{
+  "specVersion": "1",
+  "name": "synthetic-three-stocks",
+  "title": "纯合成三股票示例",
+  "source": "确定性公式生成，无真实行情",
+  "licenses": [
+    {
+      "name": "CC0-1.0"
+    }
+  ],
+  "symbology": "cn",
+  "calendar": {
+    "name": "SYNTHETIC",
+    "tz": "Asia/Shanghai",
+    "sessionOpen": "09:30",
+    "sessionClose": "15:00"
+  },
+  "resources": [
+    {
+      "name": "bars",
+      "kind": "bars",
+      "frequency": "1d",
+      "schema": {
+        "fields": [
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "date",
+            "type": "date"
+          },
+          {
+            "name": "open",
+            "type": "number"
+          },
+          {
+            "name": "high",
+            "type": "number"
+          },
+          {
+            "name": "low",
+            "type": "number"
+          },
+          {
+            "name": "close",
+            "type": "number"
+          },
+          {
+            "name": "volume",
+            "type": "number"
+          }
+        ],
+        "primaryKey": [
+          "symbol",
+          "date"
+        ]
+      },
+      "path": [
+        "bars/2024.parquet"
+      ],
+      "files": [
+        {
+          "path": "bars/2024.parquet",
+          "bytes": 3265,
+          "hash": "sha256:32343084efb92616cd107b73905d337cb3e2e7d677dc3e926feec1379c06e3fc",
+          "rows": 120
+        }
+      ],
+      "bytes": 3265,
+      "rows": 120,
+      "hash": "sha256:32343084efb92616cd107b73905d337cb3e2e7d677dc3e926feec1379c06e3fc"
+    },
+    {
+      "name": "instruments",
+      "kind": "instruments",
+      "schema": {
+        "fields": [
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "asset_type",
+            "type": "string"
+          },
+          {
+            "name": "currency",
+            "type": "string"
+          }
+        ],
+        "primaryKey": [
+          "symbol"
+        ]
+      },
+      "path": [
+        "instruments/all.parquet"
+      ],
+      "files": [
+        {
+          "path": "instruments/all.parquet",
+          "bytes": 1256,
+          "hash": "sha256:5d9543e40e1633e36d84ad002ab32ae76437ad8f273a8cf3b2da7d95f1d41ead",
+          "rows": 3
+        }
+      ],
+      "bytes": 1256,
+      "rows": 3,
+      "hash": "sha256:5d9543e40e1633e36d84ad002ab32ae76437ad8f273a8cf3b2da7d95f1d41ead"
+    },
+    {
+      "name": "calendar",
+      "kind": "calendar",
+      "schema": {
+        "fields": [
+          {
+            "name": "date",
+            "type": "date"
+          }
+        ],
+        "primaryKey": [
+          "date"
+        ]
+      },
+      "path": [
+        "calendar/all.parquet"
+      ],
+      "files": [
+        {
+          "path": "calendar/all.parquet",
+          "bytes": 661,
+          "hash": "sha256:f6927458e8d76074d33b14e834efe4e7d38149ab22252b8d2cee24db9029b9f2",
+          "rows": 40
+        }
+      ],
+      "bytes": 661,
+      "rows": 40,
+      "hash": "sha256:f6927458e8d76074d33b14e834efe4e7d38149ab22252b8d2cee24db9029b9f2"
+    }
+  ],
+  "version": "d2090ab76af2b2e85003763f6fd8c17d15189f76e8a1fff168b0ce9eef6e3116",
+  "created": "2026-11-15T14:39:57.308272Z"
+}

@@ -30,6 +30,7 @@ class Dataset:
 DATASETS = MappingProxyType(
     {
         "cn": Dataset(True),
+        "ext": Dataset(True),
         "live": Dataset(True),
         "paper": Dataset(True, "ASHARE_PAPER_DIR"),
         "platform": Dataset(True, "ASHARE_PLATFORM_DIR"),

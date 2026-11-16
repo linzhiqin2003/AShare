@@ -1,0 +1,71 @@
+{
+  "cn": {
+    "fields": [
+      "close",
+      "volume"
+    ],
+    "source_reexported": false,
+    "source_comparison_rerun": false,
+    "panel_first_seconds": 0.5426861250307411,
+    "hashes_first": 14,
+    "shape": [
+      242,
+      5923
+    ],
+    "quote_cells": 1293651,
+    "panel_cached_seconds": 0.4538536670152098,
+    "hashes_cached": 0,
+    "read_seconds": 0.09301016700919718,
+    "read_rows": 1293651,
+    "check_seconds": 11.372921416012105,
+    "check_exit_code": 0,
+    "failure_count": 0,
+    "status": "pass"
+  },
+  "crypto": {
+    "fields": [
+      "close",
+      "volume"
+    ],
+    "source_reexported": false,
+    "source_comparison_rerun": false,
+    "panel_first_seconds": 0.39949220896232873,
+    "hashes_first": 13,
+    "shape": [
+      8760,
+      4
+    ],
+    "quote_cells": 35040,
+    "panel_cached_seconds": 0.022899084025993943,
+    "hashes_cached": 0,
+    "read_seconds": 0.013198917033150792,
+    "read_rows": 35040,
+    "check_seconds": 5.685750957985874,
+    "check_exit_code": 0,
+    "failure_count": 0,
+    "status": "pass"
+  },
+  "crypto_minute": {
+    "fields": [
+      "close",
+      "volume"
+    ],
+    "source_reexported": false,
+    "source_comparison_rerun": false,
+    "panel_first_seconds": 0.20298691699281335,
+    "hashes_first": 13,
+    "shape": [
+      525600,
+      1
+    ],
+    "quote_cells": 525600,
+    "panel_cached_seconds": 0.18733304203487933,
+    "hashes_cached": 0,
+    "read_seconds": 0.035872999986168,
+    "read_rows": 525600,
+    "check_seconds": 5.656237375049386,
+    "check_exit_code": 0,
+    "failure_count": 0,
+    "status": "pass"
+  }
+}
