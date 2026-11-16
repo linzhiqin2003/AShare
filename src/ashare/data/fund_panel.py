@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from .catalog import FUND_DATASETS
 from .fund_actions import distributions, reconcile_actions, resolve_reused
 from .fund_schema import CB_FIELDS, FUND_FIELDS
 from .store import atomic_json, lock
@@ -292,6 +293,20 @@ def build_fund_arrays(store, dates):
         arrays[name] = scatter(dates, symbols, daily, name)
     arrays["adj_factor"] = scatter(dates, symbols, adj, "adj_factor")
     arrays["total_shares"] = scatter(dates, symbols, share, "total_shares")
+    etf = (
+        store.read("etf_share_size")
+        .filter(pl.col("trade_date") >= "20090105")
+        .select(
+            pl.col("ts_code").alias("symbol"),
+            pl.col("trade_date").alias("date"),
+            (pl.col("total_share").cast(pl.Float64) * 10000).alias("total_share"),
+            (pl.col("total_size").cast(pl.Float64) * 10000).alias("total_size"),
+        )
+        if complete_partitions(store, "etf_share_size")
+        else pl.DataFrame()
+    )
+    for name in ("total_share", "total_size"):
+        arrays[name] = scatter(dates, symbols, etf, name)
     arrays["close_corrected"] = fix_closes(arrays, dates, symbols)
     diagnostics["close_corrected"] = int(arrays["close_corrected"].sum())
     securities = fund_securities(basic, symbols)
@@ -359,6 +374,18 @@ def build_fund_arrays(store, dates):
         )
     ).sort("symbol", "date")
     tables = {"actions": events}
+    tables["etf_basic"] = (
+        store.read("etf_basic").rename(
+            {"ts_code": "symbol", "_fetched_at": "fetched_at"}
+        )
+        if complete_partitions(store, "etf_basic")
+        else pl.DataFrame(
+            schema={
+                ("symbol" if c == "ts_code" else c): pl.String
+                for c in FUND_DATASETS["etf_basic"].columns.split(",")
+            }
+        )
+    )
     return symbols, arrays, securities, tables, diagnostics
 
 
@@ -430,8 +457,7 @@ def write_panel(
     inputs = {
         k: v["content_hash"]
         for k, v in sorted(store.manifest().items())
-        if v.get("status") == "complete"
-        and v.get("dataset", "").startswith(("fund_", "cb_"))
+        if v.get("status") == "complete" and v.get("dataset") in FUND_DATASETS
     }
     version = hashlib.sha256(
         json.dumps(

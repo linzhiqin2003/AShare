@@ -133,6 +133,32 @@ DATASETS = {
             },
         ),
         dataset(
+            "cyq_perf",
+            "day",
+            "ts_code,trade_date",
+            "ts_code,trade_date,his_low,his_high,cost_5pct,cost_15pct,cost_50pct,cost_85pct,cost_95pct,weight_avg,winner_rate",
+            limit=6000,
+            coverage_start="20180102",
+            empty_allowed=False,
+            known_at="收盘后；历史会被重写；复权基准核对未通过，暂不公开面板字段，见 docs/D3_NOTES.md",
+            units={
+                **{
+                    c: "元（源前复权价；基准尚未核实）"
+                    for c in (
+                        "his_low",
+                        "his_high",
+                        "cost_5pct",
+                        "cost_15pct",
+                        "cost_50pct",
+                        "cost_85pct",
+                        "cost_95pct",
+                        "weight_avg",
+                    )
+                },
+                "winner_rate": "%",
+            },
+        ),
+        dataset(
             "stk_limit",
             "day",
             "ts_code,trade_date",
@@ -737,6 +763,32 @@ assert not set(DATASETS) & set(FUTURES_DATASETS)
 FUND_DATASETS = {
     d.name: d
     for d in [
+        dataset(
+            "etf_basic",
+            "static",
+            "ts_code",
+            "ts_code,csname,extname,cname,index_code,index_name,setup_date,list_date,list_status,exchange,mgr_name,custod_name,mgt_fee,etf_type",
+            limit=5000,
+            # D/P 常不足 100 只；小状态分表的异常缩水也必须保护。
+            drop_check_min_rows=1,
+            date="list_date",
+            known_at="当前 ETF 主表；合并 L/D/P 全部状态；跟踪指数为现值，不作历史成分信号",
+        ),
+        dataset(
+            "etf_share_size",
+            "day",
+            "ts_code,trade_date",
+            "trade_date,ts_code,etf_name,total_share,total_size,exchange",
+            limit=5000,
+            coverage_start="20090105",
+            # 同一日的早期小样本也不应被截断覆盖；不与相邻交易日比较。
+            drop_check_min_rows=1,
+            known_at="交易所公布的份额和净资产规模；次日可知，跨境 ETF 可能更晚；严格回测至少滞后一天",
+            units={
+                "total_share": "万份（实测）",
+                "total_size": "万元（实测；净资产规模，不等于份额乘收盘价）",
+            },
+        ),
         dataset(
             "fund_calendar",
             "fund_exchange",

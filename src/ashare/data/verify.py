@@ -9,6 +9,7 @@ import polars as pl
 
 from .aliases import CanonicalStore
 from .catalog import DATASETS, FUTURES_DATASETS, INDUSTRY_CAVEAT
+from .chip_verify import audit_chip_basis, check_chip_values
 from .crosscheck import fingerprint
 from .panel_events import dividend_rows
 from .panel_quality import securities_table
@@ -182,6 +183,9 @@ def verify(store, *, output=None):
         block = [d for d in dates if d.startswith(year)]
         tables = {**static, **{n: store.read(n, block[0], block[-1]) for n in core}}
         part = audit_tables(tables, block, prior=carry, unique_names=core)
+        if store.entries("cyq_perf"):
+            chips = store.read("cyq_perf", block[0], block[-1])
+            part.merge(check_chip_values(chips))
         carry = part.carry
         audit_limits(tables, block, part)
         panel_check = audit_panel(store, block)
@@ -231,6 +235,8 @@ def verify(store, *, output=None):
     extra = Audit()
     extra.add("unique_keys", total, duplicates, failed=duplicate_count)
     audit.merge(extra)
+    chip_basis = audit_chip_basis(store)
+    chip_extrema = chip_basis.pop("extrema_diagnostic")
     # 共用清单里的期货条目由 verify-futures 检查；这里只看股票数据集，加不加期货结果逐位不变。
     stock_keys = [
         key for key, entry in manifest.items() if entry.get("dataset") in DATASETS
@@ -265,6 +271,8 @@ def verify(store, *, output=None):
         elapsed_seconds=time.perf_counter() - started,
         coverage=coverage,
         checks=audit.checks,
+        chip_adjustment_basis=chip_basis,
+        chip_extrema_diagnostic=chip_extrema,
         by_year=yearly,
         dividend_statistics=event_stats,
         st_name_crosscheck=st_name_audit(store, dates),
@@ -310,6 +318,8 @@ def verify(store, *, output=None):
         lines.append(f"|{name}|{check['checked']}|{check['failed']}|{rate}|")
     for title, value in [
         ("不变量及样例", audit.checks),
+        ("筹码复权基准：未证实", chip_basis),
+        ("筹码极值比较：诊断（不判定）", chip_extrema),
         ("覆盖率", coverage),
         ("逐年校验", yearly),
         ("分红事件", event_stats),

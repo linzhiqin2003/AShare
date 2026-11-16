@@ -1,0 +1,93 @@
+{
+  "chips": {
+    "selected_stocks": 235,
+    "recent_ex_stocks": 27,
+    "rows": 2679,
+    "history_incomplete": 0,
+    "by_year": {
+      "2018": {
+        "stocks": 202,
+        "rows": 606,
+        "both_within_010": 208,
+        "same_basis_within_1pct": 123,
+        "median_abs_low_error": 0.08576301349547677,
+        "median_abs_high_error": 0.15163673982117842,
+        "within_tolerance": 54
+      },
+      "2021": {
+        "stocks": 224,
+        "rows": 672,
+        "both_within_010": 212,
+        "same_basis_within_1pct": 128,
+        "median_abs_low_error": 0.09000000000000075,
+        "median_abs_high_error": 0.17204175517356646,
+        "within_tolerance": 72
+      },
+      "2024": {
+        "stocks": 233,
+        "rows": 699,
+        "both_within_010": 189,
+        "same_basis_within_1pct": 117,
+        "median_abs_low_error": 0.09263199960037971,
+        "median_abs_high_error": 0.16917864994414344,
+        "within_tolerance": 60
+      },
+      "2026": {
+        "stocks": 234,
+        "rows": 702,
+        "both_within_010": 56,
+        "same_basis_within_1pct": 26,
+        "median_abs_low_error": 1.1458130740140469,
+        "median_abs_high_error": 0.5918678526048247,
+        "within_tolerance": 13
+      }
+    },
+    "etf_catalog_probe": {
+      "statuses": {
+        "L": 1743,
+        "D": 128,
+        "P": 52
+      },
+      "rows_before_2006": 0,
+      "rows_2006_through_2008": 0,
+      "rows_20090105": 2,
+      "rows_20090106": 2
+    },
+    "within_tolerance": 199,
+    "status": "diagnostic",
+    "status_label": "诊断（不判定）",
+    "data_status": "legacy_history_not_revalidated",
+    "note": "保留早期样本误差数字，撤销原 pass/fail 判定；本轮未重跑真实数据。旧完整性计数不证明历史完整，复权基准仍未证实。"
+  },
+  "etf": {
+    "20240102": {
+      "rows": 888,
+      "matched_existing_shares": 887,
+      "share_exact": 887,
+      "size_compared": 885,
+      "size_ratio_median": 0.9996101364522415,
+      "size_ratio_min": 0.009990309399882115,
+      "size_ratio_max": 1.010905893018319,
+      "nav_compared": 888,
+      "nav_ratio_median": 1.0,
+      "nav_within_1ppm": 888
+    },
+    "20261112": {
+      "rows": 1720,
+      "matched_existing_shares": 1720,
+      "share_exact": 1720,
+      "size_compared": 1694,
+      "size_ratio_median": 1.0010531864984795,
+      "size_ratio_min": 0.7230452674703213,
+      "size_ratio_max": 1.018852450618401,
+      "nav_compared": 1694,
+      "nav_ratio_median": 1.0,
+      "nav_within_1ppm": 1694
+    }
+  },
+  "history_completeness_notice": {
+    "status": "not_revalidated_after_P1",
+    "legacy_count_is_not_proof": true,
+    "note": "旧 history_incomplete=0 仅来自首日及已有报价因子连接检查，不能证明中间或尾部完整；误差数值仍为当次已有行情上的诊断。本轮未读取或重跑真实数据；后续独立全量复核见 docs/D3_NOTES.md。"
+  }
+}
