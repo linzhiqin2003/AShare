@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 
 from ashare.data.crypto.storage import digest, encoded
-from ashare.data.store import lock
 from ashare.factor.stats import adjust
 from ashare.ledger import Ledger
+from ashare.locks import lock
 
 
 class StageLedger:

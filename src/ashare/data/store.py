@@ -7,10 +7,10 @@ import json
 import logging
 import os
 import uuid
-from contextlib import contextmanager
 
 import polars as pl
 
+from ashare.locks import lock  # noqa: F401  数据层内部沿用 store.lock 这个名字
 from ashare.paths import data_root as resolve_data_root
 from ashare.paths import dataset_dir
 
@@ -51,17 +51,6 @@ def atomic_json(path, value):
             os.close(fd)
     finally:
         temp.unlink(missing_ok=True)
-
-
-@contextmanager
-def lock(path, *, shared=False, blocking=True):
-    import fcntl
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as stream:
-        mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
-        fcntl.flock(stream, mode | (0 if blocking else fcntl.LOCK_NB))
-        yield
 
 
 class Store:

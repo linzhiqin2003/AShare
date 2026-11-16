@@ -23,7 +23,12 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name("research_cli.py")
 SOURCE = "-ts_std(returns, 10)"
 # 合成库只生成面板要用的数据集；这两项覆盖检查本来就会失败，其余必须全过。
-NOT_GENERATED = {"partition_coverage_fut_daily", "partition_coverage_margin_secs"}
+# 合成数据目录不生成期货、融资融券标的和筹码（cyq_perf，D3 登记）三份按日数据。
+NOT_GENERATED = {
+    "partition_coverage_fut_daily",
+    "partition_coverage_margin_secs",
+    "partition_coverage_cyq_perf",
+}
 COMPARED_FIELDS = ["close", "adj_factor", "can_buy_open", "industry", "member_csi300"]
 
 
