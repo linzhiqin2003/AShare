@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
@@ -9,13 +10,26 @@ import threading
 import time
 from pathlib import Path
 
+from ashare.paths import bench_data_root, bench_ml_dir
+
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "bench" / "e2e"))
-from common import task_info  # noqa: E402
 
-sys.path.pop(0)
 
-from ashare.paths import bench_data_root, bench_ml_dir  # noqa: E402
+def _e2e_common():
+    """按文件路径加载 bench/e2e/common.py。bench 下有好几个 common.py，按裸名字 `common` 导入会拿到
+    sys.modules 里先导入的那份（随机顺序的 pytest 里报 ImportError）。"""
+    name = "ashare_bench_e2e_common"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, ROOT / "bench" / "e2e" / "common.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+task_info = _e2e_common().task_info
 
 DATA = bench_data_root(checkout=ROOT)
 ML_ROOT = bench_ml_dir(root=DATA)

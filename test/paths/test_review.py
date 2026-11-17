@@ -297,6 +297,31 @@ def test_ml_bench_preserves_fallback_root(roots, monkeypatch):
     assert module.ML_ROOT == target / "ml"
 
 
+def test_ml_bench_ignores_another_common_module(roots, monkeypatch):
+    """Linux CI 随机顺序下，别的测试先把 bench/testing/common.py 以 `common` 导入，
+    mlbench 的 `from common import task_info` 拿到那份而报 ImportError（2026-11-17 ci-local）。"""
+    import importlib.util
+    import sys
+    import types
+
+    root, _ = roots
+    monkeypatch.setattr(
+        paths, "bench_data_root", lambda path=None, *, checkout=None: root
+    )
+    monkeypatch.setitem(sys.modules, "common", types.ModuleType("common"))
+    file = Path(__file__).resolve().parents[2] / "bench/ml/mlbench.py"
+    spec = importlib.util.spec_from_file_location("review_mlbench_common", file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    # task_info 在 Linux 上只报 0，所以核对来源而不是取值
+    assert module.task_info.__module__ == "ashare_bench_e2e_common"
+    assert Path(sys.modules["ashare_bench_e2e_common"].__file__).parts[-3:] == (
+        "bench",
+        "e2e",
+        "common.py",
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [
