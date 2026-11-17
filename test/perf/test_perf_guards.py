@@ -83,9 +83,14 @@ def test_rolling_operator_linear_in_rows(single_thread, op):
     原来是 2T / T ≤ 3：GitHub 的 4 核机器上 `-n auto` 同时跑别的测试，大数组更吃内存
     带宽，线性的 ts_std、ts_max 也测出 3.04、3.07（2026-11-14 CI 第 3 次运行）。翻倍时
     线性和平方只差 2 倍，阈值夹在中间没有余量；×4 时差 4 倍。本机 4 份并行实测
-    3.75–4.09；按行数平方增长的假算子测出 16.1，被拦下。"""
-    x = np.random.default_rng(1).normal(size=(4800, 1500))
-    quarter = np.ascontiguousarray(x[:1200])
+    3.75–4.09；按行数平方增长的假算子测出 16.1，被拦下。
+
+    大数组不超过 glibc 的 mmap 上限 32 MB：原来 4800×1500（57 MB）在 Linux 上每次调用都
+    重新 mmap、逐页缺页，1200 行（14 MB）复用堆内存不缺页，纯线性的 numpy 运算也测出
+    6.6–8.8，ts_std / ts_mean 在负载下到 12.5–13.4（2026-11-17 ci-local）。2400×1500
+    （29 MB）两边都不缺页，同一镜像里实测 4.1–5.8。"""
+    x = np.random.default_rng(1).normal(size=(2400, 1500))
+    quarter = np.ascontiguousarray(x[:600])
     fn = getattr(po, "ts_" + op)
     ratio, small, large = paired_ratio(lambda: fn(quarter, 20), lambda: fn(x, 20))
     assert ratio <= 8.0, f"ts_{op}: {describe(('T', '4T'), ratio, small, large)}"
