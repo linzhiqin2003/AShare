@@ -1063,7 +1063,7 @@ REFERENCES = {"my_range": my_range}
 
 ### 6.11 数据存放位置（2026-11-15 用户定）
 
-内置盘空间紧，冷数据放外置盘（`/Volumes/MacData` 下，PCIe 固态）。
+内置盘空间紧，冷数据放外置盘（PCIe 固态）。
 
 - **热数据留在仓库 `data/`（内置盘）**：`cn`（每晚同步写）、`live`（实时录制）、`paper`、`platform`、`mining`、`research`。后台定时任务只碰这些，避免 launchd 写外置盘被系统权限拦下、拔盘时任务失败。
 - **冷数据放外置盘**：`dev`、`crypto`、`crypto_minute`（6.10.1）。
