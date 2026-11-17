@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import threading
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -20,6 +21,11 @@ from .timing import declarations
 
 _VERIFIED = {}
 _CACHE_LOCK = threading.Lock()
+# 文件系统的时间戳按时钟节拍取（Linux ext4 毫秒级，FAT 两秒）：校验后同一节拍内原地改写、
+# 再改回 mtime，身份五元组完全不变。所以只缓存改动早于校验开始 2 秒以上的文件，较新的
+# 每次都重算哈希（git 的 racily clean 规则）。
+_SETTLED_NS = 2 * 10**9
+_clock = time.time_ns
 
 
 def _identity(stat):
@@ -42,12 +48,14 @@ def _verify(path, entry, stream=None):
         digest = _VERIFIED.get(key)
     payload = None
     if digest is None:
+        started = _clock()
         stream.seek(0)
         payload = stream.read()
         digest = _hash_file(payload)
         if _identity(os.fstat(stream.fileno())) != key[1:]:
             raise ValueError("文件在校验中改变")
-        if digest == entry["hash"]:
+        settled = max(stat.st_mtime_ns, stat.st_ctime_ns) < started - _SETTLED_NS
+        if digest == entry["hash"] and settled:
             with _CACHE_LOCK:
                 if len(_VERIFIED) >= 4096:
                     _VERIFIED.pop(next(iter(_VERIFIED)))

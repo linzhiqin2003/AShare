@@ -1,6 +1,7 @@
 """D2 合规基线；测试签名器独立于产品 seal，避免成对实现互相掩盖错误。"""
 
 import hashlib
+import importlib
 import json
 from datetime import UTC, datetime
 
@@ -70,6 +71,22 @@ def assert_bad(root, code, exit_code=1):
     assert item(report, code)["status"] == "fail", report
     assert 0 < len(item(report, code)["examples"]) <= 20
     return report
+
+
+@pytest.fixture(autouse=True)
+def settled_clock(monkeypatch):
+    """校验缓存只收改动早于校验 2 秒以上的文件。这里的测试刚写完文件就读，默认把校验时钟
+    拨后 1 小时，当作文件早就写好；测「刚写过」那种情形的测试改用真实时钟（real_clock）。"""
+    reader = importlib.import_module("ashare.data.spec.reader")
+    real = reader._clock
+    monkeypatch.setattr(reader, "_clock", lambda: real() + 3600 * 10**9)
+    return real
+
+
+@pytest.fixture
+def real_clock(monkeypatch, settled_clock):
+    reader = importlib.import_module("ashare.data.spec.reader")
+    monkeypatch.setattr(reader, "_clock", settled_clock)
 
 
 @pytest.fixture
