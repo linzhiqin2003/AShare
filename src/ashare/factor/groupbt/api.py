@@ -14,6 +14,8 @@ from panelbt.markets.ashare import price_permissions
 
 from ..windows import IS, TEST, VALIDATION  # noqa: F401
 from . import metrics, plot, portfolio
+from .rank_ic import cumulative as _rank_ic_cumulative
+from .rank_ic import series as _rank_ic_series
 
 UNIVERSES = {
     "TOP800": ("member_csi300", "member_csi500"),
@@ -159,6 +161,9 @@ class GroupBacktest:
     by: str = "year"
     subs: dict = field(default_factory=dict)
     holdings: dict | None = None
+    rank_ic: dict | None = (
+        None  # 名字 → 逐日 RankIC：long_short（全池）、top（top 1/10 组内）
+    )
 
     def table(self, name="long_short", by=None):
         """绩效表：行是年份或季度加全历史，列是 return、sharpe、turnover、maxdrawdown、margin。"""
@@ -172,20 +177,65 @@ class GroupBacktest:
     def exposure_mean(self):
         return {k: float(np.nanmean(v)) for k, v in self.exposure.items()}
 
-    def chart(self, title=None, weights_line=None):
-        """分组累计盈亏线加多空线的 SVG。`weights_line` 默认在算了全池权重组合时画出。"""
+    def rank_ic_mean(self):
+        """两个 RankIC 序列的全历史均值；没有算 RankIC 时返回 None。"""
+        if not self.rank_ic:
+            return None
+        mean = {}
+        for name, values in self.rank_ic.items():
+            if np.isfinite(values).any():
+                value = float(np.nanmean(values))
+                mean[name] = value if np.isfinite(value) else None
+            else:
+                mean[name] = None
+        return mean
+
+    def chart(self, title=None, weights_line=None, long_only=False):
+        """分组累计盈亏线和多空线的 SVG。
+
+        `weights_line` 默认在算了全池权重组合时画出。`long_only=True` 时把纯多头
+        top 10%（只支持 10 分组，第 1 组就是 top 10%）从分组线里拿出来，单独用绿色
+        实线画在多空线旁边；默认保持原来的画法，公开输出逐位不变。
+        """
         extra = None
         show = ("weights" in self.pnl) if weights_line is None else weights_line
         if show:
             if "weights" not in self.pnl:
                 raise ValueError("没有全池权重组合：运行时传 weights_portfolio=True")
             extra = {"weights": np.cumsum(np.nan_to_num(self.pnl["weights"]))}
+        long_only_line = None
+        groups = self.group_pnl
+        labels = None
+        if long_only:
+            if self.n_groups != 10:
+                raise ValueError("long_only 只支持 n_groups=10（第 1 组即 top 10%）")
+            long_only_line = np.cumsum(np.nan_to_num(self.pnl["top"]))
+            groups = self.group_pnl[1:]
+            labels = [f"G{i + 2}" for i in range(self.n_groups - 1)]
         return plot.pnl_chart(
-            [np.cumsum(np.nan_to_num(g)) for g in self.group_pnl],
+            [np.cumsum(np.nan_to_num(g)) for g in groups],
             np.cumsum(np.nan_to_num(self.pnl["long_short"])),
             self.dates,
             title=self.universe if title is None else title,
             extra=extra,
+            long_only=long_only_line,
+            group_labels=labels,
+        )
+
+    def rank_ic_chart(self, title=None):
+        """累计 RankIC 的 SVG：多空（全池）与 top 10%（组内）两条线。"""
+        if not self.rank_ic:
+            raise ValueError("没有 RankIC：运行时传 rank_ic=True")
+        series = {
+            (
+                "L/S 多空 RankIC" if name == "long_short" else "Top 10% 多头 RankIC"
+            ): _rank_ic_cumulative(values)
+            for name, values in self.rank_ic.items()
+        }
+        return plot.rank_ic_chart(
+            series,
+            self.dates,
+            title=f"{self.universe} 累计 RankIC" if title is None else title,
         )
 
     def to_dict(self):
@@ -197,6 +247,8 @@ class GroupBacktest:
             "top": self.table("top").to_dicts(),
             "exposure_mean": self.exposure_mean(),
         }
+        if self.rank_ic:
+            out["rank_ic_mean"] = self.rank_ic_mean()
         if self.subs:
             out["subs"] = {k: v.to_dict() for k, v in self.subs.items()}
         return out
@@ -208,11 +260,18 @@ class GroupBacktest:
             lines += ["", name, _format(self.table(name))]
         lines += ["", "risk exposure (mean)"]
         lines += [f"  {k:<12}{v:>10.4f}" for k, v in self.exposure_mean().items()]
+        mean_ic = self.rank_ic_mean()
+        if mean_ic:
+            lines += ["", "rank_ic (mean)"]
+            lines += [
+                f"  {k:<12}{('—' if v is None else f'{v:>10.4f}')}"
+                for k, v in mean_ic.items()
+            ]
         for sub in self.subs.values():
             lines += ["", "-" * 60, sub.text()]
         return "\n".join(lines)
 
-    def html(self):
+    def html(self, long_only=False):
         """所有股票池的图和表拼成一页（自包含，不依赖外部文件）。"""
         parts = [
             "<meta charset='utf-8'><style>body{font:14px -apple-system,Helvetica,Arial,sans-serif;"
@@ -221,7 +280,9 @@ class GroupBacktest:
             "th{color:#666;font-weight:500}.t{display:inline-block;vertical-align:top}</style>"
         ]
         for res in (self, *self.subs.values()):
-            parts.append(res.chart())
+            parts.append(res.chart(long_only=long_only))
+            if res.rank_ic:
+                parts.append(res.rank_ic_chart())
             for name in ("long_short", "top"):
                 parts.append(
                     f"<div class='t'><b>{name}</b>{_html_table(res.table(name))}</div>"
@@ -281,6 +342,7 @@ def run(
     by="year",
     weights_portfolio=False,
     sub_universes=True,
+    rank_ic=False,
     window=IS,
 ):
     """分组回测。`factor` 是在全市场上算好的 (T, N) 因子矩阵，行列与 `panel` 对齐，值越大越做多。
@@ -295,6 +357,8 @@ def run(
     - vector_neut：一个或一组 (T, N) 风险向量，依次做截面正交。
     - weights_portfolio：另算一个直接按全池归一化权重持仓的多空组合。
     - sub_universes：用大池时把嵌套的小池各跑一遍，放在结果的 `subs` 里。
+    - rank_ic：额外算逐日 RankIC（全池一条、top 1/10 组内一条），存到
+      `result.rank_ic`；默认不算，免得给批量回测增加开销。
 
     - window：`(起, 止)`，YYYYMMDD，含起不含止，默认样本内 `IS`（2016-01-01 至 2025-01-01）。
       止日及以后的行情、因子一概不读；起日之前的数据只用来算滚动窗口，不产生持仓。
@@ -327,6 +391,7 @@ def _prepare(
     by="year",
     weights_portfolio=False,
     sub_universes=True,
+    rank_ic=False,
     window=IS,
     _shared=None,
 ):
@@ -459,6 +524,14 @@ def _prepare(
     )
 
     def finish(runs):
+        ic_series = {}
+        if rank_ic:
+            ic_price = history[trade_at]
+            ic_adjustment = history["adj_factor"]
+            for name, mask in zip(names, masks, strict=True):
+                ic_series[name] = _rank_ic_series(
+                    x, mask, ic_price, ic_adjustment, first
+                )
         results = []
         for name, out in zip(names, runs, strict=True):
             if out["bad_rows"]:
@@ -508,6 +581,11 @@ def _prepare(
                     ),
                     by=by,
                     holdings=holdings,
+                    rank_ic=(
+                        {"long_short": ic_series[name][0], "top": ic_series[name][1]}
+                        if rank_ic
+                        else None
+                    ),
                 )
             )
         results[0].subs = dict(zip(names[1:], results[1:], strict=True))

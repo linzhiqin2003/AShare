@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -473,3 +474,77 @@ def test_inputs_unchanged_and_single_point():
         )
     )
     assert len(polylines(single)) == 6
+
+
+def test_num_label():
+    assert plot._num_label(0.0) == "0"
+    assert plot._num_label(3.0) == "3"
+    assert plot._num_label(-2.5) == "-2.5"
+    assert plot._num_label(0.126) == "0.13"
+    assert plot._num_label(1e-12) == "0"
+
+
+def test_long_only_line_and_group_labels():
+    dates = make_dates(4)
+    groups = [np.array([0.0, 0.01, 0.02, 0.03]) for _ in range(3)]
+    long_short = np.array([0.0, 0.005, 0.015, 0.03])
+    long_only = np.array([0.0, 0.004, 0.012, 0.02])
+    root = parse(
+        plot.pnl_chart(
+            groups,
+            long_short,
+            dates,
+            long_only=long_only,
+            group_labels=["G2", "G3", "G4"],
+        )
+    )
+    by_name = polyline_points_by_name(root)
+    assert {"G2", "G3", "G4", "Top 10%", "L/S"} <= set(by_name)
+    element = next(e for e in polylines(root) if e.get("data-name") == "Top 10%")
+    assert element.get("stroke") == "#2a9d5c"
+    assert float(element.get("stroke-width")) == 2.0
+    assert element.get("data-kind") == "long_only"
+    assert polylines(root)[-1].get("data-name") == "L/S"
+    texts = [e.text for e in root.findall(f".//{NS}text")]
+    assert "Top 10%" in texts and "G2" in texts
+
+    plain = parse(plot.pnl_chart(groups, long_short, dates))
+    assert len(polylines(plain)) == 4
+    with pytest.raises(ValueError):
+        plot.pnl_chart(groups, long_short, dates, group_labels=["G1"])
+
+
+def test_rank_ic_chart():
+    dates = make_dates(5)
+    series = {
+        "L/S 多空 RankIC": np.array([0.0, 0.1, 0.3, 0.25, 0.4]),
+        "Top 10% 多头 RankIC": np.array([0.0, -0.05, 0.05, 0.1, 0.2]),
+    }
+    root = parse(plot.rank_ic_chart(series, dates, title="A & <B>"))
+    lines = [e for e in polylines(root) if e.get("data-kind") == "rank_ic"]
+    assert len(lines) == 2
+    assert {e.get("data-name") for e in lines} == set(series)
+    texts = [e.text for e in root.findall(f".//{NS}text")]
+    assert "A & <B>" in texts
+    tick_texts = [
+        e.text for e in root.findall(f".//{NS}text") if e.get("text-anchor") == "end"
+    ]
+    assert tick_texts and not any("%" in (text or "") for text in tick_texts)
+    zero = [e for e in root.findall(f".//{NS}line") if e.get("stroke") == "#aaaaaa"]
+    assert len(zero) == 1
+
+    broken = {"a": np.array([0.0, np.nan, 0.02]), "b": np.full(3, np.nan)}
+    root = parse(plot.rank_ic_chart(broken, dates[:3]))
+    assert len([e for e in polylines(root) if e.get("data-name") == "a"]) == 2
+    assert not [e for e in polylines(root) if e.get("data-name") == "b"]
+
+    empty = parse(plot.rank_ic_chart({}, []))
+    assert empty.tag == f"{NS}svg" and not polylines(empty)
+
+    for element in root.iter():
+        for attr in ("x", "x1", "x2"):
+            if attr in element.attrib:
+                assert 0.0 <= float(element.get(attr)) <= 960.0
+        for attr in ("y", "y1", "y2"):
+            if attr in element.attrib:
+                assert 0.0 <= float(element.get(attr)) <= 520.0

@@ -296,6 +296,36 @@ def test_outputs():
     np.testing.assert_allclose(curve["cumsum"][-1], np.nansum(res.pnl["long_short"]))
     assert res.chart().startswith("<svg") and "TOP800" in res.html()
     assert "long_short" in res.text() and "TOP800" in res.to_dict()["subs"]
+    assert res.rank_ic is None
+    assert "Top 10%" not in res.chart()
+    with pytest.raises(ValueError):
+        res.rank_ic_chart()
+
+
+def test_rank_ic_and_long_only_chart():
+    """rank_ic=True 时给出全池与 top 1/10 组内两条 RankIC，图上单列纯多头 top 10%。"""
+    panel = make_panel(seed=3, t=80, n=120)
+    factor = np.random.default_rng(4).normal(size=panel.shape)
+    res = groupbt.run(factor, panel, "ALL", n_groups=10, rank_ic=True, window=EARLY)
+    assert set(res.rank_ic) == {"long_short", "top"}
+    for values in res.rank_ic.values():
+        assert values.shape == (len(res.dates),)
+        assert np.isnan(values[-1])
+        assert np.isfinite(values).any()
+    assert np.isfinite(res.rank_ic["long_short"]).sum() > 0
+    assert np.isfinite(res.rank_ic["top"]).sum() > 0
+
+    chart = res.chart(long_only=True)
+    assert 'data-kind="long_only"' in chart and "Top 10%" in chart
+    assert "Top 10%" not in res.chart()
+    with pytest.raises(ValueError):
+        groupbt.run(factor, panel, "TOP800", n_groups=5).chart(long_only=True)
+    svg = res.rank_ic_chart()
+    assert svg.startswith("<svg") and "RankIC" in svg
+    assert "RankIC" in res.html() and "Top 10%" in res.html(long_only=True)
+    data = res.to_dict()
+    assert set(data["rank_ic_mean"]) == {"long_short", "top"}
+    assert "rank_ic" in res.text()
 
 
 def test_top1800_starts_in_2015():
