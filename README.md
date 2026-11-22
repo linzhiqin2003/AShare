@@ -167,6 +167,10 @@ ashare.report.tearsheet(result, market, targets, dates, symbols,
 
 目标在给定的那一行成交：引擎不做信号移位。信号日与成交日的错位只在 `ashare` 里统一处理一次：`ashare.backtest.execution_targets`。
 
+## 示例 notebook
+
+[`docs/notebooks/single_factor_backtest.ipynb`](docs/notebooks/single_factor_backtest.ipynb)：单因子回测的完整示例——读面板、算因子、看分组/多空/纯多头 Top 10% 的累计 PnL 与 RankIC，再按完整 A 股规则（成本、涨跌停、停牌、T+1、整手）跑一遍纯多头 topN 回测并输出自包含 HTML 报告。需要 `make dev` 之后的 `.venv` 和数据根（`ASHARE_DATA_DIR`）。
+
 ## 数据
 
 仓库不含任何行情数据。数据层用你自己的 [Tushare](https://tushare.pro) 密钥下载（读环境变量 `TUSHARE_TOKEN`），全部存在不入库的 `data/` 下。Tushare 数据受其条款约束，这里不再分发。境外期货（WTI、布伦特等）Tushare 取不到，要用你自己的 Databento 或 Bloomberg 账号。
